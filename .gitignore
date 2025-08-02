@@ -48,3 +48,10 @@ Thumbs.db
 *.mov
 *.wmv
 
+/.vs/DaidalosEngineNext
+/.vs
+/App/x64
+/Core/x64
+/ECS/x64
+/Renderer/x64
+/x64
