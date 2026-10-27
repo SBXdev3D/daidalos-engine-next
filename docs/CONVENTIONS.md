@@ -49,7 +49,8 @@ tests/unit/<module>/           unit tests for that module
 
 - Each module is one static library target, `daidalos::<module>`.
 - Dependencies are declared only with `target_link_libraries`. A module must not include another module's headers without linking it.
-- Third-party types (SDL, Vulkan, spdlog, Jolt, miniaudio) must not appear in public headers, except GLM math types (ADR-0005) and `tl::expected` through `Result` (ADR-0003).
+- Third-party types (SDL, Vulkan, spdlog, Jolt, miniaudio) must not appear in public headers, except GLM math types (ADR-0005) and `tl::expected` through `Result` (ADR-0003). The profiling macros in `daidalos/core/Profile.hpp` expand to Tracy calls in profile builds; no Tracy type is named in engine headers.
+- Tests of a module's private code (for example `platform`'s SDL event translation) add the module's `src/` directory to the test target's include path. Only tests may do this.
 
 ## 3. Ownership and lifetime
 
@@ -57,7 +58,8 @@ tests/unit/<module>/           unit tests for that module
 - Raw pointers and references are non-owning. A raw pointer means "may be null"; a reference means "never null".
 - References to entities and resources that can disappear use generational handles (`Entity`, `Handle<T>`), never pointers.
 - No global mutable objects, singletons, or service locators. Dependencies are passed through constructors.
-  The only exceptions are logging and the assert handler: every module must be able to report problems without a logger being passed everywhere. Both are still configured explicitly at startup (`logging::Initialize`, `core::SetAssertHandler`).
+  The only exceptions are process-wide by nature: logging and the assert handler (every module must be able to report problems without a logger being passed everywhere), and the crash handler. They are still configured explicitly at startup (`logging::Initialize`, `core::SetAssertHandler`, `platform::InstallCrashHandler`).
+  SDL also has process-wide state, so only one `platform::Platform` can exist at a time; `Platform::Create` enforces it.
 - Every class that owns a resource is non-copyable unless copying is meaningful; moves are explicit.
 
 ## 4. Errors, assertions, logging
@@ -66,6 +68,13 @@ tests/unit/<module>/           unit tests for that module
 - `DAI_ASSERT(condition, message)` checks programming errors and invariants. It is never used for failures caused by data, files, or devices.
 - No exception crosses a module boundary. Code that calls a throwing API catches at the call site and returns an `Error`.
 - Logging goes through the engine facade: `DAI_LOG_INFO("module", "message {}", value)`. Logging does not replace returning an error.
+- Startup steps that can fail are added to an `app::StartupSequence`, which stops the steps already started when a later one fails.
+
+## 4.1. Configuration variables
+
+- Settings that a user or tester may change without recompiling are cvars, registered in the application's `core::CVarRegistry` by the module that owns them: `Register<std::int64_t>("window.width", 1280, "description")`.
+- Names are lowercase, dot-separated by module: `window.width`, `renderer.vsync`, `physics.substeps`.
+- Values come from the config file (`name value` lines) and the command line (`+name value`); the command line wins. A value that does not parse fails the startup if the variable is already registered, and is logged as a warning otherwise. Unknown names are logged as warnings.
 
 ## 5. Math and coordinate conventions
 
@@ -119,7 +128,8 @@ These match glTF 2.0, so imported assets need no axis conversion.
 
 - Framework: GoogleTest, run through CTest (ADR-0002).
 - Test names: `TEST(ModuleOrClass, BehaviorUnderCondition)`, for example `TEST(Registry, DestroyedEntityHandleIsInvalidAfterReuse)`.
-- Unit tests never use a real window, GPU, or audio device. Use the SDL dummy video driver, the miniaudio null backend, a mock RHI, or software Vulkan (lavapipe, SwiftShader).
+- Unit tests never use a real window, GPU, or audio device. Use the SDL dummy video driver (`PlatformConfig::videoDriver = "dummy"`), the miniaudio null backend, a mock RHI, or software Vulkan (lavapipe, SwiftShader).
+- Behavior that ends the process (crashes) is tested by running a helper executable and checking what it leaves behind, not with death tests: GoogleTest catches structured exceptions on Windows before a crash handler sees them.
 - Every bug fix comes with a test that fails before the fix.
 
 ## 10. Git

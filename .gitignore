@@ -5,6 +5,11 @@
 # Local CMake settings
 CMakeUserPresets.json
 
+# Files written by the applications when run from the source tree
+sandbox.log
+sandbox.cfg
+/crashdumps/
+
 # vcpkg
 /vcpkg_installed/
 
