@@ -24,6 +24,20 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(DaidalosSanitizers)
 include(DaidalosTargets)
 
+find_package(tl-expected CONFIG REQUIRED)
+
+if(DAI_BUILD_TESTS)
+    find_package(GTest CONFIG REQUIRED)
+    include(GoogleTest)
+    enable_testing()
+endif()
+
+add_subdirectory(engine)
+
 if(DAI_BUILD_APPS)
     add_subdirectory(apps)
+endif()
+
+if(DAI_BUILD_TESTS)
+    add_subdirectory(tests)
 endif()
