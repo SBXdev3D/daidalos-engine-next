@@ -26,18 +26,6 @@ std::filesystem::path TestDirectory(const std::string& name) {
     return directory;
 }
 
-std::vector<std::filesystem::path> DumpFiles(const std::filesystem::path& directory) {
-    std::vector<std::filesystem::path> files;
-    if (std::filesystem::exists(directory)) {
-        for (const auto& entry : std::filesystem::directory_iterator(directory)) {
-            if (entry.path().extension() == ".dmp") {
-                files.push_back(entry.path());
-            }
-        }
-    }
-    return files;
-}
-
 class CrashHandlerTest : public testing::Test {
 protected:
     void TearDown() override { platform::UninstallCrashHandler(); }
@@ -85,6 +73,18 @@ TEST_F(CrashHandlerTest, UninstallWithoutInstallIsSafe) {
 #if defined(DAI_CRASH_HELPER_PATH)
 
 namespace {
+
+std::vector<std::filesystem::path> DumpFiles(const std::filesystem::path& directory) {
+    std::vector<std::filesystem::path> files;
+    if (std::filesystem::exists(directory)) {
+        for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+            if (entry.path().extension() == ".dmp") {
+                files.push_back(entry.path());
+            }
+        }
+    }
+    return files;
+}
 
 // Runs the crash helper and returns its exit code.
 DWORD RunCrashHelper(const std::filesystem::path& directory, const std::wstring& mode) {
