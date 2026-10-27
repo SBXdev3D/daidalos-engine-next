@@ -47,6 +47,8 @@ public:
 
     /// Name of the video driver in use, for example "windows", "x11", "wayland" or "dummy".
     [[nodiscard]] std::string_view VideoDriver() const;
+    /// False when the gamepad subsystem could not start. Keyboard and mouse work either way.
+    [[nodiscard]] bool GamepadsAvailable() const;
 
 private:
     friend class Window;

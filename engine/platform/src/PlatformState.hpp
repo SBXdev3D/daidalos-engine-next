@@ -5,6 +5,9 @@
 #pragma once
 
 #include <string>
+#include <vector>
+
+struct SDL_Gamepad;
 
 namespace daidalos::platform::detail {
 
@@ -17,6 +20,10 @@ struct PlatformState {
 
     std::string videoDriver;
     int liveWindows = 0;
+    /// False when SDL's gamepad subsystem could not start; the platform then works without gamepads.
+    bool gamepadsAvailable = false;
+    /// Gamepads opened on connection, closed on disconnection or shutdown.
+    std::vector<SDL_Gamepad*> gamepads;
 };
 
 } // namespace daidalos::platform::detail
