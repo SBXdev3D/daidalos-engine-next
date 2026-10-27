@@ -6,6 +6,8 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+
 namespace {
 
 int ProfiledFunction(int value) {
@@ -13,6 +15,11 @@ int ProfiledFunction(int value) {
     {
         DAI_PROFILE_SCOPE("Inner scope");
         value *= 2;
+    }
+    {
+        const std::string name = "Runtime name";
+        DAI_PROFILE_SCOPE_TEXT(name);
+        value += 0;
     }
     return value;
 }

@@ -13,7 +13,8 @@
 //       { DAI_PROFILE_SCOPE("Culling"); ... }
 //   }
 //
-// DAI_PROFILE_SCOPE takes a string literal.
+// DAI_PROFILE_SCOPE takes a string literal. DAI_PROFILE_SCOPE_TEXT takes a name known only at run
+// time (a std::string or std::string_view, copied by Tracy); it costs a little more.
 
 #if defined(DAI_PROFILER_ENABLED)
 
@@ -25,11 +26,16 @@
 #define DAI_PROFILE_FUNCTION() ZoneScoped
 /// Times the enclosing scope under the given name.
 #define DAI_PROFILE_SCOPE(name) ZoneScopedN(name)
+/// Times the enclosing scope under a name built at run time.
+#define DAI_PROFILE_SCOPE_TEXT(text)                                                                                   \
+    ZoneScoped;                                                                                                        \
+    ZoneName((text).data(), (text).size())
 
 #else
 
 #define DAI_PROFILE_FRAME() static_cast<void>(0)
 #define DAI_PROFILE_FUNCTION() static_cast<void>(0)
 #define DAI_PROFILE_SCOPE(name) static_cast<void>(0)
+#define DAI_PROFILE_SCOPE_TEXT(text) static_cast<void>(sizeof(text))
 
 #endif
