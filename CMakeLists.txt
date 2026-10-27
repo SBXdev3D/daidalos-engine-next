@@ -19,13 +19,18 @@ option(DAI_BUILD_APPS "Build the applications in apps/" ON)
 option(DAI_BUILD_TESTS "Build the unit tests in tests/" ON)
 option(DAI_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(DAI_ENABLE_ASAN "Build with AddressSanitizer (and UndefinedBehaviorSanitizer where supported)" OFF)
+option(DAI_ENABLE_PROFILER "Build with the Tracy profiler client (needs the vcpkg feature 'profiler')" OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(DaidalosSanitizers)
 include(DaidalosTargets)
 
+find_package(SDL3 CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(tl-expected CONFIG REQUIRED)
+if(DAI_ENABLE_PROFILER)
+    find_package(Tracy CONFIG REQUIRED)
+endif()
 
 if(DAI_BUILD_TESTS)
     find_package(GTest CONFIG REQUIRED)

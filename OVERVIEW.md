@@ -12,7 +12,7 @@
 **Repository:** https://github.com/StephaneBX/daidalos-engine-next  
 **Decision records:** `docs/adr/`; coding and math conventions: `docs/CONVENTIONS.md`  
 **Development approach:** Modular architecture, incremental implementation, testable components, and AI-assisted development  
-**Current project status:** Architecture and feature planning; implementation should proceed through small, verifiable milestones
+**Current project status:** Phase 0 (foundation) and Phase 1 (platform and application lifecycle) are implemented; implementation proceeds through small, verifiable milestones
 
 ---
 

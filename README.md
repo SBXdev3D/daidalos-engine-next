@@ -2,7 +2,16 @@
 
 A modular C++20 real-time 3D engine for indoor environments, rendering with Vulkan 1.3 on Windows and Linux.
 
-The project is at an early stage: the build foundation, the `core` module (errors and assertions) and the `logging` module exist. See the roadmap in [OVERVIEW.md](OVERVIEW.md).
+The project is at an early stage. Phases 0 and 1 of the roadmap in [OVERVIEW.md](OVERVIEW.md) are done:
+
+| Module | Contents |
+|---|---|
+| `core` | `Result` and `Error`, `DAI_ASSERT`, frame timer, configuration variables (cvars), profiling macros |
+| `logging` | Logging facade over spdlog |
+| `platform` | SDL3 window and events, crash dumps (Windows) |
+| `app` | Ordered startup with rollback, main loop |
+
+The sandbox opens an empty window; rendering starts in Phase 3.
 
 ## Documentation
 
@@ -15,11 +24,12 @@ The project is at an early stage: the build foundation, the `core` module (error
 | | Windows | Linux |
 |---|---|---|
 | Compiler | Visual Studio 2022 (MSVC 19.4x) with the "Desktop development with C++" workload | Clang 18 or later |
-| Build tools | CMake 3.25+ | CMake 3.25+, Ninja |
+| Build tools | CMake 3.25+ | CMake 3.25+, Ninja, pkg-config |
+| System packages | | X11 and Wayland development packages, for SDL3 (see below) |
 | Dependencies | vcpkg | vcpkg |
 | Formatting | clang-format 19 (bundled with Visual Studio's "C++ Clang tools" component) | clang-format 19 |
 
-Dependencies (spdlog, GoogleTest, tl-expected) are installed automatically by vcpkg in manifest mode during the CMake configure step. They are listed in `vcpkg.json`, and their versions are pinned by the registry baseline in `vcpkg-configuration.json`.
+Dependencies (SDL3, spdlog, GoogleTest, tl-expected, and Tracy for the profile presets) are installed automatically by vcpkg in manifest mode during the CMake configure step. They are listed in `vcpkg.json`, and their versions are pinned by the registry baseline in `vcpkg-configuration.json`.
 
 ### vcpkg
 
@@ -44,6 +54,14 @@ Visual Studio can also open the folder directly (File > Open > Folder) and use t
 
 ### Linux
 
+vcpkg builds SDL3 against the system's X11 and Wayland libraries. On Ubuntu 24.04:
+
+```bash
+sudo apt-get install ninja-build pkg-config libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev   libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev libdecor-0-dev libegl1-mesa-dev   libgl1-mesa-dev libdrm-dev libgbm-dev
+```
+
+Then:
+
 ```bash
 cmake --preset linux-clang-debug               # or linux-clang-release
 cmake --build --preset linux-clang-debug
@@ -54,12 +72,29 @@ ctest --preset linux-clang-debug
 
 `windows-msvc-asan` (AddressSanitizer) and `linux-clang-asan` (AddressSanitizer and UndefinedBehaviorSanitizer) are available with the same three commands.
 
+### Profiling
+
+`windows-msvc-profile` and `linux-clang-profile` build with optimizations and the [Tracy](https://github.com/wolfpld/tracy) client, used through the `DAI_PROFILE_*` macros in `daidalos/core/Profile.hpp`. The client records nothing until the Tracy profiler (version 0.14) connects to the running application. The profiler version must match the client: 0.14.1, set by the vcpkg baseline.
+
 ### Running the sandbox
 
 ```bash
 build/windows-msvc/apps/sandbox/Debug/sandbox.exe   # Windows
 build/linux-clang-debug/apps/sandbox/sandbox        # Linux
 ```
+
+The sandbox opens a window, shows the frame rate in its title, and exits when the window is closed. It writes `sandbox.log` and, on Windows, crash dumps to `crashdumps/` in the working directory.
+
+Settings are configuration variables (cvars). They are read from `sandbox.cfg` in the working directory, one `name value` per line, and can be overridden on the command line with `+name value`:
+
+```bash
+sandbox.exe +window.width 1920 +window.height 1080
+```
+
+| Cvar | Default | Meaning |
+|---|---|---|
+| `window.width` | 1280 | Main window width, in screen coordinates |
+| `window.height` | 720 | Main window height, in screen coordinates |
 
 ## Formatting
 

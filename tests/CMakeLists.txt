@@ -1,2 +1,4 @@
 add_subdirectory(unit/core)
 add_subdirectory(unit/logging)
+add_subdirectory(unit/platform)
+add_subdirectory(unit/app)

@@ -29,6 +29,12 @@
       "cacheVariables": { "DAI_ENABLE_ASAN": "ON" }
     },
     {
+      "name": "windows-msvc-profile",
+      "displayName": "Windows MSVC with the Tracy profiler",
+      "inherits": "windows-base",
+      "cacheVariables": { "DAI_ENABLE_PROFILER": "ON", "VCPKG_MANIFEST_FEATURES": "profiler" }
+    },
+    {
       "name": "linux-base",
       "hidden": true,
       "inherits": "base",
@@ -56,15 +62,27 @@
       "displayName": "Linux Clang Debug with AddressSanitizer and UBSan",
       "inherits": "linux-base",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "DAI_ENABLE_ASAN": "ON" }
+    },
+    {
+      "name": "linux-clang-profile",
+      "displayName": "Linux Clang RelWithDebInfo with the Tracy profiler",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "DAI_ENABLE_PROFILER": "ON",
+        "VCPKG_MANIFEST_FEATURES": "profiler"
+      }
     }
   ],
   "buildPresets": [
     { "name": "windows-msvc-debug", "configurePreset": "windows-msvc", "configuration": "Debug" },
     { "name": "windows-msvc-release", "configurePreset": "windows-msvc", "configuration": "Release" },
     { "name": "windows-msvc-asan", "configurePreset": "windows-msvc-asan", "configuration": "Debug" },
+    { "name": "windows-msvc-profile", "configurePreset": "windows-msvc-profile", "configuration": "RelWithDebInfo" },
     { "name": "linux-clang-debug", "configurePreset": "linux-clang-debug" },
     { "name": "linux-clang-release", "configurePreset": "linux-clang-release" },
-    { "name": "linux-clang-asan", "configurePreset": "linux-clang-asan" }
+    { "name": "linux-clang-asan", "configurePreset": "linux-clang-asan" },
+    { "name": "linux-clang-profile", "configurePreset": "linux-clang-profile" }
   ],
   "testPresets": [
     {
@@ -76,8 +94,10 @@
     { "name": "windows-msvc-debug", "inherits": "test-base", "configurePreset": "windows-msvc", "configuration": "Debug" },
     { "name": "windows-msvc-release", "inherits": "test-base", "configurePreset": "windows-msvc", "configuration": "Release" },
     { "name": "windows-msvc-asan", "inherits": "test-base", "configurePreset": "windows-msvc-asan", "configuration": "Debug" },
+    { "name": "windows-msvc-profile", "inherits": "test-base", "configurePreset": "windows-msvc-profile", "configuration": "RelWithDebInfo" },
     { "name": "linux-clang-debug", "inherits": "test-base", "configurePreset": "linux-clang-debug" },
     { "name": "linux-clang-release", "inherits": "test-base", "configurePreset": "linux-clang-release" },
-    { "name": "linux-clang-asan", "inherits": "test-base", "configurePreset": "linux-clang-asan" }
+    { "name": "linux-clang-asan", "inherits": "test-base", "configurePreset": "linux-clang-asan" },
+    { "name": "linux-clang-profile", "inherits": "test-base", "configurePreset": "linux-clang-profile" }
   ]
 }

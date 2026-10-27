@@ -4,7 +4,35 @@
   "version-string": "0.1.0",
   "dependencies": [
     "gtest",
+    {
+      "name": "sdl3",
+      "default-features": false,
+      "features": [
+        {
+          "name": "wayland",
+          "platform": "linux"
+        },
+        {
+          "name": "x11",
+          "platform": "linux"
+        }
+      ]
+    },
     "spdlog",
     "tl-expected"
-  ]
+  ],
+  "features": {
+    "profiler": {
+      "description": "Tracy profiler client (DAI_ENABLE_PROFILER)",
+      "dependencies": [
+        {
+          "name": "tracy",
+          "default-features": false,
+          "features": [
+            "on-demand"
+          ]
+        }
+      ]
+    }
+  }
 }
