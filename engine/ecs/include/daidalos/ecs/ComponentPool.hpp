@@ -44,6 +44,8 @@ public:
     PoolBase() = default;
     PoolBase(const PoolBase&) = delete;
     PoolBase& operator=(const PoolBase&) = delete;
+    PoolBase(PoolBase&&) noexcept = default;
+    PoolBase& operator=(PoolBase&&) noexcept = default;
     virtual ~PoolBase() = default;
 
     [[nodiscard]] bool Contains(std::uint32_t index) const {

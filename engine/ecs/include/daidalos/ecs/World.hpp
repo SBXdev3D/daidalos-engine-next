@@ -5,6 +5,7 @@
 #pragma once
 
 #include <daidalos/core/Assert.hpp>
+#include <daidalos/core/Result.hpp>
 #include <daidalos/ecs/ComponentPool.hpp>
 #include <daidalos/ecs/Entity.hpp>
 
@@ -19,6 +20,21 @@
 
 namespace daidalos::ecs {
 
+namespace detail {
+
+/// Links of an entity in the hierarchy: children form a doubly linked list in attachment order.
+/// Only entities that have a parent or children have a node.
+struct HierarchyNode {
+    Entity parent;
+    Entity firstChild;
+    Entity lastChild;
+    Entity previousSibling;
+    Entity nextSibling;
+    std::uint32_t childCount = 0;
+};
+
+} // namespace detail
+
 /// Owns entities and their components (ADR-0006). Single-threaded.
 ///
 /// Validity rules:
@@ -28,6 +44,10 @@ namespace daidalos::ecs {
 ///   errors (DAI_ASSERT).
 /// - While Each iterates some component types, components of those types cannot be added or
 ///   removed, and entities that have them cannot be destroyed (DAI_ASSERT).
+///
+/// Hierarchy: an entity has at most one parent and any number of children. Destroying an entity
+/// destroys its descendants. The links are kept by the World rather than in a public component,
+/// so they cannot be edited into an inconsistent state.
 class World {
 public:
     World();
@@ -38,10 +58,26 @@ public:
     ~World();
 
     [[nodiscard]] Entity Create();
-    /// Destroys the entity and all its components. Returns false if the handle is null or stale.
+    /// Destroys the entity, its descendants and all their components. Returns false if the handle
+    /// is null or stale.
     bool Destroy(Entity entity);
     [[nodiscard]] bool IsAlive(Entity entity) const;
     [[nodiscard]] std::size_t AliveCount() const { return m_aliveCount; }
+
+    /// Attaches the child as the last child of the parent, or detaches it when the parent is null.
+    /// Fails with InvalidArgument when either entity is not alive or when the parent is the child
+    /// or one of its descendants (a cycle). On failure nothing changes.
+    core::Result<void> SetParent(Entity child, Entity parent);
+
+    /// Null when the entity has no parent or is not alive.
+    [[nodiscard]] Entity Parent(Entity entity) const;
+    /// Children are listed from FirstChild through NextSibling, in attachment order.
+    [[nodiscard]] Entity FirstChild(Entity entity) const;
+    [[nodiscard]] Entity NextSibling(Entity entity) const;
+    [[nodiscard]] std::size_t ChildCount(Entity entity) const;
+    /// True when the ancestor is the entity's parent, grandparent, and so on. An entity is not its
+    /// own descendant.
+    [[nodiscard]] bool IsDescendantOf(Entity entity, Entity ancestor) const;
 
     /// Constructs the component in place, with a constructor or aggregate initialization.
     template <Component T, class... Args>
@@ -157,6 +193,13 @@ private:
         std::array<detail::PoolBase*, Count> m_pools;
     };
 
+    [[nodiscard]] const detail::HierarchyNode* FindNode(Entity entity) const;
+    detail::HierarchyNode& Node(Entity entity);
+    void Link(Entity child, Entity parent);
+    void Unlink(Entity child);
+    void PruneNode(Entity entity);
+    void ReleaseSlot(Entity entity);
+
     template <Component T>
     [[nodiscard]] detail::Pool<T>* FindPool() const {
         const std::size_t type = detail::ComponentTypeIndex<T>();
@@ -182,6 +225,7 @@ private:
     std::size_t m_aliveCount = 0;
     // Indexed by component type. Null for types this world has never stored.
     std::vector<std::unique_ptr<detail::PoolBase>> m_pools;
+    detail::Pool<detail::HierarchyNode> m_hierarchy;
 };
 
 } // namespace daidalos::ecs
