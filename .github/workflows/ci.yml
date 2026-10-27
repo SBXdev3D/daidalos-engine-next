@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    name: Formatting
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install clang-format 19
+        run: pip install clang-format==19.1.5
+      - name: Check formatting
+        run: python scripts/format.py --check
+
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Windows MSVC Debug,   os: windows-2022, configure: windows-msvc,      preset: windows-msvc-debug }
+          - { name: Windows MSVC Release, os: windows-2022, configure: windows-msvc,      preset: windows-msvc-release }
+          - { name: Windows MSVC ASan,    os: windows-2022, configure: windows-msvc-asan, preset: windows-msvc-asan }
+          - { name: Linux Clang Debug,    os: ubuntu-24.04, configure: linux-clang-debug,   preset: linux-clang-debug }
+          - { name: Linux Clang Release,  os: ubuntu-24.04, configure: linux-clang-release, preset: linux-clang-release }
+          - { name: Linux Clang ASan,     os: ubuntu-24.04, configure: linux-clang-asan,    preset: linux-clang-asan }
+    env:
+      # vcpkg binary cache, persisted between runs with actions/cache.
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Use the runner's vcpkg
+        shell: bash
+        run: |
+          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.vcpkg-cache
+          key: vcpkg-${{ matrix.os }}-${{ matrix.configure }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: vcpkg-${{ matrix.os }}-${{ matrix.configure }}-
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.configure }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
