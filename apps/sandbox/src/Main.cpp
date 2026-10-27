@@ -15,7 +15,8 @@ namespace {
 
 using namespace daidalos;
 
-// Opens a window and shows the frame rate in its title until the window is closed.
+// Opens a window and shows the frame rate in its title until the window is closed or Escape
+// (or a gamepad's Back button) is pressed.
 class Sandbox final : public app::IApplicationHandler {
 public:
     core::Result<void> OnStart(app::Application& app) override {
@@ -31,7 +32,24 @@ public:
         }
     }
 
+    [[nodiscard]] static bool QuitPressed(const input::InputState& input) {
+        if (input.WasPressed(platform::Key::Escape)) {
+            return true;
+        }
+        for (const platform::GamepadId gamepad : input.Gamepads()) {
+            if (input.WasPressed(gamepad, platform::GamepadButton::Back)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     void OnUpdate(app::Application& app, const core::FrameTime& time) override {
+        if (QuitPressed(app.Input())) {
+            DAI_LOG_INFO("sandbox", "Quit requested from input");
+            app.RequestQuit();
+        }
+
         ++m_frames;
         m_elapsed += time.unclampedDelta;
         if (m_elapsed >= core::Seconds{1.0}) {

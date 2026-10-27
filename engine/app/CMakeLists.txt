@@ -6,5 +6,6 @@ dai_add_module(NAME app
         src/StartupSequence.cpp
     PUBLIC_DEPS
         daidalos::core
+        daidalos::input
         daidalos::logging
         daidalos::platform)

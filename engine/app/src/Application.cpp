@@ -47,6 +47,7 @@ core::Result<void> Application::Run(IApplicationHandler& handler) {
     DAI_ASSERT(!m_running, "Application::Run is already running");
     m_running = true;
     m_quitRequested = false;
+    m_input = {};
 
     StartupSequence startup;
     startup.Add("logging", [this] { return logging::Initialize(m_config.log); }, [] { logging::Shutdown(); });
@@ -149,6 +150,7 @@ void Application::MainLoop(IApplicationHandler& handler) {
     while (!m_quitRequested) {
         {
             DAI_PROFILE_SCOPE("Events");
+            m_input.BeginFrame();
             events.clear();
             if (m_window->IsMinimized()) {
                 m_platform->WaitEvents(kMinimizedWait, events);
@@ -156,6 +158,7 @@ void Application::MainLoop(IApplicationHandler& handler) {
                 m_platform->PollEvents(events);
             }
             for (const platform::Event& event : events) {
+                m_input.Process(event);
                 HandleEvent(event);
                 handler.OnEvent(*this, event);
             }

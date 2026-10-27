@@ -7,6 +7,7 @@
 #include <daidalos/core/CVarRegistry.hpp>
 #include <daidalos/core/FrameTimer.hpp>
 #include <daidalos/core/Result.hpp>
+#include <daidalos/input/InputState.hpp>
 #include <daidalos/logging/Log.hpp>
 #include <daidalos/platform/Event.hpp>
 #include <daidalos/platform/Platform.hpp>
@@ -78,6 +79,10 @@ public:
 
     /// Valid between OnStart and OnStop.
     [[nodiscard]] platform::Window& MainWindow();
+    /// Keyboard, mouse and gamepad state, updated with the frame's events before OnFixedUpdate and
+    /// OnUpdate. Presses and releases last one frame: read them in OnUpdate, because OnFixedUpdate
+    /// may run zero or several times per frame.
+    [[nodiscard]] const input::InputState& Input() const noexcept { return m_input; }
     [[nodiscard]] core::CVarRegistry& CVars() noexcept { return m_cvars; }
     [[nodiscard]] const ApplicationConfig& Config() const noexcept { return m_config; }
 
@@ -94,6 +99,7 @@ private:
     std::optional<core::CVar<std::int64_t>> m_windowHeight;
     std::optional<platform::Platform> m_platform;
     std::optional<platform::Window> m_window;
+    input::InputState m_input;
     bool m_quitRequested = false;
     bool m_running = false;
 };
