@@ -8,6 +8,10 @@ if(DAI_ENABLE_ASAN)
         add_link_options(/INCREMENTAL:NO)
         # The runtime checks enabled by default in Debug are incompatible with AddressSanitizer.
         string(REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+        # vcpkg libraries are built without AddressSanitizer. The standard library's container annotations
+        # must match across all linked objects, so they are disabled (container-overflow checks are lost;
+        # all other AddressSanitizer checks remain).
+        add_compile_definitions(_DISABLE_VECTOR_ANNOTATION _DISABLE_STRING_ANNOTATION)
 
         # MSVC links AddressSanitizer dynamically. The runtime DLL is copied next to each executable
         # so that tests and applications run outside a Visual Studio developer prompt.

@@ -26,7 +26,7 @@ Each rule that can be checked by a test should have one (see "Tested by" notes).
 | Header extension | `.hpp`; source `.cpp` | |
 | Header guards | `#pragma once` | |
 
-Formatting is defined by `.clang-format` and is not discussed in reviews. Static analysis is defined by `.clang-tidy`.
+Formatting is defined by `.clang-format` (clang-format 19) and is not discussed in reviews: run `python scripts/format.py` before committing; CI runs it with `--check`. Static analysis is defined by `.clang-tidy`, whose naming rules mirror the table above.
 
 ### Source file header
 
@@ -57,6 +57,7 @@ tests/unit/<module>/           unit tests for that module
 - Raw pointers and references are non-owning. A raw pointer means "may be null"; a reference means "never null".
 - References to entities and resources that can disappear use generational handles (`Entity`, `Handle<T>`), never pointers.
 - No global mutable objects, singletons, or service locators. Dependencies are passed through constructors.
+  The only exceptions are logging and the assert handler: every module must be able to report problems without a logger being passed everywhere. Both are still configured explicitly at startup (`logging::Initialize`, `core::SetAssertHandler`).
 - Every class that owns a resource is non-copyable unless copying is meaningful; moves are explicit.
 
 ## 4. Errors, assertions, logging

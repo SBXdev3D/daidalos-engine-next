@@ -1,0 +1,41 @@
+# Formatting rules for Daidalos Engine Next (clang-format 19).
+# CI checks formatting with the same major version; run the format script before committing.
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++20
+
+IndentWidth: 4
+UseTab: Never
+ColumnLimit: 120
+LineEnding: DeriveLF
+
+AccessModifierOffset: -4
+IndentCaseLabels: false
+NamespaceIndentation: None
+FixNamespaceComments: true
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AlwaysBreakTemplateDeclarations: Yes
+
+BreakBeforeBraces: Attach
+InsertBraces: true
+
+# Includes: the file's own module first, then third-party, then the standard library.
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^<daidalos/'
+    Priority: 1
+  - Regex: '^<[a-zA-Z0-9_]+\.h>$'
+    Priority: 3
+  - Regex: '^<[a-z_]+>$'
+    Priority: 4
+  - Regex: '^<.*'
+    Priority: 2
+  - Regex: '.*'
+    Priority: 5
+SortIncludes: CaseSensitive

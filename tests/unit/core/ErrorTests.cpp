@@ -13,9 +13,9 @@ using namespace daidalos::core;
 
 TEST(ErrorCode, EveryCodeHasADistinctName) {
     const ErrorCode codes[] = {
-        ErrorCode::Unknown,      ErrorCode::InvalidArgument, ErrorCode::InvalidState, ErrorCode::NotFound,
-        ErrorCode::AlreadyExists, ErrorCode::IoError,        ErrorCode::ParseError,   ErrorCode::NotSupported,
-        ErrorCode::OutOfMemory,  ErrorCode::DeviceError,
+        ErrorCode::Unknown,       ErrorCode::InvalidArgument, ErrorCode::InvalidState, ErrorCode::NotFound,
+        ErrorCode::AlreadyExists, ErrorCode::IoError,         ErrorCode::ParseError,   ErrorCode::NotSupported,
+        ErrorCode::OutOfMemory,   ErrorCode::DeviceError,
     };
 
     std::set<std::string> names;

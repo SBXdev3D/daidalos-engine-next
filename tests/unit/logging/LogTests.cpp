@@ -188,5 +188,6 @@ TEST_F(LogTest, UnopenableFileFailsWithIoErrorAndLeavesLoggingStopped) {
     ASSERT_FALSE(result.has_value());
     EXPECT_EQ(result.error().code, core::ErrorCode::IoError);
     EXPECT_FALSE(logging::IsEnabled(Level::Critical));
-    ASSERT_TRUE(logging::Initialize(SinkOnlyConfig(m_sink)).has_value()) << "A failed Initialize must not block a retry";
+    ASSERT_TRUE(logging::Initialize(SinkOnlyConfig(m_sink)).has_value())
+        << "A failed Initialize must not block a retry";
 }
