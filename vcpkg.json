@@ -20,5 +20,19 @@
     },
     "spdlog",
     "tl-expected"
-  ]
+  ],
+  "features": {
+    "profiler": {
+      "description": "Tracy profiler client (DAI_ENABLE_PROFILER)",
+      "dependencies": [
+        {
+          "name": "tracy",
+          "default-features": false,
+          "features": [
+            "on-demand"
+          ]
+        }
+      ]
+    }
+  }
 }

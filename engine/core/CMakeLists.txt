@@ -4,6 +4,7 @@ dai_add_module(NAME core
         include/daidalos/core/CVarRegistry.hpp
         include/daidalos/core/Error.hpp
         include/daidalos/core/FrameTimer.hpp
+        include/daidalos/core/Profile.hpp
         include/daidalos/core/Result.hpp
         src/Assert.cpp
         src/CVarRegistry.cpp
@@ -11,3 +12,9 @@ dai_add_module(NAME core
         src/FrameTimer.cpp
     PUBLIC_DEPS
         tl::expected)
+
+# The profiling macros expand to Tracy calls in every module that uses them, so Tracy is a public dependency.
+if(DAI_ENABLE_PROFILER)
+    target_link_libraries(daidalos_core PUBLIC Tracy::TracyClient)
+    target_compile_definitions(daidalos_core PUBLIC DAI_PROFILER_ENABLED)
+endif()

@@ -34,9 +34,11 @@ jobs:
           - { name: Windows MSVC Debug,   os: windows-2022, configure: windows-msvc,      preset: windows-msvc-debug }
           - { name: Windows MSVC Release, os: windows-2022, configure: windows-msvc,      preset: windows-msvc-release }
           - { name: Windows MSVC ASan,    os: windows-2022, configure: windows-msvc-asan, preset: windows-msvc-asan }
+          - { name: Windows MSVC Profile, os: windows-2022, configure: windows-msvc-profile, preset: windows-msvc-profile }
           - { name: Linux Clang Debug,    os: ubuntu-24.04, configure: linux-clang-debug,   preset: linux-clang-debug }
           - { name: Linux Clang Release,  os: ubuntu-24.04, configure: linux-clang-release, preset: linux-clang-release }
           - { name: Linux Clang ASan,     os: ubuntu-24.04, configure: linux-clang-asan,    preset: linux-clang-asan }
+          - { name: Linux Clang Profile,  os: ubuntu-24.04, configure: linux-clang-profile, preset: linux-clang-profile }
     env:
       # vcpkg binary cache, persisted between runs with actions/cache.
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
