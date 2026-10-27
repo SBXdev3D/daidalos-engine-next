@@ -4,6 +4,7 @@ dai_add_test(NAME daidalos_ecs_tests
         EntityTests.cpp
         HierarchyTests.cpp
         ScheduleTests.cpp
+        TransformTests.cpp
         WorldTests.cpp
     DEPS
         daidalos::ecs)

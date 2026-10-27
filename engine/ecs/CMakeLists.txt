@@ -3,8 +3,11 @@ dai_add_module(NAME ecs
         include/daidalos/ecs/ComponentPool.hpp
         include/daidalos/ecs/Entity.hpp
         include/daidalos/ecs/Schedule.hpp
+        include/daidalos/ecs/Transform.hpp
         include/daidalos/ecs/World.hpp
         src/Schedule.cpp
+        src/Transform.cpp
         src/World.cpp
     PUBLIC_DEPS
-        daidalos::core)
+        daidalos::core
+        daidalos::math)
