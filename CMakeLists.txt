@@ -1,0 +1,29 @@
+cmake_minimum_required(VERSION 3.25)
+
+project(DaidalosEngineNext
+    VERSION 0.1.0
+    DESCRIPTION "Modular C++ real-time 3D engine for indoor environments"
+    LANGUAGES CXX)
+
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
+    message(FATAL_ERROR "In-source builds are not supported. Use a preset: cmake --preset <name>")
+endif()
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+option(DAI_BUILD_APPS "Build the applications in apps/" ON)
+option(DAI_BUILD_TESTS "Build the unit tests in tests/" ON)
+option(DAI_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
+option(DAI_ENABLE_ASAN "Build with AddressSanitizer (and UndefinedBehaviorSanitizer where supported)" OFF)
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(DaidalosSanitizers)
+include(DaidalosTargets)
+
+if(DAI_BUILD_APPS)
+    add_subdirectory(apps)
+endif()
