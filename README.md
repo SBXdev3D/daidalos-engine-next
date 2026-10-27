@@ -2,13 +2,16 @@
 
 A modular C++20 real-time 3D engine for indoor environments, rendering with Vulkan 1.3 on Windows and Linux.
 
-The project is at an early stage. Phases 0 and 1 of the roadmap in [OVERVIEW.md](OVERVIEW.md) are done:
+The project is at an early stage. Phases 0 to 2 of the roadmap in [OVERVIEW.md](OVERVIEW.md) are done:
 
 | Module | Contents |
 |---|---|
 | `core` | `Result` and `Error`, `DAI_ASSERT`, frame timer, configuration variables (cvars), profiling macros |
 | `logging` | Logging facade over spdlog |
-| `platform` | SDL3 window and events, crash dumps (Windows) |
+| `math` | GLM with the engine's conventions: axes, TRS transforms, reverse-Z projections, bounding boxes |
+| `platform` | SDL3 window, window and input events, crash dumps (Windows) |
+| `input` | Keyboard, mouse and gamepad state (held, pressed and released this frame) |
+| `ecs` | Entities with generational handles, sparse-set components, system schedule, hierarchy, transform propagation |
 | `app` | Ordered startup with rollback, main loop |
 
 The sandbox opens an empty window; rendering starts in Phase 3.
@@ -83,7 +86,7 @@ build/windows-msvc/apps/sandbox/Debug/sandbox.exe   # Windows
 build/linux-clang-debug/apps/sandbox/sandbox        # Linux
 ```
 
-The sandbox opens a window, shows the frame rate in its title, and exits when the window is closed. It writes `sandbox.log` and, on Windows, crash dumps to `crashdumps/` in the working directory.
+The sandbox opens a window, shows the frame rate in its title, and exits when the window is closed or Escape (or a gamepad's Back button) is pressed. It writes `sandbox.log` and, on Windows, crash dumps to `crashdumps/` in the working directory.
 
 Settings are configuration variables (cvars). They are read from `sandbox.cfg` in the working directory, one `name value` per line, and can be overridden on the command line with `+name value`:
 

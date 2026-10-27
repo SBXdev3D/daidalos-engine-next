@@ -12,7 +12,7 @@
 **Repository:** https://github.com/StephaneBX/daidalos-engine-next  
 **Decision records:** `docs/adr/`; coding and math conventions: `docs/CONVENTIONS.md`  
 **Development approach:** Modular architecture, incremental implementation, testable components, and AI-assisted development  
-**Current project status:** Phase 0 (foundation) and Phase 1 (platform and application lifecycle) are implemented; implementation proceeds through small, verifiable milestones
+**Current project status:** Phase 0 (foundation), Phase 1 (platform and application lifecycle) and Phase 2 (math, ECS and input) are implemented; implementation proceeds through small, verifiable milestones
 
 ---
 
@@ -1767,6 +1767,7 @@ Deliverables:
 - Parent-child hierarchy.
 - Local and world transforms.
 - Hierarchy tests.
+- Keyboard, mouse and gamepad input state (moved from Phase 1's input initialization).
 
 Completion criteria:
 
