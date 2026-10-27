@@ -1,5 +1,6 @@
 add_subdirectory(core)
 add_subdirectory(logging)
 add_subdirectory(math)
+add_subdirectory(ecs)
 add_subdirectory(platform)
 add_subdirectory(app)
