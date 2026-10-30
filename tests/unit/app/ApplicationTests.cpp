@@ -347,3 +347,17 @@ TEST_F(ApplicationTest, CrashHandlerIsInstalledAndRemoved) {
     platform::UninstallCrashHandler();
     std::filesystem::remove_all(m_config.crashDumpDirectory);
 }
+
+TEST(ApplicationRendering, DriverWithoutVulkanStopsTheStartupWithAnError) {
+    ApplicationConfig config;
+    config.platform.videoDriver = "dummy";
+    config.rendering = true;
+    Application application(std::move(config));
+    RecordingHandler handler;
+
+    const core::Result<void> result = application.Run(handler);
+
+    ASSERT_FALSE(result.has_value());
+    EXPECT_FALSE(result.error().message.empty());
+    EXPECT_TRUE(handler.calls.empty()); // The handler never starts.
+}
