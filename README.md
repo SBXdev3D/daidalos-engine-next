@@ -2,19 +2,22 @@
 
 A modular C++20 real-time 3D engine for indoor environments, rendering with Vulkan 1.3 on Windows and Linux.
 
-The project is at an early stage. Phases 0 to 2 of the roadmap in [OVERVIEW.md](OVERVIEW.md) are done:
+The project is at an early stage. Phases 0 to 3 of the roadmap in [OVERVIEW.md](OVERVIEW.md) are done:
 
 | Module | Contents |
 |---|---|
-| `core` | `Result` and `Error`, `DAI_ASSERT`, frame timer, configuration variables (cvars), profiling macros |
+| `core` | `Result` and `Error`, `DAI_ASSERT`, generational handles, frame timer, configuration variables (cvars), profiling macros |
 | `logging` | Logging facade over spdlog |
 | `math` | GLM with the engine's conventions: axes, TRS transforms, reverse-Z projections, bounding boxes |
-| `platform` | SDL3 window, window and input events, crash dumps (Windows) |
+| `platform` | SDL3 window, window and input events, Vulkan surfaces, process execution, crash dumps (Windows) |
 | `input` | Keyboard, mouse and gamepad state (held, pressed and released this frame) |
 | `ecs` | Entities with generational handles, sparse-set components, system schedule, hierarchy, transform propagation |
+| `rhi` | Vulkan 1.3 device, swapchain, buffers, textures, pipelines, command lists, deferred destruction |
+| `renderer` | Mesh rendering with depth, cameras, scene extraction from the ECS, shader hot reload |
+| `debugui` | Dear ImGui overlay drawn through the RHI (development builds) |
 | `app` | Ordered startup with rollback, main loop |
 
-The sandbox opens an empty window; rendering starts in Phase 3.
+The sandbox draws a few cubes with a free camera and a debug overlay.
 
 ## Documentation
 
@@ -30,9 +33,11 @@ The sandbox opens an empty window; rendering starts in Phase 3.
 | Build tools | CMake 3.25+ | CMake 3.25+, Ninja, pkg-config |
 | System packages | | X11 and Wayland development packages, for SDL3 (see below) |
 | Dependencies | vcpkg | vcpkg |
+| To run | A Vulkan 1.3 driver | A Vulkan 1.3 driver (`mesa-vulkan-drivers` provides lavapipe without a GPU) |
+| Optional | [Vulkan SDK](https://vulkan.lunarg.com/), for the validation layers | `vulkan-validationlayers` |
 | Formatting | clang-format 19 (bundled with Visual Studio's "C++ Clang tools" component) | clang-format 19 |
 
-Dependencies (SDL3, spdlog, GoogleTest, tl-expected, and Tracy for the profile presets) are installed automatically by vcpkg in manifest mode during the CMake configure step. They are listed in `vcpkg.json`, and their versions are pinned by the registry baseline in `vcpkg-configuration.json`.
+Dependencies (SDL3, spdlog, GoogleTest, tl-expected, Vulkan headers, volk, the Vulkan Memory Allocator, DXC, Dear ImGui, and Tracy for the profile presets) are installed automatically by vcpkg in manifest mode during the CMake configure step. They are listed in `vcpkg.json`, and their versions are pinned by the registry baseline in `vcpkg-configuration.json`.
 
 ### vcpkg
 
@@ -86,7 +91,7 @@ build/windows-msvc/apps/sandbox/Debug/sandbox.exe   # Windows
 build/linux-clang-debug/apps/sandbox/sandbox        # Linux
 ```
 
-The sandbox opens a window, shows the frame rate in its title, and exits when the window is closed or Escape (or a gamepad's Back button) is pressed. It writes `sandbox.log` and, on Windows, crash dumps to `crashdumps/` in the working directory.
+The sandbox draws a small scene and exits when the window is closed or Escape (or a gamepad's Back button) is pressed. W, A, S, D, Q and E move the camera, Shift goes faster, and the right mouse button looks around; a gamepad's sticks do the same. In development builds, editing a file in `engine/renderer/shaders/` reloads it while the sandbox runs; a shader that does not compile leaves the previous one running and shows the error in the overlay. It writes `sandbox.log` and, on Windows, crash dumps to `crashdumps/` in the working directory.
 
 Settings are configuration variables (cvars). They are read from `sandbox.cfg` in the working directory, one `name value` per line, and can be overridden on the command line with `+name value`:
 
@@ -98,6 +103,9 @@ sandbox.exe +window.width 1920 +window.height 1080
 |---|---|---|
 | `window.width` | 1280 | Main window width, in screen coordinates |
 | `window.height` | 720 | Main window height, in screen coordinates |
+| `renderer.vsync` | true | Synchronize presentation with the display |
+| `renderer.validation` | true in Debug | Enable the Vulkan validation layers, if installed |
+| `sandbox.frames` | 0 | Quit after this many frames; 0 runs until closed |
 
 ## Formatting
 
@@ -112,6 +120,7 @@ python scripts/format.py --check    # what CI runs
 engine/<module>/      engine modules (static libraries)
 apps/                 executables (sandbox)
 tests/unit/<module>/  unit tests, one executable per module
+tests/gpu/<module>/   tests that need a Vulkan driver
 cmake/                CMake helper functions
 scripts/              development scripts
 docs/                 conventions and decision records

@@ -47,10 +47,11 @@ jobs:
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
-        # Ninja, and the X11 and Wayland development packages that SDL3 is built against.
+        # Ninja, the X11 and Wayland development packages that SDL3 is built against, and lavapipe
+        # with the validation layers for the GPU tests.
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build pkg-config             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev             libxkbcommon-dev libwayland-dev libdecor-0-dev libegl1-mesa-dev libgl1-mesa-dev libdrm-dev libgbm-dev
+          sudo apt-get install -y ninja-build pkg-config             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev             libxkbcommon-dev libwayland-dev libdecor-0-dev libegl1-mesa-dev libgl1-mesa-dev libdrm-dev libgbm-dev             mesa-vulkan-drivers vulkan-validationlayers
 
       - name: Use the runner's vcpkg
         shell: bash
