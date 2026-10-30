@@ -1,0 +1,14 @@
+dai_add_test(NAME daidalos_renderer_gpu_tests
+    SOURCES
+        ../GpuFixture.hpp
+        MeshPassTests.cpp
+        RendererTests.cpp
+    DEPS
+        daidalos::renderer)
+# The tests run the private mesh pass on an offscreen target, without a window.
+target_include_directories(daidalos_renderer_gpu_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    "${PROJECT_SOURCE_DIR}/engine/renderer/src")
+target_compile_definitions(daidalos_renderer_gpu_tests PRIVATE
+    DAI_DXC_PATH="${DIRECTX_DXC_TOOL}"
+    DAI_SHADER_SOURCE_DIR="${PROJECT_SOURCE_DIR}/engine/renderer/shaders")

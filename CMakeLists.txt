@@ -20,9 +20,11 @@ option(DAI_BUILD_TESTS "Build the unit tests in tests/" ON)
 option(DAI_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(DAI_ENABLE_ASAN "Build with AddressSanitizer (and UndefinedBehaviorSanitizer where supported)" OFF)
 option(DAI_ENABLE_PROFILER "Build with the Tracy profiler client (needs the vcpkg feature 'profiler')" OFF)
+option(DAI_ENABLE_DEV_TOOLS "Build the debug overlay and shader hot reload (off in shipping builds)" ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(DaidalosSanitizers)
+include(DaidalosShaders)
 include(DaidalosTargets)
 
 find_package(directx-dxc CONFIG REQUIRED)
