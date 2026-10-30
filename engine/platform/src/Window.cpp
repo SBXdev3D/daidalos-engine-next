@@ -8,6 +8,9 @@
 #include <daidalos/platform/Window.hpp>
 
 #include <SDL3/SDL.h>
+#include <vulkan/vulkan_core.h>
+// SDL declares its own Vulkan types unless vulkan_core.h comes first.
+#include <SDL3/SDL_vulkan.h>
 
 #include <algorithm>
 #include <format>
@@ -54,6 +57,9 @@ core::Result<Window> Window::Create(Platform& platform, const WindowConfig& conf
     SDL_WindowFlags flags = SDL_WINDOW_HIGH_PIXEL_DENSITY;
     if (config.resizable) {
         flags |= SDL_WINDOW_RESIZABLE;
+    }
+    if (config.vulkan) {
+        flags |= SDL_WINDOW_VULKAN;
     }
 
     SDL_Window* window =
@@ -107,6 +113,39 @@ std::string Window::Title() const {
 void Window::SetTitle(std::string_view title) {
     DAI_ASSERT(m_impl, "Window used after being moved from");
     SDL_SetWindowTitle(m_impl->window, std::string(title).c_str());
+}
+
+void Window::SetSize(Extent size) {
+    DAI_ASSERT(m_impl, "Window used after being moved from");
+    SDL_SetWindowSize(m_impl->window, static_cast<int>(size.width), static_cast<int>(size.height));
+    SDL_SyncWindow(m_impl->window);
+}
+
+core::Result<std::vector<std::string>> Window::VulkanInstanceExtensions() const {
+    DAI_ASSERT(m_impl, "Window used after being moved from");
+    DAI_ASSERT((SDL_GetWindowFlags(m_impl->window) & SDL_WINDOW_VULKAN) != 0,
+               "The window was not created with WindowConfig::vulkan");
+
+    Uint32 count = 0;
+    const char* const* extensions = SDL_Vulkan_GetInstanceExtensions(&count);
+    if (extensions == nullptr) {
+        return core::MakeError(core::ErrorCode::NotSupported, std::string(kModule),
+                               std::format("Cannot list the Vulkan surface extensions: {}", SDL_GetError()));
+    }
+    return std::vector<std::string>(extensions, extensions + count);
+}
+
+core::Result<std::uint64_t> Window::CreateVulkanSurface(std::uintptr_t instance) const {
+    DAI_ASSERT(m_impl, "Window used after being moved from");
+    DAI_ASSERT((SDL_GetWindowFlags(m_impl->window) & SDL_WINDOW_VULKAN) != 0,
+               "The window was not created with WindowConfig::vulkan");
+
+    VkSurfaceKHR surface = VK_NULL_HANDLE;
+    if (!SDL_Vulkan_CreateSurface(m_impl->window, reinterpret_cast<VkInstance>(instance), nullptr, &surface)) {
+        return core::MakeError(core::ErrorCode::DeviceError, std::string(kModule),
+                               std::format("Cannot create a Vulkan surface: {}", SDL_GetError()));
+    }
+    return reinterpret_cast<std::uint64_t>(surface);
 }
 
 } // namespace daidalos::platform

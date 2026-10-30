@@ -6,10 +6,12 @@
     "directx-dxc",
     "glm",
     "gtest",
+    "imgui",
     {
       "name": "sdl3",
       "default-features": false,
       "features": [
+        "vulkan",
         {
           "name": "wayland",
           "platform": "linux"

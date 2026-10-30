@@ -3,6 +3,7 @@ dai_add_test(NAME daidalos_platform_tests
         CrashHandlerTests.cpp
         EventTranslationTests.cpp
         PlatformTests.cpp
+        ProcessTests.cpp
         WindowTests.cpp
     DEPS
         daidalos::platform
