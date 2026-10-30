@@ -4,8 +4,10 @@ dai_add_module(NAME core
         include/daidalos/core/CVarRegistry.hpp
         include/daidalos/core/Error.hpp
         include/daidalos/core/FrameTimer.hpp
+        include/daidalos/core/Handle.hpp
         include/daidalos/core/Profile.hpp
         include/daidalos/core/Result.hpp
+        include/daidalos/core/SlotPool.hpp
         src/Assert.cpp
         src/CVarRegistry.cpp
         src/Error.cpp
