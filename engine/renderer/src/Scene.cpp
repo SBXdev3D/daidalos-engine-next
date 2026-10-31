@@ -30,7 +30,7 @@ void ExtractScene(ecs::World& world, SceneView& view) {
     view.draws.reserve(world.Count<MeshRenderer>());
     world.Each<ecs::WorldTransform, MeshRenderer>(
         [&](ecs::Entity /*entity*/, const ecs::WorldTransform& transform, const MeshRenderer& renderer) {
-            view.draws.push_back({renderer.mesh, transform.matrix});
+            view.draws.push_back({renderer.mesh, transform.matrix, renderer.material});
         });
 }
 

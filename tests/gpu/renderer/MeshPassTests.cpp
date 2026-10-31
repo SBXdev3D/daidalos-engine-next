@@ -19,11 +19,13 @@
 using namespace daidalos;
 using gpu_tests::GpuTest;
 using renderer::CameraView;
-using renderer::MeshData;
+using renderer::MaterialDesc;
+using renderer::MaterialHandle;
 using renderer::MeshHandle;
 using renderer::MeshPass;
 using renderer::SceneView;
-using renderer::Vertex;
+using resources::MeshData;
+using resources::Vertex;
 
 namespace {
 
@@ -33,12 +35,13 @@ constexpr rhi::Format kDepthFormat = rhi::Format::D32Float;
 constexpr glm::vec4 kBackground{0.0f, 0.0f, 0.0f, 1.0f};
 
 // Faces the camera with counter-clockwise winding and a normal towards +Z.
-MeshData MakeQuad(float left, float right, float bottom, float top, float z, const glm::vec3& color) {
+MeshData MakeQuad(float left, float right, float bottom, float top, float z) {
     const glm::vec3 normal(0.0f, 0.0f, 1.0f);
-    return {{{{left, bottom, z}, normal, color},
-             {{right, bottom, z}, normal, color},
-             {{right, top, z}, normal, color},
-             {{left, top, z}, normal, color}},
+    const glm::vec4 tangent(1.0f, 0.0f, 0.0f, 1.0f);
+    return {{{{left, bottom, z}, normal, tangent, {0.0f, 1.0f}},
+             {{right, bottom, z}, normal, tangent, {1.0f, 1.0f}},
+             {{right, top, z}, normal, tangent, {1.0f, 0.0f}},
+             {{left, top, z}, normal, tangent, {0.0f, 0.0f}}},
             {0, 1, 2, 0, 2, 3}};
 }
 
@@ -101,6 +104,14 @@ protected:
         return mesh.value_or(MeshHandle{});
     }
 
+    MaterialHandle Material(const glm::vec3& color) {
+        MaterialDesc desc;
+        desc.baseColorFactor = glm::vec4(color, 1.0f);
+        const core::Result<MaterialHandle> material = m_pass->CreateMaterial(desc);
+        EXPECT_TRUE(material.has_value());
+        return material.value_or(MaterialHandle{});
+    }
+
     void Render(const SceneView& view) {
         ASSERT_TRUE(Device()
                         .Submit([&](rhi::CommandList& commands) {
@@ -110,7 +121,7 @@ protected:
                                                      .clearColor = kBackground,
                                                      .depthTarget = m_depth,
                                                      .clearDepth = 0.0f});
-                            m_pass->Record(commands, view, 1.0f);
+                            EXPECT_TRUE(m_pass->Record(commands, view, 1.0f).has_value());
                             commands.EndRendering();
                             commands.Transition(m_color, rhi::TextureState::TransferSrc);
                             commands.CopyTextureToBuffer(m_color, m_readback);
@@ -137,8 +148,8 @@ protected:
 } // namespace
 
 TEST_F(MeshPassTest, DrawsAMeshInFrontOfTheCamera) {
-    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f, glm::vec3(1.0f, 0.0f, 0.0f)));
-    Render({TestCamera(), {{mesh, glm::mat4(1.0f)}}});
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
+    Render({TestCamera(), {{mesh, glm::mat4(1.0f), Material({1.0f, 0.0f, 0.0f})}}});
 
     const glm::ivec3 center = Pixel(32, 32);
     EXPECT_GT(center.r, 0);
@@ -148,46 +159,49 @@ TEST_F(MeshPassTest, DrawsAMeshInFrontOfTheCamera) {
 }
 
 TEST_F(MeshPassTest, NothingIsDrawnWithoutACamera) {
-    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f, glm::vec3(1.0f)));
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
     Render({std::nullopt, {{mesh, glm::mat4(1.0f)}}});
     EXPECT_TRUE(IsBackground(32, 32));
 }
 
 TEST_F(MeshPassTest, PositiveYIsAtTheTopOfTheImage) {
-    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, 0.5f, 1.5f, 0.0f, glm::vec3(1.0f)));
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, 0.5f, 1.5f, 0.0f));
     Render({TestCamera(), {{mesh, glm::mat4(1.0f)}}});
     EXPECT_FALSE(IsBackground(32, 20));
     EXPECT_TRUE(IsBackground(32, 44));
 }
 
 TEST_F(MeshPassTest, PositiveXIsOnTheRightOfTheImage) {
-    const MeshHandle mesh = Mesh(MakeQuad(0.5f, 1.5f, -1.0f, 1.0f, 0.0f, glm::vec3(1.0f)));
+    const MeshHandle mesh = Mesh(MakeQuad(0.5f, 1.5f, -1.0f, 1.0f, 0.0f));
     Render({TestCamera(), {{mesh, glm::mat4(1.0f)}}});
     EXPECT_FALSE(IsBackground(44, 32));
     EXPECT_TRUE(IsBackground(20, 32));
 }
 
 TEST_F(MeshPassTest, ClockwiseTrianglesAreCulled) {
-    const MeshHandle mesh = Mesh(Reversed(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f, glm::vec3(1.0f))));
+    const MeshHandle mesh = Mesh(Reversed(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f)));
     Render({TestCamera(), {{mesh, glm::mat4(1.0f)}}});
     EXPECT_TRUE(IsBackground(32, 32));
 }
 
 TEST_F(MeshPassTest, NearerSurfaceWinsWhicheverIsDrawnFirst) {
-    const MeshHandle nearQuad = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 1.0f, glm::vec3(1.0f, 0.0f, 0.0f)));
-    const MeshHandle farQuad = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, -1.0f, glm::vec3(0.0f, 1.0f, 0.0f)));
+    const MeshHandle nearQuad = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 1.0f));
+    const MeshHandle farQuad = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, -1.0f));
 
-    Render({TestCamera(), {{nearQuad, glm::mat4(1.0f)}, {farQuad, glm::mat4(1.0f)}}});
+    const MaterialHandle red = Material({1.0f, 0.0f, 0.0f});
+    const MaterialHandle green = Material({0.0f, 1.0f, 0.0f});
+
+    Render({TestCamera(), {{nearQuad, glm::mat4(1.0f), red}, {farQuad, glm::mat4(1.0f), green}}});
     EXPECT_GT(Pixel(32, 32).r, 0);
     EXPECT_EQ(Pixel(32, 32).g, 0);
 
-    Render({TestCamera(), {{farQuad, glm::mat4(1.0f)}, {nearQuad, glm::mat4(1.0f)}}});
+    Render({TestCamera(), {{farQuad, glm::mat4(1.0f), green}, {nearQuad, glm::mat4(1.0f), red}}});
     EXPECT_GT(Pixel(32, 32).r, 0);
     EXPECT_EQ(Pixel(32, 32).g, 0);
 }
 
 TEST_F(MeshPassTest, WorldMatrixMovesTheMesh) {
-    const MeshHandle mesh = Mesh(MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f, glm::vec3(1.0f)));
+    const MeshHandle mesh = Mesh(MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f));
     Render({TestCamera(), {{mesh, glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.0f, 0.0f))}}});
     EXPECT_TRUE(IsBackground(32, 32));
     EXPECT_FALSE(IsBackground(44, 32));
@@ -195,7 +209,7 @@ TEST_F(MeshPassTest, WorldMatrixMovesTheMesh) {
 
 TEST_F(MeshPassTest, NormalsFollowTheWorldRotation) {
     // Lit from above: the same quad turned to face up receives more light.
-    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f, glm::vec3(1.0f)));
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
     Render({TestCamera(), {{mesh, glm::mat4(1.0f)}}});
     const int facingCamera = Pixel(32, 32).r;
 
@@ -205,7 +219,7 @@ TEST_F(MeshPassTest, NormalsFollowTheWorldRotation) {
 }
 
 TEST_F(MeshPassTest, DestroyedMeshIsSkipped) {
-    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f, glm::vec3(1.0f)));
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
     m_pass->DestroyMesh(mesh);
     Render({TestCamera(), {{mesh, glm::mat4(1.0f)}}});
     EXPECT_TRUE(IsBackground(32, 32));
@@ -217,9 +231,10 @@ TEST_F(MeshPassTest, ReloadedShadersAreUsedByTheNextFrame) {
     const std::filesystem::path source = directory / "Green.hlsl";
     std::ofstream(source) << R"(
 #include "MeshTypes.hlsli"
-[[vk::push_constant]] MeshPushConstants g_push;
 float4 VSMain(float3 position : POSITION) : SV_Position {
-    return mul(g_push.viewProjection, mul(g_push.world, float4(position, 1.0)));
+    const float4x4 viewProjection = g_frames[g_push.frameBuffer][0].viewProjection;
+    const float4x4 world = g_instances[g_push.instanceBuffer][g_push.instanceIndex].world;
+    return mul(viewProjection, mul(world, float4(position, 1.0)));
 }
 float4 PSMain() : SV_Target { return float4(0.0, 1.0, 0.0, 1.0); }
 )";
@@ -232,8 +247,82 @@ float4 PSMain() : SV_Target { return float4(0.0, 1.0, 0.0, 1.0); }
     ASSERT_TRUE(pixel.has_value()) << core::Format(pixel.error());
     ASSERT_TRUE(m_pass->ReplaceShaders(*vertex, *pixel).has_value());
 
-    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f, glm::vec3(1.0f, 0.0f, 0.0f)));
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
     Render({TestCamera(), {{mesh, glm::mat4(1.0f)}}});
     EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0));
     std::filesystem::remove_all(directory);
+}
+
+TEST_F(MeshPassTest, BaseColorTextureIsSampledWithTheMeshUvs) {
+    // Left half green, right half blue.
+    const std::array<std::uint32_t, 4> pixels{0xFF00FF00, 0xFF00FF00, 0xFFFF0000, 0xFFFF0000};
+    resources::ImageData image;
+    image.width = 4;
+    image.height = 1;
+    image.format = resources::PixelFormat::Rgba8Unorm;
+    image.pixels.resize(sizeof(pixels));
+    std::memcpy(image.pixels.data(), pixels.data(), sizeof(pixels));
+    const core::Result<rhi::TextureHandle> texture = renderer::CreateTexture(Device(), image, "Test");
+    ASSERT_TRUE(texture.has_value()) << core::Format(texture.error());
+
+    MaterialDesc desc;
+    desc.baseColorTexture = *texture;
+    const core::Result<MaterialHandle> material = m_pass->CreateMaterial(desc);
+    ASSERT_TRUE(material.has_value());
+    const MeshHandle mesh = Mesh(MakeQuad(-2.0f, 2.0f, -2.0f, 2.0f, 0.0f));
+
+    Render({TestCamera(), {{mesh, glm::mat4(1.0f), *material}}});
+    EXPECT_GT(Pixel(21, 32).g, 0);
+    EXPECT_EQ(Pixel(21, 32).b, 0);
+    EXPECT_GT(Pixel(43, 32).b, 0);
+    EXPECT_EQ(Pixel(43, 32).g, 0);
+    Device().DestroyTexture(*texture);
+}
+
+TEST_F(MeshPassTest, AlphaBelowTheCutoffIsDiscarded) {
+    MaterialDesc desc;
+    desc.baseColorFactor = glm::vec4(1.0f, 1.0f, 1.0f, 0.25f);
+    desc.alphaCutoff = 0.5f;
+    const core::Result<MaterialHandle> material = m_pass->CreateMaterial(desc);
+    ASSERT_TRUE(material.has_value());
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
+    Render({TestCamera(), {{mesh, glm::mat4(1.0f), *material}}});
+    EXPECT_TRUE(IsBackground(32, 32));
+}
+
+TEST_F(MeshPassTest, DoubleSidedMaterialDrawsTheBackOfTriangles) {
+    MaterialDesc desc;
+    desc.doubleSided = true;
+    const core::Result<MaterialHandle> material = m_pass->CreateMaterial(desc);
+    ASSERT_TRUE(material.has_value());
+    const MeshHandle mesh = Mesh(Reversed(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f)));
+    Render({TestCamera(), {{mesh, glm::mat4(1.0f), *material}}});
+    EXPECT_FALSE(IsBackground(32, 32));
+}
+
+TEST_F(MeshPassTest, DestroyedMaterialFallsBackToTheDefaultOne) {
+    const MaterialHandle material = Material({1.0f, 0.0f, 0.0f});
+    m_pass->DestroyMaterial(material);
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
+    Render({TestCamera(), {{mesh, glm::mat4(1.0f), material}}});
+    EXPECT_GT(Pixel(32, 32).g, 0); // White, not red.
+}
+
+TEST_F(MeshPassTest, MaterialTableGrowsAndKeepsItsContent) {
+    const MaterialHandle first = Material({1.0f, 0.0f, 0.0f});
+    for (int index = 0; index < 1000; ++index) {
+        Material({0.0f, 1.0f, 0.0f});
+    }
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
+    Render({TestCamera(), {{mesh, glm::mat4(1.0f), first}}});
+    EXPECT_GT(Pixel(32, 32).r, 0);
+    EXPECT_EQ(Pixel(32, 32).g, 0);
+}
+
+TEST_F(MeshPassTest, InstanceBufferGrowsWithTheNumberOfDraws) {
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
+    SceneView view{TestCamera(), {}};
+    view.draws.assign(5000, {mesh, glm::mat4(1.0f)});
+    Render(view);
+    EXPECT_FALSE(IsBackground(32, 32));
 }

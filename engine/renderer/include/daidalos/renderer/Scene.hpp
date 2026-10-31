@@ -24,6 +24,7 @@ struct CameraView {
 struct DrawItem {
     MeshHandle mesh;
     glm::mat4 world{1.0f};
+    MaterialHandle material;
 };
 
 /// What the renderer draws in one frame. It holds copies, so that rendering never touches the ECS

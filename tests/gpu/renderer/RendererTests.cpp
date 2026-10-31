@@ -75,7 +75,7 @@ TEST_F(RendererTest, RendersFramesToAWindow) {
     if (!target.has_value()) {
         GTEST_SKIP();
     }
-    const core::Result<renderer::MeshHandle> mesh = target->CreateMesh(renderer::MakeCube(glm::vec3(1.0f)), "Cube");
+    const core::Result<renderer::MeshHandle> mesh = target->CreateMesh(renderer::MakeCube(), "Cube");
     ASSERT_TRUE(mesh.has_value());
 
     RenderFrames(*target, TestView(*mesh), 10);
@@ -88,7 +88,7 @@ TEST_F(RendererTest, FollowsTheWindowSize) {
     if (!target.has_value()) {
         GTEST_SKIP();
     }
-    const core::Result<renderer::MeshHandle> mesh = target->CreateMesh(renderer::MakeCube(glm::vec3(1.0f)), "Cube");
+    const core::Result<renderer::MeshHandle> mesh = target->CreateMesh(renderer::MakeCube(), "Cube");
     ASSERT_TRUE(mesh.has_value());
     const renderer::SceneView view = TestView(*mesh);
 
@@ -118,7 +118,7 @@ TEST_F(RendererTest, DestroyedMeshIsSafeWhileFramesAreInFlight) {
     if (!target.has_value()) {
         GTEST_SKIP();
     }
-    const core::Result<renderer::MeshHandle> mesh = target->CreateMesh(renderer::MakeCube(glm::vec3(1.0f)), "Cube");
+    const core::Result<renderer::MeshHandle> mesh = target->CreateMesh(renderer::MakeCube(), "Cube");
     ASSERT_TRUE(mesh.has_value());
     const renderer::SceneView view = TestView(*mesh);
 
@@ -134,7 +134,7 @@ TEST_F(RendererTest, CanBeStartedAndStoppedRepeatedly) {
         if (!target.has_value()) {
             GTEST_SKIP();
         }
-        const core::Result<renderer::MeshHandle> mesh = target->CreateMesh(renderer::MakeCube(glm::vec3(1.0f)), "Cube");
+        const core::Result<renderer::MeshHandle> mesh = target->CreateMesh(renderer::MakeCube(), "Cube");
         ASSERT_TRUE(mesh.has_value());
         RenderFrames(*target, TestView(*mesh), 3);
         EXPECT_EQ(target->Device().ValidationErrorCount(), 0U);

@@ -152,7 +152,7 @@ Renderer::Renderer(Renderer&& other) noexcept = default;
 Renderer& Renderer::operator=(Renderer&& other) noexcept = default;
 Renderer::~Renderer() = default;
 
-core::Result<MeshHandle> Renderer::CreateMesh(const MeshData& data, const std::string& name) {
+core::Result<MeshHandle> Renderer::CreateMesh(const resources::MeshData& data, const std::string& name) {
     DAI_ASSERT(m_impl, "Renderer used after being moved from");
     return m_impl->meshPass->CreateMesh(data, name);
 }
@@ -160,6 +160,16 @@ core::Result<MeshHandle> Renderer::CreateMesh(const MeshData& data, const std::s
 void Renderer::DestroyMesh(MeshHandle mesh) {
     DAI_ASSERT(m_impl, "Renderer used after being moved from");
     m_impl->meshPass->DestroyMesh(mesh);
+}
+
+core::Result<MaterialHandle> Renderer::CreateMaterial(const MaterialDesc& desc) {
+    DAI_ASSERT(m_impl, "Renderer used after being moved from");
+    return m_impl->meshPass->CreateMaterial(desc);
+}
+
+void Renderer::DestroyMaterial(MaterialHandle material) {
+    DAI_ASSERT(m_impl, "Renderer used after being moved from");
+    m_impl->meshPass->DestroyMaterial(material);
 }
 
 void Renderer::SetVsync(bool vsync) {
@@ -187,17 +197,17 @@ core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder
     rhi::Frame& frame = **begun;
 
     // A failure from here on still ends the frame: the acquired image must be presented.
-    core::Result<void> depthReady = impl.ResizeDepth(frame.extent);
+    core::Result<void> status = impl.ResizeDepth(frame.extent);
     rhi::CommandList& commands = frame.commands;
     commands.Transition(frame.backBuffer, rhi::TextureState::ColorTarget);
-    if (depthReady) {
+    if (status) {
         commands.Discard(impl.depth, rhi::TextureState::DepthTarget);
         commands.BeginRendering({.colorTarget = frame.backBuffer,
                                  .clearColor = kClearColor,
                                  .depthTarget = impl.depth,
                                  .clearDepth = 0.0f});
         const float aspect = static_cast<float>(frame.extent.width) / static_cast<float>(frame.extent.height);
-        impl.meshPass->Record(commands, view, aspect);
+        status = impl.meshPass->Record(commands, view, aspect);
         commands.EndRendering();
 
         if (overlay) {
@@ -208,7 +218,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder
     }
 
     core::Result<void> ended = impl.device.EndFrame(&impl.swapchain);
-    return depthReady ? ended : depthReady;
+    return status ? ended : status;
 }
 
 rhi::Device& Renderer::Device() {

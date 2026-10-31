@@ -41,7 +41,8 @@ TEST(ExtractScene, CopiesTheWorldMatrixOfMeshes) {
     const ecs::Entity child = AddAt(world, {0.0f, 2.0f, 0.0f});
     ASSERT_TRUE(world.SetParent(child, parent).has_value());
     const MeshHandle mesh(3, 1);
-    world.Add<MeshRenderer>(child, mesh);
+    const renderer::MaterialHandle material(4, 1);
+    world.Add<MeshRenderer>(child, mesh, material);
     ecs::PropagateTransforms(world);
 
     SceneView view;
@@ -49,6 +50,7 @@ TEST(ExtractScene, CopiesTheWorldMatrixOfMeshes) {
 
     ASSERT_EQ(view.draws.size(), 1U);
     EXPECT_EQ(view.draws[0].mesh, mesh);
+    EXPECT_EQ(view.draws[0].material, material);
     EXPECT_EQ(glm::vec3(view.draws[0].world[3]), glm::vec3(1.0f, 2.0f, 0.0f));
 }
 

@@ -1,0 +1,145 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+
+#include <daidalos/ecs/Transform.hpp>
+#include <daidalos/platform/Platform.hpp>
+#include <daidalos/renderer/AssetLibrary.hpp>
+
+#include <gtest/gtest.h>
+
+#include <optional>
+#include <string>
+
+using namespace daidalos;
+using renderer::AssetLibrary;
+using renderer::Model;
+
+namespace {
+
+class AssetLibraryTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        core::Result<platform::Platform> created = platform::Platform::Create();
+        if (!created) {
+            GTEST_SKIP() << core::Format(created.error());
+        }
+        m_platform.emplace(std::move(*created));
+        platform::WindowConfig config;
+        config.width = 64;
+        config.height = 64;
+        config.vulkan = true;
+        core::Result<platform::Window> window = platform::Window::Create(*m_platform, config);
+        if (!window) {
+            GTEST_SKIP() << core::Format(window.error());
+        }
+        m_window.emplace(std::move(*window));
+        core::Result<renderer::Renderer> target = renderer::Renderer::Create(*m_window, {.validation = true});
+        if (!target) {
+            ASSERT_EQ(target.error().code, core::ErrorCode::NotSupported) << core::Format(target.error());
+            GTEST_SKIP() << core::Format(target.error());
+        }
+        m_renderer.emplace(std::move(*target));
+    }
+
+    void TearDown() override {
+        if (m_renderer.has_value()) {
+            EXPECT_EQ(m_renderer->Device().ValidationErrorCount(), 0U);
+        }
+    }
+
+    std::optional<platform::Platform> m_platform;
+    std::optional<platform::Window> m_window;
+    std::optional<renderer::Renderer> m_renderer;
+};
+
+constexpr const char* kAssets = DAI_TEST_ASSET_DIR;
+
+} // namespace
+
+TEST_F(AssetLibraryTest, RepeatedRequestsReturnTheSameModel) {
+    AssetLibrary library(*m_renderer, kAssets);
+    const core::Result<const Model*> first = library.LoadModel("quad.gltf");
+    ASSERT_TRUE(first.has_value()) << core::Format(first.error());
+    const core::Result<const Model*> second = library.LoadModel("./sub/../quad.gltf");
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(*first, *second);
+    EXPECT_EQ(library.ModelCount(), 1U);
+}
+
+TEST_F(AssetLibraryTest, TextureSharedByTwoModelsIsLoadedOnce) {
+    AssetLibrary library(*m_renderer, kAssets);
+    ASSERT_TRUE(library.LoadModel("quad.gltf").has_value());
+    ASSERT_TRUE(library.LoadModel("second-quad.gltf").has_value());
+    EXPECT_EQ(library.ModelCount(), 2U);
+    EXPECT_EQ(library.TextureCount(), 1U);
+}
+
+TEST_F(AssetLibraryTest, MissingTextureFailsTheModelAndNamesTheFile) {
+    AssetLibrary library(*m_renderer, kAssets);
+    const core::Result<const Model*> model = library.LoadModel("missing-texture.gltf");
+    ASSERT_FALSE(model.has_value());
+    EXPECT_EQ(model.error().code, core::ErrorCode::NotFound);
+    EXPECT_NE(model.error().message.find("no-such-image.png"), std::string::npos);
+    EXPECT_EQ(library.ModelCount(), 0U);
+}
+
+TEST_F(AssetLibraryTest, MissingModelIsNotFound) {
+    AssetLibrary library(*m_renderer, kAssets);
+    const core::Result<const Model*> model = library.LoadModel("no-such-model.gltf");
+    ASSERT_FALSE(model.has_value());
+    EXPECT_EQ(model.error().code, core::ErrorCode::NotFound);
+}
+
+TEST_F(AssetLibraryTest, ReleasedAssetsAreSkippedByLaterFrames) {
+    ecs::World world;
+    const ecs::Entity camera = world.Create();
+    ecs::LocalTransform transform;
+    transform.translation = {0.0f, 0.0f, 5.0f};
+    world.Add<ecs::LocalTransform>(camera, transform);
+    world.Add<renderer::Camera>(camera);
+
+    renderer::SceneView view;
+    const auto renderFrames = [&] {
+        ecs::PropagateTransforms(world);
+        renderer::ExtractScene(world, view);
+        for (int frame = 0; frame < 3; ++frame) {
+            ASSERT_TRUE(m_renderer->Render(view).has_value());
+        }
+    };
+    {
+        AssetLibrary library(*m_renderer, kAssets);
+        const core::Result<const Model*> model = library.LoadModel("quad.gltf");
+        ASSERT_TRUE(model.has_value());
+        ASSERT_TRUE(renderer::Instantiate(world, **model).has_value());
+        renderFrames();
+        EXPECT_EQ(view.draws.size(), 1U);
+    }
+    renderFrames();
+}
+
+TEST(Instantiate, BuildsTheHierarchyWithOneEntityPerExtraPart) {
+    Model model;
+    Model::Node& parent = model.nodes.emplace_back();
+    parent.local.translation = {1.0f, 0.0f, 0.0f};
+    Model::Node& child = model.nodes.emplace_back();
+    child.parent = 0;
+    child.local.translation = {0.0f, 2.0f, 0.0f};
+    child.parts = {{renderer::MeshHandle(1, 1), renderer::MaterialHandle(1, 1)},
+                   {renderer::MeshHandle(2, 1), renderer::MaterialHandle(2, 1)}};
+
+    ecs::World world;
+    const core::Result<ecs::Entity> root = renderer::Instantiate(world, model);
+    ASSERT_TRUE(root.has_value());
+    ecs::PropagateTransforms(world);
+
+    renderer::SceneView view;
+    renderer::ExtractScene(world, view);
+    ASSERT_EQ(view.draws.size(), 2U);
+    for (const renderer::DrawItem& draw : view.draws) {
+        EXPECT_EQ(glm::vec3(draw.world[3]), glm::vec3(1.0f, 2.0f, 0.0f));
+    }
+
+    EXPECT_TRUE(world.Destroy(*root));
+    EXPECT_EQ(world.Count<renderer::MeshRenderer>(), 0U);
+}
