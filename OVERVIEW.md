@@ -12,7 +12,7 @@
 **Repository:** https://github.com/StephaneBX/daidalos-engine-next  
 **Decision records:** `docs/adr/`; coding and math conventions: `docs/CONVENTIONS.md`  
 **Development approach:** Modular architecture, incremental implementation, testable components, and AI-assisted development  
-**Current project status:** Phase 0 (foundation) and Phase 1 (platform and application lifecycle) are implemented; implementation proceeds through small, verifiable milestones
+**Current project status:** Phase 0 (foundation), Phase 1 (platform and application lifecycle) and Phase 2 (math, ECS and input) are implemented; implementation proceeds through small, verifiable milestones
 
 ---
 
@@ -416,7 +416,7 @@ It should be possible to load and inspect many resource types without coupling t
 
 Provides the rendering hardware interface.
 
-It defines the operations and resource abstractions required by the renderer without exposing Vulkan types. It isolates Vulkan from the renderer, allows the renderer to be tested against a mock device, and keeps a future backend possible.
+It defines the operations and resource abstractions required by the renderer without exposing Vulkan types. It isolates Vulkan from the renderer and keeps a future backend possible. It is made of concrete classes, tested on a real Vulkan driver (ADR-0007).
 
 ### Renderer
 
@@ -929,7 +929,7 @@ The backend must explicitly handle:
 - Command pools and command buffers.
 - Descriptor management.
 - Image layouts and pipeline barriers.
-- Synchronization (fences and semaphores) with several frames in flight.
+- Synchronization (one timeline semaphore, binary semaphores for the swapchain) with several frames in flight.
 - Swapchain integration through SDL3.
 - GPU memory and deferred resource destruction.
 - Error reporting and device initialization failures.
@@ -1663,7 +1663,7 @@ Do not create interfaces for every class automatically.
 
 Introduce abstractions when there is a real need for substitution, isolation, testing, or independent implementation.
 
-The RHI is justified by isolating Vulkan from the renderer and by allowing the renderer to be tested against a mock device. A generic abstraction for every internal data structure is not automatically justified.
+The RHI is justified by isolating Vulkan from the renderer. It has no virtual interfaces, because a single backend gives them nothing to substitute (ADR-0007). A generic abstraction for every internal data structure is not automatically justified.
 
 ## 25.4. Premature optimization
 
@@ -1767,6 +1767,7 @@ Deliverables:
 - Parent-child hierarchy.
 - Local and world transforms.
 - Hierarchy tests.
+- Keyboard, mouse and gamepad input state (moved from Phase 1's input initialization).
 
 Completion criteria:
 
@@ -1782,7 +1783,7 @@ Completion criteria:
 
 Deliverables:
 
-- RHI interfaces.
+- RHI.
 - Vulkan 1.3 backend.
 - Device initialization.
 - Swapchain and presentation.

@@ -11,9 +11,9 @@ OVERVIEW originally planned a custom RHI with DirectX 12 first and Vulkan in a l
 
 - Vulkan 1.3 is the only planned backend, on Windows and Linux.
 - Required features: dynamic rendering, synchronization2, descriptor indexing (bindless). The Vulkan Memory Allocator (VMA) handles GPU memory.
-- A thin RHI layer sits between the renderer and Vulkan. Its purpose is to keep Vulkan types out of the renderer and to allow a mock device in tests, not to support every possible backend.
+- A thin RHI layer sits between the renderer and Vulkan. Its purpose is to keep Vulkan types out of the renderer, not to support every possible backend. It is made of concrete classes (amended 2026-10-30, see below).
 - Validation layers are enabled in Debug builds. A clean validation log is part of the definition of done for graphics work.
-- GPU resources are destroyed through a deferred-destruction queue tied to frame fences.
+- GPU resources are destroyed through a deferred-destruction queue tied to one timeline semaphore (amended 2026-10-30, see below).
 
 ## Consequences
 
@@ -27,3 +27,18 @@ OVERVIEW originally planned a custom RHI with DirectX 12 first and Vulkan in a l
 - DirectX 12 first, Vulkan later (original plan): two backends to write and maintain.
 - DirectX 12 first with an early Vulkan prototype: still two backends.
 - An existing RHI (NVRHI, SDL3 GPU, Diligent): less to write, but low-level graphics understanding is a project goal (OVERVIEW §1.1). SDL3 GPU also lacks bindless resources.
+
+## Amendment (2026-10-30): concrete RHI, timeline semaphore
+
+**No virtual interfaces and no mock device.** With a single backend, an `IDevice` interface has one
+real implementation, and a mock device can only check that calls were made, not that they render. The
+RHI is made of concrete pimpl classes (`rhi::Device`, `rhi::Swapchain`, `rhi::CommandList`) with
+generational handles. Code that reaches the GPU is tested on a real Vulkan driver: lavapipe in Linux CI,
+the local GPU on development machines. Renderer logic that needs no GPU, such as scene extraction, stays
+in plain functions with ordinary unit tests.
+
+**One timeline semaphore instead of frame fences.** Every submission signals the next value of a single
+semaphore. Destroying a resource records the value that the frame being recorded will reach, and the
+object goes away once the semaphore has reached it. This gives frames in flight, immediate uploads and
+deferred destruction a single ordering, without a fence per frame. Binary semaphores remain only where
+the swapchain requires them.

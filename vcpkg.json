@@ -3,11 +3,15 @@
   "name": "daidalos-engine-next",
   "version-string": "0.1.0",
   "dependencies": [
+    "directx-dxc",
+    "glm",
     "gtest",
+    "imgui",
     {
       "name": "sdl3",
       "default-features": false,
       "features": [
+        "vulkan",
         {
           "name": "wayland",
           "platform": "linux"
@@ -19,7 +23,10 @@
       ]
     },
     "spdlog",
-    "tl-expected"
+    "tl-expected",
+    "volk",
+    "vulkan-headers",
+    "vulkan-memory-allocator"
   ],
   "features": {
     "profiler": {

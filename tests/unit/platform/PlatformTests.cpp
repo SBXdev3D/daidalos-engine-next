@@ -126,3 +126,40 @@ TEST(Platform, WaitEventsReturnsQueuedEvent) {
     ASSERT_FALSE(events.empty());
     EXPECT_EQ(events.back(), Event(QuitRequested{}));
 }
+
+TEST(Platform, GamepadThatCannotBeOpenedIsNotReported) {
+    core::Result<Platform> platform = Platform::Create(Headless());
+    ASSERT_TRUE(platform.has_value()) << core::Format(platform.error());
+    std::vector<Event> drain;
+    platform->PollEvents(drain);
+
+    // No gamepad has this id, so opening it fails and neither its connection nor its removal is reported.
+    SDL_Event event{};
+    event.type = SDL_EVENT_GAMEPAD_ADDED;
+    event.gdevice.which = 999999;
+    ASSERT_TRUE(SDL_PushEvent(&event));
+    event.type = SDL_EVENT_GAMEPAD_REMOVED;
+    ASSERT_TRUE(SDL_PushEvent(&event));
+    std::vector<Event> events;
+    platform->PollEvents(events);
+
+    EXPECT_TRUE(events.empty());
+}
+
+TEST(Platform, InputEventsArePassedThrough) {
+    core::Result<Platform> platform = Platform::Create(Headless());
+    ASSERT_TRUE(platform.has_value()) << core::Format(platform.error());
+    std::vector<Event> drain;
+    platform->PollEvents(drain);
+
+    SDL_Event event{};
+    event.type = SDL_EVENT_KEY_DOWN;
+    event.key.scancode = SDL_SCANCODE_A;
+    event.key.down = true;
+    ASSERT_TRUE(SDL_PushEvent(&event));
+    std::vector<Event> events;
+    platform->PollEvents(events);
+
+    ASSERT_EQ(events.size(), 1u);
+    EXPECT_EQ(events[0], Event(KeyPressed{WindowId{}, Key::A, false}));
+}

@@ -11,6 +11,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace daidalos::platform {
 
@@ -22,6 +23,9 @@ struct WindowConfig {
     std::uint32_t width = 1280;
     std::uint32_t height = 720;
     bool resizable = true;
+    /// Prepares the window for a Vulkan surface. Creation fails on video drivers without Vulkan
+    /// support, such as "dummy".
+    bool vulkan = false;
 };
 
 /// A desktop window. It must be destroyed before the Platform that created it.
@@ -45,6 +49,16 @@ public:
     [[nodiscard]] std::string Title() const;
 
     void SetTitle(std::string_view title);
+    /// Resizes the window, in screen coordinates, and waits for the system to apply it.
+    void SetSize(Extent size);
+
+    /// Instance extensions that a Vulkan surface for this window needs.
+    /// The window must have been created with WindowConfig::vulkan.
+    [[nodiscard]] core::Result<std::vector<std::string>> VulkanInstanceExtensions() const;
+    /// Creates a VkSurfaceKHR for this window. The instance is a VkInstance and the result a
+    /// VkSurfaceKHR, carried as integers to keep Vulkan types out of this header. The caller owns
+    /// the surface, which must be destroyed before the window.
+    [[nodiscard]] core::Result<std::uint64_t> CreateVulkanSurface(std::uintptr_t instance) const;
 
 private:
     struct Impl;

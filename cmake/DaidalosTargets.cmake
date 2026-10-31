@@ -9,7 +9,9 @@ function(dai_configure_target target)
             target_compile_options(${target} PRIVATE /WX)
         endif()
     else()
-        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Wshadow -Wconversion)
+        # Designated initializers leave fields out on purpose, which is how Vulkan structures are filled.
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Wshadow -Wconversion
+            -Wno-missing-field-initializers)
         if(DAI_WARNINGS_AS_ERRORS)
             target_compile_options(${target} PRIVATE -Werror)
         endif()

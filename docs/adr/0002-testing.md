@@ -9,7 +9,7 @@ Testing is part of the architecture (OVERVIEW §23). A framework is needed for u
 
 ## Decision
 
-- GoogleTest (with gmock for fakes), run through CTest.
+- GoogleTest, run through CTest.
 - Layers: unit tests (no window, GPU, or audio device), integration tests (subsystems with fakes), graphics tests (offscreen rendering on software Vulkan compared with golden images), and a short manual checklist per phase.
 - Software Vulkan: lavapipe on Linux, SwiftShader on Windows.
 
@@ -21,4 +21,4 @@ Testing is part of the architecture (OVERVIEW §23). A framework is needed for u
 
 ## Alternatives considered
 
-- Catch2 or doctest: lighter, but gmock is useful for the mock RHI and fake subsystems.
+- Catch2 or doctest: lighter, with no decisive advantage over GoogleTest.

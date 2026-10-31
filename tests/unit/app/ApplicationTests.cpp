@@ -205,6 +205,29 @@ TEST_F(ApplicationTest, EventsAreForwardedToTheHandler) {
     EXPECT_EQ(m_handler.events.back(), platform::Event(platform::QuitRequested{}));
 }
 
+TEST_F(ApplicationTest, InputStateFollowsTheFramesEvents) {
+    // Frame 0 queues a key press, which frame 1 processes; frame 2 sees the key still held.
+    std::vector<bool> pressed;
+    std::vector<bool> down;
+    m_handler.onUpdate = [&](Application& app, const core::FrameTime& time) {
+        pressed.push_back(app.Input().WasPressed(platform::Key::Space));
+        down.push_back(app.Input().IsDown(platform::Key::Space));
+        if (time.frameIndex == 0) {
+            SDL_Event event{};
+            event.type = SDL_EVENT_KEY_DOWN;
+            event.key.scancode = SDL_SCANCODE_SPACE;
+            event.key.down = true;
+            ASSERT_TRUE(SDL_PushEvent(&event));
+        }
+    };
+    Application app(m_config);
+
+    ASSERT_TRUE(app.Run(m_handler).has_value());
+
+    EXPECT_EQ(pressed, (std::vector<bool>{false, true, false}));
+    EXPECT_EQ(down, (std::vector<bool>{false, true, true}));
+}
+
 TEST_F(ApplicationTest, CommandLineOverridesWindowSize) {
     m_config.arguments = {"+window.width", "640", "+window.height", "480"};
     Application app(m_config);
@@ -323,4 +346,18 @@ TEST_F(ApplicationTest, CrashHandlerIsInstalledAndRemoved) {
     EXPECT_TRUE(afterRun.has_value()) << "The handler must be removed at shutdown";
     platform::UninstallCrashHandler();
     std::filesystem::remove_all(m_config.crashDumpDirectory);
+}
+
+TEST(ApplicationRendering, DriverWithoutVulkanStopsTheStartupWithAnError) {
+    ApplicationConfig config;
+    config.platform.videoDriver = "dummy";
+    config.rendering = true;
+    Application application(std::move(config));
+    RecordingHandler handler;
+
+    const core::Result<void> result = application.Run(handler);
+
+    ASSERT_FALSE(result.has_value());
+    EXPECT_FALSE(result.error().message.empty());
+    EXPECT_TRUE(handler.calls.empty()); // The handler never starts.
 }

@@ -49,7 +49,8 @@ tests/unit/<module>/           unit tests for that module
 
 - Each module is one static library target, `daidalos::<module>`.
 - Dependencies are declared only with `target_link_libraries`. A module must not include another module's headers without linking it.
-- Third-party types (SDL, Vulkan, spdlog, Jolt, miniaudio) must not appear in public headers, except GLM math types (ADR-0005) and `tl::expected` through `Result` (ADR-0003). The profiling macros in `daidalos/core/Profile.hpp` expand to Tracy calls in profile builds; no Tracy type is named in engine headers.
+- Third-party types (SDL, Vulkan, spdlog, Jolt, miniaudio) must not appear in public headers, except GLM math types (ADR-0005) and `tl::expected` through `Result` (ADR-0003). Code that draws debug panels calls Dear ImGui directly: `daidalos::debugui` links it publicly, and it exists only in builds with `DAI_DEV_TOOLS`. The profiling macros in `daidalos/core/Profile.hpp` expand to Tracy calls in profile builds; no Tracy type is named in engine headers.
+- GLM is used through `daidalos::math`, which sets its configuration macros for every target that links it. Code does not link `glm::glm` directly.
 - Tests of a module's private code (for example `platform`'s SDL event translation) add the module's `src/` directory to the test target's include path. Only tests may do this.
 
 ## 3. Ownership and lifetime
@@ -99,6 +100,23 @@ Decided in ADR-0005. Tested by: `tests/unit/math`.
 
 These match glTF 2.0, so imported assets need no axis conversion.
 
+## 5.1. ECS
+
+Decided in ADR-0006. Tested by: `tests/unit/ecs`.
+
+- Components are plain data stored by value in `ecs::World`. Engine components only (ADR-0006); game components live in game code.
+- A reference or pointer to a component is valid until a component of the same type is added or removed. Keep `Entity` handles, not component pointers, across frames.
+- Inside `World::Each<Ts...>`, components of the types `Ts` cannot be added or removed, and entities that have them cannot be destroyed (`DAI_ASSERT`). Collect the entities and change them after the loop.
+- Systems run from an `ecs::Schedule`, in the order they were added. The order is written where the schedule is built.
+- Parent links are changed only with `World::SetParent`. Destroying an entity destroys its descendants.
+- Edit `LocalTransform`, never `WorldTransform`. `PropagateTransforms` recomputes every world transform; run it once per frame after the systems that move entities and before anything reads `WorldTransform` (rendering, audio, physics synchronization).
+
+## 5.2. Input
+
+- Keys are physical positions named after a US QWERTY keyboard (`Key::W` is the key above `S` on every layout). Text entry will use text events, not keys.
+- Mouse positions are window coordinates from the top-left corner, +Y down. Gamepad sticks are in [-1, 1] with +Y up; triggers in [0, 1]. No dead zone is applied: game code applies its own.
+- `WasPressed` and `WasReleased` last one frame: read them in `OnUpdate`, not `OnFixedUpdate`, which may run zero or several times per frame.
+
 ## 6. Rendering conventions
 
 | Topic | Convention |
@@ -110,7 +128,13 @@ These match glTF 2.0, so imported assets need no axis conversion.
 | Tangents | `vec4`: xyz = tangent, w = ±1 handedness; `bitangent = cross(normal, tangent.xyz) * tangent.w`. Generated with MikkTSpace when missing |
 | Lighting | Computed in linear space; output converted to sRGB by the swapchain format |
 | Light units | Point and spot lights in candela, directional lights in lux (glTF `KHR_lights_punctual`) |
-| GPU resource destruction | Only through the deferred-destruction queue, never immediately while frames are in flight |
+| GPU resource destruction | Only through the deferred-destruction queue, never immediately while frames are in flight. `rhi::Device::Destroy*` does this |
+| GPU resource references | Generational handles (`BufferHandle`, `TextureHandle`, `PipelineHandle`, `MeshHandle`). Destroying a null or stale handle does nothing |
+| Texture synchronization | `CommandList::Transition` before each new use; `Discard` for a target overwritten every frame, which still needs ordering against the previous frame |
+| Uploads | `UploadBuffer`, `UploadTexture` and `Device::Submit` wait for the GPU and are not allowed between `BeginFrame` and `EndFrame` |
+| Shader data | Per-draw data goes in the 128-byte push constant block. Sampled textures are read from the global bindless array `g_textures` |
+| Shader entry points | `VSMain` and `PSMain`. The compiler options are shared by `cmake/DaidalosShaders.cmake` and `engine/renderer/src/ShaderCompiler.cpp` |
+| Validation | Enabled by the `renderer.validation` cvar, on by default in Debug. A clean validation log is part of done (ADR-0007) |
 
 ## 7. Physics conventions
 
@@ -128,8 +152,10 @@ These match glTF 2.0, so imported assets need no axis conversion.
 
 - Framework: GoogleTest, run through CTest (ADR-0002).
 - Test names: `TEST(ModuleOrClass, BehaviorUnderCondition)`, for example `TEST(Registry, DestroyedEntityHandleIsInvalidAfterReuse)`.
-- Unit tests never use a real window, GPU, or audio device. Use the SDL dummy video driver (`PlatformConfig::videoDriver = "dummy"`), the miniaudio null backend, a mock RHI, or software Vulkan (lavapipe, SwiftShader).
+- Unit tests (`tests/unit/`) never use a real window, GPU, or audio device. Use the SDL dummy video driver (`PlatformConfig::videoDriver = "dummy"`) or the miniaudio null backend.
+- Tests that need the GPU live in `tests/gpu/`. They run on any Vulkan 1.3 driver (lavapipe in Linux CI) with validation on, render to offscreen targets and check the pixels, and fail on any validation error. They skip themselves where no suitable driver exists; a build defect must fail instead of skipping (`RendererTest` checks that SDL has Vulkan support). Tests that need a real window skip where there is no display.
 - Behavior that ends the process (crashes) is tested by running a helper executable and checking what it leaves behind, not with death tests: GoogleTest catches structured exceptions on Windows before a crash handler sees them.
+- Failed assertions are tested with an assert handler that throws (`DAI_EXPECT_ASSERT` in `tests/unit/ecs/AssertCapture.hpp`), so the code under test stops before it touches invalid state. These tests are skipped when assertions are compiled out.
 - Every bug fix comes with a test that fails before the fix.
 
 ## 10. Git
