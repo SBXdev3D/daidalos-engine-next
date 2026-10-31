@@ -129,10 +129,10 @@ Decided in ADR-0006. Tested by: `tests/unit/ecs`.
 | Lighting | Computed in linear space; output converted to sRGB by the swapchain format |
 | Light units | Point and spot lights in candela, directional lights in lux (glTF `KHR_lights_punctual`) |
 | GPU resource destruction | Only through the deferred-destruction queue, never immediately while frames are in flight. `rhi::Device::Destroy*` does this |
-| GPU resource references | Generational handles (`BufferHandle`, `TextureHandle`, `PipelineHandle`, `MeshHandle`). Destroying a null or stale handle does nothing |
+| GPU resource references | Generational handles (`BufferHandle`, `TextureHandle`, `PipelineHandle`, `MeshHandle`, `MaterialHandle`). Destroying a null or stale handle does nothing |
 | Texture synchronization | `CommandList::Transition` before each new use; `Discard` for a target overwritten every frame, which still needs ordering against the previous frame |
 | Uploads | `UploadBuffer`, `UploadTexture` and `Device::Submit` wait for the GPU and are not allowed between `BeginFrame` and `EndFrame` |
-| Shader data | Per-draw data goes in the 128-byte push constant block. Sampled textures are read from the global bindless array `g_textures` |
+| Shader data | Push constants hold indices. Data lives in storage buffers, read from bindless arrays at `[[vk::binding(2, 0)]]`. Sampled textures are read from the global bindless array `g_textures` |
 | Shader entry points | `VSMain` and `PSMain`. The compiler options are shared by `cmake/DaidalosShaders.cmake` and `engine/renderer/src/ShaderCompiler.cpp` |
 | Validation | Enabled by the `renderer.validation` cvar, on by default in Debug. A clean validation log is part of done (ADR-0007) |
 
@@ -146,7 +146,7 @@ Decided in ADR-0006. Tested by: `tests/unit/ecs`.
 ## 8. Asset paths
 
 - Asset paths are relative to the asset root, use `/` as separator, and are normalized (`.` and `..` resolved) before being used as identities.
-- Matching is case-sensitive everywhere. On Windows, a path whose case differs from the file on disk is loaded but logs a warning, so the error is found before running on Linux.
+- Matching is case-sensitive everywhere. On every platform, a path whose case differs from the file on disk is an error, so that it is found before running on Linux (ADR-0016).
 
 ## 9. Tests
 

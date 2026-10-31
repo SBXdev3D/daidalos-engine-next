@@ -1,6 +1,6 @@
 # ADR-0007: Vulkan 1.3 as the single rendering API
 
-- **Status:** Accepted
+- **Status:** Accepted, amended 2026-10-30 and 2026-11-01
 - **Date:** 2026-10-27
 
 ## Context
@@ -42,3 +42,9 @@ semaphore. Destroying a resource records the value that the frame being recorded
 object goes away once the semaphore has reached it. This gives frames in flight, immediate uploads and
 deferred destruction a single ordering, without a fence per frame. Binary semaphores remain only where
 the swapchain requires them.
+
+## Amendment (2026-11-01): storage buffers, BC textures
+
+**Push constants hold indices, data lives in storage buffers.** Two matrices filled the 128 bytes that Vulkan guarantees, with no room for a material. The global descriptor set gains a bindless array of storage buffers, next to the array of textures. Shaders declare it at `[[vk::binding(2, 0)]]`, once per element type. Per-frame data, per-instance data and the material table all live there, and the push constants carry indices into them. The lighting data of Phase 6 will do the same.
+
+**Required device features** now include BC texture compression and storage buffer descriptor indexing. Shader demotion, which `discard` compiles to, is part of Vulkan 1.3.

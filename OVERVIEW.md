@@ -12,7 +12,7 @@
 **Repository:** https://github.com/StephaneBX/daidalos-engine-next  
 **Decision records:** `docs/adr/`; coding and math conventions: `docs/CONVENTIONS.md`  
 **Development approach:** Modular architecture, incremental implementation, testable components, and AI-assisted development  
-**Current project status:** Phase 0 (foundation), Phase 1 (platform and application lifecycle) and Phase 2 (math, ECS and input) are implemented; implementation proceeds through small, verifiable milestones
+**Current project status:** Phases 0 to 4 (foundation, platform and lifecycle, math, ECS and input, first renderer, resources and materials) are implemented; implementation proceeds through small, verifiable milestones
 
 ---
 
@@ -797,20 +797,7 @@ ResourceManager
     └── SceneLoader
 ```
 
-The resource manager should coordinate loading and caching without embedding the parsing details of every asset format.
-
-Loader registration may use a registry keyed by resource type, file extension, or another explicit identifier.
-
-The registration mechanism must define:
-
-- Ownership of loader objects.
-- Registration and unregistration rules.
-- Duplicate registration behavior.
-- Lookup behavior.
-- Thread-safety expectations.
-- Initialization and shutdown responsibilities.
-
-Do not assume that a raw pointer stored in a loader registry owns the loader.
+Decided in ADR-0016: there is no loader registry and no resource manager. Typed functions decode files into plain CPU data, typed caches store values by identity, and `renderer::AssetLibrary` turns them into GPU objects.
 
 ## 9.3. Resource identity
 
@@ -835,7 +822,7 @@ Potential strategies include:
 - Explicit resource ownership by scenes or systems.
 - Cache eviction policies introduced when necessary.
 
-The chosen model must be documented.
+The chosen model is in ADR-0016: an asset library owns what it loads and releases it all together.
 
 GPU resource lifetime requires particular care. Resources used by in-flight GPU work must not be destroyed before the graphics API permits their release.
 
@@ -1374,7 +1361,7 @@ Potential inputs include:
 
 The project should prefer standard asset formats and established import libraries when suitable.
 
-Selected formats (ADR-0010): glTF 2.0 for meshes, materials, and scene fragments (loaded with fastgltf), and KTX2 for textures (BC7 for color, BC5 for normal maps), produced by an offline step driven by CMake. PNG and JPEG remain accepted as a development fallback. Assimp is only considered if formats other than glTF become necessary.
+Selected formats (ADR-0010): glTF 2.0 for meshes, materials, and scene fragments (loaded with fastgltf), and KTX2 for textures, stored in UASTC and transcoded at load to BC7 for color and BC5 for normal maps. PNG and JPEG remain accepted as a development fallback. Assimp is only considered if formats other than glTF become necessary.
 
 The asset pipeline should define:
 
@@ -1814,8 +1801,6 @@ The exact order of low-level RHI work should follow the actual requirements of t
 
 Deliverables:
 
-- Resource interfaces.
-- Loader registration.
 - Mesh loading.
 - Texture loading.
 - Shader resources.
