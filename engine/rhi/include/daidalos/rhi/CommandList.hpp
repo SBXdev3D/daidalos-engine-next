@@ -67,10 +67,11 @@ public:
 
     void CopyBuffer(BufferHandle source, BufferHandle destination, std::uint64_t size, std::uint64_t sourceOffset = 0,
                     std::uint64_t destinationOffset = 0);
-    /// The texture must be in the TransferDst state.
+    /// Fills every mip level, laid out as for Device::UploadTexture. The texture must be in the
+    /// TransferDst state.
     void CopyBufferToTexture(BufferHandle source, TextureHandle destination);
     /// The texture must be in the TransferSrc state. Pixels are tightly packed, row by row from the top.
-    void CopyTextureToBuffer(TextureHandle source, BufferHandle destination);
+    void CopyTextureToBuffer(TextureHandle source, BufferHandle destination, std::uint32_t mipLevel = 0);
 
 private:
     detail::CommandRecording* m_recording;

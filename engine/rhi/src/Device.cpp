@@ -90,8 +90,14 @@ std::string MissingRequirement(VkPhysicalDevice device, const DeviceConfig& conf
     }
     if (features12.runtimeDescriptorArray == VK_FALSE || features12.descriptorBindingPartiallyBound == VK_FALSE ||
         features12.descriptorBindingSampledImageUpdateAfterBind == VK_FALSE ||
-        features12.shaderSampledImageArrayNonUniformIndexing == VK_FALSE) {
+        features12.descriptorBindingStorageBufferUpdateAfterBind == VK_FALSE ||
+        features12.shaderSampledImageArrayNonUniformIndexing == VK_FALSE ||
+        features.features.shaderSampledImageArrayDynamicIndexing == VK_FALSE ||
+        features.features.shaderStorageBufferArrayDynamicIndexing == VK_FALSE) {
         return "descriptor indexing";
+    }
+    if (features.features.textureCompressionBC == VK_FALSE) {
+        return "BC texture compression";
     }
     if (config.presentation && !HasDeviceExtension(device, VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
         return "the swapchain extension";
@@ -304,6 +310,7 @@ core::Result<void> Device::Impl::CreateLogicalDevice(const DeviceConfig& config)
 
     VkPhysicalDeviceVulkan13Features features13{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+        .shaderDemoteToHelperInvocation = VK_TRUE, // What discard in a shader compiles to.
         .synchronization2 = VK_TRUE,
         .dynamicRendering = VK_TRUE,
     };
@@ -312,9 +319,17 @@ core::Result<void> Device::Impl::CreateLogicalDevice(const DeviceConfig& config)
         .pNext = &features13,
         .shaderSampledImageArrayNonUniformIndexing = VK_TRUE,
         .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
+        .descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE,
         .descriptorBindingPartiallyBound = VK_TRUE,
         .runtimeDescriptorArray = VK_TRUE,
         .timelineSemaphore = VK_TRUE,
+    };
+    const VkPhysicalDeviceFeatures2 features{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &features12,
+        .features = {.textureCompressionBC = VK_TRUE,
+                     .shaderSampledImageArrayDynamicIndexing = VK_TRUE,
+                     .shaderStorageBufferArrayDynamicIndexing = VK_TRUE},
     };
 
     std::vector<const char*> extensions;
@@ -324,7 +339,7 @@ core::Result<void> Device::Impl::CreateLogicalDevice(const DeviceConfig& config)
 
     const VkDeviceCreateInfo createInfo{
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pNext = &features12,
+        .pNext = &features,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queueInfo,
         .enabledExtensionCount = static_cast<std::uint32_t>(extensions.size()),
@@ -425,7 +440,7 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
         return tl::unexpected(VulkanError("vkCreateSampler", result));
     }
 
-    const std::array<VkDescriptorSetLayoutBinding, 2> bindings{{
+    const std::array<VkDescriptorSetLayoutBinding, 3> bindings{{
         {.binding = 0,
          .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
          .descriptorCount = kMaxBindlessTextures,
@@ -435,9 +450,14 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
          .descriptorCount = static_cast<std::uint32_t>(samplers.size()),
          .stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS,
          .pImmutableSamplers = samplers.data()},
+        {.binding = 2,
+         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+         .descriptorCount = kMaxBindlessBuffers,
+         .stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS},
     }};
-    const std::array<VkDescriptorBindingFlags, 2> bindingFlags{
-        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT, 0};
+    constexpr VkDescriptorBindingFlags kBindlessFlags =
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+    const std::array<VkDescriptorBindingFlags, 3> bindingFlags{kBindlessFlags, 0, kBindlessFlags};
     const VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
         .bindingCount = static_cast<std::uint32_t>(bindingFlags.size()),
@@ -455,8 +475,9 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
         return tl::unexpected(VulkanError("vkCreateDescriptorSetLayout", result));
     }
 
-    const std::array<VkDescriptorPoolSize, 2> poolSizes{{
+    const std::array<VkDescriptorPoolSize, 3> poolSizes{{
         {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, kMaxBindlessTextures},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kMaxBindlessBuffers},
         {VK_DESCRIPTOR_TYPE_SAMPLER, static_cast<std::uint32_t>(samplers.size())},
     }};
     const VkDescriptorPoolCreateInfo poolInfo{
@@ -501,6 +522,10 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
     freeBindlessIndices.reserve(kMaxBindlessTextures);
     for (std::uint32_t index = kMaxBindlessTextures; index > 0; --index) {
         freeBindlessIndices.push_back(index - 1);
+    }
+    freeStorageIndices.reserve(kMaxBindlessBuffers);
+    for (std::uint32_t index = kMaxBindlessBuffers; index > 0; --index) {
+        freeStorageIndices.push_back(index - 1);
     }
     return {};
 }

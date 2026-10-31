@@ -43,10 +43,18 @@ enum class Format {
     Rgb32Float,
     Rgba32Float,
     D32Float,
+    /// Block-compressed formats, with blocks of 4x4 pixels.
+    Bc5Unorm,
+    Bc7Unorm,
+    Bc7Srgb,
 };
 
-/// Bytes per pixel. Undefined has none.
+/// Bytes per pixel. Undefined and block-compressed formats have none: use MipByteSize.
 [[nodiscard]] std::uint32_t BytesPerPixel(Format format);
+/// Size of a mip level: half of the previous one, rounded down, and never below 1.
+[[nodiscard]] Extent MipExtent(Extent extent, std::uint32_t level);
+/// Tightly packed size of one mip level.
+[[nodiscard]] std::uint64_t MipByteSize(Format format, Extent extent);
 
 enum class BufferUsage : std::uint32_t {
     None = 0,
@@ -54,6 +62,8 @@ enum class BufferUsage : std::uint32_t {
     Index = 1U << 1U,
     TransferSrc = 1U << 2U,
     TransferDst = 1U << 3U,
+    /// Readable from shaders through the storage buffer arrays, with Device::StorageIndex.
+    Storage = 1U << 4U,
 };
 
 [[nodiscard]] constexpr BufferUsage operator|(BufferUsage left, BufferUsage right) {
@@ -100,6 +110,7 @@ struct TextureDesc {
     Extent extent;
     Format format = Format::Undefined;
     TextureUsage usage = TextureUsage::None;
+    std::uint32_t mipLevels = 1;
     std::string name;
 };
 
@@ -130,8 +141,9 @@ struct VertexAttribute {
 };
 
 /// A pipeline uses the push constant block and the global descriptor set: every sampled texture at
-/// [[vk::binding(0, 0)]] Texture2D g_textures[], indexed with Device::BindlessIndex. Shader entry
-/// points are named VSMain and PSMain.
+/// [[vk::binding(0, 0)]] Texture2D g_textures[], indexed with Device::BindlessIndex, and every storage
+/// buffer at [[vk::binding(2, 0)]] StructuredBuffer<T> g_name[], indexed with Device::StorageIndex.
+/// Shader entry points are named VSMain and PSMain.
 struct GraphicsPipelineDesc {
     std::span<const std::uint32_t> vertexShader;
     std::span<const std::uint32_t> fragmentShader;

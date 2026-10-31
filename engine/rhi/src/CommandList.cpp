@@ -5,6 +5,9 @@
 #include <daidalos/core/Assert.hpp>
 #include <daidalos/rhi/CommandList.hpp>
 
+#include <cstdint>
+#include <vector>
+
 #include "DeviceImpl.hpp"
 
 namespace daidalos::rhi {
@@ -49,9 +52,11 @@ VkImageAspectFlags AspectOf(Format format) {
     return (format == Format::D32Float) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
 }
 
-VkBufferImageCopy WholeImage(const TextureData& texture) {
-    return {.imageSubresource = {.aspectMask = AspectOf(texture.format), .layerCount = 1},
-            .imageExtent = {texture.extent.width, texture.extent.height, 1}};
+VkBufferImageCopy WholeLevel(const TextureData& texture, std::uint32_t level, std::uint64_t bufferOffset) {
+    const Extent extent = MipExtent(texture.extent, level);
+    return {.bufferOffset = bufferOffset,
+            .imageSubresource = {.aspectMask = AspectOf(texture.format), .mipLevel = level, .layerCount = 1},
+            .imageExtent = {extent.width, extent.height, 1}};
 }
 
 // Waits for the use described by the texture's current state, then moves it to the new state.
@@ -69,7 +74,7 @@ void Barrier(detail::CommandRecording& recording, TextureData& data, VkImageLayo
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .image = data.image,
-        .subresourceRange = {.aspectMask = AspectOf(data.format), .levelCount = 1, .layerCount = 1},
+        .subresourceRange = {.aspectMask = AspectOf(data.format), .levelCount = data.mipLevels, .layerCount = 1},
     };
     const VkDependencyInfo dependency{
         .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
@@ -195,16 +200,24 @@ void CommandList::CopyBufferToTexture(BufferHandle source, TextureHandle destina
     Device::Impl& device = *m_recording->device;
     const TextureData& texture = device.textures.Get(destination);
     DAI_ASSERT(texture.state == TextureState::TransferDst, "The texture must be in the TransferDst state");
-    const VkBufferImageCopy region = WholeImage(texture);
+    std::vector<VkBufferImageCopy> regions;
+    regions.reserve(texture.mipLevels);
+    std::uint64_t offset = 0;
+    for (std::uint32_t level = 0; level < texture.mipLevels; ++level) {
+        regions.push_back(WholeLevel(texture, level, offset));
+        offset += MipByteSize(texture.format, MipExtent(texture.extent, level));
+    }
     vkCmdCopyBufferToImage(m_recording->commands, device.buffers.Get(source).buffer, texture.image,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<std::uint32_t>(regions.size()),
+                           regions.data());
 }
 
-void CommandList::CopyTextureToBuffer(TextureHandle source, BufferHandle destination) {
+void CommandList::CopyTextureToBuffer(TextureHandle source, BufferHandle destination, std::uint32_t mipLevel) {
     Device::Impl& device = *m_recording->device;
     const TextureData& texture = device.textures.Get(source);
     DAI_ASSERT(texture.state == TextureState::TransferSrc, "The texture must be in the TransferSrc state");
-    const VkBufferImageCopy region = WholeImage(texture);
+    DAI_ASSERT(mipLevel < texture.mipLevels, "The texture does not have this mip level");
+    const VkBufferImageCopy region = WholeLevel(texture, mipLevel, 0);
     vkCmdCopyImageToBuffer(m_recording->commands, texture.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                            device.buffers.Get(destination).buffer, 1, &region);
 }

@@ -30,6 +30,8 @@ namespace daidalos::rhi {
 inline constexpr std::string_view kModule = "rhi";
 /// Size of the g_textures array of shaders.
 inline constexpr std::uint32_t kMaxBindlessTextures = 4096;
+/// Size of the storage buffer arrays of shaders.
+inline constexpr std::uint32_t kMaxBindlessBuffers = 1024;
 
 [[nodiscard]] core::Error VulkanError(std::string_view operation, VkResult result);
 [[nodiscard]] VkFormat ToVulkan(Format format);
@@ -41,6 +43,7 @@ struct BufferData {
     std::span<std::byte> mapped;
     BufferUsage usage = BufferUsage::None;
     std::uint64_t size = 0;
+    std::uint32_t storageIndex = 0;
 };
 
 struct TextureData {
@@ -49,6 +52,7 @@ struct TextureData {
     /// Null for swapchain images, which the swapchain owns.
     VmaAllocation allocation = nullptr;
     Extent extent;
+    std::uint32_t mipLevels = 1;
     Format format = Format::Undefined;
     TextureUsage usage = TextureUsage::None;
     TextureState state = TextureState::Undefined;
@@ -131,6 +135,7 @@ struct Device::Impl {
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     std::array<VkSampler, 3> samplers{};
     std::vector<std::uint32_t> freeBindlessIndices;
+    std::vector<std::uint32_t> freeStorageIndices;
 
     core::SlotPool<BufferData, BufferTag> buffers;
     core::SlotPool<TextureData, TextureTag> textures;
