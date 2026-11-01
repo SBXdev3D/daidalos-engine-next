@@ -41,7 +41,7 @@ struct Player {
     glm::vec3 previousFeet{0.0f};
     glm::vec3 feet{0.0f};
     float verticalSpeed = 0.0f;
-    float eyeHeight = 1.65f;
+    float eyeHeight = 1.5f;
     bool crouching = false;
     /// Presses last one frame, and fixed steps do not run on every frame: they wait here.
     bool jumpPressed = false;

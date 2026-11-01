@@ -22,6 +22,12 @@ struct FrameData {
     float fogDensity;
     float3 fogColor;
     float padding;
+    float3 spotPosition;
+    float spotRange; // 0 without a light.
+    float3 spotDirection;
+    float spotCosInner;
+    float3 spotColor;
+    float spotCosOuter;
 };
 
 struct InstanceData {

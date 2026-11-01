@@ -218,6 +218,26 @@ TEST_F(MeshPassTest, NormalsFollowTheWorldRotation) {
     EXPECT_GT(Pixel(32, 32).r, facingCamera);
 }
 
+TEST_F(MeshPassTest, SpotLightOnlyLightsItsCone) {
+    const MeshHandle mesh = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
+    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
+    SceneView view{TestCamera(), {{mesh, glm::mat4(1.0f), white}}};
+    view.atmosphere = {glm::vec3(0.0f), 10.0f}; // Fog hides everything.
+    Render(view);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(0));
+
+    view.spotLight = renderer::SpotLight{.position = {0.0f, 0.0f, 5.0f},
+                                         .direction = {0.0f, 0.0f, -1.0f},
+                                         .color = glm::vec3(1.0f),
+                                         .range = 20.0f,
+                                         .innerAngle = glm::radians(5.0f),
+                                         .outerAngle = glm::radians(10.0f)};
+    Render(view);
+    EXPECT_GT(Pixel(32, 32).r, 200);
+    EXPECT_EQ(Pixel(4, 32), glm::ivec3(0));
+    EXPECT_EQ(Pixel(32, 4), glm::ivec3(0));
+}
+
 TEST_F(MeshPassTest, DestroyedMeshIsSkipped) {
     const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
     m_pass->DestroyMesh(mesh);

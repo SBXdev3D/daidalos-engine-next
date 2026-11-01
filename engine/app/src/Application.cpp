@@ -230,6 +230,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_scene.camera.reset();
     m_scene.draws.clear();
     m_scene.atmosphere = {};
+    m_scene.spotLight.reset();
     if (m_currentScene) {
         m_currentScene->Extract(m_scene);
     }

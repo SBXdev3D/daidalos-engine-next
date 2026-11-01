@@ -30,6 +30,7 @@ void Scene::Extract(renderer::SceneView& view) {
     ecs::PropagateTransforms(m_world);
     renderer::ExtractScene(m_world, view, m_activeCamera);
     view.atmosphere = m_atmosphere;
+    view.spotLight = m_spotLight;
 }
 
 } // namespace daidalos::scene

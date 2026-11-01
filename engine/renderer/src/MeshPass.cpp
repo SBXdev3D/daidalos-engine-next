@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstring>
 #include <format>
@@ -38,6 +39,12 @@ struct FrameData {
     float fogDensity;
     glm::vec3 fogColor;
     float padding;
+    glm::vec3 spotPosition;
+    float spotRange; // 0 without a light.
+    glm::vec3 spotDirection;
+    float spotCosInner;
+    glm::vec3 spotColor;
+    float spotCosOuter;
 };
 
 struct InstanceData {
@@ -285,9 +292,18 @@ core::Result<void> MeshPass::Record(rhi::CommandList& commands, const SceneView&
     }
 
     const CameraView& camera = *view.camera;
+    const SpotLight spot = view.spotLight.value_or(SpotLight{.range = 0.0f});
     const FrameData frame{math::InfinitePerspectiveReverseZ(camera.verticalFov, aspect, camera.nearPlane) * camera.view,
-                          glm::vec3(glm::inverse(camera.view)[3]), view.atmosphere.fogDensity, view.atmosphere.fogColor,
-                          0.0f};
+                          glm::vec3(glm::inverse(camera.view)[3]),
+                          view.atmosphere.fogDensity,
+                          view.atmosphere.fogColor,
+                          0.0f,
+                          spot.position,
+                          spot.range,
+                          spot.direction,
+                          std::cos(spot.innerAngle),
+                          spot.color,
+                          std::cos(spot.outerAngle)};
     std::memcpy(m_device->Mapped(slot.frame).data(), &frame, sizeof(frame));
     auto* instances = reinterpret_cast<InstanceData*>(m_device->Mapped(slot.instances).data());
 

@@ -1,6 +1,6 @@
 # Architecture
 
-How the engine is built today, through Phase 5. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
+How the engine is built today, through the physics part of Phase 6. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
 
 ## Modules
 
@@ -192,8 +192,8 @@ CI runs on pull requests and on `main`: Windows MSVC and Linux Clang, in Debug, 
 ## Known gaps
 
 - No tool produces KTX2 files yet, although the loader reads them.
-- Lighting, clustering and ambient occlusion do not exist yet (Phase 7). Materials carry all the PBR data already, and the sandbox simulates darkness with fog.
-- Nothing collides, and the sandbox's player flies (Phase 6).
+- Lighting, clustering and ambient occlusion do not exist yet (Phase 7). Materials carry all the PBR data already, and the sandbox simulates darkness with fog, with one spot light without shadows for its flashlight.
+- Rays pass through characters, so weapons cannot hit them yet (Phase 6).
 - Meshes cannot be animated (Phase 6).
 - Nothing culls: every `DrawItem` is drawn.
 - There are no text input events, so ImGui text fields do not work.

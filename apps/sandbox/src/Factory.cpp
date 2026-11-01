@@ -40,9 +40,9 @@ constexpr float kClimbSpeed = 2.1f;
 constexpr float kLadderReach = 0.5f;       // Meters around a ladder that the player can hold it from.
 constexpr float kLadderTopMargin = 0.2f;   // Meters above a ladder that the player can climb to.
 constexpr float kLookDownOnLadder = -0.4f; // Radians of pitch: below that, forward climbs down.
-constexpr float kStandHeight = 1.85f;
+constexpr float kStandHeight = 1.7f;
 constexpr float kCrouchHeight = 0.9f;
-constexpr float kEyeHeight = 1.65f; // Above the floor.
+constexpr float kEyeHeight = 1.5f; // Above the floor.
 constexpr float kCrouchEyeHeight = 0.75f;
 constexpr float kEyeSpeed = 4.0f; // Meters per second, when crouching and standing up.
 constexpr float kPickupRadius = 1.75f;
@@ -60,11 +60,14 @@ constexpr float kMaxPitch = glm::radians(89.0f);
 constexpr float kStickLookSpeed = 2.5f; // Radians per second.
 constexpr float kMessageTime = 3.0f;    // Seconds.
 
-// Darkness, until the lights of Phase 7: what is far away fades to black, and the flashlight pushes
-// that distance back.
+// Darkness, until the lights of Phase 7: what is far away fades to black, and the flashlight cuts a
+// cone through it.
 constexpr glm::vec3 kDarkness{0.005f, 0.006f, 0.008f};
-constexpr float kDarkDensity = 0.22f;
-constexpr float kFlashlightDensity = 0.07f;
+constexpr float kDarkDensity = 0.32f;
+constexpr glm::vec3 kFlashlightColor{2.4f, 2.25f, 1.95f};
+constexpr float kFlashlightRange = 32.0f;                    // Meters.
+constexpr float kFlashlightInnerAngle = glm::radians(13.0f); // From the axis.
+constexpr float kFlashlightOuterAngle = glm::radians(22.0f);
 
 enum class PickupKind { Health, Armor, HandgunAmmo, ShotgunAmmo, Flashlight, RedCard };
 
@@ -511,8 +514,18 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
     });
     systems.Add("Darkness", [&, player](ecs::World& world, core::Seconds /*delta*/) {
         if (const Player* state = world.TryGet<Player>(player())) {
-            const float density = state->flashlightOn ? kFlashlightDensity : kDarkDensity;
-            scene.SetAtmosphere({kDarkness, density * settings.darkness});
+            scene.SetAtmosphere({kDarkness, kDarkDensity * settings.darkness});
+            std::optional<renderer::SpotLight> flashlight;
+            if (state->flashlightOn) {
+                const ecs::LocalTransform& eye = world.Get<ecs::LocalTransform>(player());
+                flashlight = renderer::SpotLight{.position = eye.translation,
+                                                 .direction = eye.rotation * math::kForward,
+                                                 .color = kFlashlightColor,
+                                                 .range = kFlashlightRange,
+                                                 .innerAngle = kFlashlightInnerAngle,
+                                                 .outerAngle = kFlashlightOuterAngle};
+            }
+            scene.SetSpotLight(flashlight);
         }
     });
 }

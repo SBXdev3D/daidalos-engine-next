@@ -13,6 +13,7 @@
 #include <daidalos/renderer/Scene.hpp>
 
 #include <filesystem>
+#include <optional>
 
 namespace daidalos::scene {
 
@@ -46,6 +47,9 @@ public:
     /// Fog of the scene, in the view handed to the renderer.
     void SetAtmosphere(const renderer::Atmosphere& atmosphere) { m_atmosphere = atmosphere; }
 
+    /// The cone of light of the scene, if any, in the view handed to the renderer.
+    void SetSpotLight(const std::optional<renderer::SpotLight>& light) { m_spotLight = light; }
+
     /// Runs the fixed systems, then moves the physics to where they left the entities.
     void RunFixedStep(core::Seconds step);
     /// fixedAlpha is how far this frame is into the next fixed step, in [0, 1).
@@ -64,6 +68,7 @@ private:
     ecs::Schedule m_frameSystems;
     ecs::Entity m_activeCamera;
     renderer::Atmosphere m_atmosphere;
+    std::optional<renderer::SpotLight> m_spotLight;
     float m_fixedAlpha = 0.0f;
 };
 

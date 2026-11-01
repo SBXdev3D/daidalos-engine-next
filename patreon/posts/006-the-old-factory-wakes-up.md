@@ -33,7 +33,7 @@ For now, you fly: collisions come next. But it's already more than a viewer. The
 - Doors open as you approach, stay open six seconds, and close again.
 - Pickups spin in place, and flying through one collects it. Health goes from 80 to 100.
 - The red door refuses to open until you find the red card.
-- The level is dark, and the flashlight pushes the darkness back. That's a trick for now: it's fog, not light. Real lights come in Phase 7.
+- The level is dark, and that darkness is a trick for now: it's fog, not light. The flashlight is a single cone with no shadows. Real lights come in Phase 7.
 
 ## What the engine gained
 
