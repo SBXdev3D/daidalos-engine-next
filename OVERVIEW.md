@@ -12,7 +12,7 @@
 **Repository:** https://github.com/StephaneBX/daidalos-engine-next  
 **Decision records:** `docs/adr/`; coding and math conventions: `docs/CONVENTIONS.md`  
 **Development approach:** Modular architecture, incremental implementation, testable components, and AI-assisted development  
-**Current project status:** Phases 0 to 4 (foundation, platform and lifecycle, math, ECS and input, first renderer, resources and materials) are implemented; implementation proceeds through small, verifiable milestones
+**Current project status:** Phases 0 to 5 (foundation, platform and lifecycle, math, ECS and input, first renderer, resources and materials, scenes) are implemented; implementation proceeds through small, verifiable milestones, each of which improves the demo described in `docs/DEMO.md`
 
 ---
 
@@ -626,7 +626,7 @@ Known concurrency that exists regardless of this rule (ADR-0011):
 
 - The CPU and GPU run in parallel with several frames in flight, so GPU resources are destroyed through a deferred-destruction queue from the first renderer onward.
 - The physics library requires a job system; its thread pool is accepted and confined to the physics module.
-- A single worker pool for asset decoding is planned for Phase 5 so that loading screens remain responsive. Results are always delivered on the main thread.
+- A single worker pool decodes assets, so that the window stays responsive during loading (Phase 5). Results are always delivered on the main thread.
 
 Game logic, ECS updates, and render submission remain single-threaded.
 
@@ -850,11 +850,9 @@ The exact abstraction should remain as simple as possible for the first working 
 
 ## 9.6. Asynchronous loading
 
-Asynchronous asset decoding is planned for Phase 5 using a single worker pool (ADR-0011).
+Asynchronous asset decoding uses a single worker pool (ADR-0011, ADR-0017).
 
-It should not be implemented before synchronous loading is reliable.
-
-A later asynchronous implementation must define:
+The implementation defines:
 
 - Worker-thread responsibilities.
 - Completion notifications.
@@ -1482,9 +1480,9 @@ The following table distinguishes candidate technologies from finalized decision
 | Testing | GoogleTest + CTest | Decided (ADR-0002) |
 | Model and scene format | glTF 2.0 via fastgltf | Decided (ADR-0010) |
 | Textures | KTX2 (BC7/BC5); stb_image fallback | Decided (ADR-0010) |
-| Serialization | glaze (JSON, no exceptions) | Preferred; confirm in Phase 5 |
-| Physics | Jolt Physics | Preferred; confirm by ADR in Phase 7 |
-| Audio | miniaudio | Preferred; confirm by ADR in Phase 7 |
+| Serialization | None for now | glaze rejected until an editor needs it (ADR-0017) |
+| Physics | Jolt Physics | Preferred; confirm by ADR in Phase 6 |
+| Audio | miniaudio | Preferred; confirm by ADR in Phase 6 |
 | Navigation | Recast/Detour | Only if a game requires it |
 
 Before adopting any dependency, evaluate:
@@ -1830,7 +1828,10 @@ Deliverables:
 - Basic movement.
 - Camera control.
 - Render extraction from ECS.
-- Basic scene transitions if required.
+- Scene transitions.
+- Input actions.
+- Worker pool and background model loading.
+- The factory level of the legacy demo, playable by flying (`docs/DEMO.md`).
 
 Completion criteria:
 
@@ -1839,34 +1840,11 @@ Completion criteria:
 - Input is independent of operating-system APIs at gameplay level.
 - Scene and resource lifetimes are coherent.
 
-## Phase 6 — Modern Rendering Pipeline
+## Phase 6 — Physics, Audio and Animation
 
-**Goal:** Implement the intended material and lighting capabilities.
+**Goal:** Integrate fundamental simulation and sound capabilities, and bring characters to life.
 
-Deliverables:
-
-- Material workflow.
-- Physically based rendering.
-- Normal mapping.
-- Lighting system.
-- Clustered forward rendering with depth and normal prepass.
-- Light clustering.
-- Ambient occlusion.
-- Basic renderer diagnostics.
-- Performance measurement.
-
-Completion criteria:
-
-- Multiple materials render correctly.
-- Normal maps produce the expected lighting behavior.
-- Lighting is consistent with the documented material workflow.
-- Clustered light assignment matches a CPU reference on test scenes.
-- AO can be enabled and disabled.
-- Rendering resource lifetimes and synchronization are validated.
-
-## Phase 7 — Physics and Audio
-
-**Goal:** Integrate fundamental simulation and sound capabilities.
+This phase comes before the modern rendering pipeline: a game that can be walked through and heard gives every later feature a real test, and the demo needs it most.
 
 Deliverables:
 
@@ -1879,6 +1857,8 @@ Deliverables:
 - Sound emitters and listener.
 - Spatial audio.
 - Lifecycle and error handling.
+- Skeletal animation: skinned meshes from glTF, with blending between clips.
+- Character movement: walking, jumping, crouching and ladders.
 
 Completion criteria:
 
@@ -1886,7 +1866,36 @@ Completion criteria:
 - Collision queries work in a test scene.
 - Sound can be played from an entity.
 - Audio follows the appropriate listener and emitter transforms.
+- A skinned character plays its animations at the transform of its entity.
 - Cleanup is reliable.
+
+## Phase 7 — Modern Rendering Pipeline
+
+**Goal:** Implement the intended material and lighting capabilities.
+
+Deliverables:
+
+- Material workflow.
+- Physically based rendering.
+- Normal mapping.
+- Lighting system.
+- Clustered forward rendering with depth and normal prepass.
+- Light clustering.
+- Ambient occlusion.
+- Shadow maps for spot lights.
+- Particles.
+- Basic renderer diagnostics.
+- Performance measurement.
+
+Completion criteria:
+
+- Multiple materials render correctly.
+- Normal maps produce the expected lighting behavior.
+- Lighting is consistent with the documented material workflow.
+- Clustered light assignment matches a CPU reference on test scenes.
+- AO can be enabled and disabled.
+- Lights cast correct shadows, and the budget of shadowed lights is documented.
+- Rendering resource lifetimes and synchronization are validated.
 
 ## Phase 8 — GUI and Developer Tools
 
@@ -1986,8 +1995,8 @@ The following are planning estimates, not commitments.
 | First working renderer | 80–150 hours | 27–50 weeks |
 | Asset loading and basic materials | 40–80 hours | 13–27 weeks |
 | Basic interactive scene | 30–60 hours | 10–20 weeks |
-| Advanced rendering | 80–150 hours | 27–50 weeks |
-| Physics and audio integration | 50–100 hours | 17–33 weeks |
+| Physics, audio and animation integration | 70–130 hours | 23–43 weeks |
+| Advanced rendering | 100–180 hours | 33–60 weeks |
 | GUI and development tools | 50–100 hours | 17–33 weeks |
 | AI, cinematics, and indoor optimization | 40–100 hours | 13–33 weeks |
 | Linux validation | 20–50 hours | 7–17 weeks |

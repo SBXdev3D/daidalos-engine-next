@@ -34,6 +34,10 @@ struct MeshPushConstants {
 
 struct FrameData {
     glm::mat4 viewProjection;
+    glm::vec3 cameraPosition;
+    float fogDensity;
+    glm::vec3 fogColor;
+    float padding;
 };
 
 struct InstanceData {
@@ -281,8 +285,9 @@ core::Result<void> MeshPass::Record(rhi::CommandList& commands, const SceneView&
     }
 
     const CameraView& camera = *view.camera;
-    const FrameData frame{math::InfinitePerspectiveReverseZ(camera.verticalFov, aspect, camera.nearPlane) *
-                          camera.view};
+    const FrameData frame{math::InfinitePerspectiveReverseZ(camera.verticalFov, aspect, camera.nearPlane) * camera.view,
+                          glm::vec3(glm::inverse(camera.view)[3]), view.atmosphere.fogDensity, view.atmosphere.fogColor,
+                          0.0f};
     std::memcpy(m_device->Mapped(slot.frame).data(), &frame, sizeof(frame));
     auto* instances = reinterpret_cast<InstanceData*>(m_device->Mapped(slot.instances).data());
 

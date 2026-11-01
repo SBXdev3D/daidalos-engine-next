@@ -17,7 +17,7 @@ Reference counting was also on the table. It adds cost to every copy of a handle
 - `renderer::AssetLibrary` turns CPU data into GPU objects and owns them. It releases everything together when it is destroyed. There is no reference counting and no eviction. A scene keeps a library for as long as it needs its assets.
 - Stale handles are harmless: draws with a destroyed mesh are skipped, and draws with a destroyed material use the default one. Deferred destruction (ADR-0007) keeps frames in flight safe.
 - A missing or invalid model or texture fails the whole load, with an error that names the file. Failed loads are not cached.
-- Loading is synchronous. The CPU data has no GPU dependency, so the worker pool of ADR-0011 can decode it in Phase 5.
+- Loading is synchronous. The CPU data has no GPU dependency, so the worker pool of ADR-0011 can decode it in Phase 5. Amended by ADR-0017, which adds `LoadModelAsync`.
 
 ## Consequences
 

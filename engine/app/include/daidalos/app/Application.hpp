@@ -7,6 +7,7 @@
 #include <daidalos/core/CVarRegistry.hpp>
 #include <daidalos/core/FrameTimer.hpp>
 #include <daidalos/core/Result.hpp>
+#include <daidalos/core/WorkerPool.hpp>
 #include <daidalos/input/InputState.hpp>
 #include <daidalos/logging/Log.hpp>
 #include <daidalos/platform/Event.hpp>
@@ -14,12 +15,14 @@
 #include <daidalos/platform/Window.hpp>
 #include <daidalos/renderer/Renderer.hpp>
 #include <daidalos/renderer/Scene.hpp>
+#include <daidalos/scene/Scene.hpp>
 #if DAI_DEV_TOOLS
 #include <daidalos/debugui/DebugUi.hpp>
 #endif
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -46,8 +49,8 @@ public:
     /// Called once per frame.
     virtual void OnUpdate(Application& /*app*/, const core::FrameTime& /*time*/) {}
 
-    /// Called once per frame after OnUpdate, when ApplicationConfig::rendering is set: fill the scene
-    /// to draw, usually with renderer::ExtractScene. The scene starts empty.
+    /// Called once per frame after OnUpdate, when ApplicationConfig::rendering is set. The view already
+    /// shows the current scene, if there is one: this is the place to add to it, or to fill it by hand.
     virtual void OnRender(Application& /*app*/, renderer::SceneView& /*scene*/) {}
 
     /// Called once when the loop ends, before anything is shut down.
@@ -72,8 +75,8 @@ struct ApplicationConfig {
 
 /// Starts the engine, runs the main loop and shuts everything down in reverse order.
 ///
-/// Startup order: logging, crash handler, configuration (cvars), platform, main window, renderer,
-/// debug overlay, handler.
+/// Startup order: logging, crash handler, configuration (cvars), platform, main window, worker pool,
+/// renderer, debug overlay, scene slot, handler.
 /// If a step fails, the steps already started are stopped (StartupSequence) and Run returns the error.
 /// The loop ends when the main window is closed, the system asks to quit, RequestQuit is called, or
 /// rendering fails, in which case Run returns that error after shutting down.
@@ -90,8 +93,19 @@ public:
     /// Ends the loop after the current frame.
     void RequestQuit() noexcept { m_quitRequested = true; }
 
+    /// Replaces the current scene between two frames, or at once before the loop starts. Null leaves no
+    /// scene. The old one is destroyed then, and whichever is current when the application stops goes
+    /// before the renderer, also when OnStart fails. Once in place, its systems run every frame and
+    /// its world is extracted for rendering.
+    void SetScene(std::unique_ptr<scene::Scene> scene);
+    /// Null without a scene.
+    [[nodiscard]] scene::Scene* CurrentScene() noexcept { return m_currentScene.get(); }
+
     /// Valid between OnStart and OnStop.
     [[nodiscard]] platform::Window& MainWindow();
+    /// Threads for slow work, such as decoding assets. Results are delivered before each frame's
+    /// updates. Valid between OnStart and OnStop.
+    [[nodiscard]] core::WorkerPool& Workers();
     /// Keyboard, mouse and gamepad state, updated with the frame's events before OnFixedUpdate and
     /// OnUpdate. Presses and releases last one frame: read them in OnUpdate, because OnFixedUpdate
     /// may run zero or several times per frame.
@@ -114,6 +128,7 @@ private:
     void ReportConfigurationProblems();
     void MainLoop(IApplicationHandler& handler);
     void HandleEvent(const platform::Event& event);
+    void ApplyPendingScene();
 
     ApplicationConfig m_config;
     core::CVarRegistry m_cvars;
@@ -123,10 +138,15 @@ private:
     std::optional<core::CVar<bool>> m_validation;
     std::optional<platform::Platform> m_platform;
     std::optional<platform::Window> m_window;
+    std::optional<core::WorkerPool> m_workers;
     std::optional<renderer::Renderer> m_renderer;
 #if DAI_DEV_TOOLS
     std::optional<debugui::DebugUi> m_debugUi;
 #endif
+    std::unique_ptr<scene::Scene> m_currentScene;
+    std::unique_ptr<scene::Scene> m_pendingScene;
+    bool m_scenePending = false;
+    bool m_looping = false;
     renderer::SceneView m_scene;
     input::InputState m_input;
     std::optional<core::Error> m_failure;

@@ -2,7 +2,7 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
-// Forward shading of opaque meshes with fixed lighting, until lights exist (Phase 6). Materials hold
+// Forward shading of opaque meshes with fixed lighting, until lights exist (Phase 7). Materials hold
 // the full metallic-roughness data, but only the base color is shaded for now.
 
 #include "MeshTypes.hlsli"
@@ -17,6 +17,7 @@ struct VertexOutput {
     float4 clipPosition : SV_Position;
     [[vk::location(0)]] float3 worldNormal : NORMAL;
     [[vk::location(1)]] float2 uv : TEXCOORD;
+    [[vk::location(2)]] float3 worldPosition : POSITION;
 };
 
 // Transforms a normal with the cofactor matrix, which stays correct under non-uniform scale and
@@ -37,10 +38,12 @@ VertexOutput VSMain(VertexInput input) {
     output.clipPosition = mul(viewProjection, worldPosition);
     output.worldNormal = TransformNormal(world, input.normal);
     output.uv = input.uv;
+    output.worldPosition = worldPosition.xyz;
     return output;
 }
 
 float4 PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target {
+    const FrameData frame = g_frames[g_push.frameBuffer][0];
     const MaterialData material = g_materials[g_push.materialBuffer][g_push.materialIndex];
 
     float4 baseColor = material.baseColorFactor;
@@ -58,5 +61,8 @@ float4 PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target
     const float3 toLight = normalize(float3(0.4, 1.0, 0.6));
     const float diffuse = saturate(dot(normal, toLight));
     const float ambient = 0.2 + 0.1 * (normal.y * 0.5 + 0.5);
-    return float4(baseColor.rgb * (ambient + diffuse), 1.0);
+    const float3 lit = baseColor.rgb * (ambient + diffuse);
+
+    const float visibility = exp(-frame.fogDensity * distance(input.worldPosition, frame.cameraPosition));
+    return float4(lerp(frame.fogColor, lit, visibility), 1.0);
 }

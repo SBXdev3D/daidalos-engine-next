@@ -26,7 +26,7 @@ struct Vertex {
     glm::vec3 position{0.0f};
     glm::vec3 normal{0.0f, 1.0f, 0.0f};
     /// Direction of increasing u, with the handedness of the bitangent in w. All zeros if the asset has
-    /// no tangents: they are generated with normal mapping in Phase 6.
+    /// no tangents: they are generated with normal mapping in Phase 7.
     glm::vec4 tangent{0.0f};
     glm::vec2 uv{0.0f};
 };

@@ -12,6 +12,7 @@ sandbox.cfg
 
 # Assets downloaded by scripts/fetch_sample_assets.py
 /assets/*/
+!/assets/Factory/
 
 # vcpkg
 /vcpkg_installed/

@@ -23,7 +23,6 @@ namespace {
 
 constexpr std::string_view kModule = "renderer";
 constexpr rhi::Format kDepthFormat = rhi::Format::D32Float;
-constexpr glm::vec4 kClearColor{0.02f, 0.02f, 0.03f, 1.0f};
 
 } // namespace
 
@@ -203,7 +202,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder
     if (status) {
         commands.Discard(impl.depth, rhi::TextureState::DepthTarget);
         commands.BeginRendering({.colorTarget = frame.backBuffer,
-                                 .clearColor = kClearColor,
+                                 .clearColor = glm::vec4(view.atmosphere.fogColor, 1.0f),
                                  .depthTarget = impl.depth,
                                  .clearDepth = 0.0f});
         const float aspect = static_cast<float>(frame.extent.width) / static_cast<float>(frame.extent.height);

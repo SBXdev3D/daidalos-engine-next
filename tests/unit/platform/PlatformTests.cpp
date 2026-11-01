@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <filesystem>
 #include <utility>
 #include <vector>
 
@@ -24,6 +25,13 @@ PlatformConfig Headless() {
 }
 
 } // namespace
+
+TEST(Platform, ExecutableDirectoryHoldsTheRunningTests) {
+    const std::filesystem::path directory = ExecutableDirectory();
+    ASSERT_FALSE(directory.empty());
+    EXPECT_TRUE(directory.is_absolute());
+    EXPECT_TRUE(std::filesystem::is_directory(directory));
+}
 
 TEST(Platform, CreatesWithRequestedVideoDriver) {
     core::Result<Platform> platform = Platform::Create(Headless());

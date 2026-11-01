@@ -4,89 +4,102 @@
 
 #include <daidalos/app/Application.hpp>
 #include <daidalos/ecs/Transform.hpp>
-#include <daidalos/math/Axes.hpp>
-#include <daidalos/renderer/AssetLibrary.hpp>
 #include <daidalos/renderer/Primitives.hpp>
+
+#include <glm/trigonometric.hpp>
+#include <glm/vec3.hpp>
+
+#include "Factory.hpp"
 
 #if DAI_DEV_TOOLS
 #include <imgui.h>
 #endif
 
-#include <glm/ext/quaternion_trigonometric.hpp>
-#include <glm/gtc/quaternion.hpp>
-#include <glm/trigonometric.hpp>
-
-#include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <format>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 namespace {
 
 using namespace daidalos;
 
-constexpr const char* kAssetRoot = "assets"; // Relative to the working directory.
-constexpr glm::vec3 kModelPosition{-0.5f, 0.0f, -3.0f};
-constexpr float kModelScale = 0.15f;        // The sample lantern is much taller than a person.
-constexpr float kMoveSpeed = 4.0f;          // Meters per second.
-constexpr float kFastMoveFactor = 3.0f;     // While Shift is held.
-constexpr float kMouseSensitivity = 0.003f; // Radians per mouse unit.
-constexpr float kStickLookSpeed = 2.0f;     // Radians per second.
-constexpr float kStickDeadZone = 0.15f;     // Sticks rest slightly off center.
-constexpr float kMaxPitch = glm::radians(89.0f);
-constexpr float kSpinSpeed = glm::radians(45.0f); // Radians per second.
-
-float ApplyDeadZone(float value) {
-    return (std::abs(value) < kStickDeadZone) ? 0.0f : value;
+// Finds "assets" in the working directory, then beside the executable and in the directories above
+// it, so the demo starts from a double-click in the build tree.
+std::filesystem::path FindAssetRoot() {
+    constexpr const char* kName = "assets";
+    std::error_code error;
+    if (std::filesystem::is_directory(kName, error)) {
+        return kName;
+    }
+    std::filesystem::path directory = platform::ExecutableDirectory();
+    while (!directory.empty()) {
+        std::filesystem::path candidate = directory / kName;
+        if (std::filesystem::is_directory(candidate, error)) {
+            return candidate;
+        }
+        if (directory == directory.parent_path()) {
+            break;
+        }
+        directory = directory.parent_path();
+    }
+    return kName; // The load then reports what is missing.
 }
 
-// Draws a few cubes and flies a camera around them: W, A, S, D, Q and E to move, right mouse button
-// to look, or the sticks of a gamepad. Quits when the window is closed or Escape (or a gamepad's Back
-// button) is pressed.
+// The demo: a dark factory, on the level of the original Daidalos demo (docs/DEMO.md). It loads in the
+// background, and F5 starts it over in a new scene, which replaces the old one once it is ready.
 class Sandbox final : public app::IApplicationHandler {
 public:
     core::Result<void> OnStart(app::Application& app) override {
         DAI_LOG_INFO("sandbox", "Daidalos Engine Next {} started", DAI_VERSION);
-        const platform::Extent size = app.MainWindow().PixelSize();
-        DAI_LOG_INFO("sandbox", "Main window: {}x{} pixels", size.width, size.height);
         m_frameLimit =
             app.CVars().Register<std::int64_t>("sandbox.frames", 0, "Quit after this many frames; 0 runs until closed");
-        const core::CVar<std::string> scene = app.CVars().Register<std::string>(
-            "sandbox.scene", "Lantern/glTF/Lantern.gltf", "Model to load from the assets directory");
-        if (core::Result<void> loaded = LoadModel(app.Renderer(), scene.Get()); !loaded) {
-            return loaded;
-        }
-        return BuildScene(app.Renderer());
-    }
+        m_levelPath = app.CVars()
+                          .Register<std::string>("sandbox.scene", "Factory/Factory.gltf",
+                                                 "Level to load from the assets directory")
+                          .Get();
+        m_settings.mouseSensitivity =
+            static_cast<float>(app.CVars().Register<double>("sandbox.mouse", 0.0025, "Radians per mouse unit").Get());
+        m_settings.darkness = static_cast<float>(
+            app.CVars().Register<double>("sandbox.darkness", 1.0, "Multiplies the darkness; 0 shows the level").Get());
+        m_start =
+            app.CVars()
+                .Register<std::string>("sandbox.start", "", "Where to start: 'x y z yaw pitch', in meters and degrees")
+                .Get();
+        m_actions = sandbox::MakeActions();
+        m_assetRoot = FindAssetRoot();
+        DAI_LOG_INFO("sandbox", "Assets in '{}'", m_assetRoot.string());
 
-    void OnEvent(app::Application& /*app*/, const platform::Event& event) override {
-        if (const auto* resized = std::get_if<platform::WindowResized>(&event)) {
-            DAI_LOG_DEBUG("sandbox", "Resized to {}x{} pixels", resized->pixelSize.width, resized->pixelSize.height);
-        }
+        // The first scene is current at once: the renderer's owner then releases it on any failure.
+        app.SetScene(std::make_unique<scene::Scene>(app.Renderer(), m_assetRoot));
+        LoadLevel(app, *app.CurrentScene());
+        app.MainWindow().SetMouseCaptured(true);
+        return {};
     }
 
     void OnUpdate(app::Application& app, const core::FrameTime& time) override {
-        if (QuitPressed(app.Input())) {
-            DAI_LOG_INFO("sandbox", "Quit requested from input");
+        const input::InputState& input = app.Input();
+        if (m_actions.WasPressed(input, sandbox::Quit)) {
             app.RequestQuit();
+        }
+        if (m_actions.WasPressed(input, sandbox::ToggleMouse)) {
+            m_mouseCaptured = !m_mouseCaptured;
+            app.MainWindow().SetMouseCaptured(m_mouseCaptured);
+        }
+        if (m_actions.WasPressed(input, sandbox::Restart) && !m_loading) {
+            m_nextScene = std::make_unique<scene::Scene>(app.Renderer(), m_assetRoot);
+            LoadLevel(app, *m_nextScene);
         }
         ++m_totalFrames;
         if (m_frameLimit->Get() > 0 && m_totalFrames >= m_frameLimit->Get()) {
             app.RequestQuit();
         }
-
-        const auto delta = static_cast<float>(time.unclampedDelta.count());
-        UpdateCamera(app, delta);
-
-        // A parent that turns, carrying its child: the transform hierarchy at work.
-        m_spin += kSpinSpeed * delta;
-        m_world.Get<ecs::LocalTransform>(m_spinner).rotation = glm::angleAxis(m_spin, math::kUp);
 
         ++m_frames;
         m_elapsed += time.unclampedDelta;
@@ -96,152 +109,115 @@ public:
             m_frames = 0;
             m_elapsed = core::Seconds::zero();
         }
-        DrawDebugPanel(app);
-    }
-
-    void OnRender(app::Application& /*app*/, renderer::SceneView& scene) override {
-        ecs::PropagateTransforms(m_world);
-        renderer::ExtractScene(m_world, scene);
+        DrawHud(app);
     }
 
     void OnStop(app::Application& app) override {
-        m_assets.reset();
+        m_nextScene.reset();
         DAI_LOG_INFO("sandbox", "Stopping after {} frames, {} presented", m_totalFrames,
                      app.Renderer().Device().PresentedFrameCount());
     }
 
+    [[nodiscard]] const std::optional<core::Error>& Failure() const { return m_failure; }
+
 private:
-    // The sample scene is downloaded (scripts/fetch_sample_assets.py). Without it, the cubes stand alone.
-    core::Result<void> LoadModel(renderer::Renderer& target, const std::string& path) {
-        m_assets = std::make_unique<renderer::AssetLibrary>(target, kAssetRoot);
-        core::Result<const renderer::Model*> model = m_assets->LoadModel(path);
-        if (!model) {
-            if (model.error().code == core::ErrorCode::NotFound) {
-                DAI_LOG_INFO("sandbox", "No sample scene: {}", core::Format(model.error()));
-                return {};
+    void LoadLevel(app::Application& app, scene::Scene& target) {
+        m_loading = true;
+        target.Assets().LoadModelAsync(m_levelPath, app.Workers(),
+                                       [this, &app, &target](core::Result<const renderer::Model*> model) {
+                                           m_loading = false;
+                                           if (core::Result<void> built = Build(app, target, model); !built) {
+                                               DAI_LOG_ERROR("sandbox", "{}", core::Format(built.error()));
+                                               m_failure = std::move(built.error());
+                                               app.RequestQuit();
+                                               return;
+                                           }
+                                           if (m_nextScene) {
+                                               app.SetScene(std::move(m_nextScene));
+                                           }
+                                       });
+    }
+
+    core::Result<void> Build(app::Application& app, scene::Scene& target,
+                             const core::Result<const renderer::Model*>& model) {
+        if (model) {
+            core::Result<ecs::Entity> player = sandbox::BuildLevel(target, **model);
+            if (!player) {
+                return tl::unexpected(player.error());
             }
-            return tl::unexpected(std::move(model.error()));
+        } else if (model.error().code == core::ErrorCode::NotFound) {
+            // Other levels can be tried with sandbox.scene, so a missing one is not fatal.
+            DAI_LOG_INFO("sandbox", "No level, showing a test floor: {}", core::Format(model.error()));
+            if (core::Result<void> built = BuildTestFloor(app, target); !built) {
+                return built;
+            }
+        } else {
+            return tl::unexpected(model.error());
         }
-        core::Result<ecs::Entity> root = renderer::Instantiate(m_world, **model);
-        if (!root) {
-            return tl::unexpected(std::move(root.error()));
-        }
-        ecs::LocalTransform& transform = m_world.Get<ecs::LocalTransform>(*root);
-        transform.translation = kModelPosition;
-        transform.scale = glm::vec3(kModelScale);
+        sandbox::AddSystems(target, app.Input(), m_actions, m_settings);
+        ApplyStart(target);
         return {};
     }
 
-    core::Result<void> BuildScene(renderer::Renderer& target) {
-        core::Result<renderer::MeshHandle> cube = target.CreateMesh(renderer::MakeCube(), "Cube");
+    void ApplyStart(scene::Scene& target) const {
+        glm::vec3 position{0.0f};
+        float yaw = 0.0f;
+        float pitch = 0.0f;
+        std::istringstream text(m_start);
+        if (!(text >> position.x >> position.y >> position.z >> yaw >> pitch)) {
+            return;
+        }
+        ecs::World& world = target.World();
+        world.Each<sandbox::Player, ecs::LocalTransform>(
+            [&](ecs::Entity /*entity*/, sandbox::Player& player, ecs::LocalTransform& transform) {
+                transform.translation = position;
+                player.yaw = glm::radians(yaw);
+                player.pitch = glm::radians(pitch);
+            });
+    }
+
+    static core::Result<void> BuildTestFloor(app::Application& app, scene::Scene& target) {
+        core::Result<renderer::MeshHandle> cube = app.Renderer().CreateMesh(renderer::MakeCube(), "Test floor");
         if (!cube) {
             return tl::unexpected(std::move(cube.error()));
         }
-        const auto colored = [&target](const glm::vec3& color) {
-            renderer::MaterialDesc desc;
-            desc.baseColorFactor = glm::vec4(color, 1.0f);
-            return target.CreateMaterial(desc);
-        };
-        core::Result<renderer::MaterialHandle> gray = colored({0.5f, 0.5f, 0.55f});
-        core::Result<renderer::MaterialHandle> red = colored({0.8f, 0.15f, 0.1f});
-        core::Result<renderer::MaterialHandle> blue = colored({0.1f, 0.3f, 0.8f});
-        if (!gray || !red || !blue) {
-            return tl::unexpected(std::move(!gray ? gray.error() : (!red ? red.error() : blue.error())));
-        }
-
-        AddMesh(*cube, *gray, {0.0f, -0.05f, 0.0f}, {12.0f, 0.1f, 12.0f}); // The floor.
-        AddMesh(*cube, *gray, {-2.5f, 0.5f, -1.0f}, glm::vec3(1.0f));
-        m_spinner = AddMesh(*cube, *red, {1.0f, 0.75f, 0.0f}, {1.0f, 1.5f, 1.0f});
-        const ecs::Entity satellite = AddMesh(*cube, *blue, {1.5f, 0.0f, 0.0f}, glm::vec3(0.4f));
-        if (core::Result<void> attached = m_world.SetParent(satellite, m_spinner); !attached) {
-            return attached;
-        }
-
-        m_camera = m_world.Create();
+        ecs::World& world = target.World();
+        const ecs::Entity floor = world.Create();
         ecs::LocalTransform transform;
-        transform.translation = {0.0f, 1.6f, 6.0f};
-        m_world.Add<ecs::LocalTransform>(m_camera, transform);
-        m_world.Add<renderer::Camera>(m_camera);
+        transform.translation = {0.0f, -0.05f, 0.0f};
+        transform.scale = {12.0f, 0.1f, 12.0f};
+        world.Add<ecs::LocalTransform>(floor, transform);
+        world.Add<renderer::MeshRenderer>(floor, *cube);
+        core::Result<ecs::Entity> player = sandbox::BuildLevel(target, renderer::Model{});
+        if (!player) {
+            return tl::unexpected(std::move(player.error()));
+        }
         return {};
     }
 
-    ecs::Entity AddMesh(renderer::MeshHandle mesh, renderer::MaterialHandle material, const glm::vec3& position,
-                        const glm::vec3& scale) {
-        const ecs::Entity entity = m_world.Create();
-        ecs::LocalTransform transform;
-        transform.translation = position;
-        transform.scale = scale;
-        m_world.Add<ecs::LocalTransform>(entity, transform);
-        m_world.Add<renderer::MeshRenderer>(entity, mesh, material);
-        return entity;
-    }
-
-    [[nodiscard]] static bool QuitPressed(const input::InputState& input) {
-        if (input.WasPressed(platform::Key::Escape)) {
-            return true;
-        }
-        for (const platform::GamepadId gamepad : input.Gamepads()) {
-            if (input.WasPressed(gamepad, platform::GamepadButton::Back)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    void UpdateCamera(app::Application& app, float delta) {
-        const input::InputState& input = app.Input();
-        bool mouseFree = true;
-        bool keyboardFree = true;
+    void DrawHud(app::Application& app) {
 #if DAI_DEV_TOOLS
-        if (const debugui::DebugUi* overlay = app.DebugOverlay()) {
-            mouseFree = !overlay->WantsMouse();
-            keyboardFree = !overlay->WantsKeyboard();
-        }
-#endif
-
-        glm::vec3 move(0.0f); // x right, y up, z backward: the camera's local axes.
-        if (keyboardFree) {
-            const auto axis = [&input](platform::Key positive, platform::Key negative) {
-                return (input.IsDown(positive) ? 1.0f : 0.0f) - (input.IsDown(negative) ? 1.0f : 0.0f);
-            };
-            move.x = axis(platform::Key::D, platform::Key::A);
-            move.y = axis(platform::Key::E, platform::Key::Q);
-            move.z = axis(platform::Key::S, platform::Key::W);
-        }
-        if (mouseFree && input.IsDown(platform::MouseButton::Right)) {
-            m_yaw -= input.MouseDelta().x * kMouseSensitivity;
-            m_pitch -= input.MouseDelta().y * kMouseSensitivity;
-        }
-        for (const platform::GamepadId gamepad : input.Gamepads()) {
-            using platform::GamepadAxis;
-            move.x += ApplyDeadZone(input.Axis(gamepad, GamepadAxis::LeftX));
-            move.z -= ApplyDeadZone(input.Axis(gamepad, GamepadAxis::LeftY));
-            m_yaw -= ApplyDeadZone(input.Axis(gamepad, GamepadAxis::RightX)) * kStickLookSpeed * delta;
-            m_pitch += ApplyDeadZone(input.Axis(gamepad, GamepadAxis::RightY)) * kStickLookSpeed * delta;
-        }
-        m_pitch = std::clamp(m_pitch, -kMaxPitch, kMaxPitch);
-
-        const bool fast = input.IsDown(platform::Key::LeftShift);
-        ecs::LocalTransform& transform = m_world.Get<ecs::LocalTransform>(m_camera);
-        transform.rotation = math::FromYawPitchRoll(m_yaw, m_pitch, 0.0f);
-        transform.translation += transform.rotation * move * kMoveSpeed * (fast ? kFastMoveFactor : 1.0f) * delta;
-    }
-
-    void DrawDebugPanel(app::Application& app) {
-#if DAI_DEV_TOOLS
+        // A stand-in until the game has its own HUD (docs/DEMO.md).
         if (app.DebugOverlay() == nullptr) {
             return;
         }
         ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_FirstUseEver);
-        ImGui::Begin("Sandbox", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-        const rhi::DeviceInfo& info = app.Renderer().Device().Info();
-        ImGui::Text("%s", info.name.c_str());
-        ImGui::Text("%.0f FPS, validation %s", m_fps, info.validationEnabled ? "on" : "off");
-        if (ImGui::Checkbox("Vertical sync", &m_vsync)) {
-            // Cannot fail: the variable is registered and the text is valid.
-            static_cast<void>(app.CVars().Set("renderer.vsync", m_vsync ? "true" : "false"));
+        ImGui::Begin("Daidalos", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+        ImGui::Text("%.0f FPS", m_fps);
+        if (m_loading) {
+            ImGui::TextUnformatted("Loading...");
         }
-        ImGui::TextDisabled("WASD, QE, Shift: move. Right mouse: look.");
+        if (scene::Scene* current = app.CurrentScene()) {
+            current->World().Each<sandbox::Player>([](ecs::Entity /*entity*/, const sandbox::Player& player) {
+                ImGui::Text("Health %d   Armor %d", player.health, player.armor);
+                ImGui::Text("Ammo: handgun %d, shotgun %d", player.handgunAmmo, player.shotgunAmmo);
+                ImGui::Text("%s%s", player.hasFlashlight ? "[Flashlight] " : "", player.hasRedCard ? "[Red card]" : "");
+                if (player.messageTime > 0.0f) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", player.message.c_str());
+                }
+            });
+        }
+        ImGui::TextDisabled("WASD, Space, C: fly. E: use. F: flashlight. F5: restart. Tab: free the mouse.");
         if (const std::string& error = app.Renderer().ShaderError(); !error.empty()) {
             ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "Shader reload failed:");
             ImGui::TextUnformatted(error.c_str());
@@ -252,16 +228,17 @@ private:
 #endif
     }
 
-    std::unique_ptr<renderer::AssetLibrary> m_assets;
-    ecs::World m_world;
-    ecs::Entity m_camera;
-    ecs::Entity m_spinner;
+    input::ActionMap m_actions;
+    std::filesystem::path m_assetRoot;
+    std::string m_levelPath;
+    sandbox::Settings m_settings;
+    std::string m_start;
+    std::unique_ptr<scene::Scene> m_nextScene;
+    bool m_loading = false;
+    bool m_mouseCaptured = true;
+    std::optional<core::Error> m_failure;
     std::optional<core::CVar<std::int64_t>> m_frameLimit;
     std::int64_t m_totalFrames = 0;
-    float m_yaw = 0.0f;
-    float m_pitch = 0.0f;
-    float m_spin = 0.0f;
-    bool m_vsync = true;
     int m_frames = 0;
     double m_fps = 0.0;
     core::Seconds m_elapsed{};
@@ -281,7 +258,11 @@ int main(int argc, char** argv) {
 
     app::Application application(std::move(config));
     Sandbox sandbox;
-    if (const core::Result<void> result = application.Run(sandbox); !result) {
+    core::Result<void> result = application.Run(sandbox);
+    if (result && sandbox.Failure().has_value()) {
+        result = tl::unexpected(*sandbox.Failure());
+    }
+    if (!result) {
         std::fprintf(stderr, "%s\n", core::Format(result.error()).c_str());
         return 1;
     }

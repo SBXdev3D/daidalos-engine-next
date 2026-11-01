@@ -8,6 +8,8 @@
 
 #include <glm/trigonometric.hpp>
 
+#include <string>
+
 namespace daidalos::renderer {
 
 struct MeshTag;
@@ -29,6 +31,11 @@ struct MeshRenderer {
     MeshHandle mesh;
     /// Null for the default material: plain white.
     MaterialHandle material;
+};
+
+/// ECS component: the name of the model node an entity comes from, for the code that builds on a level.
+struct NodeName {
+    std::string value;
 };
 
 } // namespace daidalos::renderer

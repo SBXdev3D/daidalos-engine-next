@@ -110,6 +110,11 @@ std::string Window::Title() const {
     return SDL_GetWindowTitle(m_impl->window);
 }
 
+void Window::SetMouseCaptured(bool captured) {
+    DAI_ASSERT(m_impl, "Window used after being moved from");
+    SDL_SetWindowRelativeMouseMode(m_impl->window, captured);
+}
+
 void Window::SetTitle(std::string_view title) {
     DAI_ASSERT(m_impl, "Window used after being moved from");
     SDL_SetWindowTitle(m_impl->window, std::string(title).c_str());

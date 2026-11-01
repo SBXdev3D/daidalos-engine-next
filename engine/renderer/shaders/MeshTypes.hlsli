@@ -7,7 +7,7 @@
 
 // Each structure matches its C++ twin in engine/renderer/src/MeshPass.cpp.
 
-// Indices only: everything else is in storage buffers, which the lighting data of Phase 6 will join.
+// Indices only: everything else is in storage buffers, which the lighting data of Phase 7 will join.
 struct MeshPushConstants {
     uint frameBuffer;
     uint instanceBuffer;
@@ -18,6 +18,10 @@ struct MeshPushConstants {
 
 struct FrameData {
     float4x4 viewProjection;
+    float3 cameraPosition;
+    float fogDensity;
+    float3 fogColor;
+    float padding;
 };
 
 struct InstanceData {

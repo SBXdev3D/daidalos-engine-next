@@ -64,6 +64,34 @@ TEST(ExtractScene, MeshWithoutWorldTransformIsNotDrawn) {
     EXPECT_TRUE(view.draws.empty());
 }
 
+TEST(ExtractScene, ActiveCameraWinsOverTheLowestIndex) {
+    ecs::World world;
+    const auto addCamera = [&world](float x) {
+        const ecs::Entity entity = world.Create();
+        ecs::LocalTransform transform;
+        transform.translation = {x, 0.0f, 0.0f};
+        world.Add<ecs::LocalTransform>(entity, transform);
+        world.Add<renderer::Camera>(entity);
+        return entity;
+    };
+    addCamera(1.0f);
+    const ecs::Entity active = addCamera(2.0f);
+    addCamera(3.0f);
+    ecs::PropagateTransforms(world);
+
+    renderer::SceneView view;
+    renderer::ExtractScene(world, view, active);
+    ASSERT_TRUE(view.camera.has_value());
+    EXPECT_FLOAT_EQ(view.camera->view[3].x, -2.0f);
+
+    renderer::ExtractScene(world, view);
+    EXPECT_FLOAT_EQ(view.camera->view[3].x, -1.0f);
+
+    world.Destroy(active);
+    renderer::ExtractScene(world, view, active);
+    EXPECT_FLOAT_EQ(view.camera->view[3].x, -1.0f) << "A stale camera falls back on the lowest index";
+}
+
 TEST(ExtractScene, ViewMatrixMovesTheWorldOppositeToTheCamera) {
     ecs::World world;
     const ecs::Entity camera = AddAt(world, {0.0f, 0.0f, 5.0f});
