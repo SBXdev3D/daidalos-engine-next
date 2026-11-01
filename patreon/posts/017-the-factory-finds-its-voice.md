@@ -44,7 +44,7 @@ I also read the Windows output meter while the game ran. It went from 0 before t
 |---|---|
 | Automated tests | 426, up from 408 |
 | New module | `audio`, the fourteenth |
-| Sounds in the level | 19, loaded in 15 ms |
+| Sounds in the level | 19, loaded in 38 ms |
 | Sounds at once | 64 at most |
 
 ## What isn't done

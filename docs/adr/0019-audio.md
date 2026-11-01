@@ -24,7 +24,7 @@ Phase 6 needs footsteps, doors, pickups, alarms, fans and music, placed in the w
 - Volumes cannot change while the game runs. A settings menu (Phase 8) needs setters on `AudioEngine`.
 - Sound passes through walls and doors: there is no occlusion. Rays from the listener to each emitter could add it later, as `PhysicsWorld::CastRay` already exists.
 - `SoundWorld::Load` opens each file with a plain decoder first, because miniaudio 0.11.25 reads freed memory when its resource manager fails to decode a file. ASan found it with a corrupt WAV. The check can go when a later version fixes this.
-- Decoded clips load on the main thread. The 19 sounds of the factory take 15 ms, so a worker is not needed yet.
+- Decoded clips load on the main thread. The 19 sounds of the factory take 38 ms, so a worker is not needed yet.
 
 ## Alternatives considered
 
