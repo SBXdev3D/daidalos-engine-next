@@ -9,7 +9,8 @@ dai_add_module(NAME app
         daidalos::input
         daidalos::logging
         daidalos::platform
-        daidalos::renderer)
+        daidalos::renderer
+        daidalos::scene)
 
 if(DAI_ENABLE_DEV_TOOLS)
     target_link_libraries(daidalos_app PUBLIC daidalos::debugui)

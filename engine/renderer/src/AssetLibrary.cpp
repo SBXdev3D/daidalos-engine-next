@@ -9,6 +9,7 @@
 #include <daidalos/resources/AssetPath.hpp>
 
 #include <format>
+#include <memory>
 #include <utility>
 
 namespace daidalos::renderer {
@@ -35,6 +36,9 @@ AssetLibrary::AssetLibrary(Renderer& renderer, std::filesystem::path root)
     : m_renderer(&renderer), m_root(std::move(root)) {}
 
 AssetLibrary::~AssetLibrary() {
+    for (const PendingLoad& load : m_pending) {
+        load.workers->Cancel(load.job);
+    }
     // Materials first: they refer to the textures.
     for (const MaterialHandle material : m_materials) {
         m_renderer->DestroyMaterial(material);
@@ -45,52 +49,68 @@ AssetLibrary::~AssetLibrary() {
     m_textures.ForEach([this](rhi::TextureHandle texture) { m_renderer->Device().DestroyTexture(texture); });
 }
 
-core::Result<rhi::TextureHandle> AssetLibrary::LoadTexture(const resources::ImageSource& source,
-                                                           const std::string& modelKey, std::uint32_t imageIndex) {
-    std::string identity;
-    std::filesystem::path file;
-    if (source.file.empty()) {
-        identity = std::format("{}#{}", modelKey, imageIndex);
-    } else {
+core::Result<AssetLibrary::DecodedModel> AssetLibrary::Decode(const std::filesystem::path& root,
+                                                              const std::string& key) {
+    DAI_PROFILE_SCOPE("renderer::DecodeModel");
+    core::Result<std::filesystem::path> file = resources::ResolveAssetPath(root, key);
+    if (!file) {
+        return tl::unexpected(std::move(file.error()));
+    }
+    core::Result<resources::ModelData> data = resources::LoadModelFile(*file);
+    if (!data) {
+        return tl::unexpected(std::move(data.error()));
+    }
+
+    DecodedModel decoded{std::move(*data), {}};
+    decoded.images.reserve(decoded.data.images.size());
+    for (std::uint32_t index = 0; index < decoded.data.images.size(); ++index) {
+        const resources::ImageSource& source = decoded.data.images[index];
+        if (source.file.empty()) {
+            std::string identity = std::format("{}#{}", key, index);
+            std::string textureKey = std::format("{}|{}", identity, ToString(source.use));
+            core::Result<resources::ImageData> image = resources::DecodeImage(source.embedded, source.use, identity);
+            decoded.images.push_back({std::move(identity), std::move(textureKey), std::move(image)});
+            continue;
+        }
         // The identity of a file comes from the root, whichever model refers to it.
         core::Result<std::string> normalized =
-            resources::NormalizeAssetPath(resources::ToUtf8(source.file.lexically_relative(m_root)));
+            resources::NormalizeAssetPath(resources::ToUtf8(source.file.lexically_relative(root)));
         if (!normalized) {
             return tl::unexpected(std::move(normalized.error()));
         }
-        core::Result<std::filesystem::path> resolved = resources::ResolveAssetPath(m_root, *normalized);
+        core::Result<std::filesystem::path> resolved = resources::ResolveAssetPath(root, *normalized);
         if (!resolved) {
             return tl::unexpected(std::move(resolved.error()));
         }
-        identity = std::move(*normalized);
-        file = std::move(*resolved);
+        // A file used in two ways is two textures: the use decides how it is decoded.
+        std::string textureKey = std::format("{}|{}", *normalized, ToString(source.use));
+        decoded.images.push_back(
+            {std::move(*normalized), std::move(textureKey), resources::LoadImageFile(*resolved, source.use)});
     }
+    return decoded;
+}
 
-    // A file used in two ways is two textures: the use decides how it is decoded.
-    std::string key = std::format("{}|{}", identity, ToString(source.use));
-    if (const rhi::TextureHandle* found = m_textures.Find(key)) {
+core::Result<rhi::TextureHandle> AssetLibrary::FindOrCreateTexture(DecodedImage& image) {
+    if (const rhi::TextureHandle* found = m_textures.Find(image.key)) {
         return *found;
     }
-
-    core::Result<resources::ImageData> image = file.empty()
-                                                   ? resources::DecodeImage(source.embedded, source.use, identity)
-                                                   : resources::LoadImageFile(file, source.use);
-    if (!image) {
-        return tl::unexpected(std::move(image.error()));
+    if (!image.image) {
+        return tl::unexpected(std::move(image.image.error()));
     }
-    core::Result<rhi::TextureHandle> texture = CreateTexture(m_renderer->Device(), *image, identity);
+    core::Result<rhi::TextureHandle> texture = CreateTexture(m_renderer->Device(), *image.image, image.identity);
     if (!texture) {
         return texture;
     }
-    m_textures.Insert(std::move(key), *texture);
+    m_textures.Insert(image.key, *texture);
     return texture;
 }
 
-core::Result<Model> AssetLibrary::BuildModel(const resources::ModelData& data, const std::string& key) {
+core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::string& key) {
+    const resources::ModelData& data = decoded.data;
     std::vector<rhi::TextureHandle> textures;
-    textures.reserve(data.images.size());
-    for (std::uint32_t index = 0; index < data.images.size(); ++index) {
-        core::Result<rhi::TextureHandle> texture = LoadTexture(data.images[index], key, index);
+    textures.reserve(decoded.images.size());
+    for (DecodedImage& image : decoded.images) {
+        core::Result<rhi::TextureHandle> texture = FindOrCreateTexture(image);
         if (!texture) {
             return tl::unexpected(std::move(texture.error()));
         }
@@ -153,6 +173,22 @@ core::Result<Model> AssetLibrary::BuildModel(const resources::ModelData& data, c
     return model;
 }
 
+core::Result<const Model*> AssetLibrary::Build(std::string key, core::Result<DecodedModel> decoded) {
+    if (const Model* found = m_models.Find(key)) {
+        return found; // Loaded in the meantime by another request.
+    }
+    if (!decoded) {
+        return tl::unexpected(std::move(decoded.error()));
+    }
+    core::Result<Model> model = BuildModel(*decoded, key);
+    if (!model) {
+        return tl::unexpected(std::move(model.error()));
+    }
+    DAI_LOG_INFO(kModule, "Loaded model '{}': {} meshes, {} materials, {} images", key, decoded->data.primitives.size(),
+                 decoded->data.materials.size(), decoded->data.images.size());
+    return &m_models.Insert(std::move(key), std::move(*model));
+}
+
 core::Result<const Model*> AssetLibrary::LoadModel(std::string_view path) {
     DAI_PROFILE_SCOPE("renderer::LoadModel");
     core::Result<std::string> key = resources::NormalizeAssetPath(path);
@@ -162,22 +198,31 @@ core::Result<const Model*> AssetLibrary::LoadModel(std::string_view path) {
     if (const Model* found = m_models.Find(*key)) {
         return found;
     }
+    core::Result<DecodedModel> decoded = Decode(m_root, *key);
+    return Build(std::move(*key), std::move(decoded));
+}
 
-    core::Result<std::filesystem::path> file = resources::ResolveAssetPath(m_root, *key);
-    if (!file) {
-        return tl::unexpected(std::move(file.error()));
+void AssetLibrary::LoadModelAsync(std::string_view path, core::WorkerPool& workers,
+                                  std::function<void(core::Result<const Model*>)> done) {
+    core::Result<std::string> key = resources::NormalizeAssetPath(path);
+    if (!key) {
+        done(tl::unexpected(std::move(key.error())));
+        return;
     }
-    core::Result<resources::ModelData> data = resources::LoadModelFile(*file);
-    if (!data) {
-        return tl::unexpected(std::move(data.error()));
+    if (const Model* found = m_models.Find(*key)) {
+        done(found);
+        return;
     }
-    core::Result<Model> model = BuildModel(*data, *key);
-    if (!model) {
-        return tl::unexpected(std::move(model.error()));
-    }
-    DAI_LOG_INFO(kModule, "Loaded model '{}': {} meshes, {} materials, {} images", *key, data->primitives.size(),
-                 data->materials.size(), data->images.size());
-    return &m_models.Insert(std::move(*key), std::move(*model));
+
+    // The id is known once Submit returns. The job may finish before that, but its result waits for
+    // Deliver, which runs on this thread.
+    auto job = std::make_shared<core::JobId>(0);
+    *job = workers.Submit([root = m_root, key = *key] { return Decode(root, key); },
+                          [this, key = *key, job, done = std::move(done)](core::Result<DecodedModel> decoded) {
+                              std::erase_if(m_pending, [&job](const PendingLoad& load) { return load.job == *job; });
+                              done(Build(key, std::move(decoded)));
+                          });
+    m_pending.push_back({&workers, *job});
 }
 
 core::Result<ecs::Entity> Instantiate(ecs::World& world, const Model& model) {
@@ -196,6 +241,9 @@ core::Result<ecs::Entity> Instantiate(ecs::World& world, const Model& model) {
             return tl::unexpected(std::move(attached.error()));
         }
         entities.push_back(entity);
+        if (!node.name.empty()) {
+            world.Add<NodeName>(entity, node.name);
+        }
 
         for (std::size_t index = 0; index < node.parts.size(); ++index) {
             const Model::Part& part = node.parts[index];

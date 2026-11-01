@@ -8,8 +8,10 @@
 #include <daidalos/core/Profile.hpp>
 #include <daidalos/platform/CrashHandler.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <format>
+#include <thread>
 #include <utility>
 #include <variant>
 
@@ -21,6 +23,8 @@ constexpr std::string_view kModule = "app";
 constexpr std::int64_t kMaxWindowSize = 32768;
 // While minimized there is nothing to draw: wait for events instead of spinning.
 constexpr std::chrono::milliseconds kMinimizedWait{100};
+// Asset decoding is the only customer: more threads than this would only compete for the disk.
+constexpr std::uint32_t kMaxWorkerThreads = 4;
 #ifdef NDEBUG
 constexpr bool kValidationByDefault = false;
 #else
@@ -46,6 +50,27 @@ Application::~Application() = default;
 platform::Window& Application::MainWindow() {
     DAI_ASSERT(m_window.has_value(), "The main window exists only while the application runs");
     return *m_window;
+}
+
+core::WorkerPool& Application::Workers() {
+    DAI_ASSERT(m_workers.has_value(), "The worker pool exists only while the application runs");
+    return *m_workers;
+}
+
+void Application::SetScene(std::unique_ptr<scene::Scene> scene) {
+    if (m_looping) {
+        m_pendingScene = std::move(scene);
+        m_scenePending = true;
+    } else {
+        m_currentScene = std::move(scene);
+    }
+}
+
+void Application::ApplyPendingScene() {
+    if (m_scenePending) {
+        m_scenePending = false;
+        m_currentScene = std::move(m_pendingScene);
+    }
 }
 
 renderer::Renderer& Application::Renderer() {
@@ -84,6 +109,14 @@ core::Result<void> Application::Run(IApplicationHandler& handler) {
         },
         [this] { m_platform.reset(); });
     startup.Add("main window", [this] { return CreateMainWindow(); }, [this] { m_window.reset(); });
+    startup.Add(
+        "worker pool",
+        [this]() -> core::Result<void> {
+            const std::uint32_t cores = std::thread::hardware_concurrency();
+            m_workers.emplace(std::clamp<std::uint32_t>(cores > 1 ? cores - 1 : 1, 1, kMaxWorkerThreads));
+            return {};
+        },
+        [this] { m_workers.reset(); });
     startup.Add("renderer", [this] { return CreateRenderer(); }, [this] { m_renderer.reset(); });
     startup.Add(
         "debug overlay", [this] { return CreateDebugOverlay(); },
@@ -91,6 +124,15 @@ core::Result<void> Application::Run(IApplicationHandler& handler) {
 #if DAI_DEV_TOOLS
             m_debugUi.reset();
 #endif
+        });
+    // The handler creates the scene, and can fail halfway. Stopping this step is what releases it
+    // before the renderer, whichever way the application ends.
+    startup.Add(
+        "scene", []() -> core::Result<void> { return {}; },
+        [this] {
+            m_pendingScene.reset();
+            m_scenePending = false;
+            m_currentScene.reset();
         });
     startup.Add(
         "application", [this, &handler] { return handler.OnStart(*this); },
@@ -187,6 +229,10 @@ core::Result<void> Application::CreateDebugOverlay() {
 void Application::RenderFrame(IApplicationHandler& handler) {
     m_scene.camera.reset();
     m_scene.draws.clear();
+    m_scene.atmosphere = {};
+    if (m_currentScene) {
+        m_currentScene->Extract(m_scene);
+    }
     handler.OnRender(*this, m_scene);
 
     renderer::OverlayRecorder overlay;
@@ -226,7 +272,9 @@ void Application::MainLoop(IApplicationHandler& handler) {
     std::vector<platform::Event> events;
     auto previous = std::chrono::steady_clock::now();
 
+    m_looping = true;
     while (!m_quitRequested) {
+        ApplyPendingScene();
         {
             DAI_PROFILE_SCOPE("Events");
             m_input.BeginFrame();
@@ -251,6 +299,8 @@ void Application::MainLoop(IApplicationHandler& handler) {
             break;
         }
 
+        m_workers->Deliver();
+
         const auto now = std::chrono::steady_clock::now();
         const core::FrameTime time = timer.Advance(now - previous);
         previous = now;
@@ -259,6 +309,9 @@ void Application::MainLoop(IApplicationHandler& handler) {
             DAI_PROFILE_SCOPE("FixedUpdate");
             for (std::uint32_t step = 0; step < time.fixedSteps; ++step) {
                 handler.OnFixedUpdate(*this, timer.Config().fixedStep);
+                if (m_currentScene) {
+                    m_currentScene->RunFixedStep(timer.Config().fixedStep);
+                }
             }
         }
 #if DAI_DEV_TOOLS
@@ -269,6 +322,9 @@ void Application::MainLoop(IApplicationHandler& handler) {
         {
             DAI_PROFILE_SCOPE("Update");
             handler.OnUpdate(*this, time);
+            if (m_currentScene) {
+                m_currentScene->RunFrame(time.delta);
+            }
         }
         if (m_renderer.has_value()) {
             DAI_PROFILE_SCOPE("Render");
@@ -276,6 +332,7 @@ void Application::MainLoop(IApplicationHandler& handler) {
         }
         DAI_PROFILE_FRAME();
     }
+    m_looping = false;
 }
 
 void Application::HandleEvent(const platform::Event& event) {

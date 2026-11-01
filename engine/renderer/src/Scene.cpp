@@ -13,15 +13,17 @@
 
 namespace daidalos::renderer {
 
-void ExtractScene(ecs::World& world, SceneView& view) {
+void ExtractScene(ecs::World& world, SceneView& view, ecs::Entity activeCamera) {
     DAI_PROFILE_SCOPE("renderer::ExtractScene");
     view.camera.reset();
     view.draws.clear();
 
+    bool chosen = false;
     std::uint32_t cameraIndex = std::numeric_limits<std::uint32_t>::max();
     world.Each<ecs::WorldTransform, Camera>(
         [&](ecs::Entity entity, const ecs::WorldTransform& transform, const Camera& camera) {
-            if (entity.Index() < cameraIndex) {
+            if (entity == activeCamera || (!chosen && entity.Index() < cameraIndex)) {
+                chosen = (entity == activeCamera);
                 cameraIndex = entity.Index();
                 view.camera = CameraView{glm::inverse(transform.matrix), camera.verticalFov, camera.nearPlane};
             }

@@ -49,6 +49,8 @@ public:
     [[nodiscard]] std::string Title() const;
 
     void SetTitle(std::string_view title);
+    /// Hides the pointer and reports motion without limits, for looking around in a game.
+    void SetMouseCaptured(bool captured);
     /// Resizes the window, in screen coordinates, and waits for the system to apply it.
     void SetSize(Extent size);
 

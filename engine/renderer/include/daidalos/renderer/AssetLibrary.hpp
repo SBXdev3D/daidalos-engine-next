@@ -5,6 +5,7 @@
 #pragma once
 
 #include <daidalos/core/Result.hpp>
+#include <daidalos/core/WorkerPool.hpp>
 #include <daidalos/ecs/World.hpp>
 #include <daidalos/math/Transform.hpp>
 #include <daidalos/renderer/Components.hpp>
@@ -14,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -43,7 +45,8 @@ struct Model {
 /// harmless: their draws are skipped, or use the default material.
 ///
 /// Models and textures are found under the root, by the identity of NormalizeAssetPath. A texture
-/// shared by several models is loaded once. The renderer must outlive the library.
+/// shared by several models is loaded once. The renderer must outlive the library, and so must the
+/// worker pools it was given.
 class AssetLibrary {
 public:
     AssetLibrary(Renderer& renderer, std::filesystem::path root);
@@ -56,13 +59,38 @@ public:
     /// tries again.
     [[nodiscard]] core::Result<const Model*> LoadModel(std::string_view path);
 
+    /// Same as LoadModel, but files are read and decoded on a worker, so that the main thread keeps
+    /// running. The function is called on the main thread, from WorkerPool::Deliver, or at once if the
+    /// model is already there or the path is invalid. It is not called once the library is destroyed.
+    /// Creating the GPU objects still happens on the main thread, in that Deliver.
+    void LoadModelAsync(std::string_view path, core::WorkerPool& workers,
+                        std::function<void(core::Result<const Model*>)> done);
+
     [[nodiscard]] std::size_t ModelCount() const { return m_models.Size(); }
     [[nodiscard]] std::size_t TextureCount() const { return m_textures.Size(); }
 
 private:
-    [[nodiscard]] core::Result<rhi::TextureHandle> LoadTexture(const resources::ImageSource& source,
-                                                               const std::string& modelKey, std::uint32_t imageIndex);
-    [[nodiscard]] core::Result<Model> BuildModel(const resources::ModelData& data, const std::string& key);
+    struct DecodedImage {
+        /// The identity of the file, and the key of the texture in the cache.
+        std::string identity;
+        std::string key;
+        core::Result<resources::ImageData> image;
+    };
+    /// A model read from disk, with nothing on the GPU yet.
+    struct DecodedModel {
+        resources::ModelData data;
+        std::vector<DecodedImage> images;
+    };
+    struct PendingLoad {
+        core::WorkerPool* workers = nullptr;
+        core::JobId job = 0;
+    };
+
+    /// Touches nothing of the library, because it runs on workers.
+    [[nodiscard]] static core::Result<DecodedModel> Decode(const std::filesystem::path& root, const std::string& key);
+    [[nodiscard]] core::Result<const Model*> Build(std::string key, core::Result<DecodedModel> decoded);
+    [[nodiscard]] core::Result<rhi::TextureHandle> FindOrCreateTexture(DecodedImage& image);
+    [[nodiscard]] core::Result<Model> BuildModel(DecodedModel& decoded, const std::string& key);
 
     Renderer* m_renderer;
     std::filesystem::path m_root;
@@ -70,6 +98,7 @@ private:
     resources::Cache<rhi::TextureHandle> m_textures;
     std::vector<MeshHandle> m_meshes;
     std::vector<MaterialHandle> m_materials;
+    std::vector<PendingLoad> m_pending;
 };
 
 /// Creates an entity for each node of a model, under one new root entity at the origin, and returns
