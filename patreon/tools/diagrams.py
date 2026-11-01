@@ -306,6 +306,489 @@ def asset_pipeline():
     svg.write("asset-pipeline")
 
 
+def cells(svg, x, y, values, width=64, height=52, stroke=PANEL_EDGE, highlight=None, labels=None):
+    """A row of array cells. Empty values are drawn dimmed; labels go beneath the cells."""
+    for index, value in enumerate(values):
+        color = ACCENT if highlight is not None and index in highlight else stroke
+        fill = BACKGROUND if value == "" else PANEL
+        svg.box(x + index * width, y, width, height, fill=fill, stroke=color, radius=4,
+                stroke_width=2 if highlight is not None and index in highlight else 1.5)
+        svg.text(x + index * width + width / 2, y + height / 2 + 7, value, 19, TEXT, 600, "middle")
+        if labels:
+            svg.text(x + index * width + width / 2, y + height + 20, labels[index], 13.5, MUTED, 400, "middle")
+
+
+def ecs_sparse_set():
+    svg = Svg(1400, 760)
+    svg.text(50, 58, "One component type, one sparse set", 32, TEXT, 700)
+    svg.text(50, 90, "Example with the Door component: entities 1, 5 and 3 have one. The others do not.", 18, MUTED)
+
+    svg.text(50, 160, "Sparse array", 20, TEXT, 700)
+    svg.text(50, 186, "Indexed by entity.", 15.5, MUTED)
+    svg.text(50, 208, "Holds a position.", 15.5, MUTED)
+    cells(svg, 300, 150, ["", "0", "", "2", "", "1", "", ""], labels=[str(i) for i in range(8)], highlight={1, 3, 5})
+    svg.text(840, 182, "Question: does entity 5 have a door?", 16, MUTED)
+    svg.text(840, 206, "Answer in one array read.", 16, MUTED)
+
+    svg.text(50, 294, "Dense arrays", 20, TEXT, 700)
+    svg.text(50, 320, "Packed side by side,", 15.5, MUTED)
+    svg.text(50, 342, "with no holes.", 15.5, MUTED)
+    cells(svg, 300, 276, ["1", "5", "3"], labels=["0", "1", "2"])
+    cells(svg, 300, 356, ["A", "B", "C"], labels=["", "", ""])
+    svg.text(516, 308, "entities", 16, MUTED)
+    svg.text(516, 388, "Door components", 16, MUTED)
+    svg.text(840, 306, "A system walks these from left to right,", 16, MUTED)
+    svg.text(840, 330, "so the CPU reads memory in order,", 16, MUTED)
+    svg.text(840, 354, "which is what it does fastest.", 16, MUTED)
+
+    svg.box(30, 450, 1340, 270, fill="#181c26", stroke="#262c3a", radius=12)
+    svg.text(55, 490, "Removing the door of entity 1: swap and pop", 20, ALERT, 700)
+    svg.text(55, 520, "The hole is filled by the last element, so the array stays packed.", 16, MUTED)
+
+    cells(svg, 80, 560, ["1", "5", "3"], highlight={0, 2})
+    cells(svg, 80, 620, ["A", "B", "C"], highlight={0, 2})
+    svg.text(80, 696, "before", 15, MUTED)
+    svg.line(310, 616, 430, 616)
+    svg.text(370, 600, "C moves", 15, MUTED, 400, "middle")
+    cells(svg, 450, 560, ["3", "5"])
+    cells(svg, 450, 620, ["C", "B"])
+    svg.text(450, 696, "after", 15, MUTED)
+    svg.text(680, 590, "Only two entries of the sparse array change:", 17, TEXT, 500)
+    svg.text(680, 624, "entity 3 now points to position 0", 16, MUTED)
+    svg.text(680, 650, "entity 1 is marked as absent", 16, MUTED)
+    svg.text(680, 684, "No loop over the other components, however many there are.", 16, MUTED)
+    svg.write("ecs-sparse-set")
+
+
+def stale_handles():
+    svg = Svg(1400, 620)
+    svg.text(50, 58, "Why an old handle can never reach the wrong object", 32, TEXT, 700)
+    svg.text(50, 90, "A handle is two numbers: a slot, and the generation of that slot.", 18, MUTED)
+
+    states = [
+        ("1. Created", "slot 7, generation 3", "Door", "A system keeps the handle (7, 3)", DONE),
+        ("2. Destroyed", "slot 7, generation 4", "empty", "The generation goes up by one", ALERT),
+        ("3. Slot reused", "slot 7, generation 4", "Zombie", "A new handle: (7, 4)", ACCENT),
+    ]
+    for index, (title, slot, content, note, color) in enumerate(states):
+        x = 50 + index * 440
+        svg.box(x, 130, 420, 210, stroke=color, stroke_width=2)
+        svg.text(x + 24, 172, title, 21, TEXT, 700)
+        svg.text(x + 24, 202, slot, 16, MUTED)
+        svg.box(x + 24, 222, 372, 56, fill="#1a2030", stroke=PANEL_EDGE, radius=6)
+        svg.text(x + 210, 258, content, 21, TEXT if content != "empty" else MUTED, 600, "middle")
+        svg.text(x + 24, 312, note, 16, MUTED)
+        if index < 2:
+            svg.line(x + 422, 235, x + 438, 235)
+
+    svg.box(50, 376, 650, 200, stroke=ALERT, stroke_width=2)
+    svg.text(76, 416, "With a plain pointer", 20, ALERT, 700)
+    svg.text(76, 452, "The old system still holds the address of slot 7.", 17, TEXT)
+    svg.text(76, 482, "It opens a door that is now a zombie, or crashes.", 17, TEXT)
+    svg.text(76, 518, "The bug shows up far from where it was made,", 16, MUTED)
+    svg.text(76, 544, "and only on some runs.", 16, MUTED)
+
+    svg.box(720, 376, 630, 200, stroke=DONE, stroke_width=2)
+    svg.text(746, 416, "With a generational handle", 20, DONE, 700)
+    svg.text(746, 452, "The old system asks for (7, 3). The slot says 4.", 17, TEXT)
+    svg.text(746, 482, "3 is not 4, so the answer is: that object is gone.", 17, TEXT)
+    svg.text(746, 518, "Entities, meshes, materials, textures and buffers", 16, MUTED)
+    svg.text(746, 544, "all use this same idea.", 16, MUTED)
+    svg.write("stale-handles")
+
+
+def render_pipeline():
+    svg = Svg(1400, 700)
+    svg.text(50, 58, "The render pipeline today", 32, TEXT, 700)
+    svg.text(50, 90, "Deliberately small: one pass for the world, one for the debug overlay. Phase 7 fills in the dashed part.", 18, MUTED)
+
+    steps = [
+        ("ECS", "entities with", "WorldTransform and", "MeshRenderer", PANEL_EDGE),
+        ("Extract", "copied into a", "SceneView: camera,", "fog, draw list", ACCENT),
+        ("Mesh pass", "one draw per item,", "depth test, reverse-Z,", "materials", DONE),
+        ("Overlay", "Dear ImGui, in", "development", "builds", DONE),
+        ("Present", "the finished image", "goes to the", "screen", PANEL_EDGE),
+    ]
+    width = 240
+    gap = 26
+    for index, (name, line1, line2, line3, stroke) in enumerate(steps):
+        x = 50 + index * (width + gap)
+        svg.box(x, 130, width, 158, stroke=stroke, stroke_width=2)
+        svg.text(x + width / 2, 172, name, 22, TEXT, 700, "middle")
+        svg.text(x + width / 2, 208, line1, 15.5, MUTED, 400, "middle")
+        svg.text(x + width / 2, 232, line2, 15.5, MUTED, 400, "middle")
+        svg.text(x + width / 2, 256, line3, 15.5, MUTED, 400, "middle")
+        if index < len(steps) - 1:
+            svg.line(x + width + 2, 209, x + width + gap - 2, 209)
+
+    svg.box(30, 322, 1340, 150, fill="#181c26", stroke="#262c3a", radius=12)
+    svg.text(55, 358, "Inside the shader, for each pixel of each mesh", 19, TEXT, 700)
+    shading = [
+        ("Base color", "texture × factor"),
+        ("Cut-out", "discard if see-through"),
+        ("Fake light", "one fixed direction"),
+        ("Fog", "fades with distance"),
+    ]
+    for index, (name, detail) in enumerate(shading):
+        x = 55 + index * 325
+        svg.box(x, 376, 300, 76, stroke=PANEL_EDGE)
+        svg.text(x + 150, 408, name, 18, TEXT, 600, "middle")
+        svg.text(x + 150, 434, detail, 15, MUTED, 400, "middle")
+        if index < len(shading) - 1:
+            svg.line(x + 301, 414, x + 323, 414)
+
+    svg.box(30, 506, 1340, 158, fill=BACKGROUND, stroke=PLANNED, dashed=True, radius=12)
+    svg.text(55, 542, "Planned for Phase 7", 19, MUTED, 700)
+    planned = ["Depth and normals", "Light clustering", "Ambient occlusion", "PBR shading", "Transparency", "Post-processing"]
+    for index, name in enumerate(planned):
+        x = 55 + index * 217
+        svg.box(x, 562, 200, 72, fill=BACKGROUND, stroke=PLANNED, dashed=True)
+        svg.text(x + 100, 604, name, 16, MUTED, 600, "middle")
+    svg.write("render-pipeline")
+
+
+def bindless():
+    svg = Svg(1400, 560)
+    svg.text(50, 58, "How one draw finds its data", 32, TEXT, 700)
+    svg.text(50, 90, "The draw carries five small numbers. The GPU follows them to everything else.", 18, MUTED)
+
+    svg.box(50, 130, 330, 370, stroke=ACCENT, stroke_width=2)
+    svg.text(215, 172, "Push constants", 21, TEXT, 700, "middle")
+    svg.text(215, 198, "20 bytes, set for each draw", 15, MUTED, 400, "middle")
+    rows = ["frame table", "instance table", "instance number", "material table", "material number"]
+    for index, name in enumerate(rows):
+        svg.box(80, 218 + index * 52, 270, 42, fill="#1a2030", stroke=PANEL_EDGE, radius=6)
+        svg.text(215, 245 + index * 52, name, 16, TEXT, 500, "middle")
+
+    targets = [
+        (130, "FrameData", "view-projection matrix, camera, fog"),
+        (262, "InstanceData", "world matrix of this draw"),
+        (394, "MaterialData", "factors and texture numbers"),
+    ]
+    for y, name, detail in targets:
+        svg.box(520, y, 420, 106, stroke=PANEL_EDGE)
+        svg.text(730, y + 44, name, 20, TEXT, 700, "middle")
+        svg.text(730, y + 74, detail, 15.5, MUTED, 400, "middle")
+    svg.line(351, 239, 518, 183)
+    svg.line(351, 317, 518, 315)
+    svg.line(351, 421, 518, 447)
+
+    svg.box(1060, 262, 290, 238, stroke=DONE, stroke_width=2)
+    svg.text(1205, 304, "All textures", 20, TEXT, 700, "middle")
+    svg.text(1205, 330, "one big array", 15, MUTED, 400, "middle")
+    svg.text(1205, 356, "up to 4096", 15, MUTED, 400, "middle")
+    for row in range(3):
+        for column in range(5):
+            svg.box(1086 + column * 48, 376 + row * 36, 42, 30, fill="#1a2030", stroke=PANEL_EDGE, radius=4)
+    svg.line(941, 447, 1058, 420)
+    svg.write("bindless")
+
+
+def character_move():
+    svg = Svg(1400, 660)
+    svg.text(50, 58, "One step of walking, 60 times per second", 32, TEXT, 700)
+    svg.text(50, 90, "The game decides where the player wants to go. Jolt decides how far the world lets them.", 18, MUTED)
+
+    steps = [
+        ("Wish", "keys become a direction,", "speed from walk, run, crouch", ACCENT),
+        ("Gravity", "added by the game,", "skipped on a ladder", ACCENT),
+        ("Move the capsule", "Jolt sweeps it through", "the level and the doors", DONE),
+        ("Measure", "real speed = distance moved", "÷ time of the step", DONE),
+    ]
+    width = 310
+    gap = 20
+    for index, (name, line1, line2, color) in enumerate(steps):
+        x = 50 + index * (width + gap)
+        svg.box(x, 130, width, 132, stroke=color, stroke_width=2)
+        svg.text(x + width / 2, 172, name, 21, TEXT, 700, "middle")
+        svg.text(x + width / 2, 206, line1, 15.5, MUTED, 400, "middle")
+        svg.text(x + width / 2, 232, line2, 15.5, MUTED, 400, "middle")
+        if index < len(steps) - 1:
+            svg.line(x + width + 2, 196, x + width + gap - 2, 196)
+
+    svg.text(205, 296, "game code", 15, ACCENT, 600, "middle")
+    svg.text(865, 296, "physics module", 15, DONE, 600, "middle")
+
+    cards = [
+        ("Walls", "Slide along them", "instead of stopping dead"),
+        ("Steps", "Climbed up to 0.4 m", "with no jump needed"),
+        ("Slopes", "Walkable up to 50°", "steeper ones are walls"),
+        ("Doors", "Boxes that move", "with their animation"),
+    ]
+    for index, (name, line1, line2) in enumerate(cards):
+        x = 50 + index * (width + gap)
+        svg.box(x, 326, width, 132, stroke=PANEL_EDGE)
+        svg.text(x + width / 2, 366, name, 20, TEXT, 700, "middle")
+        svg.text(x + width / 2, 400, line1, 16, TEXT, 400, "middle")
+        svg.text(x + width / 2, 426, line2, 15, MUTED, 400, "middle")
+
+    svg.box(50, 492, 1300, 130, stroke=PANEL_EDGE)
+    svg.text(80, 532, "What the capsule moves through", 19, TEXT, 700)
+    svg.text(80, 568, "The factory's visible level, 10,282 triangles, is also its collision mesh. There is no separate invisible version to keep in step.", 16.5, MUTED)
+    svg.text(80, 596, "The capsule is 1.7 m tall and 0.35 m in radius, and shrinks to 0.9 m when crouching. It only stands up if there is room.", 16.5, MUTED)
+    svg.write("character-move")
+
+
+def fixed_step():
+    svg = Svg(1400, 640)
+    svg.text(50, 58, "Two clocks: the world's and the screen's", 32, TEXT, 700)
+    svg.text(50, 90, "The world ticks at a steady 60 Hz. The screen draws whenever it can, and shows the moment between two ticks.", 18, MUTED)
+
+    left = 170
+    tick = 165
+    svg.text(50, 196, "Fixed steps", 17, TEXT, 700)
+    svg.line(left - 20, 190, 1350, 190, arrow=True)
+    for index in range(7):
+        x = left + index * tick
+        svg.parts.append(f'<circle cx="{x}" cy="190" r="9" fill="{DONE}"/>')
+        svg.text(x, 170, f"{index * 1000 / 60:.1f}", 14, MUTED, 400, "middle")
+    svg.text(1270, 170, "ms", 14, MUTED)
+
+    svg.text(50, 306, "Frames", 17, TEXT, 700)
+    svg.line(left - 20, 300, 1350, 300, arrow=True)
+    frames = [0.0, 0.8, 1.5, 3.4, 4.3, 5.6]
+    for index, position in enumerate(frames):
+        x = left + position * tick
+        color = ACCENT
+        svg.box(x - 12, 284, 24, 32, fill=color, stroke=color, radius=4)
+        svg.line(x, 282, x, 204, stroke=PANEL_EDGE, width=1.5, arrow=False, dashed=True)
+    svg.text(left + 2.45 * tick, 344, "a slow frame: two steps to catch up", 15.5, ALERT, 500, "middle")
+
+    svg.box(50, 376, 640, 224, stroke=PANEL_EDGE)
+    svg.text(76, 416, "Worked example: a frame took 40 ms", 20, TEXT, 700)
+    svg.text(76, 454, "With nothing owed before, 40 ms are now owed.", 17, TEXT)
+    svg.text(76, 484, "Two steps of 16.7 ms fit, so the world ticks twice.", 17, TEXT)
+    svg.text(76, 514, "6.7 ms stay in the account for the next frame.", 17, TEXT)
+    svg.text(76, 544, "6.7 ÷ 16.7 = 0.4: the screen is 40% of the way", 17, TEXT)
+    svg.text(76, 570, "from the last position to the current one.", 17, TEXT)
+
+    svg.box(710, 376, 640, 224, stroke=PANEL_EDGE)
+    svg.text(736, 416, "What the camera draws", 20, TEXT, 700)
+    a = 790
+    b = 1270
+    svg.line(a, 490, b, 490, arrow=False, width=3)
+    svg.parts.append(f'<circle cx="{a}" cy="490" r="11" fill="{DONE}"/>')
+    svg.parts.append(f'<circle cx="{b}" cy="490" r="11" fill="{DONE}"/>')
+    middle = a + 0.4 * (b - a)
+    svg.parts.append(f'<circle cx="{middle}" cy="490" r="11" fill="{ACCENT}"/>')
+    svg.text(a, 462, "previous step", 15, MUTED, 400, "middle")
+    svg.text(b, 462, "latest step", 15, MUTED, 400, "middle")
+    svg.text(middle, 462, "drawn: 0.4", 15, ACCENT, 600, "middle")
+    svg.text(736, 548, "Smooth on any monitor, at the price of showing", 16.5, MUTED)
+    svg.text(736, 574, "the player up to one step (16.7 ms) in the past.", 16.5, MUTED)
+    svg.write("fixed-step")
+
+
+OLD = NEXT
+NEW = DONE
+
+
+def compare_table(name, title, subtitle, rows, old_label="Old Daidalos", new_label="Daidalos Engine Next"):
+    """A table of "then and now" rows: (topic, old line, new line)."""
+    row_height = 88
+    top = 178
+    height = top + len(rows) * row_height + 40
+    svg = Svg(1400, height)
+    svg.text(50, 58, title, 32, TEXT, 700)
+    svg.text(50, 90, subtitle, 18, MUTED)
+    svg.text(280, 150, old_label, 20, OLD, 700)
+    svg.text(840, 150, new_label, 20, NEW, 700)
+    for index, (topic, old, new) in enumerate(rows):
+        y = top + index * row_height
+        svg.box(50, y, 1300, row_height - 10, fill=PANEL if index % 2 == 0 else "#191d28", stroke="#262c3a", radius=8)
+        svg.text(72, y + 46, topic, 17.5, TEXT, 600)
+        for x, value in ((280, old), (840, new)):
+            lines = value if isinstance(value, tuple) else (value,)
+            start = y + (46 if len(lines) == 1 else 34)
+            for line_index, line in enumerate(lines):
+                svg.text(x, start + line_index * 25, line, 16, TEXT if line_index == 0 else MUTED)
+    svg.write(name)
+
+
+def compare_objects():
+    svg = Svg(1400, 760)
+    svg.text(50, 58, "A door, then and now", 32, TEXT, 700)
+    svg.text(50, 90, "On the left, a door is a kind of something. On the right, a door is a list of parts.", 18, MUTED)
+
+    svg.box(30, 120, 620, 600, fill="#181c26", stroke="#262c3a", radius=12)
+    svg.text(55, 158, "Old Daidalos: a family tree", 20, OLD, 700)
+
+    def node(x, y, width, label, stroke=PANEL_EDGE):
+        svg.box(x, y, width, 54, stroke=stroke)
+        svg.text(x + width / 2, y + 34, label, 16, TEXT, 600, "middle")
+
+    node(225, 186, 170, "IEntity", OLD)
+    svg.text(405, 208, "health, particles,", 14, MUTED)
+    svg.text(405, 228, "id, flag...", 14, MUTED)
+    node(70, 286, 220, "ICollidableEntity")
+    node(350, 286, 220, "ITriggerEntity")
+    svg.line(285, 241, 190, 284)
+    svg.line(335, 241, 450, 284)
+    node(70, 376, 220, "IEnemyEntity")
+    svg.line(180, 341, 180, 374)
+    node(70, 466, 220, "CZombieEntity")
+    svg.line(180, 431, 180, 464)
+    node(350, 376, 220, "CDoorEntity", OLD)
+    node(350, 442, 220, "CLadderEntity")
+    node(350, 508, 220, "CHandgunAmmoEntity")
+    svg.line(450, 341, 450, 374)
+    svg.text(460, 590, "...and 21 entity classes in all", 15, MUTED, 400, "middle")
+    svg.text(55, 640, "A door inherits a health value it has no use for,", 16, MUTED)
+    svg.text(55, 666, "and each new mix of abilities needs a new place in the tree.", 16, MUTED)
+
+    svg.box(670, 120, 700, 600, fill="#181c26", stroke="#262c3a", radius=12)
+    svg.text(695, 158, "Daidalos Engine Next: a table", 20, NEW, 700)
+    components = ["Transform", "Mesh", "Door", "Body", "Pickup", "Ladder", "Camera", "Player"]
+    entities = [
+        ("Door", {0, 1, 2, 3}),
+        ("Pickup", {0, 1, 4}),
+        ("Ladder", {0, 1, 5}),
+        ("Player", {0, 6, 7}),
+    ]
+    left = 790
+    width = 70
+    for index, name in enumerate(components):
+        svg.parts.append(
+            f'<text transform="translate({left + index * width + 42},232) rotate(-38)" font-family="{FONT}" '
+            f'font-size="14.5" fill="{MUTED}">{name}</text>'
+        )
+    for row, (name, has) in enumerate(entities):
+        y = 250 + row * 76
+        svg.text(695, y + 42, name, 17, TEXT, 600)
+        for column in range(len(components)):
+            present = column in has
+            svg.box(left + column * width + 6, y, width - 12, 62, fill="#21403a" if present else BACKGROUND,
+                    stroke=NEW if present else "#262c3a", radius=6)
+    svg.text(695, 588, "Entities are only numbers. Any mix of components is allowed,", 16, MUTED)
+    svg.text(695, 614, "and giving a crate a health value later touches no other class.", 16, MUTED)
+    svg.text(695, 666, "Zombies join this table in Phase 6.", 16, MUTED)
+    svg.write("compare-objects")
+
+
+def compare_collision():
+    compare_table(
+        "compare-collision",
+        "Collision, then and now",
+        "From my own BSP code to a library, and what that trade really cost.",
+        [
+            ("Written by", ("Me: about 2,400 lines of BSP code", "licence headers included"), ("Jolt, an open-source library", "a 370-line wrapper around it")),
+            ("The world", ("A BSP tree of brushes", "convex shapes, split by planes"), ("A triangle mesh", "the level as it is drawn")),
+            ("The player", "An ellipse, slid along planes", "A capsule, moved by Jolt each step"),
+            ("Steps", ("Retry 0.4 units higher", "when a wall stops the move"), ("Built in, up to 0.4 m", "plus sticking to the floor going down")),
+            ("Doors", ("Collision switched on or off", "solid until fully open, solid again as it starts closing"), ("A box that follows the door", "each step of its animation")),
+            ("Timing", ("Every 16 ms of elapsed time", "with a variable step, per entity"), ("Exactly 60 times per second", "for everything")),
+            ("Queries", "Slide and collision point", "Rays, returning a surface and a normal"),
+        ],
+    )
+
+
+def compare_rendering():
+    svg = Svg(1400, 790)
+    svg.text(50, 58, "A frame, then and now", 32, TEXT, 700)
+    svg.text(50, 90, "Same goal: many lights in dark corridors. The new frame is much simpler today, and it has not earned the comparison yet.", 18, MUTED)
+
+    svg.box(30, 120, 660, 630, fill="#181c26", stroke="#262c3a", radius=12)
+    svg.text(55, 158, "Old Daidalos: deferred shading on DirectX 9", 20, OLD, 700)
+    old = [
+        ("Fill", "color, normal, specular, depth into 4 textures"),
+        ("Spot lights", "shadow map if it casts one, then one draw per light"),
+        ("Point lights", "one draw per light, limited to its area on screen"),
+        ("Directional lights", "shadow map if it casts one, then one draw per light"),
+        ("Combine", "color × accumulated light"),
+        ("Post-processing", "glow and blur"),
+        ("Skybox", "drawn behind what is already there"),
+        ("Transparent, particles", "a second, forward path"),
+    ]
+    for index, (name, detail) in enumerate(old):
+        y = 178 + index * 68
+        svg.box(55, y, 610, 58, stroke=PANEL_EDGE)
+        svg.text(75, y + 25, name, 17, TEXT, 600)
+        svg.text(75, y + 47, detail, 14.5, MUTED)
+
+    svg.box(710, 120, 660, 630, fill="#181c26", stroke="#262c3a", radius=12)
+    svg.text(735, 158, "Daidalos Engine Next: forward on Vulkan 1.3", 20, NEW, 700)
+    svg.text(735, 192, "Today", 16, NEW, 700)
+    now = [("Mesh pass", "every mesh, fixed light, fog"), ("Overlay", "debug interface")]
+    for index, (name, detail) in enumerate(now):
+        y = 206 + index * 68
+        svg.box(735, y, 610, 58, stroke=NEW)
+        svg.text(755, y + 25, name, 17, TEXT, 600)
+        svg.text(755, y + 47, detail, 14.5, MUTED)
+    svg.text(735, 366, "Phase 7, not written yet", 16, MUTED, 700)
+    later = [
+        ("Depth and normals", "a quick first pass"),
+        ("Clusters", "the view cut into cells, each with its light list"),
+        ("Ambient occlusion", "contact shadows, from the first pass"),
+        ("PBR shading, then transparency", "one material path for both"),
+    ]
+    for index, (name, detail) in enumerate(later):
+        y = 380 + index * 68
+        svg.box(735, y, 610, 58, fill=BACKGROUND, stroke=PLANNED, dashed=True)
+        svg.text(755, y + 25, name, 17, MUTED, 600)
+        svg.text(755, y + 47, detail, 14.5, MUTED)
+    svg.write("compare-rendering")
+
+
+def compare_errors():
+    svg = Svg(1400, 620)
+    svg.text(50, 58, "When a file is missing, then and now", 32, TEXT, 700)
+    svg.text(50, 90, "The old engine threw exceptions. The new one returns failure as a value.", 18, MUTED)
+
+    def flow(x, title, color, steps, note):
+        svg.box(x, 120, 650, 460, fill="#181c26", stroke="#262c3a", radius=12)
+        svg.text(x + 25, 158, title, 20, color, 700)
+        for index, (name, detail) in enumerate(steps):
+            y = 178 + index * 88
+            svg.box(x + 25, y, 600, 68, stroke=PANEL_EDGE)
+            svg.text(x + 45, y + 30, name, 17, TEXT, 600)
+            svg.text(x + 45, y + 54, detail, 14.5, MUTED)
+            if index < len(steps) - 1:
+                svg.line(x + 325, y + 69, x + 325, y + 87)
+        svg.text(x + 25, 554, note, 16, MUTED)
+
+    flow(
+        40,
+        "Old Daidalos",
+        OLD,
+        [
+            ("Loader", "throw CExceptionLoad(filename)"),
+            ("Each function in between", "looks as if nothing can go wrong"),
+            ("No catch anywhere in the game path", "only the thread pool catches anything"),
+            ("The program stops", "an uncaught exception ends it"),
+        ],
+        "Nothing in a function's signature says that it can fail.",
+    )
+    flow(
+        710,
+        "Daidalos Engine Next",
+        NEW,
+        [
+            ("Loader", "return tl::unexpected(Error{NotFound, module, message})"),
+            ("Result<Model*>", "each caller must look before using the value"),
+            ("The caller decides", "report, retry, or pass it up with more context"),
+            ("Startup failed? Roll back", "started steps stop in reverse order"),
+        ],
+        "The signature says it: this call can fail, and here is what you get.",
+    )
+    svg.write("compare-errors")
+
+
+def compare_ownership():
+    compare_table(
+        "compare-ownership",
+        "Who owns what, then and now",
+        "Assets and global services. One old idea survived: the path of a file is its identity.",
+        [
+            ("Finding the renderer", ("IRenderer::GetRenderer(), a global", "99 calls in 32 source files"), ("Passed in where it is needed", "you can see who uses it")),
+            ("Global managers", ("5 singletons", "resources, media, config, input, sound"), ("None of these", "logging stays global")),
+            ("Finding a loader", ("Registered by file extension", "at run time"), ("Typed functions", "LoadModel, LoadImageFile")),
+            ("Asset lifetime", ("Reference count per resource", "AddReference, Release, by hand"), ("AssetLibrary owns all of them", "released together with the scene")),
+            ("Using an asset", "A raw pointer", ("A generational handle", "a stale one is detected")),
+            ("Destroying GPU data", ("Immediate", "DirectX 9 tracks what the GPU uses"), ("Deferred", "until the GPU has finished with it")),
+        ],
+    )
+
+
 def find_browser():
     candidates = [
         shutil.which("msedge"),
@@ -357,6 +840,17 @@ def main():
     roadmap()
     deferred_destruction()
     asset_pipeline()
+    ecs_sparse_set()
+    stale_handles()
+    render_pipeline()
+    bindless()
+    character_move()
+    fixed_step()
+    compare_objects()
+    compare_collision()
+    compare_rendering()
+    compare_errors()
+    compare_ownership()
     export_png()
 
 

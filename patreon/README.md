@@ -12,6 +12,16 @@ Drafts of my Patreon posts about building Daidalos Engine Next. Each post is cop
 | 004 | [From an empty repository to a first frame](posts/004-from-empty-repository-to-first-frame.md) | Progress, Phases 0 to 3 | Draft, 1 passage for me to write |
 | 005 | [Goodbye, cubes](posts/005-goodbye-cubes.md) | Progress, Phase 4 | Draft, 1 passage for me to write |
 | 006 | [The old factory wakes up](posts/006-the-old-factory-wakes-up.md) | Progress, Phase 5 | Draft, 2 passages for me to write, no screenshot until the demo's assets are cleared |
+| 007 | [What is a door made of?](posts/007-what-is-a-door-made-of.md) | Inside the engine: ECS | Draft |
+| 008 | [The handle that knows its object is gone](posts/008-the-handle-that-knows-its-object-is-gone.md) | Inside the engine: handles | Draft |
+| 009 | [From entity to pixel](posts/009-from-entity-to-pixel.md) | Inside the engine: render pipeline | Draft |
+| 010 | [How the player walks](posts/010-how-the-player-walks.md) | Inside the engine: collision | Draft, 1 passage for me to write, publish after PR #5 is merged |
+| 011 | [Two clocks](posts/011-two-clocks.md) | Inside the engine: fixed step | Draft, publish after PR #5 is merged |
+| 012 | [The door, then and now](posts/012-the-door-then-and-now.md) | Then and now: entities | Draft, 1 passage for me to write |
+| 013 | [My BSP tree and a library](posts/013-my-bsp-tree-and-a-library.md) | Then and now: collision | Draft, 2 passages for me to write, publish after PR #5 is merged |
+| 014 | [A frame, then and now](posts/014-a-frame-then-and-now.md) | Then and now: rendering | Draft, 1 passage for me to write |
+| 015 | [When a file is missing](posts/015-when-a-file-is-missing.md) | Then and now: errors | Draft |
+| 016 | [Who owns this texture?](posts/016-who-owns-this-texture.md) | Then and now: ownership | Draft |
 
 ## Layout
 
@@ -24,7 +34,7 @@ tools/      diagrams.py regenerates diagrams/ and images/ (needs Python and Edge
 
 ## How posts are produced
 
-Every completed phase gets at least one progress post. A notable design decision can get its own architecture post. The roadmap post is updated when the plan changes.
+Every completed phase gets at least one progress post. A notable design decision can get its own architecture post. The roadmap post is updated when the plan changes. Between phases, two short series fill the gaps: "Inside the engine" explains one part, and "Then and now" compares one part with the old engine, using facts from its source code in `../daidalos-engine`.
 
 1. Facts come from the repository: commits, ADRs, test runs, screenshots of the real engine.
 2. Diagrams go in `tools/diagrams.py`, so that they stay editable and share one look.
