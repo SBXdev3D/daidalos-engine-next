@@ -117,6 +117,13 @@ core::Result<void> Application::Run(IApplicationHandler& handler) {
             return {};
         },
         [this] { m_workers.reset(); });
+    startup.Add(
+        "audio",
+        [this]() -> core::Result<void> {
+            CreateAudio();
+            return {};
+        },
+        [this] { m_audio.reset(); });
     startup.Add("renderer", [this] { return CreateRenderer(); }, [this] { m_renderer.reset(); });
     startup.Add(
         "debug overlay", [this] { return CreateDebugOverlay(); },
@@ -163,6 +170,9 @@ core::Result<void> Application::LoadConfiguration() {
         m_vsync = m_cvars.Register<bool>("renderer.vsync", true, "Synchronize presentation with the display");
         m_validation = m_cvars.Register<bool>("renderer.validation", kValidationByDefault,
                                               "Enable the Vulkan validation layers, read at startup");
+        m_volume = m_cvars.Register<double>("audio.volume", 1.0, "Overall volume, from 0 to 1, read at startup");
+        m_effectsVolume = m_cvars.Register<double>("audio.effects", 1.0, "Volume of sound effects, read at startup");
+        m_musicVolume = m_cvars.Register<double>("audio.music", 1.0, "Volume of music, read at startup");
     }
 
     if (!m_config.configFile.empty()) {
@@ -197,6 +207,22 @@ core::Result<void> Application::CreateMainWindow() {
     }
     m_window.emplace(std::move(*window));
     return {};
+}
+
+void Application::CreateAudio() {
+    if (!m_config.audio) {
+        return;
+    }
+    core::Result<audio::AudioEngine> created = audio::AudioEngine::Create({
+        .volume = static_cast<float>(m_volume->Get()),
+        .effectsVolume = static_cast<float>(m_effectsVolume->Get()),
+        .musicVolume = static_cast<float>(m_musicVolume->Get()),
+    });
+    if (created) {
+        m_audio.emplace(std::move(*created));
+    } else {
+        DAI_LOG_WARNING(kModule, "Running without sound: {}", core::Format(created.error()));
+    }
 }
 
 core::Result<void> Application::CreateRenderer() {

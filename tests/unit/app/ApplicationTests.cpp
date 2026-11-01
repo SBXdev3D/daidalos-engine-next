@@ -114,6 +114,14 @@ TEST_F(ApplicationTest, RunCallsHandlerInOrderAndShutsDown) {
     ExpectEverythingStopped();
 }
 
+TEST_F(ApplicationTest, RunsWithOrWithoutAnAudioOutput) {
+    m_config.audio = true;
+    app::Application application(m_config);
+    RecordingHandler handler;
+    EXPECT_TRUE(application.Run(handler).has_value());
+    ExpectEverythingStopped();
+}
+
 TEST_F(ApplicationTest, MainWindowUsesConfiguredSize) {
     Application app(m_config);
 

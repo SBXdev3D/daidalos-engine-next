@@ -70,13 +70,15 @@ struct ApplicationConfig {
     platform::WindowConfig window;
     /// Starts the renderer, which needs Vulkan and a video driver that supports it (not "dummy").
     bool rendering = false;
+    /// Opens the audio output. Without one, the game runs silently.
+    bool audio = false;
     core::FrameTimerConfig frameTimer;
 };
 
 /// Starts the engine, runs the main loop and shuts everything down in reverse order.
 ///
 /// Startup order: logging, crash handler, configuration (cvars), platform, main window, worker pool,
-/// renderer, debug overlay, scene slot, handler.
+/// audio, renderer, debug overlay, scene slot, handler.
 /// If a step fails, the steps already started are stopped (StartupSequence) and Run returns the error.
 /// The loop ends when the main window is closed, the system asks to quit, RequestQuit is called, or
 /// rendering fails, in which case Run returns that error after shutting down.
@@ -116,12 +118,15 @@ public:
     /// The overlay, or null without ApplicationConfig::rendering. Valid between OnStart and OnStop.
     [[nodiscard]] debugui::DebugUi* DebugOverlay() noexcept { return m_debugUi ? &*m_debugUi : nullptr; }
 #endif
+    /// Null when silent, which a scene accepts. Scenes must be created with this engine to be heard.
+    [[nodiscard]] audio::AudioEngine* Audio() noexcept { return m_audio.has_value() ? &*m_audio : nullptr; }
     [[nodiscard]] core::CVarRegistry& CVars() noexcept { return m_cvars; }
     [[nodiscard]] const ApplicationConfig& Config() const noexcept { return m_config; }
 
 private:
     core::Result<void> LoadConfiguration();
     core::Result<void> CreateMainWindow();
+    void CreateAudio();
     core::Result<void> CreateRenderer();
     core::Result<void> CreateDebugOverlay();
     void RenderFrame(IApplicationHandler& handler);
@@ -136,9 +141,13 @@ private:
     std::optional<core::CVar<std::int64_t>> m_windowHeight;
     std::optional<core::CVar<bool>> m_vsync;
     std::optional<core::CVar<bool>> m_validation;
+    std::optional<core::CVar<double>> m_volume;
+    std::optional<core::CVar<double>> m_effectsVolume;
+    std::optional<core::CVar<double>> m_musicVolume;
     std::optional<platform::Platform> m_platform;
     std::optional<platform::Window> m_window;
     std::optional<core::WorkerPool> m_workers;
+    std::optional<audio::AudioEngine> m_audio;
     std::optional<renderer::Renderer> m_renderer;
 #if DAI_DEV_TOOLS
     std::optional<debugui::DebugUi> m_debugUi;

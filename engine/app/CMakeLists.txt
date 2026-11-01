@@ -5,6 +5,7 @@ dai_add_module(NAME app
         src/Application.cpp
         src/StartupSequence.cpp
     PUBLIC_DEPS
+        daidalos::audio
         daidalos::core
         daidalos::input
         daidalos::logging

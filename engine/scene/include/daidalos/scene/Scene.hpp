@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <daidalos/audio/Audio.hpp>
 #include <daidalos/core/FrameTimer.hpp>
 #include <daidalos/ecs/Schedule.hpp>
 #include <daidalos/ecs/World.hpp>
@@ -26,13 +27,15 @@ namespace daidalos::scene {
 class Scene {
 public:
     /// Assets are found under the root.
-    Scene(renderer::Renderer& renderer, std::filesystem::path assetRoot);
+    /// The audio engine is optional: without one, the scene is silent. It must outlive the scene.
+    Scene(renderer::Renderer& renderer, std::filesystem::path assetRoot, audio::AudioEngine* audio = nullptr);
     Scene(const Scene&) = delete;
     Scene& operator=(const Scene&) = delete;
 
     [[nodiscard]] ecs::World& World() { return m_world; }
     [[nodiscard]] renderer::AssetLibrary& Assets() { return m_assets; }
     [[nodiscard]] physics::PhysicsWorld& Physics() { return m_physics; }
+    [[nodiscard]] audio::SoundWorld& Sounds() { return m_sounds; }
 
     /// Runs on every fixed step (60 Hz by default), for what must not depend on the frame rate.
     [[nodiscard]] ecs::Schedule& FixedSystems() { return m_fixedSystems; }
@@ -56,7 +59,8 @@ public:
     void RunFrame(core::Seconds delta, float fixedAlpha = 0.0f);
     /// For frame systems that draw between two fixed steps.
     [[nodiscard]] float FixedAlpha() const { return m_fixedAlpha; }
-    /// Computes the world transforms and fills the view.
+    /// Computes the world transforms and fills the view. Sounds follow the same transforms, and the
+    /// listener is the camera.
     void Extract(renderer::SceneView& view);
 
 private:
@@ -64,6 +68,7 @@ private:
     renderer::AssetLibrary m_assets;
     ecs::World m_world;
     physics::PhysicsWorld m_physics;
+    audio::SoundWorld m_sounds;
     ecs::Schedule m_fixedSystems;
     ecs::Schedule m_frameSystems;
     ecs::Entity m_activeCamera;

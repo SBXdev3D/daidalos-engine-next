@@ -16,7 +16,8 @@ The project is at an early stage. Phases 0 to 5 of the roadmap in [OVERVIEW.md](
 | `rhi` | Vulkan 1.3 device, swapchain, buffers, textures with mip levels and BC compression, pipelines, command lists, deferred destruction |
 | `renderer` | Mesh rendering with depth, materials, asset library, cameras, scene extraction from the ECS, shader hot reload |
 | `physics` | Jolt behind a small API: static meshes, kinematic boxes, raycasts, character movement |
-| `scene` | A world with its assets, physics, systems and camera |
+| `audio` | miniaudio behind a small API: clips, voices, 3D sounds, buses, silent without an output |
+| `scene` | A world with its assets, physics, sounds, systems and camera |
 | `debugui` | Dear ImGui overlay drawn through the RHI (development builds) |
 | `app` | Ordered startup with rollback, main loop, current scene |
 
@@ -112,6 +113,9 @@ sandbox.exe +window.width 1920 +window.height 1080
 | `window.height` | 720 | Main window height, in screen coordinates |
 | `renderer.vsync` | true | Synchronize presentation with the display |
 | `renderer.validation` | true in Debug | Enable the Vulkan validation layers, if installed |
+| `audio.volume` | 1 | Overall volume, from 0 to 1, read at startup |
+| `audio.effects` | 1 | Volume of sound effects, read at startup |
+| `audio.music` | 1 | Volume of music, read at startup |
 | `sandbox.frames` | 0 | Quit after this many frames; 0 runs until closed |
 | `sandbox.scene` | `Factory/Factory.gltf` | Level to load from `assets/` |
 | `sandbox.mouse` | 0.0025 | Radians per mouse unit |

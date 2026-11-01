@@ -31,7 +31,7 @@ flowchart LR
 | Phase | The demo gains | Status |
 |---|---|---|
 | 5: Scene | The level in the new engine, background loading, restart, doors, pickups, red card, darkness | Done |
-| 6: Physics and audio | Walking with collisions, jumps, crouching, ladders and solid doors (done), then sound, zombies with skeletal animation, hitscan weapons, damage and death | In progress |
+| 6: Physics and audio | Walking with collisions, jumps, crouching, ladders and solid doors, sound (done), then zombies with skeletal animation, hitscan weapons, damage and death | In progress |
 | 7: Modern rendering | Real lights replacing the fog, the flashlight's shadow, rotating alarms, normal maps, ambient occlusion, particles for smoke, blood and green fog | |
 | 8: GUI | The game's own HUD, crosshair, menus and loading screen | |
 | 9: AI, cinematics, optimization | Security camera, opening camera flight, better zombie navigation, culling | |
@@ -43,7 +43,7 @@ Zombies come earlier than the roadmap's AI phase, because a shooter with no one 
 - **Pace.** Faster movement, more enemies, ambushes when doors open: closer to Doom than to the original's slow zombies.
 - **Feel.** Hit feedback, screen flash on damage, stronger recoil and sway.
 - **Structure.** The factory level has shotgun ammunition, but no shotgun to pick up. The remake gets a shotgun pickup, a clear exit and an end-of-level summary of kills, items and time.
-- **Sound.** Spatial audio with occlusion by doors, if the audio library makes that cheap.
+- **Sound.** Spatial audio is done. Occlusion by doors can come later, with rays from the listener.
 
 ## Running it
 
@@ -81,6 +81,6 @@ Some legacy content is left out:
 
 - `eva.md2` and its texture `eva_d.png`, a test model the level does not use.
 - `test.wav` and `test2.wav`, which are leftover tests.
-- `enter_the_maze.wav`, the level's ambient track. At 31 MB of WAV, it waits for a compressed format in Phase 6.
+- `enter_the_maze.wav`, the level's ambient track, which is committed as a 3.4 MB OGG file instead.
 
 The site the free assets came from is not recorded yet, and Patreon screenshots need it for attribution.

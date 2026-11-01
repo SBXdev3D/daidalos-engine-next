@@ -78,7 +78,7 @@ public:
         DAI_LOG_INFO("sandbox", "Assets in '{}'", m_assetRoot.string());
 
         // The first scene is current at once: the renderer's owner then releases it on any failure.
-        app.SetScene(std::make_unique<scene::Scene>(app.Renderer(), m_assetRoot));
+        app.SetScene(std::make_unique<scene::Scene>(app.Renderer(), m_assetRoot, app.Audio()));
         LoadLevel(app, *app.CurrentScene());
         app.MainWindow().SetMouseCaptured(true);
         return {};
@@ -94,7 +94,7 @@ public:
             app.MainWindow().SetMouseCaptured(m_mouseCaptured);
         }
         if (m_actions.WasPressed(input, sandbox::Restart) && !m_loading) {
-            m_nextScene = std::make_unique<scene::Scene>(app.Renderer(), m_assetRoot);
+            m_nextScene = std::make_unique<scene::Scene>(app.Renderer(), m_assetRoot, app.Audio());
             LoadLevel(app, *m_nextScene);
         }
         ++m_totalFrames;
@@ -272,6 +272,7 @@ int main(int argc, char** argv) {
     config.arguments.assign(argv + 1, argv + argc);
     config.window.title = "Daidalos Sandbox";
     config.rendering = true;
+    config.audio = true;
 
     app::Application application(std::move(config));
     Sandbox sandbox;
