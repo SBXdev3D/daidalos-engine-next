@@ -7,5 +7,6 @@ dai_add_test(NAME daidalos_core_tests
         ProfileTests.cpp
         ResultTests.cpp
         SlotPoolTests.cpp
+        WorkerPoolTests.cpp
     DEPS
         daidalos::core)

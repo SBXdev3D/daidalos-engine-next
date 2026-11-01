@@ -27,6 +27,7 @@ include(DaidalosSanitizers)
 include(DaidalosShaders)
 include(DaidalosTargets)
 
+find_package(Threads REQUIRED)
 find_package(directx-dxc CONFIG REQUIRED)
 find_package(fastgltf CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)

@@ -8,11 +8,14 @@ dai_add_module(NAME core
         include/daidalos/core/Profile.hpp
         include/daidalos/core/Result.hpp
         include/daidalos/core/SlotPool.hpp
+        include/daidalos/core/WorkerPool.hpp
         src/Assert.cpp
         src/CVarRegistry.cpp
         src/Error.cpp
         src/FrameTimer.cpp
+        src/WorkerPool.cpp
     PUBLIC_DEPS
+        Threads::Threads
         tl::expected)
 
 # The profiling macros expand to Tracy calls in every module that uses them, so Tracy is a public dependency.
