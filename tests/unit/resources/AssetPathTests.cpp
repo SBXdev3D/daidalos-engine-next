@@ -29,8 +29,9 @@ TEST(NormalizeAssetPath, KeepsTheCase) {
 }
 
 TEST(NormalizeAssetPath, RejectsPathsThatAreNotUnderTheRoot) {
-    for (const char* path : {"", ".", "/models/crate.gltf", "C:/models/crate.gltf", "../crate.gltf",
-                             "models/../../crate.gltf", "models/"}) {
+    for (const char* path :
+         {"", ".", "/models/crate.gltf", "C:/models/crate.gltf", "../crate.gltf", "models/../../crate.gltf", "models/",
+          "C:crate.gltf", "models/C:/crate.gltf", "crate.gltf:stream", "\\\\server\\share\\crate.gltf"}) {
         const core::Result<std::string> normalized = NormalizeAssetPath(path);
         ASSERT_FALSE(normalized.has_value()) << path;
         EXPECT_EQ(normalized.error().code, core::ErrorCode::InvalidArgument) << path;

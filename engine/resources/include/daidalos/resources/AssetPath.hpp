@@ -15,7 +15,8 @@ namespace daidalos::resources {
 /// The identity of an asset: a path relative to an asset root, in UTF-8, with forward slashes and
 /// without "." or ".." (ADR-0016). Two spellings of a file give the same string, and the case is kept
 /// because the case of file names matters on Linux. Fails with InvalidArgument on an empty path, an
-/// absolute path, or a path that leaves the root.
+/// absolute path, a path with a ':', or a path that leaves the root. The result is the same on every
+/// platform.
 [[nodiscard]] core::Result<std::string> NormalizeAssetPath(std::string_view path);
 
 /// Finds a normalized asset path under the root. The case must match the files on disk on every

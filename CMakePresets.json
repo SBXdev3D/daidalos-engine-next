@@ -97,7 +97,12 @@
     { "name": "windows-msvc-profile", "inherits": "test-base", "configurePreset": "windows-msvc-profile", "configuration": "RelWithDebInfo" },
     { "name": "linux-clang-debug", "inherits": "test-base", "configurePreset": "linux-clang-debug" },
     { "name": "linux-clang-release", "inherits": "test-base", "configurePreset": "linux-clang-release" },
-    { "name": "linux-clang-asan", "inherits": "test-base", "configurePreset": "linux-clang-asan" },
+    {
+      "name": "linux-clang-asan",
+      "inherits": "test-base",
+      "configurePreset": "linux-clang-asan",
+      "environment": { "LSAN_OPTIONS": "suppressions=${sourceDir}/tests/lsan.supp:print_suppressions=0" }
+    },
     { "name": "linux-clang-profile", "inherits": "test-base", "configurePreset": "linux-clang-profile" }
   ]
 }

@@ -34,13 +34,14 @@ core::Result<std::string> NormalizeAssetPath(std::string_view path) {
     if (separators.empty()) {
         return core::MakeError(core::ErrorCode::InvalidArgument, std::string(kModule), "An asset path cannot be empty");
     }
-    const std::filesystem::path parsed = FromUtf8(separators);
-    if (parsed.is_absolute() || parsed.has_root_name() || separators.front() == '/') {
+    // Checked on the text: std::filesystem only sees a drive in "C:/file" on Windows, and an asset path
+    // must mean the same on every platform. Windows does not allow ':' in file names either.
+    if (separators.front() == '/' || separators.find(':') != std::string::npos) {
         return core::MakeError(core::ErrorCode::InvalidArgument, std::string(kModule),
                                std::format("Asset path '{}' must be relative to the asset root", path));
     }
 
-    const std::filesystem::path normal = parsed.lexically_normal();
+    const std::filesystem::path normal = FromUtf8(separators).lexically_normal();
     const std::string text = ToUtf8(normal);
     if (text == "." || text.empty() || text.back() == '/') {
         return core::MakeError(core::ErrorCode::InvalidArgument, std::string(kModule),
