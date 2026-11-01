@@ -15,9 +15,13 @@ Scene::Scene(renderer::Renderer& renderer, std::filesystem::path assetRoot)
 
 void Scene::RunFixedStep(core::Seconds step) {
     m_fixedSystems.Run(m_world, step);
+    const auto seconds = static_cast<float>(step.count());
+    physics::SyncKinematicBodies(m_world, m_physics, seconds);
+    m_physics.Step(seconds);
 }
 
-void Scene::RunFrame(core::Seconds delta) {
+void Scene::RunFrame(core::Seconds delta, float fixedAlpha) {
+    m_fixedAlpha = fixedAlpha;
     m_frameSystems.Run(m_world, delta);
 }
 

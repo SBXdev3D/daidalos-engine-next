@@ -6,8 +6,11 @@
 
 #include <daidalos/ecs/World.hpp>
 #include <daidalos/input/ActionMap.hpp>
+#include <daidalos/physics/PhysicsWorld.hpp>
 #include <daidalos/renderer/AssetLibrary.hpp>
 #include <daidalos/scene/Scene.hpp>
+
+#include <glm/vec3.hpp>
 
 #include <string>
 
@@ -19,7 +22,8 @@ namespace sandbox {
 enum Action : daidalos::input::Action {
     MoveForward,
     MoveRight,
-    MoveUp,
+    Jump,
+    Crouch,
     Run,
     Interact,
     ToggleFlashlight,
@@ -32,6 +36,16 @@ enum Action : daidalos::input::Action {
 
 /// The player's state, as a component of the camera entity.
 struct Player {
+    daidalos::physics::CharacterId character;
+    /// Where the feet were after the last two fixed steps: the camera draws in between.
+    glm::vec3 previousFeet{0.0f};
+    glm::vec3 feet{0.0f};
+    float verticalSpeed = 0.0f;
+    float eyeHeight = 1.65f;
+    bool crouching = false;
+    /// Presses last one frame, and fixed steps do not run on every frame: they wait here.
+    bool jumpPressed = false;
+    bool interactPressed = false;
     float yaw = 0.0f;
     float pitch = 0.0f;
     int health = 80;
@@ -53,8 +67,12 @@ struct Settings {
     float darkness = 1.0f;
 };
 
-/// Creates the entities of a level: the player, the doors and the pickups are found by the names of
-/// the model's nodes. Returns the player's entity.
+/// Places the player's eyes, for example from sandbox.start.
+void Teleport(daidalos::scene::Scene& scene, daidalos::ecs::Entity entity, const glm::vec3& eye);
+
+/// Creates the entities of a level: the player, the doors, the ladders and the pickups are found by
+/// the names of the model's nodes, and the "level" node is what the player walks on. Returns the
+/// player's entity.
 [[nodiscard]] daidalos::core::Result<daidalos::ecs::Entity> BuildLevel(daidalos::scene::Scene& scene,
                                                                        const daidalos::renderer::Model& model);
 

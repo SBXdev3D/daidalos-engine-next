@@ -46,6 +46,7 @@ ENTITY_KINDS = {
     "security_camera_entity": "security_camera",
     "teleporter_entity": "teleporter",
     "area_trigger_entity": "area_trigger",
+    "ladder_entity": "ladder",
     "player": "player",
 }
 # Attributes that the game reads. Others stay behind.
@@ -347,6 +348,7 @@ def convert(source, scene, output):
 
     def add_entity(kind, node, position, rotation, scale):
         mesh = None
+        bounds = ""
         file = BOX_MESHES.get(kind, node.get("file"))
         texture = texture_of(node)
         if file and texture and texture not in SKIPPED_TEXTURES:
@@ -356,7 +358,14 @@ def convert(source, scene, output):
                 geometry = Geometry()
                 geometry.add(triangles, [0.0, 0.0, 0.0], rotation_matrix(rotation), scale)
                 mesh = writer.mesh({texture: geometry})
-        writer.node(entity_name(kind, node), to_engine(position), mesh=mesh)
+                if kind == "ladder":
+                    # The box the player climbs in, in the world.
+                    origin = to_engine(position)
+                    low = [origin[axis] + min(point[axis] for point in geometry.positions) for axis in range(3)]
+                    high = [origin[axis] + max(point[axis] for point in geometry.positions) for axis in range(3)]
+                    bounds = (f";min={low[0]:.3f},{low[1]:.3f},{low[2]:.3f}"
+                              f";max={high[0]:.3f},{high[1]:.3f},{high[2]:.3f}")
+        writer.node(entity_name(kind, node) + bounds, to_engine(position), mesh=mesh)
         counts[kind] = counts.get(kind, 0) + 1
 
     def walk(parent, origin):

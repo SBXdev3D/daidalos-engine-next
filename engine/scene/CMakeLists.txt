@@ -5,4 +5,5 @@ dai_add_module(NAME scene
     PUBLIC_DEPS
         daidalos::core
         daidalos::ecs
+        daidalos::physics
         daidalos::renderer)

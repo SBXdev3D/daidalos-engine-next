@@ -30,8 +30,8 @@ flowchart LR
 
 | Phase | The demo gains | Status |
 |---|---|---|
-| 5: Scene | The level in the new engine, background loading, restart, flying, doors, pickups, red card, darkness | Done |
-| 6: Physics and audio | Walking with collisions, jumps, crouching and ladders, solid doors, hitscan weapons, sound, zombies with skeletal animation and their state machine, damage and death | Next |
+| 5: Scene | The level in the new engine, background loading, restart, doors, pickups, red card, darkness | Done |
+| 6: Physics and audio | Walking with collisions, jumps, crouching, ladders and solid doors (done), then sound, zombies with skeletal animation, hitscan weapons, damage and death | In progress |
 | 7: Modern rendering | Real lights replacing the fog, the flashlight's shadow, rotating alarms, normal maps, ambient occlusion, particles for smoke, blood and green fog | |
 | 8: GUI | The game's own HUD, crosshair, menus and loading screen | |
 | 9: AI, cinematics, optimization | Security camera, opening camera flight, better zombie navigation, culling | |
@@ -61,8 +61,10 @@ If the level is missing, the sandbox shows a test floor. Other glTF files can be
 |---|---|
 | Mouse, right stick | Look |
 | W, A, S, D, left stick | Move |
-| Space, C | Up, down, while the player flies (Phase 5) |
 | Shift | Run |
+| Space | Jump |
+| C, left Ctrl | Crouch |
+| W on a ladder | Climb up, or down when looking down |
 | E | Use a door |
 | F | Flashlight |
 | F5 | Restart |

@@ -8,6 +8,7 @@
     "glm",
     "gtest",
     "imgui",
+    "joltphysics",
     {
       "name": "ktx",
       "default-features": false

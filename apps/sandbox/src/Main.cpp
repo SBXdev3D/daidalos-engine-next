@@ -15,6 +15,7 @@
 #include <imgui.h>
 #endif
 
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -116,6 +117,12 @@ public:
         m_nextScene.reset();
         DAI_LOG_INFO("sandbox", "Stopping after {} frames, {} presented", m_totalFrames,
                      app.Renderer().Device().PresentedFrameCount());
+        if (scene::Scene* current = app.CurrentScene()) {
+            current->World().Each<sandbox::Player>([](ecs::Entity /*entity*/, const sandbox::Player& player) {
+                DAI_LOG_INFO("sandbox", "Player's feet at {:.2f} {:.2f} {:.2f}", player.feet.x, player.feet.y,
+                             player.feet.z);
+            });
+        }
     }
 
     [[nodiscard]] const std::optional<core::Error>& Failure() const { return m_failure; }
@@ -168,12 +175,15 @@ private:
             return;
         }
         ecs::World& world = target.World();
-        world.Each<sandbox::Player, ecs::LocalTransform>(
-            [&](ecs::Entity /*entity*/, sandbox::Player& player, ecs::LocalTransform& transform) {
-                transform.translation = position;
-                player.yaw = glm::radians(yaw);
-                player.pitch = glm::radians(pitch);
-            });
+        std::vector<ecs::Entity> players;
+        world.Each<sandbox::Player>([&](ecs::Entity entity, sandbox::Player& player) {
+            player.yaw = glm::radians(yaw);
+            player.pitch = glm::radians(pitch);
+            players.push_back(entity);
+        });
+        for (const ecs::Entity entity : players) {
+            sandbox::Teleport(target, entity, position);
+        }
     }
 
     static core::Result<void> BuildTestFloor(app::Application& app, scene::Scene& target) {
@@ -188,6 +198,12 @@ private:
         transform.scale = {12.0f, 0.1f, 12.0f};
         world.Add<ecs::LocalTransform>(floor, transform);
         world.Add<renderer::MeshRenderer>(floor, *cube);
+        const std::array<glm::vec3, 4> corners{glm::vec3(-6.0f, 0.0f, -6.0f), glm::vec3(-6.0f, 0.0f, 6.0f),
+                                               glm::vec3(6.0f, 0.0f, 6.0f), glm::vec3(6.0f, 0.0f, -6.0f)};
+        const std::array<std::uint32_t, 6> triangles{0, 1, 2, 0, 2, 3};
+        if (core::Result<physics::BodyId> body = target.Physics().AddStaticMesh(corners, triangles); !body) {
+            return tl::unexpected(std::move(body.error()));
+        }
         core::Result<ecs::Entity> player = sandbox::BuildLevel(target, renderer::Model{});
         if (!player) {
             return tl::unexpected(std::move(player.error()));
@@ -217,7 +233,8 @@ private:
                 }
             });
         }
-        ImGui::TextDisabled("WASD, Space, C: fly. E: use. F: flashlight. F5: restart. Tab: free the mouse.");
+        ImGui::TextDisabled(
+            "WASD: move. Shift: run. Space: jump. C: crouch. E: use. F: flashlight. F5: restart. Tab: free the mouse.");
         if (const std::string& error = app.Renderer().ShaderError(); !error.empty()) {
             ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "Shader reload failed:");
             ImGui::TextUnformatted(error.c_str());

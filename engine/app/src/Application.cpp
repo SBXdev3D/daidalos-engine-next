@@ -323,7 +323,7 @@ void Application::MainLoop(IApplicationHandler& handler) {
             DAI_PROFILE_SCOPE("Update");
             handler.OnUpdate(*this, time);
             if (m_currentScene) {
-                m_currentScene->RunFrame(time.delta);
+                m_currentScene->RunFrame(time.delta, static_cast<float>(time.alpha));
             }
         }
         if (m_renderer.has_value()) {

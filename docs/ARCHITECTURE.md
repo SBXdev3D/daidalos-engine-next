@@ -22,6 +22,7 @@ flowchart TD
     end
 
     subgraph world [World and data]
+        physics
         ecs
         resources
         input
@@ -38,6 +39,8 @@ flowchart TD
     app --> input
     scene --> renderer
     scene --> ecs
+    scene --> physics
+    physics --> ecs
     app -.-> debugui
     app --> renderer
     debugui --> rhi
@@ -68,7 +71,8 @@ To keep the graph readable, it omits the links to `core` and `logging` that near
 | `resources` | Asset paths, caches, decoding of files into plain CPU data | fastgltf, KTX, stb |
 | `rhi` | Vulkan 1.3 device, swapchain, buffers, textures, pipelines, command lists | Vulkan, volk, VMA |
 | `renderer` | Mesh pass, materials, asset library, cameras, ECS extraction, shader hot reload | |
-| `scene` | A world with its assets, systems, active camera and atmosphere | |
+| `physics` | Collisions and queries of a scene, with Jolt hidden inside | ADR-0018 |
+| `scene` | A world with its assets, physics, systems, active camera and atmosphere | |
 | `debugui` | Dear ImGui overlay drawn through the RHI | Dear ImGui |
 | `app` | Ordered startup with rollback, main loop, current scene | |
 
@@ -110,7 +114,7 @@ sequenceDiagram
     A->>A: Advance the frame timer
     loop 0 to n fixed steps
         A->>G: OnFixedUpdate
-        A->>S: Fixed systems
+        A->>S: Fixed systems, then physics
     end
     A->>G: OnUpdate
     A->>S: Frame systems
@@ -150,6 +154,7 @@ flowchart TD
     App --> Scene["scene::Scene"]
     Scene --> Library["AssetLibrary<br/>releases all its assets together"]
     Scene --> World["ecs::World<br/>entities and components"]
+    Scene --> Physics["physics::PhysicsWorld<br/>bodies and characters"]
     Library -. "handles" .-> MeshPass
     Library -. "handles" .-> Device
     World -. "handles" .-> MeshPass
@@ -182,11 +187,10 @@ flowchart LR
 | `tests/unit/<module>/` | Logic of one module, one executable per module | No |
 | `tests/gpu/<module>/` | `rhi`, `renderer`, `scene` and `debugui` on a real driver, with no mock device | Yes, or lavapipe on Linux |
 
-CI runs on pull requests and on `main`: Windows MSVC and Linux Clang, in Debug, Release, ASan and Profile, plus a formatting check. Its runners have no display, so tests that need a window skip themselves. Linux runs the headless GPU tests on lavapipe, and Windows runners have no Vulkan, so they skip all GPU tests.
+CI runs on pull requests and on `main`: Windows MSVC and Linux Clang, in Debug, Release, ASan and Profile, plus a formatting check. Linux runs all GPU tests on lavapipe, under a virtual display. Windows runners have no Vulkan, so they skip those tests.
 
 ## Known gaps
 
-- Tests that need a window (`renderer`, `AssetLibrary`, `scene`, `debugui`) only run on a developer's machine, on Windows so far. Running Linux CI under a virtual display would cover them on lavapipe.
 - No tool produces KTX2 files yet, although the loader reads them.
 - Lighting, clustering and ambient occlusion do not exist yet (Phase 7). Materials carry all the PBR data already, and the sandbox simulates darkness with fog.
 - Nothing collides, and the sandbox's player flies (Phase 6).

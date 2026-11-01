@@ -12,6 +12,8 @@
 #include <daidalos/renderer/Renderer.hpp>
 #include <daidalos/resources/Cache.hpp>
 
+#include <glm/vec3.hpp>
+
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -28,6 +30,9 @@ struct Model {
     struct Part {
         MeshHandle mesh;
         MaterialHandle material;
+        /// The triangles, also kept on the CPU for collisions and queries.
+        std::vector<glm::vec3> positions;
+        std::vector<std::uint32_t> indices;
     };
     struct Node {
         std::string name;

@@ -8,6 +8,7 @@
 #include <daidalos/math/Axes.hpp>
 #include <daidalos/renderer/Components.hpp>
 
+#include <glm/common.hpp>
 #include <glm/ext/quaternion_trigonometric.hpp>
 #include <glm/geometric.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -16,6 +17,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <limits>
 #include <map>
 #include <optional>
 #include <string_view>
@@ -31,7 +33,18 @@ namespace {
 // The numbers of the original demo, whose units were 0.35 m.
 constexpr float kWalkSpeed = 3.5f; // Meters per second.
 constexpr float kRunFactor = 1.7f;
+constexpr float kCrouchFactor = 0.6f;
+constexpr float kGravity = 7.0f;   // Meters per second squared.
+constexpr float kJumpSpeed = 3.5f; // Meters per second.
+constexpr float kClimbSpeed = 2.1f;
+constexpr float kLadderReach = 0.5f;       // Meters around a ladder that the player can hold it from.
+constexpr float kLadderTopMargin = 0.2f;   // Meters above a ladder that the player can climb to.
+constexpr float kLookDownOnLadder = -0.4f; // Radians of pitch: below that, forward climbs down.
+constexpr float kStandHeight = 1.85f;
+constexpr float kCrouchHeight = 0.9f;
 constexpr float kEyeHeight = 1.65f; // Above the floor.
+constexpr float kCrouchEyeHeight = 0.75f;
+constexpr float kEyeSpeed = 4.0f; // Meters per second, when crouching and standing up.
 constexpr float kPickupRadius = 1.75f;
 constexpr float kPickupSpin = glm::radians(70.0f); // Radians per second.
 constexpr float kDoorRadius = 3.5f;                // Opens by itself this close.
@@ -57,6 +70,12 @@ enum class PickupKind { Health, Armor, HandgunAmmo, ShotgunAmmo, Flashlight, Red
 
 struct Pickup {
     PickupKind kind;
+};
+
+/// The box around a ladder, in which the player climbs.
+struct Ladder {
+    glm::vec3 min{0.0f};
+    glm::vec3 max{0.0f};
 };
 
 struct Door {
@@ -103,6 +122,21 @@ T Number(const NodeDescription& description, std::string_view key, T fallback) {
     T value = fallback;
     const std::string_view text = found->second;
     std::from_chars(text.data(), text.data() + text.size(), value);
+    return value;
+}
+
+/// A value "x,y,z".
+glm::vec3 Vector(const NodeDescription& description, std::string_view key) {
+    glm::vec3 value{0.0f};
+    const auto found = description.attributes.find(key);
+    if (found == description.attributes.end()) {
+        return value;
+    }
+    const char* cursor = found->second.data();
+    const char* const end = cursor + found->second.size();
+    for (int axis = 0; axis < 3 && cursor < end; ++axis) {
+        cursor = std::from_chars(cursor, end, value[axis]).ptr + 1; // Past the comma.
+    }
     return value;
 }
 
@@ -163,8 +197,10 @@ void Collect(Player& player, PickupKind kind) {
     }
 }
 
-void MovePlayer(ecs::Entity entity, ecs::World& world, const input::InputState& input, const input::ActionMap& actions,
-                float mouseSensitivity, float delta) {
+/// What the player does every frame: looking around, and what must not miss a press.
+void LookAround(ecs::Entity entity, scene::Scene& scene, const input::InputState& input,
+                const input::ActionMap& actions, float mouseSensitivity, float delta) {
+    ecs::World& world = scene.World();
     Player& player = world.Get<Player>(entity);
     ecs::LocalTransform& transform = world.Get<ecs::LocalTransform>(entity);
 
@@ -182,16 +218,83 @@ void MovePlayer(ecs::Entity entity, ecs::World& world, const input::InputState& 
     player.pitch = std::clamp(player.pitch, -kMaxPitch, kMaxPitch);
     transform.rotation = math::FromYawPitchRoll(player.yaw, player.pitch, 0.0f);
 
-    // Flying, until the player walks in Phase 6. x is right, y up and z backward, as for the camera.
-    const glm::vec3 move(actions.Value(input, MoveRight), actions.Value(input, MoveUp),
-                         -actions.Value(input, MoveForward));
-    const float speed = kWalkSpeed * (actions.IsDown(input, Run) ? kRunFactor : 1.0f);
-    transform.translation += transform.rotation * move * speed * delta;
+    const float targetEye = player.crouching ? kCrouchEyeHeight : kEyeHeight;
+    const float eyeStep = kEyeSpeed * delta;
+    player.eyeHeight = std::clamp(targetEye, player.eyeHeight - eyeStep, player.eyeHeight + eyeStep);
+    transform.translation =
+        glm::mix(player.previousFeet, player.feet, scene.FixedAlpha()) + math::kUp * player.eyeHeight;
 
+    player.jumpPressed = player.jumpPressed || actions.WasPressed(input, Jump);
+    player.interactPressed = player.interactPressed || actions.WasPressed(input, Interact);
     if (player.hasFlashlight && actions.WasPressed(input, ToggleFlashlight)) {
         player.flashlightOn = !player.flashlightOn;
     }
     player.messageTime = std::max(player.messageTime - delta, 0.0f);
+}
+
+/// The top of the ladder the feet are at, if any.
+std::optional<float> LadderTop(ecs::World& world, const glm::vec3& feet) {
+    std::optional<float> top;
+    world.Each<Ladder>([&](ecs::Entity /*entity*/, const Ladder& ladder) {
+        if (feet.x > ladder.min.x - kLadderReach && feet.x < ladder.max.x + kLadderReach &&
+            feet.z > ladder.min.z - kLadderReach && feet.z < ladder.max.z + kLadderReach &&
+            feet.y > ladder.min.y - 0.1f && feet.y < ladder.max.y + kLadderTopMargin + 0.1f) {
+            top = std::max(top.value_or(ladder.max.y), ladder.max.y);
+        }
+    });
+    return top;
+}
+
+/// What the player does on every fixed step: walking, jumping, crouching and climbing.
+void MovePlayer(ecs::Entity entity, scene::Scene& scene, const input::InputState& input,
+                const input::ActionMap& actions, float step) {
+    ecs::World& world = scene.World();
+    physics::PhysicsWorld& physics = scene.Physics();
+    Player& player = world.Get<Player>(entity);
+
+    const bool wantsCrouch = actions.IsDown(input, Crouch);
+    if (wantsCrouch != player.crouching &&
+        physics.SetCharacterHeight(player.character, wantsCrouch ? kCrouchHeight : kStandHeight)) {
+        player.crouching = wantsCrouch;
+    }
+
+    // Only the direction the player faces counts: looking up does not slow them down.
+    const glm::quat heading = math::FromYawPitchRoll(player.yaw, 0.0f, 0.0f);
+    const float forward = actions.Value(input, MoveForward);
+    glm::vec3 wish = heading * glm::vec3(actions.Value(input, MoveRight), 0.0f, -forward);
+    if (const float length = glm::length(wish); length > 1.0f) {
+        wish /= length;
+    }
+    float speed = kWalkSpeed;
+    if (player.crouching) {
+        speed *= kCrouchFactor;
+    } else if (actions.IsDown(input, Run)) {
+        speed *= kRunFactor;
+    }
+    glm::vec3 velocity = wish * speed;
+
+    const bool jump = player.jumpPressed;
+    player.jumpPressed = false;
+    // Moving up, the ground just left does not count as ground yet.
+    const bool onGround = physics.IsOnGround(player.character) && player.verticalSpeed <= 0.0f;
+    if (const std::optional<float> top = LadderTop(world, player.feet); top.has_value() && !jump) {
+        player.verticalSpeed = forward * kClimbSpeed * (player.pitch < kLookDownOnLadder ? -1.0f : 1.0f);
+        // The player waits just above the top, from where they can step off to any side.
+        if (player.feet.y >= *top + kLadderTopMargin) {
+            player.verticalSpeed = std::min(player.verticalSpeed, 0.0f);
+        }
+    } else if (onGround) {
+        player.verticalSpeed = jump && !player.crouching ? kJumpSpeed : 0.0f;
+    } else {
+        // A ceiling takes the speed away.
+        player.verticalSpeed =
+            std::min(player.verticalSpeed, physics.CharacterVelocity(player.character).y) - kGravity * step;
+    }
+    velocity.y = player.verticalSpeed;
+
+    physics.MoveCharacter(player.character, velocity, step);
+    player.previousFeet = player.feet;
+    player.feet = physics.CharacterPosition(player.character);
 }
 
 void UpdatePickups(ecs::World& world, ecs::Entity playerEntity, float delta) {
@@ -213,9 +316,11 @@ void UpdatePickups(ecs::World& world, ecs::Entity playerEntity, float delta) {
     }
 }
 
-void UpdateDoors(ecs::World& world, ecs::Entity playerEntity, bool interact, float delta) {
+void UpdateDoors(ecs::World& world, ecs::Entity playerEntity, float delta) {
     Player& player = world.Get<Player>(playerEntity);
     const glm::vec3 eye = world.Get<ecs::LocalTransform>(playerEntity).translation;
+    const bool interact = player.interactPressed;
+    player.interactPressed = false;
 
     world.Each<Door, ecs::LocalTransform>([&](ecs::Entity /*entity*/, Door& door, ecs::LocalTransform& transform) {
         const float distance = glm::distance(door.closedPosition, eye);
@@ -231,7 +336,8 @@ void UpdateDoors(ecs::World& world, ecs::Entity playerEntity, bool interact, flo
         }
         if (door.open && door.closable) {
             door.timeLeft -= delta;
-            if (door.timeLeft <= 0.0f && (byHand || distance >= door.radius)) {
+            // Never down on the player.
+            if (door.timeLeft <= 0.0f && distance >= kDoorRadius) {
                 door.open = false;
             }
         }
@@ -253,7 +359,11 @@ input::ActionMap MakeActions() {
     actions.BindAxis(MoveForward, GamepadAxis::LeftY);
     actions.BindAxis(MoveRight, Key::D, Key::A);
     actions.BindAxis(MoveRight, GamepadAxis::LeftX);
-    actions.BindAxis(MoveUp, Key::Space, Key::C);
+    actions.Bind(Jump, Key::Space);
+    actions.Bind(Jump, GamepadButton::South);
+    actions.Bind(Crouch, Key::C);
+    actions.Bind(Crouch, Key::LeftCtrl);
+    actions.Bind(Crouch, GamepadButton::East);
     actions.Bind(Run, Key::LeftShift);
     actions.Bind(Run, GamepadButton::LeftShoulder);
     actions.Bind(Interact, Key::E);
@@ -267,18 +377,44 @@ input::ActionMap MakeActions() {
     return actions;
 }
 
+void Teleport(scene::Scene& scene, ecs::Entity entity, const glm::vec3& eye) {
+    Player& player = scene.World().Get<Player>(entity);
+    player.feet = eye - math::kUp * player.eyeHeight;
+    player.previousFeet = player.feet;
+    player.verticalSpeed = 0.0f;
+    scene.Physics().SetCharacterPosition(player.character, player.feet);
+}
+
 core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const renderer::Model& model) {
     ecs::World& world = scene.World();
     core::Result<ecs::Entity> root = renderer::Instantiate(world, model);
     if (!root) {
         return root;
     }
+    physics::PhysicsWorld& physics = scene.Physics();
+
+    // What the game needs from the geometry: the level to walk on, and the size of the doors.
+    std::map<std::string_view, const renderer::Model::Node*> modelNodes;
+    for (const renderer::Model::Node& node : model.nodes) {
+        modelNodes.emplace(node.name, &node);
+        if (node.name != "level") {
+            continue;
+        }
+        for (const renderer::Model::Part& part : node.parts) {
+            if (core::Result<physics::BodyId> body = physics.AddStaticMesh(part.positions, part.indices, node.local);
+                !body) {
+                return tl::unexpected(std::move(body.error()));
+            }
+        }
+    }
 
     ecs::Entity playerEntity = world.Create();
-    ecs::LocalTransform start;
-    start.translation = {0.0f, kEyeHeight, 3.0f};
+    glm::vec3 eye{0.0f, kEyeHeight, 3.0f};
     world.Add<Player>(playerEntity);
     world.Add<renderer::Camera>(playerEntity);
+    physics::CharacterConfig body;
+    body.height = kStandHeight;
+    world.Get<Player>(playerEntity).character = physics.AddCharacter(body, eye - math::kUp * kEyeHeight);
 
     std::vector<int> lockedDoors;
     std::vector<std::pair<ecs::Entity, std::string>> nodes;
@@ -294,7 +430,12 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const renderer::Model&
         const NodeDescription node = Parse(name);
         const glm::vec3 position = world.Get<ecs::LocalTransform>(entity).translation;
         if (node.kind == "player") {
-            start.translation = {position.x, kEyeHeight, position.z};
+            eye = position;
+            if (const std::optional<physics::RayHit> floor = physics.CastRay(position, -math::kUp, 20.0f)) {
+                eye = floor->position + math::kUp * kEyeHeight;
+            }
+        } else if (node.kind == "ladder") {
+            world.Add<Ladder>(entity, Vector(node, "min"), Vector(node, "max"));
         } else if (const std::optional<PickupKind> pickup = PickupOf(node.kind)) {
             world.Add<Pickup>(entity, *pickup);
         } else if (node.kind == "door") {
@@ -306,9 +447,34 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const renderer::Model&
             door.closable = closable == node.attributes.end() || closable->second != "false";
             door.locked = std::ranges::find(lockedDoors, door.id) != lockedDoors.end();
             world.Add<Door>(entity, door);
+
+            if (const auto found = modelNodes.find(name); found != modelNodes.end()) {
+                glm::vec3 low(std::numeric_limits<float>::max());
+                glm::vec3 high(std::numeric_limits<float>::lowest());
+                for (const renderer::Model::Part& part : found->second->parts) {
+                    for (const glm::vec3& vertex : part.positions) {
+                        low = glm::min(low, vertex);
+                        high = glm::max(high, vertex);
+                    }
+                }
+                if (low.x <= high.x) {
+                    math::Transform transform;
+                    transform.translation = position;
+                    const glm::vec3 halfExtents = glm::max((high - low) * 0.5f, glm::vec3(0.05f));
+                    core::Result<physics::BodyId> box =
+                        physics.AddKinematicBox(halfExtents, (low + high) * 0.5f, transform);
+                    if (!box) {
+                        return tl::unexpected(std::move(box.error()));
+                    }
+                    world.Add<physics::KinematicBody>(entity, *box);
+                }
+            }
         }
     }
+    ecs::LocalTransform start;
+    start.translation = eye;
     world.Add<ecs::LocalTransform>(playerEntity, start);
+    Teleport(scene, playerEntity, eye);
     scene.SetActiveCamera(playerEntity);
     return playerEntity;
 }
@@ -320,20 +486,27 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
         scene.World().Each<Player>([&found](ecs::Entity entity, const Player& /*player*/) { found = entity; });
         return found;
     };
-    ecs::Schedule& systems = scene.FrameSystems();
-    systems.Add("Player", [&, player](ecs::World& world, core::Seconds delta) {
+    ecs::Schedule& fixed = scene.FixedSystems();
+    fixed.Add("Movement", [&, player](ecs::World& world, core::Seconds step) {
         if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
-            MovePlayer(entity, world, input, actions, settings.mouseSensitivity, static_cast<float>(delta.count()));
+            MovePlayer(entity, scene, input, actions, static_cast<float>(step.count()));
+        }
+    });
+    fixed.Add("Doors", [player](ecs::World& world, core::Seconds step) {
+        if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
+            UpdateDoors(world, entity, static_cast<float>(step.count()));
+        }
+    });
+
+    ecs::Schedule& systems = scene.FrameSystems();
+    systems.Add("Look", [&, player](ecs::World& world, core::Seconds delta) {
+        if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
+            LookAround(entity, scene, input, actions, settings.mouseSensitivity, static_cast<float>(delta.count()));
         }
     });
     systems.Add("Pickups", [player](ecs::World& world, core::Seconds delta) {
         if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
             UpdatePickups(world, entity, static_cast<float>(delta.count()));
-        }
-    });
-    systems.Add("Doors", [&, player](ecs::World& world, core::Seconds delta) {
-        if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
-            UpdateDoors(world, entity, actions.WasPressed(input, Interact), static_cast<float>(delta.count()));
         }
     });
     systems.Add("Darkness", [&, player](ecs::World& world, core::Seconds /*delta*/) {
