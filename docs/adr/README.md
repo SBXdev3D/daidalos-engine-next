@@ -20,5 +20,6 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0014](0014-repository-and-ci.md) | GitHub, GitHub Actions, delete legacy code | Accepted |
 | [0015](0015-development-tooling.md) | Tracy, minidumps, cvars, ImGui, hot reload early | Accepted |
 | [0016](0016-resources.md) | Typed loaders, caches by identity, libraries that own their assets | Accepted |
+| [0017](0017-scenes.md) | Scenes own a world and its assets, glTF plus code, no scene file format | Accepted |
 
-Decisions still to record: scene serialization library (Phase 5), physics library (Phase 7), audio library (Phase 7).
+Decisions still to record: physics library (Phase 6), audio library (Phase 6).

@@ -19,12 +19,12 @@ An engine has no natural finish line, which makes it dangerous for a solo develo
 
 ## Next
 
-**Phase 5: an interactive scene.** Scene files and the first gameplay: something that moves and responds to you.
+**Phase 5: an interactive scene.** Scenes and the first gameplay: the factory from my old demo, in the new engine.
 
 ## Later
 
-- **Phase 6, modern rendering.** The big visual step: physically based materials, normal mapping, clustered lighting, ambient occlusion.
-- **Phase 7, physics and audio.** Jolt and miniaudio, so that the world gets solid and starts making noise.
+- **Phase 6, physics, audio and animation.** Jolt and miniaudio, so that the world gets solid and starts making noise, and skeletal animation, so that characters can move.
+- **Phase 7, modern rendering.** The big visual step: physically based materials, normal mapping, clustered lighting, shadows, ambient occlusion and particles.
 - **Phase 8, GUI and tools.** Menus, a HUD, loading screens and inspectors for looking inside the running engine.
 - **Phase 9, AI, cinematics and indoor optimization.** State machines, camera sequences, and visibility work, but only where measurements show that it pays off.
 - **Phase 10, Linux validation.** A complete pass over everything on Linux. It's designed in from the start, and this is where it gets proven.

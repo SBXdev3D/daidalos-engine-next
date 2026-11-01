@@ -1,6 +1,6 @@
 # Architecture
 
-How the engine is built today, through Phase 4. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
+How the engine is built today, through Phase 5. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
 
 ## Modules
 
@@ -12,6 +12,7 @@ flowchart TD
 
     subgraph application [Application]
         app
+        scene
         debugui["debugui<br/>(development builds)"]
     end
 
@@ -33,9 +34,12 @@ flowchart TD
         core
     end
 
-    app --> renderer
+    app --> scene
     app --> input
+    scene --> renderer
+    scene --> ecs
     app -.-> debugui
+    app --> renderer
     debugui --> rhi
     debugui --> platform
     renderer --> rhi
@@ -55,17 +59,18 @@ To keep the graph readable, it omits the links to `core` and `logging` that near
 
 | Module | Responsibility | Third-party libraries it hides |
 |---|---|---|
-| `core` | `Result`, `Error`, `DAI_ASSERT`, generational handles, slot pool, frame timer, cvars, profiling macros | tl::expected and Tracy (both public) |
+| `core` | `Result`, `Error`, `DAI_ASSERT`, generational handles, slot pool, frame timer, worker pool, cvars, profiling macros | tl::expected and Tracy (both public) |
 | `logging` | Logging facade | spdlog |
 | `math` | Conventions, transforms, reverse-Z projections, bounding boxes | GLM (public, on purpose: ADR-0005) |
 | `platform` | Window, events, Vulkan surface, processes, crash dumps | SDL3 |
-| `input` | Held, pressed and released state for keyboard, mouse and gamepads | |
+| `input` | Held, pressed and released state for keyboard, mouse and gamepads, and actions | |
 | `ecs` | Entities, sparse-set components, schedule, hierarchy, transform propagation | |
 | `resources` | Asset paths, caches, decoding of files into plain CPU data | fastgltf, KTX, stb |
 | `rhi` | Vulkan 1.3 device, swapchain, buffers, textures, pipelines, command lists | Vulkan, volk, VMA |
 | `renderer` | Mesh pass, materials, asset library, cameras, ECS extraction, shader hot reload | |
+| `scene` | A world with its assets, systems, active camera and atmosphere | |
 | `debugui` | Dear ImGui overlay drawn through the RHI | Dear ImGui |
-| `app` | Ordered startup with rollback, main loop | |
+| `app` | Ordered startup with rollback, main loop, current scene | |
 
 Three rules keep this graph healthy:
 
@@ -79,32 +84,38 @@ Three rules keep this graph healthy:
 
 ```mermaid
 flowchart LR
-    A[logging] --> B[crash handler] --> C[configuration] --> D[platform] --> E[main window] --> F[renderer] --> G[debug overlay] --> H["application<br/>OnStart"]
+    A[logging] --> B[crash handler] --> C[configuration] --> D[platform] --> E[main window] --> W[worker pool]
+    W --> F[renderer] --> G[debug overlay] --> S[scene slot] --> H["application<br/>OnStart"]
     H -. "failure or shutdown:<br/>stop in reverse order" .-> A
 ```
 
-The game plugs in through `app::IApplicationHandler`: `OnStart`, `OnEvent`, `OnFixedUpdate`, `OnUpdate`, `OnRender` and `OnStop`.
+The game plugs in through `app::IApplicationHandler`: `OnStart`, `OnEvent`, `OnFixedUpdate`, `OnUpdate`, `OnRender` and `OnStop`. It usually gives the application a `scene::Scene`, which the application then runs. The scene slot makes sure that the scene goes before the renderer, even if `OnStart` fails.
 
 ## One frame
 
-Everything here runs on the main thread (ADR-0011). The GPU runs in parallel, with up to two frames in flight.
+Everything here runs on the main thread, except the jobs of the worker pool (ADR-0011). The GPU runs in parallel, with up to two frames in flight.
 
 ```mermaid
 sequenceDiagram
     participant A as Application
     participant G as Game handler
+    participant S as Current scene
     participant R as Renderer
     participant D as rhi::Device
 
+    A->>A: Swap in the pending scene
     A->>A: Read events, update InputState
     A->>G: OnEvent, for each event
+    A->>A: Deliver finished worker jobs
     A->>A: Advance the frame timer
     loop 0 to n fixed steps
         A->>G: OnFixedUpdate
+        A->>S: Fixed systems
     end
     A->>G: OnUpdate
+    A->>S: Frame systems
+    A->>S: Extract: transforms, then SceneView
     A->>G: OnRender
-    G->>G: PropagateTransforms, then ExtractScene into SceneView
     A->>R: Render(SceneView, overlay)
     R->>R: Reload changed shaders
     R->>D: BeginFrame
@@ -112,20 +123,22 @@ sequenceDiagram
     R->>D: EndFrame: submit and present
 ```
 
-`SceneView` holds copies, so rendering never touches the ECS. World transforms are recomputed from scratch every frame, in `OnRender`, with no dirty flags (ADR-0006).
+`SceneView` holds copies, so rendering never touches the ECS. World transforms are recomputed from scratch every frame, during extraction, with no dirty flags (ADR-0006).
 
 ## From file to GPU
 
 ```mermaid
 flowchart LR
-    F["glTF, PNG, JPEG, KTX2<br/>under assets/"] -->|"LoadModelFile<br/>LoadImageFile"| C["ModelData, ImageData<br/>plain CPU data"]
-    C -->|"AssetLibrary"| G["Meshes, materials, textures<br/>owned by handles"]
+    F["glTF, PNG, JPEG, KTX2<br/>under assets/"] -->|"LoadModelFile<br/>LoadImageFile<br/>on a worker"| C["ModelData, ImageData<br/>plain CPU data"]
+    C -->|"AssetLibrary<br/>on the main thread"| G["Meshes, materials, textures<br/>owned by handles"]
     G -->|"Instantiate"| E["Entities with<br/>LocalTransform, MeshRenderer"]
     E -->|"ExtractScene"| S["SceneView<br/>DrawItem list"]
     S -->|"MeshPass::Record"| V["GPU commands"]
 ```
 
-An asset's identity is its normalized path relative to the asset root. The case must match the file on disk, so a mismatch fails on Windows as well as on Linux. A shared texture is loaded once.
+An asset's identity is its normalized path relative to the asset root. The case must match the file on disk, so a mismatch fails on Windows as well as on Linux. A shared texture is uploaded once. `LoadModel` does all of this at once, and `LoadModelAsync` keeps the main thread running during the first arrow. Loading a replacement level happens in a second scene, which takes over when it is ready.
+
+The sandbox's level comes from the legacy engine, through `scripts/import_legacy_level.py`: a single glTF file, whose node names tell the game what each node is (ADR-0017).
 
 ## Who owns what
 
@@ -134,8 +147,9 @@ flowchart TD
     App["Application"] --> Renderer
     Renderer --> Device["rhi::Device<br/>GPU memory, deferred destruction"]
     Renderer --> MeshPass["MeshPass<br/>meshes, materials, pipelines"]
-    Game["Game handler"] --> Library["AssetLibrary<br/>releases all its assets together"]
-    Game --> World["ecs::World<br/>entities and components"]
+    App --> Scene["scene::Scene"]
+    Scene --> Library["AssetLibrary<br/>releases all its assets together"]
+    Scene --> World["ecs::World<br/>entities and components"]
     Library -. "handles" .-> MeshPass
     Library -. "handles" .-> Device
     World -. "handles" .-> MeshPass
@@ -145,7 +159,7 @@ Solid arrows own, and dotted arrows only refer. GPU objects are never held by po
 
 - A draw with a destroyed mesh is skipped, and a draw with a destroyed material uses the default one, so unloading assets before entities is safe.
 - `Destroy*` invalidates the handle at once. The GPU object is released when the timeline semaphore shows that the GPU has finished with it.
-- The renderer must outlive every `AssetLibrary`. There is no reference counting and no eviction (ADR-0016).
+- The renderer must outlive every `AssetLibrary`, which the application's scene slot guarantees. There is no reference counting and no eviction (ADR-0016).
 
 ## How the GPU reads its data
 
@@ -166,16 +180,17 @@ flowchart LR
 | Location | What it covers | Needs a GPU |
 |---|---|---|
 | `tests/unit/<module>/` | Logic of one module, one executable per module | No |
-| `tests/gpu/<module>/` | `rhi`, `renderer` and `debugui` on a real driver, with no mock device | Yes, or lavapipe on Linux |
+| `tests/gpu/<module>/` | `rhi`, `renderer`, `scene` and `debugui` on a real driver, with no mock device | Yes, or lavapipe on Linux |
 
 CI runs on pull requests and on `main`: Windows MSVC and Linux Clang, in Debug, Release, ASan and Profile, plus a formatting check.
 
 ## Known gaps
 
-- Linux and the lavapipe GPU path have not been confirmed locally: there is no Linux machine in the development setup.
 - No tool produces KTX2 files yet, although the loader reads them.
-- Lighting, clustering and ambient occlusion do not exist yet (Phase 6). Materials carry all the PBR data already.
+- Lighting, clustering and ambient occlusion do not exist yet (Phase 7). Materials carry all the PBR data already, and the sandbox simulates darkness with fog.
+- Nothing collides, and the sandbox's player flies (Phase 6).
+- Meshes cannot be animated (Phase 6).
 - Nothing culls: every `DrawItem` is drawn.
 - There are no text input events, so ImGui text fields do not work.
-- Asset loading is synchronous and blocks the main thread.
-- `ecs::Schedule` is implemented and tested, but no application uses it yet.
+- Creating a model's GPU objects still happens all at once on the main thread, which can cause a hitch at the end of a load.
+- Levels can only carry gameplay data in the names of glTF nodes.

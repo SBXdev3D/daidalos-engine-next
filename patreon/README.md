@@ -11,6 +11,7 @@ Drafts of my Patreon posts about building Daidalos Engine Next. Each post is cop
 | 003 | [The road ahead](posts/003-the-road-ahead.md) | Roadmap | Draft |
 | 004 | [From an empty repository to a first frame](posts/004-from-empty-repository-to-first-frame.md) | Progress, Phases 0 to 3 | Draft, 1 passage for me to write |
 | 005 | [Goodbye, cubes](posts/005-goodbye-cubes.md) | Progress, Phase 4 | Draft, 1 passage for me to write |
+| 006 | [The old factory wakes up](posts/006-the-old-factory-wakes-up.md) | Progress, Phase 5 | Draft, 2 passages for me to write, no screenshot until the demo's assets are cleared |
 
 ## Layout
 

@@ -14,6 +14,8 @@ OVERVIEW §7.4 favors single-threaded execution until a workload requires otherw
 - The physics library's job system is accepted and confined to the physics module.
 - One worker pool decodes assets from Phase 5. Results are delivered only on the main thread, and cancelled jobs are never delivered.
 
+Implemented in Phase 5 as `core::WorkerPool` (ADR-0017).
+
 ## Consequences
 
 - Thread ownership rules stay simple: ECS and renderer state are only touched by the main thread.

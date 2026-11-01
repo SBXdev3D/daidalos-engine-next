@@ -86,7 +86,7 @@ def architecture():
 
     # (layer label, [(name, detail, planned)])
     layers = [
-        ("Applications", [("sandbox", "test bed: cubes, free camera", False), ("editor", "Phase 11", True)]),
+        ("Applications", [("sandbox", "demo: the old factory level", False), ("editor", "Phase 11", True)]),
         (
             "Game layer",
             [
@@ -101,9 +101,9 @@ def architecture():
                 ("renderer", "scene drawing, shader reload", False),
                 ("debugui", "Dear ImGui overlay", False),
                 ("input", "keyboard, mouse, gamepad", False),
-                ("scene", "Phase 5", True),
-                ("physics", "Phase 7", True),
-                ("audio", "Phase 7", True),
+                ("scene", "world, assets, systems", False),
+                ("physics", "Phase 6", True),
+                ("audio", "Phase 6", True),
                 ("gui", "Phase 8", True),
             ],
         ),
@@ -142,7 +142,7 @@ def architecture():
 
     legend_y = 806
     svg.box(50, legend_y - 16, 26, 20, stroke=DONE, radius=5)
-    svg.text(86, legend_y, "Implemented (Phases 0 to 4)", 16, MUTED)
+    svg.text(86, legend_y, "Implemented (Phases 0 to 5)", 16, MUTED)
     svg.box(350, legend_y - 16, 26, 20, fill=BACKGROUND, stroke=PLANNED, dashed=True, radius=5)
     svg.text(386, legend_y, "Planned, not written yet", 16, MUTED)
     svg.write("architecture")
@@ -199,9 +199,9 @@ def roadmap():
         ("2", "Math, ECS, input", "sparse sets, hierarchy", "done"),
         ("3", "First renderer", "Vulkan 1.3, ImGui, hot reload", "done"),
         ("4", "Resources and materials", "glTF, textures, caching", "done"),
-        ("5", "Interactive scene", "scene files, movement", "next"),
-        ("6", "Modern rendering", "PBR, clustered lights, AO", "planned"),
-        ("7", "Physics and audio", "Jolt, miniaudio", "planned"),
+        ("5", "Interactive scene", "scenes, the old factory", "done"),
+        ("6", "Physics, audio, animation", "Jolt, miniaudio, skinning", "next"),
+        ("7", "Modern rendering", "PBR, clustered lights, shadows", "planned"),
         ("8", "GUI and tools", "menus, HUD, debug tools", "planned"),
         ("9", "AI, cinematics, indoors", "visibility, cameras", "planned"),
         ("10", "Linux validation", "full Linux pass", "planned"),
