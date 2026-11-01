@@ -23,6 +23,7 @@ The sandbox draws a glTF model and a few cubes with a free camera and a debug ov
 ## Documentation
 
 - [OVERVIEW.md](OVERVIEW.md): vision, architecture, roadmap.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how the engine is built today, with diagrams.
 - [docs/CONVENTIONS.md](docs/CONVENTIONS.md): naming, ownership, error handling, math and rendering conventions.
 - [docs/adr/](docs/adr/README.md): architecture decision records.
 
