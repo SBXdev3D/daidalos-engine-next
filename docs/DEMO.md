@@ -47,14 +47,15 @@ Zombies come earlier than the roadmap's AI phase, because a shooter with no one 
 
 ## Running it
 
-The level is converted from the legacy repository. The result goes to `assets/Factory/`, which git ignores.
+The level is committed in `assets/Factory/`, so the demo only needs a build. Run it from the repository root:
 
 ```bash
-python scripts/import_legacy_level.py ../daidalos-engine/Resources
 build/windows-msvc/apps/sandbox/Release/sandbox.exe
 ```
 
-Without the level, the sandbox shows a test floor. Other glTF files can be tried with `+sandbox.scene <path>`.
+If the level is missing, the sandbox shows a test floor. Other glTF files can be tried with `+sandbox.scene <path>`.
+
+`scripts/import_legacy_level.py` is not part of running the demo. It converts the legacy level again, or brings more legacy content over, such as the models Phase 6 needs.
 
 | Control | Action |
 |---|---|
@@ -72,9 +73,12 @@ Without the level, the sandbox shows a test floor. Other glTF files can be tried
 
 ## Assets
 
-The origin of the legacy assets is unknown: there are no licence files, and some of them clearly come from elsewhere. For example, the handgun texture shows a real product, and `eva_d.png` looks like a licensed character. Until each one is cleared or replaced:
+The geometry and `handgun_ammo_d.png` are the author's own work. The other textures and the sounds are free assets whose licences allow commercial use. [assets/Factory/LICENSE.md](../assets/Factory/LICENSE.md) has the details.
 
-- They stay out of the repository, because `assets/` is ignored by git.
-- They do not appear in Patreon posts, whose rules require a licence that allows it.
+Some legacy content is left out:
 
-The level's layout, its numbers and its code are the project's own. Only the art and the sounds are in question. They must be cleared or replaced before the demo is shown or released.
+- `eva.md2` and its texture `eva_d.png`, a test model the level does not use.
+- `test.wav` and `test2.wav`, which are leftover tests.
+- `enter_the_maze.wav`, the level's ambient track. At 31 MB of WAV, it waits for a compressed format in Phase 6.
+
+The site the free assets came from is not recorded yet, and Patreon screenshots need it for attribution.

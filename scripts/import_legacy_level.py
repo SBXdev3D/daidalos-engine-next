@@ -3,8 +3,8 @@
 
     python scripts/import_legacy_level.py ../daidalos-engine/Resources [--scene factory]
 
-The result goes to assets/<Scene>/, which git ignores: the origin of the legacy assets is unknown,
-so they stay out of the repository (see docs/DEMO.md).
+The sandbox does not need this script: its result, assets/Factory/, is committed. It is only useful to
+convert the level again, or to bring more of the legacy content over. The level's sounds are copied too.
 
 The static geometry is merged by material into one node, "level". Everything the game needs to find
 is a node of its own, whose name holds its kind and attributes: "door;id=-5;radius=-1;closable=false".
@@ -62,6 +62,9 @@ ENTITY_ATTRIBUTES = {
 }
 # Kinds that are drawn as a model in place of their legacy animated mesh.
 BOX_MESHES = {"door": "door_bbox.obj"}
+
+# Two leftover tests, and the 31 MB ambient track, which waits for a compressed format in Phase 6.
+SKIPPED_SOUNDS = {"test.wav", "test2.wav", "enter_the_maze.wav"}
 
 
 def tga_to_png(source, target):
@@ -382,6 +385,14 @@ def convert(source, scene, output):
     print(f"{scene}: {triangles} level triangles in {len(level)} materials, entities: {counts}")
 
 
+def copy_sounds(source, output):
+    sounds = output / "Sounds"
+    sounds.mkdir(exist_ok=True)
+    for sound in sorted((source / "Sounds").glob("*.wav")):
+        if sound.name not in SKIPPED_SOUNDS:
+            shutil.copyfile(sound, sounds / sound.name)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("source", type=Path, help="Resources directory of the legacy engine")
@@ -391,6 +402,7 @@ def main():
     output = ROOT / "assets" / arguments.scene.capitalize()
     output.mkdir(parents=True, exist_ok=True)
     convert(arguments.source, arguments.scene, output)
+    copy_sounds(arguments.source, output)
 
 
 if __name__ == "__main__":

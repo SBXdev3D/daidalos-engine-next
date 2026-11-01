@@ -1,6 +1,6 @@
 # Assets
 
-The sandbox loads models from this directory, which is its asset root. Downloaded assets are not committed:
+The sandbox loads models from this directory, which is its asset root. `Factory/`, the demo's level, is committed. Downloaded assets are not:
 
 ```bash
 python scripts/fetch_sample_assets.py
@@ -12,6 +12,6 @@ python scripts/fetch_sample_assets.py
 
 Each model's `LICENSE.md` is downloaded with it.
 
-`Factory/` comes from `scripts/import_legacy_level.py`. Its art and sounds are of unknown origin, so it is for local use only (see [docs/DEMO.md](../docs/DEMO.md)).
+`Factory/` has its own terms, in [its licence file](Factory/LICENSE.md). It was converted once from the legacy engine, so playing the demo needs no script.
 
 A model joins this table only if its licence allows showing it anywhere, including in paid posts. Sponza does not qualify: its files are under the CRYENGINE Limited License Agreement rather than an open licence. It can still be tried locally by placing it here and starting the sandbox with `+sandbox.scene <path>`.

@@ -13,7 +13,7 @@ credits: ""
 
 The rebuilt engine now runs a real level. Not a test scene: the factory from the demo I made with the old Daidalos engine, inspired by Doom and Quake. From now on, the sandbox is that demo's remake, and every phase of the roadmap has to make it better.
 
-*No screenshot in this post yet. The level's layout is mine, but I don't know where all of its textures and sounds came from, so I'm not publishing them on a paid platform until I've cleared or replaced them.*
+*No screenshot in this post yet. The geometry is mine and the textures and sounds are free ones, but I still need to find the site they came from so I can credit it.*
 
 ## An old level in a new engine
 
