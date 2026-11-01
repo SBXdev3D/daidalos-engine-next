@@ -76,6 +76,7 @@ jobs:
         if: runner.os != 'Linux'
         run: ctest --preset ${{ matrix.preset }}
 
+      # Without -noreset, Xvfb resets when its last client leaves, and the next test finds no display.
       - name: Test on a virtual display
         if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" ctest --preset ${{ matrix.preset }}
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24 -noreset" ctest --preset ${{ matrix.preset }}
