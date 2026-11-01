@@ -95,7 +95,7 @@ build/windows-msvc/apps/sandbox/Debug/sandbox.exe   # Windows
 build/linux-clang-debug/apps/sandbox/sandbox        # Linux
 ```
 
-Run it from the repository root, where it finds `assets/`. The level is committed, and [docs/DEMO.md](docs/DEMO.md) explains how to play.
+It finds `assets/` from anywhere in the repository, so it also starts with a double-click. The level is committed, and [docs/DEMO.md](docs/DEMO.md) explains how to play.
 
 In development builds, editing a file in `engine/renderer/shaders/` reloads it while the sandbox runs; a shader that does not compile leaves the previous one running and shows the error in the overlay. The sandbox writes `sandbox.log` and, on Windows, crash dumps to `crashdumps/` in the working directory.
 

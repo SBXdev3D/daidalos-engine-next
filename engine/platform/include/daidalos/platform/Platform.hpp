@@ -8,6 +8,7 @@
 #include <daidalos/platform/Event.hpp>
 
 #include <chrono>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -18,6 +19,9 @@ namespace daidalos::platform {
 namespace detail {
 struct PlatformState;
 } // namespace detail
+
+/// Directory of the running executable, or empty if the system cannot tell.
+[[nodiscard]] std::filesystem::path ExecutableDirectory();
 
 struct PlatformConfig {
     /// Video driver to use. Empty selects the best one for the system. "dummy" opens windows without

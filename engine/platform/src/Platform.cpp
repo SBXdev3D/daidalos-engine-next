@@ -15,8 +15,10 @@
 
 #include <algorithm>
 #include <atomic>
+#include <filesystem>
 #include <format>
 #include <limits>
+#include <string_view>
 
 namespace daidalos::platform {
 
@@ -114,6 +116,15 @@ core::Result<Platform> Platform::Create(const PlatformConfig& config) {
     DAI_LOG_INFO(kModule, "SDL {}.{}.{} initialized, video driver '{}'", SDL_VERSIONNUM_MAJOR(version),
                  SDL_VERSIONNUM_MINOR(version), SDL_VERSIONNUM_MICRO(version), state->videoDriver);
     return Platform(std::move(state));
+}
+
+std::filesystem::path ExecutableDirectory() {
+    const char* directory = SDL_GetBasePath(); // UTF-8, owned by SDL.
+    if (directory == nullptr) {
+        DAI_LOG_WARNING("platform", "Executable directory unknown: {}", SDL_GetError());
+        return {};
+    }
+    return std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(directory)));
 }
 
 Platform::Platform(std::unique_ptr<detail::PlatformState> state) : m_state(std::move(state)) {}

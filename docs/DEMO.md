@@ -47,7 +47,7 @@ Zombies come earlier than the roadmap's AI phase, because a shooter with no one 
 
 ## Running it
 
-The level is committed in `assets/Factory/`, so the demo only needs a build. Run it from the repository root:
+The level is committed in `assets/Factory/`, so the demo only needs a build. The executable finds it from its own location, so a double-click works:
 
 ```bash
 build/windows-msvc/apps/sandbox/Release/sandbox.exe

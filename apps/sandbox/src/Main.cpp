@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <format>
 #include <memory>
 #include <optional>
@@ -29,7 +30,27 @@ namespace {
 
 using namespace daidalos;
 
-constexpr const char* kAssetRoot = "assets"; // Relative to the working directory.
+// Finds "assets" in the working directory, then beside the executable and in the directories above
+// it, so the demo starts from a double-click in the build tree.
+std::filesystem::path FindAssetRoot() {
+    constexpr const char* kName = "assets";
+    std::error_code error;
+    if (std::filesystem::is_directory(kName, error)) {
+        return kName;
+    }
+    std::filesystem::path directory = platform::ExecutableDirectory();
+    while (!directory.empty()) {
+        std::filesystem::path candidate = directory / kName;
+        if (std::filesystem::is_directory(candidate, error)) {
+            return candidate;
+        }
+        if (directory == directory.parent_path()) {
+            break;
+        }
+        directory = directory.parent_path();
+    }
+    return kName; // The load then reports what is missing.
+}
 
 // The demo: a dark factory, on the level of the original Daidalos demo (docs/DEMO.md). It loads in the
 // background, and F5 starts it over in a new scene, which replaces the old one once it is ready.
@@ -52,9 +73,11 @@ public:
                 .Register<std::string>("sandbox.start", "", "Where to start: 'x y z yaw pitch', in meters and degrees")
                 .Get();
         m_actions = sandbox::MakeActions();
+        m_assetRoot = FindAssetRoot();
+        DAI_LOG_INFO("sandbox", "Assets in '{}'", m_assetRoot.string());
 
         // The first scene is current at once: the renderer's owner then releases it on any failure.
-        app.SetScene(std::make_unique<scene::Scene>(app.Renderer(), kAssetRoot));
+        app.SetScene(std::make_unique<scene::Scene>(app.Renderer(), m_assetRoot));
         LoadLevel(app, *app.CurrentScene());
         app.MainWindow().SetMouseCaptured(true);
         return {};
@@ -70,7 +93,7 @@ public:
             app.MainWindow().SetMouseCaptured(m_mouseCaptured);
         }
         if (m_actions.WasPressed(input, sandbox::Restart) && !m_loading) {
-            m_nextScene = std::make_unique<scene::Scene>(app.Renderer(), kAssetRoot);
+            m_nextScene = std::make_unique<scene::Scene>(app.Renderer(), m_assetRoot);
             LoadLevel(app, *m_nextScene);
         }
         ++m_totalFrames;
@@ -123,7 +146,7 @@ private:
                 return tl::unexpected(player.error());
             }
         } else if (model.error().code == core::ErrorCode::NotFound) {
-            // The level is not in the repository: see docs/DEMO.md.
+            // Other levels can be tried with sandbox.scene, so a missing one is not fatal.
             DAI_LOG_INFO("sandbox", "No level, showing a test floor: {}", core::Format(model.error()));
             if (core::Result<void> built = BuildTestFloor(app, target); !built) {
                 return built;
@@ -206,6 +229,7 @@ private:
     }
 
     input::ActionMap m_actions;
+    std::filesystem::path m_assetRoot;
     std::string m_levelPath;
     sandbox::Settings m_settings;
     std::string m_start;
