@@ -81,7 +81,7 @@ struct PlayOptions {
 
 /// The sounds of a scene: its clips, what is playing, and who is listening (ADR-0019). Destroying it
 /// stops everything, so restarting a level also restarts its sounds. Without an engine it is silent:
-/// clips still load and report missing files, and Play does nothing.
+/// clips still load and report missing or invalid files, and Play does nothing.
 class SoundWorld {
 public:
     /// Clips are found under the root. The engine, if any, must outlive this world.

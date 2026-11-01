@@ -34,13 +34,15 @@ The automated build machines have no sound card, so the engine can also mix with
 
 A machine with no output simply runs the game silently, with a warning in the log.
 
+The memory checker also earned its keep. Feeding miniaudio a corrupt file made it read memory it had already freed, inside the library itself. The engine now checks each file with a plain decoder first, so a broken sound is a clean error that names the file.
+
 I also read the Windows output meter while the game ran. It went from 0 before the launch to a peak of 0.51 during play, so sound really reaches the device.
 
 ## The numbers
 
 | | |
 |---|---|
-| Automated tests | 425, up from 408 |
+| Automated tests | 426, up from 408 |
 | New module | `audio`, the fourteenth |
 | Sounds in the level | 19, loaded in 15 ms |
 | Sounds at once | 64 at most |

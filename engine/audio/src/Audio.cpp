@@ -58,6 +58,21 @@ ma_result InitFromFile(ma_engine* engine, const std::filesystem::path& path, ma_
 #endif
 }
 
+/// Whether the file can be decoded. miniaudio 0.11.25 reads freed memory when its resource manager
+/// fails to decode a file, so nothing unreadable may get that far.
+ma_result ProbeFile(const std::filesystem::path& path) {
+    ma_decoder decoder;
+#ifdef _WIN32
+    const ma_result result = ma_decoder_init_file_w(path.c_str(), nullptr, &decoder);
+#else
+    const ma_result result = ma_decoder_init_file(path.c_str(), nullptr, &decoder);
+#endif
+    if (result == MA_SUCCESS) {
+        ma_decoder_uninit(&decoder);
+    }
+    return result;
+}
+
 } // namespace
 
 struct AudioEngine::Impl {
@@ -169,6 +184,11 @@ core::Result<ClipHandle> SoundWorld::Load(std::string_view path, const ClipOptio
     if (std::error_code error; !std::filesystem::is_regular_file(file, error)) {
         return tl::unexpected(core::Error{core::ErrorCode::NotFound, std::string(kModule),
                                           std::format("Missing sound '{}'", file.generic_string())});
+    }
+
+    if (const ma_result result = ProbeFile(file); result != MA_SUCCESS) {
+        return tl::unexpected(
+            AudioError(core::ErrorCode::ParseError, std::format("Cannot read '{}'", file.generic_string()), result));
     }
 
     State::Clip clip{file, options.stream, nullptr};

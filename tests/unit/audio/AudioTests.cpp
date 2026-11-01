@@ -255,6 +255,11 @@ TEST_F(AudioTest, DemoMusicStreamsFromOgg) {
     EXPECT_GT(loudest, 0.0f);
 }
 
+TEST_F(AudioTest, StreamedInvalidFileIsAnErrorToo) {
+    std::ofstream(m_root / "broken.ogg") << "not a sound";
+    EXPECT_FALSE(m_sounds->Load("broken.ogg", {.stream = true}).has_value());
+}
+
 TEST(SilentSoundWorld, StillReportsMissingFilesAndPlaysNothing) {
     const std::filesystem::path root = std::filesystem::temp_directory_path() / "daidalos-silent-audio-test";
     std::filesystem::create_directories(root);
