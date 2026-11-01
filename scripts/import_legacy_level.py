@@ -46,6 +46,7 @@ ENTITY_KINDS = {
     "security_camera_entity": "security_camera",
     "teleporter_entity": "teleporter",
     "area_trigger_entity": "area_trigger",
+    "ladder_entity": "ladder",
     "player": "player",
 }
 # Attributes that the game reads. Others stay behind.
@@ -65,6 +66,9 @@ BOX_MESHES = {"door": "door_bbox.obj"}
 
 # Two leftover tests, and the 31 MB ambient track, which waits for a compressed format in Phase 6.
 SKIPPED_SOUNDS = {"test.wav", "test2.wav", "enter_the_maze.wav"}
+# Authored right-handed and read left-handed by the legacy engine, which showed their lettering
+# backwards. Their shape is symmetric in X, so mirroring them only corrects the texture.
+MIRRORED_MODELS = {"lockers.obj"}
 
 
 def tga_to_png(source, target):
@@ -148,7 +152,8 @@ def read_obj(path):
         if parts[0] == "v":
             positions.append([float(value) for value in parts[1:4]])
         elif parts[0] == "vt":
-            uvs.append([float(value) for value in parts[1:3]])
+            # OBJ counts V from the bottom of the image, and the engine from the top.
+            uvs.append([float(parts[1]), 1.0 - float(parts[2])])
         elif parts[0] == "f":
             corners = []
             for corner in parts[1:]:
@@ -161,7 +166,7 @@ def read_obj(path):
 
 
 def read_md2(path):
-    """The triangles of the first frame of a Quake 2 model."""
+    """The triangles of the first frame of a Quake 2 model, in the space of the legacy engine."""
     data = path.read_bytes()
     header = struct.unpack_from("<17i", data)
     if header[0] != 0x32504449:
@@ -172,10 +177,15 @@ def read_md2(path):
 
     scale = struct.unpack_from("<3f", data, frame_offset)
     translate = struct.unpack_from("<3f", data, frame_offset + 12)
+    # A frame starts with its scale, its translation and a name of 16 characters.
+    vertices_offset = frame_offset + 12 + 12 + 16
+    # As CMD2Mesh did: Quake's Z is up, then a quarter turn and one unit up.
+    turn = rotation_matrix([0.0, 90.0, 0.0])
     positions = []
     for index in range(vertex_count):
-        packed = struct.unpack_from("<3B", data, frame_offset + 56 + index * 4)
-        positions.append([packed[axis] * scale[axis] + translate[axis] for axis in range(3)])
+        packed = struct.unpack_from("<3B", data, vertices_offset + index * 4)
+        x, z, y = (packed[axis] * scale[axis] + translate[axis] for axis in range(3))
+        positions.append(place([x, y, z], [0.0, 1.0, 0.0], turn, [1.0, 1.0, 1.0]))
     uvs = [
         [s / skin_width, t / skin_height]
         for s, t in (struct.unpack_from("<2h", data, uv_offset + index * 4) for index in range(uv_count))
@@ -308,7 +318,10 @@ def texture_of(node):
 def read_triangles(models, file):
     path = models / file
     if path.suffix.lower() == ".obj":
-        return read_obj(path)
+        triangles = read_obj(path)
+        if file in MIRRORED_MODELS:
+            return [[([-c[0][0], c[0][1], c[0][2]], c[1]) for c in (t[0], t[2], t[1])] for t in triangles]
+        return triangles
     if path.suffix.lower() == ".md2":
         return read_md2(path)
     return None # Animated models come later (docs/DEMO.md).
@@ -347,6 +360,7 @@ def convert(source, scene, output):
 
     def add_entity(kind, node, position, rotation, scale):
         mesh = None
+        bounds = ""
         file = BOX_MESHES.get(kind, node.get("file"))
         texture = texture_of(node)
         if file and texture and texture not in SKIPPED_TEXTURES:
@@ -356,7 +370,14 @@ def convert(source, scene, output):
                 geometry = Geometry()
                 geometry.add(triangles, [0.0, 0.0, 0.0], rotation_matrix(rotation), scale)
                 mesh = writer.mesh({texture: geometry})
-        writer.node(entity_name(kind, node), to_engine(position), mesh=mesh)
+                if kind == "ladder":
+                    # The box the player climbs in, in the world.
+                    origin = to_engine(position)
+                    low = [origin[axis] + min(point[axis] for point in geometry.positions) for axis in range(3)]
+                    high = [origin[axis] + max(point[axis] for point in geometry.positions) for axis in range(3)]
+                    bounds = (f";min={low[0]:.3f},{low[1]:.3f},{low[2]:.3f}"
+                              f";max={high[0]:.3f},{high[1]:.3f},{high[2]:.3f}")
+        writer.node(entity_name(kind, node) + bounds, to_engine(position), mesh=mesh)
         counts[kind] = counts.get(kind, 0) + 1
 
     def walk(parent, origin):

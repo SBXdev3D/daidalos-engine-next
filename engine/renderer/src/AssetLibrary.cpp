@@ -155,7 +155,14 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
             return tl::unexpected(std::move(mesh.error()));
         }
         m_meshes.push_back(*mesh);
-        parts.push_back({*mesh, primitive.material.has_value() ? materials[*primitive.material] : MaterialHandle{}});
+        Model::Part& part = parts.emplace_back();
+        part.mesh = *mesh;
+        part.material = primitive.material.has_value() ? materials[*primitive.material] : MaterialHandle{};
+        part.positions.reserve(primitive.mesh.vertices.size());
+        for (const resources::Vertex& vertex : primitive.mesh.vertices) {
+            part.positions.push_back(vertex.position);
+        }
+        part.indices = primitive.mesh.indices;
     }
 
     Model model;

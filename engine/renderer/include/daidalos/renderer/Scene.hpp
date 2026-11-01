@@ -35,6 +35,20 @@ struct Atmosphere {
     float fogDensity = 0.0f;
 };
 
+/// A cone of light, drawn over the fog, for a flashlight. It casts no shadow. The lights of Phase 7
+/// will replace it.
+struct SpotLight {
+    glm::vec3 position{0.0f};
+    /// Normalized.
+    glm::vec3 direction{0.0f, 0.0f, -1.0f};
+    glm::vec3 color{1.0f};
+    /// Meters: the light reaches zero there.
+    float range = 10.0f;
+    /// Radians from the axis: full light inside the first angle, none outside the second.
+    float innerAngle = 0.0f;
+    float outerAngle = 0.0f;
+};
+
 /// What the renderer draws in one frame. It holds copies, so that rendering never touches the ECS
 /// (OVERVIEW §10.12).
 struct SceneView {
@@ -42,6 +56,7 @@ struct SceneView {
     std::optional<CameraView> camera;
     std::vector<DrawItem> draws;
     Atmosphere atmosphere;
+    std::optional<SpotLight> spotLight;
 };
 
 /// Fills the view from the entities with a WorldTransform and a Camera or MeshRenderer. Run it after

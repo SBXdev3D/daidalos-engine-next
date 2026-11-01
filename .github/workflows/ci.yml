@@ -47,11 +47,11 @@ jobs:
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
-        # Ninja, the X11 and Wayland development packages that SDL3 is built against, and lavapipe
-        # with the validation layers for the GPU tests.
+        # Ninja, the X11 and Wayland development packages that SDL3 is built against, lavapipe with the
+        # validation layers for the GPU tests, and a virtual display for the tests that need a window.
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build pkg-config             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev             libxkbcommon-dev libwayland-dev libdecor-0-dev libegl1-mesa-dev libgl1-mesa-dev libdrm-dev libgbm-dev             mesa-vulkan-drivers vulkan-validationlayers
+          sudo apt-get install -y ninja-build pkg-config             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev             libxkbcommon-dev libwayland-dev libdecor-0-dev libegl1-mesa-dev libgl1-mesa-dev libdrm-dev libgbm-dev             mesa-vulkan-drivers vulkan-validationlayers xvfb
 
       - name: Use the runner's vcpkg
         shell: bash
@@ -73,4 +73,10 @@ jobs:
         run: cmake --build --preset ${{ matrix.preset }}
 
       - name: Test
+        if: runner.os != 'Linux'
         run: ctest --preset ${{ matrix.preset }}
+
+      # Without -noreset, Xvfb resets when its last client leaves, and the next test finds no display.
+      - name: Test on a virtual display
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24 -noreset" ctest --preset ${{ matrix.preset }}

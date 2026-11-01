@@ -230,6 +230,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_scene.camera.reset();
     m_scene.draws.clear();
     m_scene.atmosphere = {};
+    m_scene.spotLight.reset();
     if (m_currentScene) {
         m_currentScene->Extract(m_scene);
     }
@@ -323,7 +324,7 @@ void Application::MainLoop(IApplicationHandler& handler) {
             DAI_PROFILE_SCOPE("Update");
             handler.OnUpdate(*this, time);
             if (m_currentScene) {
-                m_currentScene->RunFrame(time.delta);
+                m_currentScene->RunFrame(time.delta, static_cast<float>(time.alpha));
             }
         }
         if (m_renderer.has_value()) {

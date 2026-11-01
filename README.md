@@ -15,7 +15,8 @@ The project is at an early stage. Phases 0 to 5 of the roadmap in [OVERVIEW.md](
 | `resources` | Asset paths and caching, glTF models, PNG, JPEG and KTX2 images, as plain CPU data |
 | `rhi` | Vulkan 1.3 device, swapchain, buffers, textures with mip levels and BC compression, pipelines, command lists, deferred destruction |
 | `renderer` | Mesh rendering with depth, materials, asset library, cameras, scene extraction from the ECS, shader hot reload |
-| `scene` | A world with its assets, systems and camera |
+| `physics` | Jolt behind a small API: static meshes, kinematic boxes, raycasts, character movement |
+| `scene` | A world with its assets, physics, systems and camera |
 | `debugui` | Dear ImGui overlay drawn through the RHI (development builds) |
 | `app` | Ordered startup with rollback, main loop, current scene |
 
@@ -115,7 +116,7 @@ sandbox.exe +window.width 1920 +window.height 1080
 | `sandbox.scene` | `Factory/Factory.gltf` | Level to load from `assets/` |
 | `sandbox.mouse` | 0.0025 | Radians per mouse unit |
 | `sandbox.darkness` | 1 | Multiplies the darkness; 0 shows the level |
-| `sandbox.start` | | Where to start: `x y z yaw pitch`, in meters and degrees |
+| `sandbox.start` | | Where the player's eyes start: `x y z yaw pitch`, in meters and degrees |
 
 ## Formatting
 
