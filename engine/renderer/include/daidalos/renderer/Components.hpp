@@ -14,6 +14,10 @@ struct MeshTag;
 /// A mesh owned by the Renderer.
 using MeshHandle = core::Handle<MeshTag>;
 
+struct MaterialTag;
+/// A material owned by the Renderer.
+using MaterialHandle = core::Handle<MaterialTag>;
+
 /// ECS component: the entity's WorldTransform places the camera, which looks down its local -Z.
 struct Camera {
     float verticalFov = glm::radians(60.0f);
@@ -23,6 +27,8 @@ struct Camera {
 /// ECS component: draws a mesh at the entity's WorldTransform.
 struct MeshRenderer {
     MeshHandle mesh;
+    /// Null for the default material: plain white.
+    MaterialHandle material;
 };
 
 } // namespace daidalos::renderer

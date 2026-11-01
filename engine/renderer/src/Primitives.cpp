@@ -10,7 +10,7 @@
 
 namespace daidalos::renderer {
 
-MeshData MakeCube(const glm::vec3& color) {
+resources::MeshData MakeCube() {
     constexpr std::array<glm::vec3, 6> kNormals{{
         {1.0f, 0.0f, 0.0f},
         {-1.0f, 0.0f, 0.0f},
@@ -20,7 +20,7 @@ MeshData MakeCube(const glm::vec3& color) {
         {0.0f, 0.0f, -1.0f},
     }};
 
-    MeshData mesh;
+    resources::MeshData mesh;
     mesh.vertices.reserve(kNormals.size() * 4);
     mesh.indices.reserve(kNormals.size() * 6);
     for (const glm::vec3& normal : kNormals) {
@@ -31,10 +31,11 @@ MeshData MakeCube(const glm::vec3& color) {
 
         const auto first = static_cast<std::uint32_t>(mesh.vertices.size());
         const glm::vec3 center = normal * 0.5f;
-        mesh.vertices.push_back({center - right * 0.5f - up * 0.5f, normal, color});
-        mesh.vertices.push_back({center + right * 0.5f - up * 0.5f, normal, color});
-        mesh.vertices.push_back({center + right * 0.5f + up * 0.5f, normal, color});
-        mesh.vertices.push_back({center - right * 0.5f + up * 0.5f, normal, color});
+        const glm::vec4 tangent(right, 1.0f);
+        mesh.vertices.push_back({center - right * 0.5f - up * 0.5f, normal, tangent, {0.0f, 1.0f}});
+        mesh.vertices.push_back({center + right * 0.5f - up * 0.5f, normal, tangent, {1.0f, 1.0f}});
+        mesh.vertices.push_back({center + right * 0.5f + up * 0.5f, normal, tangent, {1.0f, 0.0f}});
+        mesh.vertices.push_back({center - right * 0.5f + up * 0.5f, normal, tangent, {0.0f, 0.0f}});
         for (const std::uint32_t corner : {0U, 1U, 2U, 0U, 2U, 3U}) {
             mesh.indices.push_back(first + corner);
         }

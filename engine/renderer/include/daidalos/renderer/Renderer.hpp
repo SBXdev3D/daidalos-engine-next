@@ -6,6 +6,7 @@
 
 #include <daidalos/core/Result.hpp>
 #include <daidalos/platform/Window.hpp>
+#include <daidalos/renderer/Material.hpp>
 #include <daidalos/renderer/Primitives.hpp>
 #include <daidalos/renderer/Scene.hpp>
 #include <daidalos/rhi/Device.hpp>
@@ -26,7 +27,7 @@ struct RendererConfig {
 using OverlayRecorder = std::function<void(rhi::CommandList& commands, rhi::Extent extent)>;
 
 /// Draws scenes to a window. The window must have been created with WindowConfig::vulkan and must
-/// outlive the renderer. Meshes are released with it.
+/// outlive the renderer. Meshes and materials are released with it.
 class Renderer {
 public:
     /// Returns the errors of rhi::Device::Create and rhi::Swapchain::Create.
@@ -38,9 +39,13 @@ public:
     Renderer& operator=(const Renderer&) = delete;
     ~Renderer();
 
-    [[nodiscard]] core::Result<MeshHandle> CreateMesh(const MeshData& data, const std::string& name);
+    [[nodiscard]] core::Result<MeshHandle> CreateMesh(const resources::MeshData& data, const std::string& name);
     /// Safe at any time: the GPU buffers go away once frames in flight are finished.
     void DestroyMesh(MeshHandle mesh);
+
+    [[nodiscard]] core::Result<MaterialHandle> CreateMaterial(const MaterialDesc& desc);
+    /// Draws using the material fall back to the default one.
+    void DestroyMaterial(MaterialHandle material);
 
     void SetVsync(bool vsync);
 

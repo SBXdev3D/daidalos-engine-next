@@ -88,6 +88,85 @@ TEST_F(GpuTest, TextureDataSurvivesARoundTripThroughGpuMemory) {
     Device().DestroyBuffer(*readback);
 }
 
+TEST(TextureSizes, MipExtentsHalveAndStopAtOne) {
+    EXPECT_EQ(rhi::MipExtent({8, 3}, 0), (rhi::Extent{8, 3}));
+    EXPECT_EQ(rhi::MipExtent({8, 3}, 1), (rhi::Extent{4, 1}));
+    EXPECT_EQ(rhi::MipExtent({8, 3}, 3), (rhi::Extent{1, 1}));
+}
+
+TEST(TextureSizes, BlockFormatsRoundUpToWholeBlocks) {
+    EXPECT_EQ(rhi::MipByteSize(rhi::Format::Rgba8Srgb, {3, 2}), 24U);
+    EXPECT_EQ(rhi::MipByteSize(rhi::Format::Bc7Srgb, {4, 4}), 16U);
+    EXPECT_EQ(rhi::MipByteSize(rhi::Format::Bc7Unorm, {5, 1}), 32U);
+    EXPECT_EQ(rhi::MipByteSize(rhi::Format::Bc5Unorm, {1, 1}), 16U);
+}
+
+TEST_F(GpuTest, EveryMipLevelSurvivesARoundTripThroughGpuMemory) {
+    // Levels of 4x2, 2x1 and 1x1 pixels.
+    const std::array<std::uint32_t, 11> chain{10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 30};
+    const auto bytes = std::as_bytes(std::span(chain));
+
+    const core::Result<rhi::TextureHandle> texture = Device().CreateTexture(
+        {.extent = {4, 2},
+         .format = rhi::Format::Rgba8Unorm,
+         .usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDst | rhi::TextureUsage::TransferSrc,
+         .mipLevels = 3,
+         .name = "Mips"});
+    ASSERT_TRUE(texture.has_value());
+    const core::Result<rhi::BufferHandle> readback = Device().CreateBuffer({.size = bytes.size(),
+                                                                            .usage = rhi::BufferUsage::TransferDst,
+                                                                            .memory = rhi::MemoryLocation::GpuToCpu,
+                                                                            .name = "Readback"});
+    ASSERT_TRUE(readback.has_value());
+
+    ASSERT_TRUE(Device().UploadTexture(*texture, bytes).has_value());
+    ASSERT_TRUE(Device()
+                    .Submit([&](rhi::CommandList& commands) {
+                        commands.Transition(*texture, rhi::TextureState::TransferSrc);
+                        commands.CopyTextureToBuffer(*texture, *readback, 1);
+                    })
+                    .has_value());
+    std::array<std::uint32_t, 2> level1{};
+    std::memcpy(level1.data(), Device().Mapped(*readback).data(), sizeof(level1));
+    EXPECT_EQ(level1, (std::array<std::uint32_t, 2>{20, 21}));
+
+    ASSERT_TRUE(Device()
+                    .Submit([&](rhi::CommandList& commands) { commands.CopyTextureToBuffer(*texture, *readback, 2); })
+                    .has_value());
+    std::uint32_t level2 = 0;
+    std::memcpy(&level2, Device().Mapped(*readback).data(), sizeof(level2));
+    EXPECT_EQ(level2, 30U);
+
+    Device().DestroyTexture(*texture);
+    Device().DestroyBuffer(*readback);
+}
+
+TEST_F(GpuTest, BlockCompressedTextureCanBeUploaded) {
+    const std::array<std::byte, 32> blocks{}; // Two levels of one block: a 4x4 and a 2x2 texture.
+    const core::Result<rhi::TextureHandle> texture =
+        Device().CreateTexture({.extent = {4, 4},
+                                .format = rhi::Format::Bc7Srgb,
+                                .usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDst,
+                                .mipLevels = 2,
+                                .name = "Compressed"});
+    ASSERT_TRUE(texture.has_value());
+    EXPECT_TRUE(Device().UploadTexture(*texture, blocks).has_value());
+    Device().DestroyTexture(*texture);
+}
+
+TEST_F(GpuTest, StorageSlotIsNotReusedBeforeTheGpuIsDone) {
+    const rhi::BufferDesc desc{.size = 16, .usage = rhi::BufferUsage::Storage, .name = "Storage"};
+    const core::Result<rhi::BufferHandle> first = Device().CreateBuffer(desc);
+    ASSERT_TRUE(first.has_value());
+    const std::uint32_t slot = Device().StorageIndex(*first);
+    Device().DestroyBuffer(*first);
+
+    const core::Result<rhi::BufferHandle> second = Device().CreateBuffer(desc);
+    ASSERT_TRUE(second.has_value());
+    EXPECT_NE(Device().StorageIndex(*second), slot);
+    Device().DestroyBuffer(*second);
+}
+
 TEST_F(GpuTest, DestroyedHandleBecomesStaleImmediately) {
     const core::Result<rhi::BufferHandle> buffer =
         Device().CreateBuffer({.size = 16, .usage = rhi::BufferUsage::Vertex, .name = "Buffer"});

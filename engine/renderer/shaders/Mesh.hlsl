@@ -2,22 +2,21 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
-// Forward shading of opaque meshes with fixed lighting, until lights exist (Phase 6).
+// Forward shading of opaque meshes with fixed lighting, until lights exist (Phase 6). Materials hold
+// the full metallic-roughness data, but only the base color is shaded for now.
 
 #include "MeshTypes.hlsli"
-
-[[vk::push_constant]] MeshPushConstants g_push;
 
 struct VertexInput {
     [[vk::location(0)]] float3 position : POSITION;
     [[vk::location(1)]] float3 normal : NORMAL;
-    [[vk::location(2)]] float3 color : COLOR;
+    [[vk::location(2)]] float2 uv : TEXCOORD;
 };
 
 struct VertexOutput {
     float4 clipPosition : SV_Position;
     [[vk::location(0)]] float3 worldNormal : NORMAL;
-    [[vk::location(1)]] float3 color : COLOR;
+    [[vk::location(1)]] float2 uv : TEXCOORD;
 };
 
 // Transforms a normal with the cofactor matrix, which stays correct under non-uniform scale and
@@ -30,18 +29,34 @@ float3 TransformNormal(float4x4 world, float3 normal) {
 }
 
 VertexOutput VSMain(VertexInput input) {
+    const float4x4 viewProjection = g_frames[g_push.frameBuffer][0].viewProjection;
+    const float4x4 world = g_instances[g_push.instanceBuffer][g_push.instanceIndex].world;
+
     VertexOutput output;
-    const float4 worldPosition = mul(g_push.world, float4(input.position, 1.0));
-    output.clipPosition = mul(g_push.viewProjection, worldPosition);
-    output.worldNormal = TransformNormal(g_push.world, input.normal);
-    output.color = input.color;
+    const float4 worldPosition = mul(world, float4(input.position, 1.0));
+    output.clipPosition = mul(viewProjection, worldPosition);
+    output.worldNormal = TransformNormal(world, input.normal);
+    output.uv = input.uv;
     return output;
 }
 
-float4 PSMain(VertexOutput input) : SV_Target {
-    const float3 normal = normalize(input.worldNormal);
+float4 PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target {
+    const MaterialData material = g_materials[g_push.materialBuffer][g_push.materialIndex];
+
+    float4 baseColor = material.baseColorFactor;
+    if (material.baseColorTexture != kNoTexture) {
+        baseColor *= g_textures[material.baseColorTexture].Sample(g_samplers[kSamplerLinearRepeat], input.uv);
+    }
+    if (baseColor.a < material.alphaCutoff) {
+        discard;
+    }
+
+    float3 normal = normalize(input.worldNormal);
+    if (!isFrontFace) {
+        normal = -normal; // The back of a double-sided material.
+    }
     const float3 toLight = normalize(float3(0.4, 1.0, 0.6));
     const float diffuse = saturate(dot(normal, toLight));
     const float ambient = 0.2 + 0.1 * (normal.y * 0.5 + 0.5);
-    return float4(input.color * (ambient + diffuse), 1.0);
+    return float4(baseColor.rgb * (ambient + diffuse), 1.0);
 }

@@ -5,6 +5,7 @@
 #include <daidalos/app/Application.hpp>
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/math/Axes.hpp>
+#include <daidalos/renderer/AssetLibrary.hpp>
 #include <daidalos/renderer/Primitives.hpp>
 
 #if DAI_DEV_TOOLS
@@ -19,6 +20,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <format>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -29,6 +31,9 @@ namespace {
 
 using namespace daidalos;
 
+constexpr const char* kAssetRoot = "assets"; // Relative to the working directory.
+constexpr glm::vec3 kModelPosition{-0.5f, 0.0f, -3.0f};
+constexpr float kModelScale = 0.15f;        // The sample lantern is much taller than a person.
 constexpr float kMoveSpeed = 4.0f;          // Meters per second.
 constexpr float kFastMoveFactor = 3.0f;     // While Shift is held.
 constexpr float kMouseSensitivity = 0.003f; // Radians per mouse unit.
@@ -52,6 +57,11 @@ public:
         DAI_LOG_INFO("sandbox", "Main window: {}x{} pixels", size.width, size.height);
         m_frameLimit =
             app.CVars().Register<std::int64_t>("sandbox.frames", 0, "Quit after this many frames; 0 runs until closed");
+        const core::CVar<std::string> scene = app.CVars().Register<std::string>(
+            "sandbox.scene", "Lantern/glTF/Lantern.gltf", "Model to load from the assets directory");
+        if (core::Result<void> loaded = LoadModel(app.Renderer(), scene.Get()); !loaded) {
+            return loaded;
+        }
         return BuildScene(app.Renderer());
     }
 
@@ -95,31 +105,54 @@ public:
     }
 
     void OnStop(app::Application& app) override {
+        m_assets.reset();
         DAI_LOG_INFO("sandbox", "Stopping after {} frames, {} presented", m_totalFrames,
                      app.Renderer().Device().PresentedFrameCount());
     }
 
 private:
+    // The sample scene is downloaded (scripts/fetch_sample_assets.py). Without it, the cubes stand alone.
+    core::Result<void> LoadModel(renderer::Renderer& target, const std::string& path) {
+        m_assets = std::make_unique<renderer::AssetLibrary>(target, kAssetRoot);
+        core::Result<const renderer::Model*> model = m_assets->LoadModel(path);
+        if (!model) {
+            if (model.error().code == core::ErrorCode::NotFound) {
+                DAI_LOG_INFO("sandbox", "No sample scene: {}", core::Format(model.error()));
+                return {};
+            }
+            return tl::unexpected(std::move(model.error()));
+        }
+        core::Result<ecs::Entity> root = renderer::Instantiate(m_world, **model);
+        if (!root) {
+            return tl::unexpected(std::move(root.error()));
+        }
+        ecs::LocalTransform& transform = m_world.Get<ecs::LocalTransform>(*root);
+        transform.translation = kModelPosition;
+        transform.scale = glm::vec3(kModelScale);
+        return {};
+    }
+
     core::Result<void> BuildScene(renderer::Renderer& target) {
-        core::Result<renderer::MeshHandle> gray =
-            target.CreateMesh(renderer::MakeCube({0.5f, 0.5f, 0.55f}), "Gray cube");
-        if (!gray) {
-            return tl::unexpected(std::move(gray.error()));
+        core::Result<renderer::MeshHandle> cube = target.CreateMesh(renderer::MakeCube(), "Cube");
+        if (!cube) {
+            return tl::unexpected(std::move(cube.error()));
         }
-        core::Result<renderer::MeshHandle> red = target.CreateMesh(renderer::MakeCube({0.8f, 0.15f, 0.1f}), "Red cube");
-        if (!red) {
-            return tl::unexpected(std::move(red.error()));
-        }
-        core::Result<renderer::MeshHandle> blue =
-            target.CreateMesh(renderer::MakeCube({0.1f, 0.3f, 0.8f}), "Blue cube");
-        if (!blue) {
-            return tl::unexpected(std::move(blue.error()));
+        const auto colored = [&target](const glm::vec3& color) {
+            renderer::MaterialDesc desc;
+            desc.baseColorFactor = glm::vec4(color, 1.0f);
+            return target.CreateMaterial(desc);
+        };
+        core::Result<renderer::MaterialHandle> gray = colored({0.5f, 0.5f, 0.55f});
+        core::Result<renderer::MaterialHandle> red = colored({0.8f, 0.15f, 0.1f});
+        core::Result<renderer::MaterialHandle> blue = colored({0.1f, 0.3f, 0.8f});
+        if (!gray || !red || !blue) {
+            return tl::unexpected(std::move(!gray ? gray.error() : (!red ? red.error() : blue.error())));
         }
 
-        AddMesh(*gray, {0.0f, -0.05f, 0.0f}, {12.0f, 0.1f, 12.0f}); // The floor.
-        AddMesh(*gray, {-2.5f, 0.5f, -1.0f}, glm::vec3(1.0f));
-        m_spinner = AddMesh(*red, {1.0f, 0.75f, 0.0f}, {1.0f, 1.5f, 1.0f});
-        const ecs::Entity satellite = AddMesh(*blue, {1.5f, 0.0f, 0.0f}, glm::vec3(0.4f));
+        AddMesh(*cube, *gray, {0.0f, -0.05f, 0.0f}, {12.0f, 0.1f, 12.0f}); // The floor.
+        AddMesh(*cube, *gray, {-2.5f, 0.5f, -1.0f}, glm::vec3(1.0f));
+        m_spinner = AddMesh(*cube, *red, {1.0f, 0.75f, 0.0f}, {1.0f, 1.5f, 1.0f});
+        const ecs::Entity satellite = AddMesh(*cube, *blue, {1.5f, 0.0f, 0.0f}, glm::vec3(0.4f));
         if (core::Result<void> attached = m_world.SetParent(satellite, m_spinner); !attached) {
             return attached;
         }
@@ -132,13 +165,14 @@ private:
         return {};
     }
 
-    ecs::Entity AddMesh(renderer::MeshHandle mesh, const glm::vec3& position, const glm::vec3& scale) {
+    ecs::Entity AddMesh(renderer::MeshHandle mesh, renderer::MaterialHandle material, const glm::vec3& position,
+                        const glm::vec3& scale) {
         const ecs::Entity entity = m_world.Create();
         ecs::LocalTransform transform;
         transform.translation = position;
         transform.scale = scale;
         m_world.Add<ecs::LocalTransform>(entity, transform);
-        m_world.Add<renderer::MeshRenderer>(entity, mesh);
+        m_world.Add<renderer::MeshRenderer>(entity, mesh, material);
         return entity;
     }
 
@@ -218,6 +252,7 @@ private:
 #endif
     }
 
+    std::unique_ptr<renderer::AssetLibrary> m_assets;
     ecs::World m_world;
     ecs::Entity m_camera;
     ecs::Entity m_spinner;

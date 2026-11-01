@@ -1,0 +1,5 @@
+# LeakSanitizer suppressions, used by the linux-clang-asan test preset.
+
+# libktx 4.4.2: ktxTexture2_CreateFromMemory does not destroy its memory stream when the data is
+# invalid, and the caller gets nothing to free. 40 bytes per failed load.
+leak:ktxMem_create_ro

@@ -1,6 +1,7 @@
 dai_add_test(NAME daidalos_renderer_gpu_tests
     SOURCES
         ../GpuFixture.hpp
+        AssetLibraryTests.cpp
         MeshPassTests.cpp
         RendererTests.cpp
     DEPS
@@ -12,3 +13,4 @@ target_include_directories(daidalos_renderer_gpu_tests PRIVATE
 target_compile_definitions(daidalos_renderer_gpu_tests PRIVATE
     DAI_DXC_PATH="${DIRECTX_DXC_TOOL}"
     DAI_SHADER_SOURCE_DIR="${PROJECT_SOURCE_DIR}/engine/renderer/shaders")
+target_compile_definitions(daidalos_renderer_gpu_tests PRIVATE DAI_TEST_ASSET_DIR="${PROJECT_SOURCE_DIR}/tests/assets")

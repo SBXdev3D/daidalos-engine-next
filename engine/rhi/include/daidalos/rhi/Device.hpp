@@ -86,11 +86,14 @@ public:
 
     [[nodiscard]] core::Result<TextureHandle> CreateTexture(const TextureDesc& desc);
     void DestroyTexture(TextureHandle texture);
-    /// Fills a texture with tightly packed pixels and leaves it in the ShaderRead state, as
-    /// UploadBuffer does for buffers. The texture needs TextureUsage::TransferDst and Sampled.
+    /// Fills every mip level of a texture and leaves it in the ShaderRead state, as UploadBuffer does
+    /// for buffers. The levels follow each other from the largest, tightly packed (MipByteSize).
+    /// The texture needs TextureUsage::TransferDst and Sampled.
     [[nodiscard]] core::Result<void> UploadTexture(TextureHandle texture, std::span<const std::byte> pixels);
     /// Index of a sampled texture in the g_textures array of shaders.
     [[nodiscard]] std::uint32_t BindlessIndex(TextureHandle texture) const;
+    /// Index of a BufferUsage::Storage buffer in the storage buffer arrays of shaders.
+    [[nodiscard]] std::uint32_t StorageIndex(BufferHandle buffer) const;
 
     /// Fails with DeviceError if the driver rejects the SPIR-V.
     [[nodiscard]] core::Result<PipelineHandle> CreatePipeline(const GraphicsPipelineDesc& desc);

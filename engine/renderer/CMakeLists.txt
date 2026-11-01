@@ -1,9 +1,13 @@
 dai_add_module(NAME renderer
     SOURCES
+        include/daidalos/renderer/AssetLibrary.hpp
         include/daidalos/renderer/Components.hpp
+        include/daidalos/renderer/Material.hpp
         include/daidalos/renderer/Primitives.hpp
         include/daidalos/renderer/Renderer.hpp
         include/daidalos/renderer/Scene.hpp
+        src/AssetLibrary.cpp
+        src/Material.cpp
         src/MeshPass.cpp
         src/MeshPass.hpp
         src/Primitives.cpp
@@ -16,6 +20,7 @@ dai_add_module(NAME renderer
         daidalos::ecs
         daidalos::math
         daidalos::platform
+        daidalos::resources
         daidalos::rhi
     PRIVATE_DEPS
         daidalos::logging)

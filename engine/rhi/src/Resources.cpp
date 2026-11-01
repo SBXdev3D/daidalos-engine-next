@@ -5,6 +5,7 @@
 #include <daidalos/core/Assert.hpp>
 #include <daidalos/rhi/Device.hpp>
 
+#include <algorithm>
 #include <cstring>
 #include <format>
 #include <utility>
@@ -21,6 +22,7 @@ VkBufferUsageFlags ToVulkanUsage(BufferUsage usage) {
     flags |= HasFlag(usage, BufferUsage::Index) ? VK_BUFFER_USAGE_INDEX_BUFFER_BIT : 0U;
     flags |= HasFlag(usage, BufferUsage::TransferSrc) ? VK_BUFFER_USAGE_TRANSFER_SRC_BIT : 0U;
     flags |= HasFlag(usage, BufferUsage::TransferDst) ? VK_BUFFER_USAGE_TRANSFER_DST_BIT : 0U;
+    flags |= HasFlag(usage, BufferUsage::Storage) ? VK_BUFFER_USAGE_STORAGE_BUFFER_BIT : 0U;
     return flags;
 }
 
@@ -39,6 +41,9 @@ VkImageUsageFlags ToVulkanUsage(TextureUsage usage) {
 std::uint32_t BytesPerPixel(Format format) {
     switch (format) {
     case Format::Undefined:
+    case Format::Bc5Unorm:
+    case Format::Bc7Unorm:
+    case Format::Bc7Srgb:
         return 0;
     case Format::Rgba8Unorm:
     case Format::Rgba8Srgb:
@@ -54,6 +59,25 @@ std::uint32_t BytesPerPixel(Format format) {
         return 16;
     }
     return 0;
+}
+
+Extent MipExtent(Extent extent, std::uint32_t level) {
+    return {std::max(extent.width >> level, 1U), std::max(extent.height >> level, 1U)};
+}
+
+std::uint64_t MipByteSize(Format format, Extent extent) {
+    switch (format) {
+    case Format::Bc5Unorm:
+    case Format::Bc7Unorm:
+    case Format::Bc7Srgb: {
+        constexpr std::uint64_t kBytesPerBlock = 16;
+        const std::uint64_t blocksWide = (std::uint64_t{extent.width} + 3) / 4;
+        const std::uint64_t blocksHigh = (std::uint64_t{extent.height} + 3) / 4;
+        return blocksWide * blocksHigh * kBytesPerBlock;
+    }
+    default:
+        return std::uint64_t{extent.width} * extent.height * BytesPerPixel(format);
+    }
 }
 
 VkFormat ToVulkan(Format format) {
@@ -76,6 +100,12 @@ VkFormat ToVulkan(Format format) {
         return VK_FORMAT_R32G32B32A32_SFLOAT;
     case Format::D32Float:
         return VK_FORMAT_D32_SFLOAT;
+    case Format::Bc5Unorm:
+        return VK_FORMAT_BC5_UNORM_BLOCK;
+    case Format::Bc7Unorm:
+        return VK_FORMAT_BC7_UNORM_BLOCK;
+    case Format::Bc7Srgb:
+        return VK_FORMAT_BC7_SRGB_BLOCK;
     }
     return VK_FORMAT_UNDEFINED;
 }
@@ -111,6 +141,13 @@ core::Result<BufferHandle> Device::CreateBuffer(const BufferDesc& desc) {
         allocationInfo.requiredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     }
 
+    const bool storage = HasFlag(desc.usage, BufferUsage::Storage);
+    if (storage && m_impl->freeStorageIndices.empty()) {
+        return core::MakeError(
+            core::ErrorCode::OutOfMemory, std::string(kModule),
+            std::format("Buffer '{}': all {} storage buffer slots are in use", desc.name, kMaxBindlessBuffers));
+    }
+
     BufferData data;
     data.usage = desc.usage;
     data.size = desc.size;
@@ -124,6 +161,21 @@ core::Result<BufferHandle> Device::CreateBuffer(const BufferDesc& desc) {
     if (allocated.pMappedData != nullptr) {
         data.mapped = std::span(static_cast<std::byte*>(allocated.pMappedData), desc.size);
     }
+    if (storage) {
+        data.storageIndex = m_impl->freeStorageIndices.back();
+        m_impl->freeStorageIndices.pop_back();
+        const VkDescriptorBufferInfo descriptor{.buffer = data.buffer, .range = VK_WHOLE_SIZE};
+        const VkWriteDescriptorSet write{
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = m_impl->globalSet,
+            .dstBinding = 2,
+            .dstArrayElement = data.storageIndex,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .pBufferInfo = &descriptor,
+        };
+        vkUpdateDescriptorSets(m_impl->device, 1, &write, 0, nullptr);
+    }
     m_impl->SetName(VK_OBJECT_TYPE_BUFFER, reinterpret_cast<std::uint64_t>(data.buffer), desc.name);
     return m_impl->buffers.Insert(data);
 }
@@ -131,8 +183,13 @@ core::Result<BufferHandle> Device::CreateBuffer(const BufferDesc& desc) {
 void Device::DestroyBuffer(BufferHandle buffer) {
     DAI_ASSERT(m_impl, "Device used after being moved from");
     if (const std::optional<BufferData> data = m_impl->buffers.Remove(buffer)) {
-        m_impl->Defer([allocator = m_impl->allocator, data = *data] {
-            vmaDestroyBuffer(allocator, data.buffer, data.allocation);
+        // The storage slot is released with the buffer: frames in flight may still read it.
+        Impl* impl = m_impl.get();
+        m_impl->Defer([impl, data = *data] {
+            vmaDestroyBuffer(impl->allocator, data.buffer, data.allocation);
+            if (HasFlag(data.usage, BufferUsage::Storage)) {
+                impl->freeStorageIndices.push_back(data.storageIndex);
+            }
         });
     }
 }
@@ -168,6 +225,7 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
     DAI_ASSERT(m_impl, "Device used after being moved from");
     DAI_ASSERT(desc.extent.width > 0 && desc.extent.height > 0, "A texture cannot be empty");
     DAI_ASSERT(desc.format != Format::Undefined, "A texture needs a format");
+    DAI_ASSERT(desc.mipLevels > 0, "A texture has at least one mip level");
 
     const bool sampled = HasFlag(desc.usage, TextureUsage::Sampled);
     if (sampled && m_impl->freeBindlessIndices.empty()) {
@@ -181,7 +239,7 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
         .imageType = VK_IMAGE_TYPE_2D,
         .format = ToVulkan(desc.format),
         .extent = {desc.extent.width, desc.extent.height, 1},
-        .mipLevels = 1,
+        .mipLevels = desc.mipLevels,
         .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
@@ -193,6 +251,7 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
 
     TextureData data;
     data.extent = desc.extent;
+    data.mipLevels = desc.mipLevels;
     data.format = desc.format;
     data.usage = desc.usage;
     if (const VkResult result =
@@ -209,7 +268,7 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
         .subresourceRange = {.aspectMask = (desc.format == Format::D32Float)
                                                ? VkImageAspectFlags{VK_IMAGE_ASPECT_DEPTH_BIT}
                                                : VkImageAspectFlags{VK_IMAGE_ASPECT_COLOR_BIT},
-                             .levelCount = 1,
+                             .levelCount = desc.mipLevels,
                              .layerCount = 1},
     };
     if (const VkResult result = vkCreateImageView(m_impl->device, &viewInfo, nullptr, &data.view);
@@ -260,8 +319,11 @@ void Device::DestroyTexture(TextureHandle texture) {
 core::Result<void> Device::UploadTexture(TextureHandle texture, std::span<const std::byte> pixels) {
     DAI_ASSERT(m_impl, "Device used after being moved from");
     const TextureData& data = m_impl->textures.Get(texture);
-    DAI_ASSERT(pixels.size() == std::uint64_t{data.extent.width} * data.extent.height * BytesPerPixel(data.format),
-               "The pixels do not match the size of the texture");
+    std::uint64_t expectedSize = 0;
+    for (std::uint32_t level = 0; level < data.mipLevels; ++level) {
+        expectedSize += MipByteSize(data.format, MipExtent(data.extent, level));
+    }
+    DAI_ASSERT(pixels.size() == expectedSize, "The pixels do not match the size of the texture");
 
     core::Result<BufferHandle> staging = CreateBuffer({.size = pixels.size(),
                                                        .usage = BufferUsage::TransferSrc,
@@ -278,6 +340,13 @@ core::Result<void> Device::UploadTexture(TextureHandle texture, std::span<const 
     });
     DestroyBuffer(*staging);
     return submitted;
+}
+
+std::uint32_t Device::StorageIndex(BufferHandle buffer) const {
+    DAI_ASSERT(m_impl, "Device used after being moved from");
+    const BufferData& data = m_impl->buffers.Get(buffer);
+    DAI_ASSERT(HasFlag(data.usage, BufferUsage::Storage), "The buffer is not a storage buffer");
+    return data.storageIndex;
 }
 
 std::uint32_t Device::BindlessIndex(TextureHandle texture) const {
