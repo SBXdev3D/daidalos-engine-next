@@ -182,10 +182,11 @@ flowchart LR
 | `tests/unit/<module>/` | Logic of one module, one executable per module | No |
 | `tests/gpu/<module>/` | `rhi`, `renderer`, `scene` and `debugui` on a real driver, with no mock device | Yes, or lavapipe on Linux |
 
-CI runs on pull requests and on `main`: Windows MSVC and Linux Clang, in Debug, Release, ASan and Profile, plus a formatting check.
+CI runs on pull requests and on `main`: Windows MSVC and Linux Clang, in Debug, Release, ASan and Profile, plus a formatting check. Its runners have no display, so tests that need a window skip themselves. Linux runs the headless GPU tests on lavapipe, and Windows runners have no Vulkan, so they skip all GPU tests.
 
 ## Known gaps
 
+- Tests that need a window (`renderer`, `AssetLibrary`, `scene`, `debugui`) only run on a developer's machine, on Windows so far. Running Linux CI under a virtual display would cover them on lavapipe.
 - No tool produces KTX2 files yet, although the loader reads them.
 - Lighting, clustering and ambient occlusion do not exist yet (Phase 7). Materials carry all the PBR data already, and the sandbox simulates darkness with fog.
 - Nothing collides, and the sandbox's player flies (Phase 6).

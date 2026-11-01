@@ -38,7 +38,25 @@ app::ApplicationConfig RenderingConfig() {
     return config;
 }
 
-/// Runs the handler, or skips the test on machines that cannot render.
+/// Skips the tests on machines without a display or a Vulkan window, like continuous integration.
+class ApplicationScene : public ::testing::Test {
+protected:
+    void SetUp() override {
+        core::Result<platform::Platform> created = platform::Platform::Create();
+        if (!created) {
+            GTEST_SKIP() << core::Format(created.error());
+        }
+        platform::WindowConfig config;
+        config.width = 64;
+        config.height = 64;
+        config.vulkan = true;
+        if (core::Result<platform::Window> window = platform::Window::Create(*created, config); !window) {
+            GTEST_SKIP() << core::Format(window.error());
+        }
+    }
+};
+
+/// Runs the handler, or skips the test on machines without Vulkan 1.3.
 #define RUN_OR_SKIP(handler)                                                                                           \
     app::Application application(RenderingConfig());                                                                   \
     const core::Result<void> result = application.Run(handler);                                                        \
@@ -48,7 +66,7 @@ app::ApplicationConfig RenderingConfig() {
 
 constexpr const char* kModel = "quad.gltf";
 
-TEST(ApplicationScene, FailedStartReleasesTheSceneBeforeTheRenderer) {
+TEST_F(ApplicationScene, FailedStartReleasesTheSceneBeforeTheRenderer) {
     FunctionHandler handler;
     handler.start = [](app::Application& app) -> core::Result<void> {
         auto scene = std::make_unique<scene::Scene>(app.Renderer(), DAI_TEST_ASSET_DIR);
@@ -62,7 +80,7 @@ TEST(ApplicationScene, FailedStartReleasesTheSceneBeforeTheRenderer) {
     EXPECT_EQ(result.error().code, core::ErrorCode::InvalidArgument);
 }
 
-TEST(ApplicationScene, SceneIsReplacedBetweenFrames) {
+TEST_F(ApplicationScene, SceneIsReplacedBetweenFrames) {
     scene::Scene* first = nullptr;
     scene::Scene* second = nullptr;
     FunctionHandler handler;
@@ -88,7 +106,7 @@ TEST(ApplicationScene, SceneIsReplacedBetweenFrames) {
     EXPECT_TRUE(result.has_value());
 }
 
-TEST(ApplicationScene, SystemsRunAndTheCurrentSceneIsDrawn) {
+TEST_F(ApplicationScene, SystemsRunAndTheCurrentSceneIsDrawn) {
     int frameRuns = 0;
     FunctionHandler handler;
     handler.start = [&frameRuns](app::Application& app) -> core::Result<void> {
@@ -113,7 +131,7 @@ TEST(ApplicationScene, SystemsRunAndTheCurrentSceneIsDrawn) {
     EXPECT_EQ(frameRuns, 4);
 }
 
-TEST(ApplicationScene, ModelLoadsOnAWorkerDuringTheLoop) {
+TEST_F(ApplicationScene, ModelLoadsOnAWorkerDuringTheLoop) {
     bool loaded = false;
     FunctionHandler handler;
     handler.start = [&loaded](app::Application& app) -> core::Result<void> {
@@ -135,7 +153,7 @@ TEST(ApplicationScene, ModelLoadsOnAWorkerDuringTheLoop) {
     EXPECT_TRUE(loaded);
 }
 
-TEST(ApplicationScene, MissingModelReportsNotFoundThroughTheCallback) {
+TEST_F(ApplicationScene, MissingModelReportsNotFoundThroughTheCallback) {
     core::ErrorCode code = core::ErrorCode::InvalidArgument;
     bool called = false;
     FunctionHandler handler;
@@ -159,7 +177,7 @@ TEST(ApplicationScene, MissingModelReportsNotFoundThroughTheCallback) {
     EXPECT_EQ(code, core::ErrorCode::NotFound);
 }
 
-TEST(ApplicationScene, SceneDestroyedWhileLoadingNeverCallsBack) {
+TEST_F(ApplicationScene, SceneDestroyedWhileLoadingNeverCallsBack) {
     bool called = false;
     FunctionHandler handler;
     handler.start = [&called](app::Application& app) -> core::Result<void> {
