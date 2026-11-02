@@ -6,12 +6,15 @@
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/scene/Scene.hpp>
 
+#include <glm/geometric.hpp>
+#include <glm/matrix.hpp>
+
 #include <utility>
 
 namespace daidalos::scene {
 
-Scene::Scene(renderer::Renderer& renderer, std::filesystem::path assetRoot)
-    : m_assets(renderer, std::move(assetRoot)) {}
+Scene::Scene(renderer::Renderer& renderer, std::filesystem::path assetRoot, audio::AudioEngine* audio)
+    : m_assets(renderer, assetRoot), m_sounds(audio, std::move(assetRoot)) {}
 
 void Scene::RunFixedStep(core::Seconds step) {
     m_fixedSystems.Run(m_world, step);
@@ -31,6 +34,14 @@ void Scene::Extract(renderer::SceneView& view) {
     renderer::ExtractScene(m_world, view, m_activeCamera);
     view.atmosphere = m_atmosphere;
     view.spotLight = m_spotLight;
+
+    audio::SyncSoundEmitters(m_world, m_sounds);
+    if (view.camera.has_value()) {
+        const glm::mat4 camera = glm::inverse(view.camera->view);
+        m_sounds.SetListener(glm::vec3(camera[3]), glm::normalize(-glm::vec3(camera[2])),
+                             glm::normalize(glm::vec3(camera[1])));
+    }
+    m_sounds.Update();
 }
 
 } // namespace daidalos::scene

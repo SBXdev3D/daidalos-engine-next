@@ -65,6 +65,7 @@ ENTITY_ATTRIBUTES = {
 BOX_MESHES = {"door": "door_bbox.obj"}
 
 # Two leftover tests, and the 31 MB ambient track, which waits for a compressed format in Phase 6.
+# enter_the_maze.wav is 31 MB: it was converted once, and only enter_the_maze.ogg is committed.
 SKIPPED_SOUNDS = {"test.wav", "test2.wav", "enter_the_maze.wav"}
 # Authored right-handed and read left-handed by the legacy engine, which showed their lettering
 # backwards. Their shape is symmetric in X, so mirroring them only corrects the texture.

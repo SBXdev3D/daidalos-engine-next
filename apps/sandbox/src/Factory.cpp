@@ -5,6 +5,7 @@
 #include "Factory.hpp"
 
 #include <daidalos/ecs/Transform.hpp>
+#include <daidalos/logging/Log.hpp>
 #include <daidalos/math/Axes.hpp>
 #include <daidalos/renderer/Components.hpp>
 
@@ -15,11 +16,15 @@
 #include <glm/trigonometric.hpp>
 
 #include <algorithm>
+#include <array>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <map>
 #include <optional>
+#include <random>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -69,10 +74,44 @@ constexpr float kFlashlightRange = 32.0f;                    // Meters.
 constexpr float kFlashlightInnerAngle = glm::radians(13.0f); // From the axis.
 constexpr float kFlashlightOuterAngle = glm::radians(22.0f);
 
+// Sounds. Distances are the steps of the original, and a fall is heard from about 0.7 m high.
+constexpr float kStepDistance = 2.45f;   // Meters walked between two footsteps.
+constexpr float kLadderDistance = 1.05f; // Meters climbed between two sounds.
+constexpr float kLandingSpeed = 4.0f;    // Meters per second.
+constexpr float kMusicVolume = 0.35f;
+
 enum class PickupKind { Health, Armor, HandgunAmmo, ShotgunAmmo, Flashlight, RedCard };
+constexpr std::size_t kPickupKinds = 6;
 
 struct Pickup {
     PickupKind kind;
+};
+
+/// A sound that plays for as long as the level does, from where its entity is.
+struct LoopedSound {
+    audio::ClipHandle clip;
+    float volume = 1.0f;
+    float minDistance = 1.5f;
+    float maxDistance = 35.0f;
+};
+
+/// The sounds of the game, with the player's entity.
+struct SoundBank {
+    std::array<audio::ClipHandle, 4> steps;
+    std::array<audio::ClipHandle, kPickupKinds> pickups;
+    audio::ClipHandle jump;
+    audio::ClipHandle land;
+    audio::ClipHandle ladder;
+    audio::ClipHandle flashlight;
+    audio::ClipHandle doorStart;
+    audio::ClipHandle doorStop;
+    audio::ClipHandle alarm;
+    audio::ClipHandle fan;
+    audio::ClipHandle music;
+    float stepDistance = 0.0f;
+    float ladderDistance = 0.0f;
+    std::size_t lastStep = 0;
+    std::minstd_rand random{std::random_device{}()};
 };
 
 /// The box around a ladder, in which the player climbs.
@@ -170,6 +209,64 @@ void Say(Player& player, std::string message) {
     player.messageTime = kMessageTime;
 }
 
+/// A sound that does not stop the game when it is missing, because the game can be played without it.
+audio::ClipHandle LoadSound(scene::Scene& scene, std::string_view name, const audio::ClipOptions& options = {}) {
+    core::Result<audio::ClipHandle> clip =
+        scene.Sounds().Load(std::string("Factory/Sounds/") + std::string(name), options);
+    if (!clip) {
+        DAI_LOG_WARNING("sandbox", "{}", core::Format(clip.error()));
+        return {};
+    }
+    return *clip;
+}
+
+SoundBank LoadSounds(scene::Scene& scene) {
+    const auto start = std::chrono::steady_clock::now();
+    SoundBank bank;
+    bank.steps = {LoadSound(scene, "footstep1.wav"), LoadSound(scene, "footstep2.wav"),
+                  LoadSound(scene, "footstep3.wav"), LoadSound(scene, "footstep4.wav")};
+    bank.pickups[static_cast<std::size_t>(PickupKind::Health)] = LoadSound(scene, "health_bonus.wav");
+    bank.pickups[static_cast<std::size_t>(PickupKind::Armor)] = LoadSound(scene, "armor_bonus.wav");
+    bank.pickups[static_cast<std::size_t>(PickupKind::HandgunAmmo)] = LoadSound(scene, "handgun_ammo.wav");
+    bank.pickups[static_cast<std::size_t>(PickupKind::ShotgunAmmo)] = LoadSound(scene, "shotgun_ammo.wav");
+    bank.pickups[static_cast<std::size_t>(PickupKind::Flashlight)] = LoadSound(scene, "flashlight_bonus.wav");
+    bank.pickups[static_cast<std::size_t>(PickupKind::RedCard)] = LoadSound(scene, "misc_bonus.wav");
+    bank.jump = LoadSound(scene, "jump.wav");
+    bank.land = LoadSound(scene, "footstep_fall.wav");
+    bank.ladder = LoadSound(scene, "ladder.wav");
+    bank.flashlight = LoadSound(scene, "flashlight.wav");
+    bank.doorStart = LoadSound(scene, "door_start.wav");
+    bank.doorStop = LoadSound(scene, "door_stop.wav");
+    bank.alarm = LoadSound(scene, "alarm.wav");
+    bank.fan = LoadSound(scene, "fan.wav");
+    bank.music = LoadSound(scene, "enter_the_maze.ogg", {.stream = true});
+    const std::chrono::duration<double, std::milli> elapsed = std::chrono::steady_clock::now() - start;
+    DAI_LOG_INFO("sandbox", "{} sounds loaded in {:.0f} ms", scene.Sounds().ClipCount(), elapsed.count());
+    return bank;
+}
+
+/// Starts what plays for the whole level. Waiting for the scene to run keeps a restart, which builds
+/// the new scene while the old one plays, from doubling every sound.
+void StartLoopedSounds(scene::Scene& scene, ecs::Entity playerEntity) {
+    ecs::World& world = scene.World();
+    audio::SoundWorld& sounds = scene.Sounds();
+    if (const SoundBank* bank = world.TryGet<SoundBank>(playerEntity)) {
+        sounds.Play(bank->music, {.volume = kMusicVolume, .loop = true, .bus = audio::Bus::Music});
+    }
+    std::vector<std::pair<ecs::Entity, audio::VoiceHandle>> started;
+    world.Each<LoopedSound, ecs::LocalTransform>(
+        [&](ecs::Entity entity, const LoopedSound& sound, const ecs::LocalTransform& transform) {
+            started.emplace_back(entity, sounds.Play(sound.clip, {.position = transform.translation,
+                                                                  .volume = sound.volume,
+                                                                  .loop = true,
+                                                                  .minDistance = sound.minDistance,
+                                                                  .maxDistance = sound.maxDistance}));
+        });
+    for (const auto& [entity, voice] : started) {
+        world.Add<audio::SoundEmitter>(entity, voice);
+    }
+}
+
 void Collect(Player& player, PickupKind kind) {
     switch (kind) {
     case PickupKind::Health:
@@ -231,6 +328,9 @@ void LookAround(ecs::Entity entity, scene::Scene& scene, const input::InputState
     player.interactPressed = player.interactPressed || actions.WasPressed(input, Interact);
     if (player.hasFlashlight && actions.WasPressed(input, ToggleFlashlight)) {
         player.flashlightOn = !player.flashlightOn;
+        if (const SoundBank* bank = scene.World().TryGet<SoundBank>(entity)) {
+            scene.Sounds().Play(bank->flashlight);
+        }
     }
     player.messageTime = std::max(player.messageTime - delta, 0.0f);
 }
@@ -246,6 +346,35 @@ std::optional<float> LadderTop(ecs::World& world, const glm::vec3& feet) {
         }
     });
     return top;
+}
+
+/// Footsteps go by the distance walked, so that they follow the speed of the player.
+void PlayMovementSounds(scene::Scene& scene, ecs::Entity entity, bool climbing, bool grounded) {
+    ecs::World& world = scene.World();
+    SoundBank* bank = world.TryGet<SoundBank>(entity);
+    if (bank == nullptr) {
+        return;
+    }
+    const Player& player = world.Get<Player>(entity);
+    const glm::vec3 moved = player.feet - player.previousFeet;
+    if (climbing) {
+        bank->ladderDistance += std::abs(moved.y);
+        if (bank->ladderDistance >= kLadderDistance) {
+            bank->ladderDistance = 0.0f;
+            scene.Sounds().Play(bank->ladder);
+        }
+    } else if (grounded) {
+        bank->stepDistance += glm::length(glm::vec2(moved.x, moved.z));
+        if (bank->stepDistance >= kStepDistance) {
+            bank->stepDistance = 0.0f;
+            // Never the same one twice in a row.
+            const std::size_t offset = 1 + bank->random() % (bank->steps.size() - 1);
+            bank->lastStep = (bank->lastStep + offset) % bank->steps.size();
+            scene.Sounds().Play(bank->steps[bank->lastStep]);
+        }
+    } else {
+        bank->stepDistance = 0.0f;
+    }
 }
 
 /// What the player does on every fixed step: walking, jumping, crouching and climbing.
@@ -280,14 +409,24 @@ void MovePlayer(ecs::Entity entity, scene::Scene& scene, const input::InputState
     player.jumpPressed = false;
     // Moving up, the ground just left does not count as ground yet.
     const bool onGround = physics.IsOnGround(player.character) && player.verticalSpeed <= 0.0f;
-    if (const std::optional<float> top = LadderTop(world, player.feet); top.has_value() && !jump) {
+    const SoundBank* bank = world.TryGet<SoundBank>(entity);
+    const std::optional<float> top = LadderTop(world, player.feet);
+    const bool climbing = top.has_value() && !jump;
+    if (climbing) {
         player.verticalSpeed = forward * kClimbSpeed * (player.pitch < kLookDownOnLadder ? -1.0f : 1.0f);
         // The player waits just above the top, from where they can step off to any side.
         if (player.feet.y >= *top + kLadderTopMargin) {
             player.verticalSpeed = std::min(player.verticalSpeed, 0.0f);
         }
     } else if (onGround) {
-        player.verticalSpeed = jump && !player.crouching ? kJumpSpeed : 0.0f;
+        if (bank != nullptr && player.verticalSpeed <= -kLandingSpeed) {
+            scene.Sounds().Play(bank->land);
+        }
+        const bool jumps = jump && !player.crouching;
+        if (bank != nullptr && jumps) {
+            scene.Sounds().Play(bank->jump);
+        }
+        player.verticalSpeed = jumps ? kJumpSpeed : 0.0f;
     } else {
         // A ceiling takes the speed away.
         player.verticalSpeed =
@@ -298,9 +437,12 @@ void MovePlayer(ecs::Entity entity, scene::Scene& scene, const input::InputState
     physics.MoveCharacter(player.character, velocity, step);
     player.previousFeet = player.feet;
     player.feet = physics.CharacterPosition(player.character);
+    PlayMovementSounds(scene, entity, climbing, onGround);
 }
 
-void UpdatePickups(ecs::World& world, ecs::Entity playerEntity, float delta) {
+void UpdatePickups(scene::Scene& scene, ecs::Entity playerEntity, float delta) {
+    ecs::World& world = scene.World();
+    const SoundBank* bank = world.TryGet<SoundBank>(playerEntity);
     Player& player = world.Get<Player>(playerEntity);
     const glm::vec3 eye = world.Get<ecs::LocalTransform>(playerEntity).translation;
     const glm::quat spin = glm::angleAxis(kPickupSpin * delta, math::kUp);
@@ -311,6 +453,9 @@ void UpdatePickups(ecs::World& world, ecs::Entity playerEntity, float delta) {
             transform.rotation = spin * transform.rotation;
             if (glm::distance(transform.translation, eye) < kPickupRadius + kEyeHeight * 0.5f) {
                 Collect(player, pickup.kind);
+                if (bank != nullptr) {
+                    scene.Sounds().Play(bank->pickups[static_cast<std::size_t>(pickup.kind)]);
+                }
                 taken.push_back(entity);
             }
         });
@@ -319,7 +464,14 @@ void UpdatePickups(ecs::World& world, ecs::Entity playerEntity, float delta) {
     }
 }
 
-void UpdateDoors(ecs::World& world, ecs::Entity playerEntity, float delta) {
+void UpdateDoors(scene::Scene& scene, ecs::Entity playerEntity, float delta) {
+    ecs::World& world = scene.World();
+    const SoundBank* bank = world.TryGet<SoundBank>(playerEntity);
+    const auto playAt = [&](audio::ClipHandle(SoundBank::* clip), const glm::vec3& position) {
+        if (bank != nullptr) {
+            scene.Sounds().Play(bank->*clip, {.position = position});
+        }
+    };
     Player& player = world.Get<Player>(playerEntity);
     const glm::vec3 eye = world.Get<ecs::LocalTransform>(playerEntity).translation;
     const bool interact = player.interactPressed;
@@ -335,6 +487,7 @@ void UpdateDoors(ecs::World& world, ecs::Entity playerEntity, float delta) {
                 door.locked = false;
                 door.open = true;
                 door.timeLeft = kDoorOpenTime;
+                playAt(&SoundBank::doorStart, door.closedPosition);
             }
         }
         if (door.open && door.closable) {
@@ -342,10 +495,15 @@ void UpdateDoors(ecs::World& world, ecs::Entity playerEntity, float delta) {
             // Never down on the player.
             if (door.timeLeft <= 0.0f && distance >= kDoorRadius) {
                 door.open = false;
+                playAt(&SoundBank::doorStart, door.closedPosition);
             }
         }
         const float step = kDoorSpeed * delta;
-        door.rise = std::clamp(door.rise + (door.open ? step : -step), 0.0f, kDoorRise);
+        const float rise = std::clamp(door.rise + (door.open ? step : -step), 0.0f, kDoorRise);
+        if (rise != door.rise && (rise == 0.0f || rise == kDoorRise)) {
+            playAt(&SoundBank::doorStop, door.closedPosition);
+        }
+        door.rise = rise;
         transform.translation = door.closedPosition + math::kUp * door.rise;
     });
 }
@@ -418,6 +576,7 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const renderer::Model&
     physics::CharacterConfig body;
     body.height = kStandHeight;
     world.Get<Player>(playerEntity).character = physics.AddCharacter(body, eye - math::kUp * kEyeHeight);
+    const SoundBank& bank = world.Add<SoundBank>(playerEntity, LoadSounds(scene));
 
     std::vector<int> lockedDoors;
     std::vector<std::pair<ecs::Entity, std::string>> nodes;
@@ -437,6 +596,10 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const renderer::Model&
             if (const std::optional<physics::RayHit> floor = physics.CastRay(position, -math::kUp, 20.0f)) {
                 eye = floor->position + math::kUp * kEyeHeight;
             }
+        } else if (node.kind == "alarm") {
+            world.Add<LoopedSound>(entity, bank.alarm, 0.5f, 1.4f, 35.0f);
+        } else if (node.kind == "fan") {
+            world.Add<LoopedSound>(entity, bank.fan, 0.7f, 1.0f, 20.0f);
         } else if (node.kind == "ladder") {
             world.Add<Ladder>(entity, Vector(node, "min"), Vector(node, "max"));
         } else if (const std::optional<PickupKind> pickup = PickupOf(node.kind)) {
@@ -495,9 +658,9 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
             MovePlayer(entity, scene, input, actions, static_cast<float>(step.count()));
         }
     });
-    fixed.Add("Doors", [player](ecs::World& world, core::Seconds step) {
+    fixed.Add("Doors", [&scene, player](ecs::World& world, core::Seconds step) {
         if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
-            UpdateDoors(world, entity, static_cast<float>(step.count()));
+            UpdateDoors(scene, entity, static_cast<float>(step.count()));
         }
     });
 
@@ -507,9 +670,15 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
             LookAround(entity, scene, input, actions, settings.mouseSensitivity, static_cast<float>(delta.count()));
         }
     });
-    systems.Add("Pickups", [player](ecs::World& world, core::Seconds delta) {
+    systems.Add("Pickups", [&scene, player](ecs::World& world, core::Seconds delta) {
         if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
-            UpdatePickups(world, entity, static_cast<float>(delta.count()));
+            UpdatePickups(scene, entity, static_cast<float>(delta.count()));
+        }
+    });
+    systems.Add("Looped sounds", [&scene, player, started = false](ecs::World& /*world*/, core::Seconds) mutable {
+        if (!started) {
+            started = true;
+            StartLoopedSounds(scene, player());
         }
     });
     systems.Add("Darkness", [&, player](ecs::World& world, core::Seconds /*delta*/) {

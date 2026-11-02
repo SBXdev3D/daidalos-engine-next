@@ -9,6 +9,7 @@
 *.png  binary
 *.bin  binary
 *.wav  binary
+*.ogg  binary
 *.jpg  binary
 *.ktx2 binary
 *.glb  binary

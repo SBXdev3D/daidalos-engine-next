@@ -1,6 +1,6 @@
 # Architecture
 
-How the engine is built today, through the physics part of Phase 6. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
+How the engine is built today, through the physics and audio parts of Phase 6. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
 
 ## Modules
 
@@ -23,6 +23,7 @@ flowchart TD
 
     subgraph world [World and data]
         physics
+        audio
         ecs
         resources
         input
@@ -40,7 +41,9 @@ flowchart TD
     scene --> renderer
     scene --> ecs
     scene --> physics
+    scene --> audio
     physics --> ecs
+    audio --> ecs
     app -.-> debugui
     app --> renderer
     debugui --> rhi
@@ -72,7 +75,8 @@ To keep the graph readable, it omits the links to `core` and `logging` that near
 | `rhi` | Vulkan 1.3 device, swapchain, buffers, textures, pipelines, command lists | Vulkan, volk, VMA |
 | `renderer` | Mesh pass, materials, asset library, cameras, ECS extraction, shader hot reload | |
 | `physics` | Collisions and queries of a scene, with Jolt hidden inside | ADR-0018 |
-| `scene` | A world with its assets, physics, systems, active camera and atmosphere | |
+| `audio` | Output, mixing, clips and voices of a scene, silent without an output | miniaudio, stb_vorbis |
+| `scene` | A world with its assets, physics, sounds, systems, active camera and atmosphere | |
 | `debugui` | Dear ImGui overlay drawn through the RHI | Dear ImGui |
 | `app` | Ordered startup with rollback, main loop, current scene | |
 
@@ -89,11 +93,11 @@ Three rules keep this graph healthy:
 ```mermaid
 flowchart LR
     A[logging] --> B[crash handler] --> C[configuration] --> D[platform] --> E[main window] --> W[worker pool]
-    W --> F[renderer] --> G[debug overlay] --> S[scene slot] --> H["application<br/>OnStart"]
+    W --> AU[audio] --> F[renderer] --> G[debug overlay] --> S[scene slot] --> H["application<br/>OnStart"]
     H -. "failure or shutdown:<br/>stop in reverse order" .-> A
 ```
 
-The game plugs in through `app::IApplicationHandler`: `OnStart`, `OnEvent`, `OnFixedUpdate`, `OnUpdate`, `OnRender` and `OnStop`. It usually gives the application a `scene::Scene`, which the application then runs. The scene slot makes sure that the scene goes before the renderer, even if `OnStart` fails.
+The game plugs in through `app::IApplicationHandler`: `OnStart`, `OnEvent`, `OnFixedUpdate`, `OnUpdate`, `OnRender` and `OnStop`. It usually gives the application a `scene::Scene`, which the application then runs. The scene slot makes sure that the scene goes before the renderer and the audio engine, even if `OnStart` fails. A machine with no audio output only gets a warning, and its scenes stay silent (ADR-0019).
 
 ## One frame
 
@@ -118,7 +122,7 @@ sequenceDiagram
     end
     A->>G: OnUpdate
     A->>S: Frame systems
-    A->>S: Extract: transforms, then SceneView
+    A->>S: Extract: transforms, SceneView, sounds and listener
     A->>G: OnRender
     A->>R: Render(SceneView, overlay)
     R->>R: Reload changed shaders
@@ -155,6 +159,9 @@ flowchart TD
     Scene --> Library["AssetLibrary<br/>releases all its assets together"]
     Scene --> World["ecs::World<br/>entities and components"]
     Scene --> Physics["physics::PhysicsWorld<br/>bodies and characters"]
+    Scene --> Sounds["audio::SoundWorld<br/>clips and voices"]
+    App --> Audio["audio::AudioEngine<br/>output and mixer"]
+    Sounds -. "plays through" .-> Audio
     Library -. "handles" .-> MeshPass
     Library -. "handles" .-> Device
     World -. "handles" .-> MeshPass
@@ -194,6 +201,8 @@ CI runs on pull requests and on `main`: Windows MSVC and Linux Clang, in Debug, 
 - No tool produces KTX2 files yet, although the loader reads them.
 - Lighting, clustering and ambient occlusion do not exist yet (Phase 7). Materials carry all the PBR data already, and the sandbox simulates darkness with fog, with one spot light without shadows for its flashlight.
 - Rays pass through characters, so weapons cannot hit them yet (Phase 6).
+- Sound passes through walls and doors: there is no occlusion.
+- Volumes are read at startup and cannot change during play.
 - Meshes cannot be animated (Phase 6).
 - Nothing culls: every `DrawItem` is drawn.
 - There are no text input events, so ImGui text fields do not work.

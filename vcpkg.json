@@ -28,6 +28,7 @@
         }
       ]
     },
+    "miniaudio",
     "spdlog",
     "stb",
     "tl-expected",
