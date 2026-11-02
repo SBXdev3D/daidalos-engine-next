@@ -16,6 +16,7 @@ dai_add_module(NAME renderer
         src/ShaderCompiler.cpp
         src/ShaderCompiler.hpp
     PUBLIC_DEPS
+        daidalos::animation
         daidalos::core
         daidalos::ecs
         daidalos::math

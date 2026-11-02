@@ -42,9 +42,25 @@ float3 SpotLighting(FrameData frame, float3 position, float3 normal) {
     return frame.spotColor * cone * reach * reach * saturate(dot(normal, direction));
 }
 
-VertexOutput VSMain(VertexInput input) {
+// The joints of a skinned vertex, blended by their weights (ADR-0020).
+float4x4 SkinMatrix(InstanceData instance, uint vertexId) {
+    const SkinVertex skin = g_skins[instance.skinBuffer][vertexId];
+    const uint first = instance.firstJoint;
+    const uint joints = g_push.jointBuffer;
+    return g_joints[joints][first + (skin.joints01 & 0xFFFF)].matrix * skin.weight0 +
+           g_joints[joints][first + (skin.joints01 >> 16)].matrix * skin.weight1 +
+           g_joints[joints][first + (skin.joints23 & 0xFFFF)].matrix * skin.weight2 +
+           g_joints[joints][first + (skin.joints23 >> 16)].matrix * skin.weight3;
+}
+
+VertexOutput VSMain(VertexInput input, uint vertexId : SV_VertexID) {
     const float4x4 viewProjection = g_frames[g_push.frameBuffer][0].viewProjection;
-    const float4x4 world = g_instances[g_push.instanceBuffer][g_push.instanceIndex].world;
+    const InstanceData instance = g_instances[g_push.instanceBuffer][g_push.instanceIndex];
+    // Not a ternary operator: HLSL would evaluate both sides, and read a skin that rigid draws lack.
+    float4x4 world = instance.world;
+    if (instance.firstJoint != kNoJoints) {
+        world = SkinMatrix(instance, vertexId);
+    }
 
     VertexOutput output;
     const float4 worldPosition = mul(world, float4(input.position, 1.0));

@@ -167,15 +167,27 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
 
     Model model;
     model.nodes.reserve(data.nodes.size());
+    std::vector<math::Transform> restPose;
+    restPose.reserve(data.nodes.size());
     for (const resources::ModelNode& node : data.nodes) {
         Model::Node& added = model.nodes.emplace_back();
         added.name = node.name;
         added.parent = node.parent;
         added.local = node.local;
+        added.skin = node.skin;
         added.parts.reserve(node.primitives.size());
         for (const std::uint32_t primitive : node.primitives) {
             added.parts.push_back(parts[primitive]);
         }
+        restPose.push_back(node.local);
+    }
+    model.skins.reserve(data.skins.size());
+    for (const resources::SkinData& skin : data.skins) {
+        model.skins.push_back({skin.joints, std::make_shared<const std::vector<glm::mat4>>(skin.inverseBindMatrices)});
+    }
+    if (!data.animations.empty()) {
+        model.clips =
+            std::make_shared<const animation::ClipSet>(animation::MakeClipSet(data.animations, std::move(restPose)));
     }
     return model;
 }
@@ -191,8 +203,9 @@ core::Result<const Model*> AssetLibrary::Build(std::string key, core::Result<Dec
     if (!model) {
         return tl::unexpected(std::move(model.error()));
     }
-    DAI_LOG_INFO(kModule, "Loaded model '{}': {} meshes, {} materials, {} images", key, decoded->data.primitives.size(),
-                 decoded->data.materials.size(), decoded->data.images.size());
+    DAI_LOG_INFO(kModule, "Loaded model '{}': {} meshes, {} materials, {} images, {} skins, {} animations", key,
+                 decoded->data.primitives.size(), decoded->data.materials.size(), decoded->data.images.size(),
+                 decoded->data.skins.size(), decoded->data.animations.size());
     return &m_models.Insert(std::move(key), std::move(*model));
 }
 
@@ -238,6 +251,8 @@ core::Result<ecs::Entity> Instantiate(ecs::World& world, const Model& model) {
 
     std::vector<ecs::Entity> entities;
     entities.reserve(model.nodes.size());
+    // Joints may come after the meshes that follow them, so those are given their joints at the end.
+    std::vector<std::pair<ecs::Entity, std::uint32_t>> skinned;
     for (const Model::Node& node : model.nodes) {
         const ecs::Entity entity = world.Create();
         ecs::LocalTransform transform;
@@ -262,8 +277,24 @@ core::Result<ecs::Entity> Instantiate(ecs::World& world, const Model& model) {
                     return tl::unexpected(std::move(attached.error()));
                 }
             }
-            world.Add<MeshRenderer>(holder, part.mesh, part.material);
+            if (node.skin.has_value() && *node.skin < model.skins.size()) {
+                world.Add<SkinnedMeshRenderer>(holder, part.mesh, part.material, std::vector<ecs::Entity>{},
+                                               model.skins[*node.skin].inverseBindMatrices);
+                skinned.emplace_back(holder, *node.skin);
+            } else {
+                world.Add<MeshRenderer>(holder, part.mesh, part.material);
+            }
         }
+    }
+
+    for (const auto& [entity, skin] : skinned) {
+        std::vector<ecs::Entity>& joints = world.Get<SkinnedMeshRenderer>(entity).joints;
+        for (const std::uint32_t joint : model.skins[skin].joints) {
+            joints.push_back(entities[joint]);
+        }
+    }
+    if (model.clips != nullptr) {
+        world.Add<animation::Animator>(root, model.clips, entities);
     }
     return root;
 }

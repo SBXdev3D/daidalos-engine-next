@@ -5,10 +5,14 @@
 #pragma once
 
 #include <daidalos/core/Handle.hpp>
+#include <daidalos/ecs/Entity.hpp>
 
+#include <glm/mat4x4.hpp>
 #include <glm/trigonometric.hpp>
 
+#include <memory>
 #include <string>
+#include <vector>
 
 namespace daidalos::renderer {
 
@@ -31,6 +35,18 @@ struct MeshRenderer {
     MeshHandle mesh;
     /// Null for the default material: plain white.
     MaterialHandle material;
+};
+
+/// ECS component: draws a mesh that follows joints, which are other entities (ADR-0020). The entity's
+/// own transform does not move it. A mesh without skin data is drawn rigid, at the entity.
+struct SkinnedMeshRenderer {
+    MeshHandle mesh;
+    MaterialHandle material;
+    /// The entities of the skin's joints, in the order of the skin.
+    std::vector<ecs::Entity> joints;
+    /// For each joint, from the space of the mesh to the space of the joint in the bind pose. Shared by
+    /// every instance of the model.
+    std::shared_ptr<const std::vector<glm::mat4>> inverseBindMatrices;
 };
 
 /// ECS component: the name of the model node an entity comes from, for the code that builds on a level.

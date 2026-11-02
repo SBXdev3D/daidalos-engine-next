@@ -529,6 +529,50 @@ def character_move():
     svg.write("character-move")
 
 
+def skinning():
+    svg = Svg(1400, 640)
+    svg.text(50, 58, "How a zombie moves", 32, TEXT, 700)
+    svg.text(50, 90, "Animation only moves invisible joints. The graphics card bends the skin to follow them.", 18, MUTED)
+
+    steps = [
+        ("Clips", "keys read from the model:", "wait, walk, attack, die", ACCENT),
+        ("Animator", "plays one clip, and fades", "the previous one out", ACCENT),
+        ("Joints", "ordinary entities, placed", "by the transform pass", DONE),
+        ("Vertex shader", "each vertex follows up to", "four joints, by weight", DONE),
+    ]
+    width = 310
+    gap = 20
+    for index, (name, line1, line2, color) in enumerate(steps):
+        x = 50 + index * (width + gap)
+        svg.box(x, 130, width, 132, stroke=color, stroke_width=2)
+        svg.text(x + width / 2, 172, name, 21, TEXT, 700, "middle")
+        svg.text(x + width / 2, 206, line1, 15.5, MUTED, 400, "middle")
+        svg.text(x + width / 2, 232, line2, 15.5, MUTED, 400, "middle")
+        if index < len(steps) - 1:
+            svg.line(x + width + 2, 196, x + width + gap - 2, 196)
+
+    svg.text(380, 296, "processor, once per frame", 15, ACCENT, 600, "middle")
+    svg.text(1040, 296, "graphics card, for every vertex", 15, DONE, 600, "middle")
+
+    cards = [
+        ("19 joints", "in the zombie's skeleton,", "each one an entity"),
+        ("735 triangles", "bent on the graphics card,", "never rewritten"),
+        ("4 clips", "cut from one long timeline", "at the old frame ranges"),
+        ("0.3 s", "to fade from one clip", "to the next"),
+    ]
+    for index, (name, line1, line2) in enumerate(cards):
+        x = 50 + index * (width + gap)
+        svg.box(x, 326, width, 132, stroke=PANEL_EDGE)
+        svg.text(x + width / 2, 366, name, 20, TEXT, 700, "middle")
+        svg.text(x + width / 2, 400, line1, 16, TEXT, 400, "middle")
+        svg.text(x + width / 2, 426, line2, 15, MUTED, 400, "middle")
+
+    svg.box(50, 492, 1300, 110, stroke=PANEL_EDGE)
+    svg.text(80, 532, "Then: the old engine bent every vertex on the processor, for every frame of every clip, at load time.", 16.5, MUTED)
+    svg.text(80, 564, "Now: the converter reproduces the old math, checks the vertices of each clip against it, and saves standard glTF files.", 16.5, MUTED)
+    svg.write("skinning")
+
+
 def fixed_step():
     svg = Svg(1400, 640)
     svg.text(50, 58, "Two clocks: the world's and the screen's", 32, TEXT, 700)
@@ -845,6 +889,7 @@ def main():
     render_pipeline()
     bindless()
     character_move()
+    skinning()
     fixed_step()
     compare_objects()
     compare_collision()

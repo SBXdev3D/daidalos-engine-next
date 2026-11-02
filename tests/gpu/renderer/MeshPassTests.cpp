@@ -346,3 +346,47 @@ TEST_F(MeshPassTest, InstanceBufferGrowsWithTheNumberOfDraws) {
     Render(view);
     EXPECT_FALSE(IsBackground(32, 32));
 }
+
+TEST_F(MeshPassTest, SkinnedMeshFollowsItsJointAndNotItsWorldMatrix) {
+    MeshData data = MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f);
+    data.skin.assign(data.vertices.size(), resources::SkinWeights{});
+    const MeshHandle mesh = Mesh(data);
+    SceneView view{TestCamera(), {{mesh, glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 0.0f, 0.0f)), {}, 0}}};
+    view.jointMatrices = {glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.0f, 0.0f))};
+    Render(view);
+    EXPECT_TRUE(IsBackground(32, 32));
+    EXPECT_TRUE(IsBackground(20, 32));
+    EXPECT_FALSE(IsBackground(44, 32));
+}
+
+TEST_F(MeshPassTest, SkinnedVerticesBlendTheirJointsByWeight) {
+    MeshData data = MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f);
+    // Half on a joint moved two meters right, half on a joint that stays: one meter right.
+    data.skin.assign(data.vertices.size(), resources::SkinWeights{{0, 1, 0, 0}, {0.5f, 0.5f, 0.0f, 0.0f}});
+    const MeshHandle mesh = Mesh(data);
+    SceneView view{TestCamera(), {{mesh, glm::mat4(1.0f), {}, 1}}};
+    view.jointMatrices = {glm::mat4(1.0f), glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.0f, 0.0f)),
+                          glm::mat4(1.0f)};
+    Render(view);
+    EXPECT_TRUE(IsBackground(32, 32));
+    EXPECT_FALSE(IsBackground(44, 32));
+}
+
+TEST_F(MeshPassTest, MeshWithoutSkinIsDrawnRigidEvenWithJoints) {
+    const MeshHandle mesh = Mesh(MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f));
+    SceneView view{TestCamera(), {{mesh, glm::mat4(1.0f), {}, 0}}};
+    view.jointMatrices = {glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.0f, 0.0f))};
+    Render(view);
+    EXPECT_FALSE(IsBackground(32, 32));
+}
+
+TEST_F(MeshPassTest, JointBufferGrowsWithTheNumberOfJoints) {
+    MeshData data = MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f);
+    data.skin.assign(data.vertices.size(), resources::SkinWeights{});
+    const MeshHandle mesh = Mesh(data);
+    SceneView view{TestCamera(), {{mesh, glm::mat4(1.0f), {}, 999}}};
+    view.jointMatrices.assign(1000, glm::mat4(1.0f));
+    view.jointMatrices.back() = glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    Render(view);
+    EXPECT_FALSE(IsBackground(44, 32));
+}

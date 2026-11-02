@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <daidalos/animation/Animation.hpp>
 #include <daidalos/core/Result.hpp>
 #include <daidalos/core/WorkerPool.hpp>
 #include <daidalos/ecs/World.hpp>
@@ -12,12 +13,14 @@
 #include <daidalos/renderer/Renderer.hpp>
 #include <daidalos/resources/Cache.hpp>
 
+#include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -30,18 +33,29 @@ struct Model {
     struct Part {
         MeshHandle mesh;
         MaterialHandle material;
-        /// The triangles, also kept on the CPU for collisions and queries.
+        /// The triangles, also kept on the CPU for collisions and queries. Skinned ones are in their
+        /// bind pose.
         std::vector<glm::vec3> positions;
         std::vector<std::uint32_t> indices;
+    };
+    struct Skin {
+        /// Indices into nodes.
+        std::vector<std::uint32_t> joints;
+        std::shared_ptr<const std::vector<glm::mat4>> inverseBindMatrices;
     };
     struct Node {
         std::string name;
         std::optional<std::uint32_t> parent;
         math::Transform local;
         std::vector<Part> parts;
+        /// Index into skins, if the parts follow joints.
+        std::optional<std::uint32_t> skin;
     };
     /// Parents come before their children.
     std::vector<Node> nodes;
+    std::vector<Skin> skins;
+    /// Null for a model without animations.
+    std::shared_ptr<const animation::ClipSet> clips;
 };
 
 /// Loads assets to the GPU, once each, and owns what it loaded (ADR-0016). Everything is released
@@ -107,7 +121,9 @@ private:
 };
 
 /// Creates an entity for each node of a model, under one new root entity at the origin, and returns
-/// the root. A node with one part draws it, and further parts go to child entities.
+/// the root. A node with one part draws it, and further parts go to child entities. Skinned parts get
+/// a SkinnedMeshRenderer that follows the entities of their joints, and the root of an animated model
+/// gets an animation::Animator for its nodes.
 [[nodiscard]] core::Result<ecs::Entity> Instantiate(ecs::World& world, const Model& model);
 
 } // namespace daidalos::renderer

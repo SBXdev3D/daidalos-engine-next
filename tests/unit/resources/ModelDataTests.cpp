@@ -95,3 +95,71 @@ TEST(LoadModelFile, InvalidFileIsAParseErrorThatNamesTheFile) {
 TEST(LoadModelFile, NodeCycleIsAnError) {
     EXPECT_FALSE(resources::LoadModelFile(kAssets / "cycle.gltf").has_value());
 }
+
+TEST(LoadModelFile, RigidMeshHasNoSkin) {
+    const core::Result<ModelData> model = resources::LoadModelFile(kAssets / "quad.gltf");
+    ASSERT_TRUE(model.has_value());
+    EXPECT_TRUE(model->primitives[0].mesh.skin.empty());
+    EXPECT_TRUE(model->skins.empty());
+    EXPECT_TRUE(model->animations.empty());
+    EXPECT_FALSE(model->nodes[1].skin.has_value());
+}
+
+TEST(LoadModelFile, ReadsTheJointsAndWeightsOfEachVertex) {
+    const core::Result<ModelData> model = resources::LoadModelFile(kAssets / "skinned.gltf");
+    ASSERT_TRUE(model.has_value()) << core::Format(model.error());
+    const std::vector<resources::SkinWeights>& skin = model->primitives[0].mesh.skin;
+    ASSERT_EQ(skin.size(), 4U);
+    EXPECT_EQ(skin[0].joints[0], 0U);
+    EXPECT_EQ(skin[2].joints[0], 1U);
+    EXPECT_EQ(skin[2].weights, glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
+    // Its weights add up to 2 in the file.
+    EXPECT_EQ(skin[3].weights, glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
+}
+
+TEST(LoadModelFile, SkinJointsAreNodesOfTheModel) {
+    const core::Result<ModelData> model = resources::LoadModelFile(kAssets / "skinned.gltf");
+    ASSERT_TRUE(model.has_value());
+    // The model lists nodes parents first, depth first: Character, Hip, Hand, then Body.
+    ASSERT_EQ(model->nodes.size(), 4U);
+    EXPECT_EQ(model->nodes[1].name, "Hip");
+    EXPECT_EQ(model->nodes[3].name, "Body");
+    EXPECT_EQ(model->nodes[3].skin, 0U);
+    ASSERT_EQ(model->skins.size(), 1U);
+    EXPECT_EQ(model->skins[0].joints, (std::vector<std::uint32_t>{1, 2}));
+    ASSERT_EQ(model->skins[0].inverseBindMatrices.size(), 2U);
+    EXPECT_EQ(model->skins[0].inverseBindMatrices[0], glm::mat4(1.0f));
+    EXPECT_EQ(model->skins[0].inverseBindMatrices[1][3], glm::vec4(0.0f, -1.0f, 0.0f, 1.0f));
+}
+
+TEST(LoadModelFile, ReadsAnimationsWithTheirKeys) {
+    const core::Result<ModelData> model = resources::LoadModelFile(kAssets / "skinned.gltf");
+    ASSERT_TRUE(model.has_value());
+    ASSERT_EQ(model->animations.size(), 3U);
+    const resources::AnimationData& lift = model->animations[0];
+    EXPECT_EQ(lift.name, "lift");
+    // The channel of the node outside the scene is left out.
+    ASSERT_EQ(lift.channels.size(), 1U);
+    const resources::AnimationChannel& channel = lift.channels[0];
+    EXPECT_EQ(channel.node, 2U);
+    EXPECT_EQ(channel.path, resources::AnimationPath::Translation);
+    EXPECT_EQ(channel.interpolation, resources::AnimationInterpolation::Linear);
+    EXPECT_EQ(channel.times, (std::vector<float>{0.0f, 1.0f, 2.0f}));
+    EXPECT_EQ(channel.values[2], glm::vec4(0.0f, 3.0f, 0.0f, 0.0f));
+
+    const resources::AnimationChannel& snap = model->animations[1].channels.at(0);
+    EXPECT_EQ(snap.path, resources::AnimationPath::Rotation);
+    EXPECT_EQ(snap.interpolation, resources::AnimationInterpolation::Step);
+    EXPECT_NEAR(snap.values[1].y, 0.7071068f, 1e-6f);
+    EXPECT_NEAR(snap.values[1].w, 0.7071068f, 1e-6f);
+}
+
+TEST(LoadModelFile, CubicSplineKeepsOnlyTheValues) {
+    const core::Result<ModelData> model = resources::LoadModelFile(kAssets / "skinned.gltf");
+    ASSERT_TRUE(model.has_value());
+    const resources::AnimationChannel& spline = model->animations[2].channels.at(0);
+    EXPECT_EQ(spline.interpolation, resources::AnimationInterpolation::Linear);
+    ASSERT_EQ(spline.values.size(), 2U);
+    EXPECT_EQ(spline.values[0], glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
+    EXPECT_EQ(spline.values[1], glm::vec4(2.0f, 0.0f, 0.0f, 0.0f));
+}

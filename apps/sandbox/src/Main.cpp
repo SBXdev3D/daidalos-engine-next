@@ -148,7 +148,7 @@ private:
     core::Result<void> Build(app::Application& app, scene::Scene& target,
                              const core::Result<const renderer::Model*>& model) {
         if (model) {
-            core::Result<ecs::Entity> player = sandbox::BuildLevel(target, **model);
+            core::Result<ecs::Entity> player = sandbox::BuildLevel(target, **model, m_levelPath);
             if (!player) {
                 return tl::unexpected(player.error());
             }
@@ -204,7 +204,7 @@ private:
         if (core::Result<physics::BodyId> body = target.Physics().AddStaticMesh(corners, triangles); !body) {
             return tl::unexpected(std::move(body.error()));
         }
-        core::Result<ecs::Entity> player = sandbox::BuildLevel(target, renderer::Model{});
+        core::Result<ecs::Entity> player = sandbox::BuildLevel(target, renderer::Model{}, "");
         if (!player) {
             return tl::unexpected(std::move(player.error()));
         }

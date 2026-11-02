@@ -13,8 +13,11 @@
 #include <fastgltf/types.hpp>
 #include <glm/geometric.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <glm/vec4.hpp>
 
+#include <algorithm>
 #include <format>
+#include <limits>
 #include <map>
 #include <span>
 #include <string_view>
@@ -41,6 +44,8 @@ private:
     core::Result<void> AddMaterials();
     core::Result<void> AddMeshes();
     core::Result<void> AddNode(std::size_t index, std::optional<std::uint32_t> parent, std::size_t depth);
+    core::Result<void> AddSkins();
+    core::Result<void> AddAnimations();
     core::Result<std::optional<std::uint32_t>> AddTexture(std::size_t textureIndex, TextureUse use);
     core::Result<ImageSource> MakeImageSource(std::size_t imageIndex, TextureUse use) const;
     core::Result<MeshData> ReadPrimitive(const fastgltf::Primitive& primitive, const std::string& name) const;
@@ -57,6 +62,8 @@ private:
     std::map<ImageKey, std::uint32_t> m_images;
     // For each glTF mesh, its primitives in the model.
     std::vector<std::vector<std::uint32_t>> m_meshPrimitives;
+    // For each glTF node, its index in the model, if the scene holds it.
+    std::vector<std::optional<std::uint32_t>> m_nodeIndices;
 };
 
 core::Result<ImageSource> ModelBuilder::MakeImageSource(std::size_t imageIndex, TextureUse use) const {
@@ -197,6 +204,34 @@ core::Result<MeshData> ModelBuilder::ReadPrimitive(const fastgltf::Primitive& pr
     readAttribute.template operator()<glm::vec2>("TEXCOORD_0",
                                                  [](Vertex& vertex, glm::vec2 value) { vertex.uv = value; });
 
+    const auto joints = primitive.findAttribute("JOINTS_0");
+    const auto weights = primitive.findAttribute("WEIGHTS_0");
+    if (joints != primitive.attributes.end() && weights != primitive.attributes.end()) {
+        const fastgltf::Accessor& jointAccessor = m_asset.accessors[joints->accessorIndex];
+        const fastgltf::Accessor& weightAccessor = m_asset.accessors[weights->accessorIndex];
+        if (jointAccessor.count != mesh.vertices.size() || weightAccessor.count != mesh.vertices.size()) {
+            return Invalid(std::format("{} has joints or weights for a different number of vertices", name));
+        }
+        mesh.skin.resize(mesh.vertices.size());
+        bool inRange = true;
+        fastgltf::iterateAccessorWithIndex<glm::uvec4>(
+            m_asset, jointAccessor, [&mesh, &inRange](glm::uvec4 value, std::size_t index) {
+                for (glm::length_t joint = 0; joint < 4; ++joint) {
+                    inRange = inRange && value[joint] <= std::numeric_limits<std::uint16_t>::max();
+                    mesh.skin[index].joints[static_cast<std::size_t>(joint)] = static_cast<std::uint16_t>(value[joint]);
+                }
+            });
+        if (!inRange) {
+            return Invalid(std::format("{} has a joint index out of range", name));
+        }
+        fastgltf::iterateAccessorWithIndex<glm::vec4>(
+            m_asset, weightAccessor, [&mesh](glm::vec4 value, std::size_t index) {
+                // Exporters round, so the sum is made 1 again.
+                const float sum = value.x + value.y + value.z + value.w;
+                mesh.skin[index].weights = sum > 0.0f ? value / sum : glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+            });
+    }
+
     if (!primitive.indicesAccessor.has_value()) {
         return Invalid(std::format("{} has no indices", name));
     }
@@ -280,13 +315,151 @@ core::Result<void> ModelBuilder::AddNode(std::size_t index, std::optional<std::u
     if (node.meshIndex.has_value()) {
         added.primitives = m_meshPrimitives[*node.meshIndex];
     }
+    if (node.skinIndex.has_value()) {
+        // The model keeps every skin of the file, in the same order.
+        added.skin = static_cast<std::uint32_t>(*node.skinIndex);
+    }
     const auto addedIndex = static_cast<std::uint32_t>(m_model.nodes.size());
+    if (m_nodeIndices[index].has_value()) {
+        return Invalid("a node appears twice in its scene");
+    }
+    m_nodeIndices[index] = addedIndex;
     m_model.nodes.push_back(std::move(added));
 
     for (const std::size_t child : node.children) {
         if (core::Result<void> result = AddNode(child, addedIndex, depth + 1); !result) {
             return result;
         }
+    }
+    return {};
+}
+
+core::Result<void> ModelBuilder::AddSkins() {
+    m_model.skins.reserve(m_asset.skins.size());
+    for (std::size_t skinIndex = 0; skinIndex < m_asset.skins.size(); ++skinIndex) {
+        const fastgltf::Skin& skin = m_asset.skins[skinIndex];
+        SkinData data;
+        data.name = skin.name;
+        for (const std::size_t joint : skin.joints) {
+            if (joint >= m_nodeIndices.size() || !m_nodeIndices[joint].has_value()) {
+                return Invalid(std::format("skin {} has a joint outside of the scene", skinIndex));
+            }
+            data.joints.push_back(*m_nodeIndices[joint]);
+        }
+        if (data.joints.empty()) {
+            return Invalid(std::format("skin {} has no joints", skinIndex));
+        }
+        // Without matrices, every joint is at the origin of the mesh in the bind pose.
+        data.inverseBindMatrices.assign(data.joints.size(), glm::mat4(1.0f));
+        if (skin.inverseBindMatrices.has_value()) {
+            const fastgltf::Accessor& accessor = m_asset.accessors[*skin.inverseBindMatrices];
+            if (accessor.count != data.joints.size() || accessor.type != fastgltf::AccessorType::Mat4) {
+                return Invalid(std::format("skin {} does not have one matrix per joint", skinIndex));
+            }
+            fastgltf::iterateAccessorWithIndex<glm::mat4>(
+                m_asset, accessor,
+                [&data](const glm::mat4& value, std::size_t index) { data.inverseBindMatrices[index] = value; });
+        }
+        m_model.skins.push_back(std::move(data));
+    }
+
+    for (const ModelNode& node : m_model.nodes) {
+        if (!node.skin.has_value()) {
+            continue;
+        }
+        if (*node.skin >= m_model.skins.size()) {
+            return Invalid(std::format("node '{}' has a skin that does not exist", node.name));
+        }
+        const std::size_t jointCount = m_model.skins[*node.skin].joints.size();
+        const auto outOfRange = [jointCount](const SkinWeights& weights) {
+            return std::ranges::any_of(weights.joints,
+                                       [jointCount](std::uint16_t joint) { return joint >= jointCount; });
+        };
+        for (const std::uint32_t primitive : node.primitives) {
+            if (std::ranges::any_of(m_model.primitives[primitive].mesh.skin, outOfRange)) {
+                return Invalid(std::format("node '{}' uses a joint that its skin does not have", node.name));
+            }
+        }
+    }
+    return {};
+}
+
+core::Result<void> ModelBuilder::AddAnimations() {
+    bool warnedCubic = false;
+    m_model.animations.reserve(m_asset.animations.size());
+    for (std::size_t animationIndex = 0; animationIndex < m_asset.animations.size(); ++animationIndex) {
+        const fastgltf::Animation& animation = m_asset.animations[animationIndex];
+        AnimationData data;
+        data.name = animation.name.empty() ? std::format("animation {}", animationIndex) : std::string(animation.name);
+        for (const fastgltf::AnimationChannel& channel : animation.channels) {
+            AnimationChannel added;
+            switch (channel.path) {
+            case fastgltf::AnimationPath::Translation:
+                added.path = AnimationPath::Translation;
+                break;
+            case fastgltf::AnimationPath::Rotation:
+                added.path = AnimationPath::Rotation;
+                break;
+            case fastgltf::AnimationPath::Scale:
+                added.path = AnimationPath::Scale;
+                break;
+            default:
+                continue; // Morph target weights.
+            }
+            if (!channel.nodeIndex.has_value() || *channel.nodeIndex >= m_nodeIndices.size() ||
+                !m_nodeIndices[*channel.nodeIndex].has_value()) {
+                continue; // A node outside of the scene moves nothing that is drawn.
+            }
+            added.node = *m_nodeIndices[*channel.nodeIndex];
+
+            if (channel.samplerIndex >= animation.samplers.size()) {
+                return Invalid(std::format("animation '{}' has a channel without a sampler", data.name));
+            }
+            const fastgltf::AnimationSampler& sampler = animation.samplers[channel.samplerIndex];
+            std::size_t stride = 1;
+            switch (sampler.interpolation) {
+            case fastgltf::AnimationInterpolation::Step:
+                added.interpolation = AnimationInterpolation::Step;
+                break;
+            case fastgltf::AnimationInterpolation::Linear:
+                added.interpolation = AnimationInterpolation::Linear;
+                break;
+            case fastgltf::AnimationInterpolation::CubicSpline:
+                // Each key holds an in-tangent, a value and an out-tangent: only the value is kept.
+                added.interpolation = AnimationInterpolation::Linear;
+                stride = 3;
+                if (!warnedCubic) {
+                    warnedCubic = true;
+                    DAI_LOG_WARNING(kModule, "Model '{}': cubic spline keys are interpolated linearly", m_fileName);
+                }
+                break;
+            }
+
+            const fastgltf::Accessor& input = m_asset.accessors[sampler.inputAccessor];
+            const fastgltf::Accessor& output = m_asset.accessors[sampler.outputAccessor];
+            if (input.count == 0 || output.count != input.count * stride) {
+                return Invalid(std::format("animation '{}' has a sampler with mismatched keys", data.name));
+            }
+            added.times.resize(input.count);
+            fastgltf::copyFromAccessor<float>(m_asset, input, added.times.data());
+            if (!std::ranges::is_sorted(added.times)) {
+                return Invalid(std::format("animation '{}' has keys out of order", data.name));
+            }
+            std::vector<glm::vec4> values(output.count);
+            if (added.path == AnimationPath::Rotation) {
+                fastgltf::iterateAccessorWithIndex<glm::vec4>(
+                    m_asset, output, [&values](glm::vec4 value, std::size_t index) { values[index] = value; });
+            } else {
+                fastgltf::iterateAccessorWithIndex<glm::vec3>(
+                    m_asset, output, [&values](glm::vec3 value, std::size_t index) { values[index] = {value, 0.0f}; });
+            }
+            added.values.reserve(input.count);
+            for (std::size_t key = 0; key < input.count; ++key) {
+                added.values.push_back(values[key * stride + (stride == 3 ? 1 : 0)]);
+            }
+            data.channels.push_back(std::move(added));
+        }
+        m_model.animations.push_back(std::move(data));
     }
     return {};
 }
@@ -302,10 +475,17 @@ core::Result<ModelData> ModelBuilder::Build() {
         return Invalid("it has no scene");
     }
     const fastgltf::Scene& scene = m_asset.scenes[m_asset.defaultScene.value_or(0)];
+    m_nodeIndices.assign(m_asset.nodes.size(), std::nullopt);
     for (const std::size_t root : scene.nodeIndices) {
         if (core::Result<void> result = AddNode(root, std::nullopt, 0); !result) {
             return tl::unexpected(std::move(result.error()));
         }
+    }
+    if (core::Result<void> result = AddSkins(); !result) {
+        return tl::unexpected(std::move(result.error()));
+    }
+    if (core::Result<void> result = AddAnimations(); !result) {
+        return tl::unexpected(std::move(result.error()));
     }
     return std::move(m_model);
 }

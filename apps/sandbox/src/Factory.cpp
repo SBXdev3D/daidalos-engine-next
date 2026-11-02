@@ -4,6 +4,7 @@
 
 #include "Factory.hpp"
 
+#include <daidalos/animation/Animation.hpp>
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/logging/Log.hpp>
 #include <daidalos/math/Axes.hpp>
@@ -20,6 +21,7 @@
 #include <charconv>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <limits>
 #include <map>
 #include <optional>
@@ -61,6 +63,13 @@ constexpr int kHealthBonus = 25;
 constexpr int kArmorBonus = 50;
 constexpr int kHandgunAmmoBonus = 12;
 constexpr int kShotgunAmmoBonus = 7;
+// Zombies, until they hunt in Phase 6.4: they turn to the player they see, and strike when close.
+constexpr float kZombieSight = 12.0f;                   // Meters.
+constexpr float kZombieReach = 2.0f;                    // Meters.
+constexpr float kZombieTurnSpeed = glm::radians(90.0f); // Radians per second.
+constexpr float kZombieFade = 0.3f;                     // Seconds between two clips.
+constexpr float kZombieFloorSearch = 0.5f;              // Meters above a zombie where its floor is looked for.
+constexpr float kZombieFloorDrop = 20.0f;               // Meters below it.
 constexpr float kMaxPitch = glm::radians(89.0f);
 constexpr float kStickLookSpeed = 2.5f; // Radians per second.
 constexpr float kMessageTime = 3.0f;    // Seconds.
@@ -112,6 +121,11 @@ struct SoundBank {
     float ladderDistance = 0.0f;
     std::size_t lastStep = 0;
     std::minstd_rand random{std::random_device{}()};
+};
+
+/// The level node of a zombie. Its model, a child entity, has the animator.
+struct Zombie {
+    ecs::Entity model;
 };
 
 /// The box around a ladder, in which the player climbs.
@@ -538,6 +552,60 @@ input::ActionMap MakeActions() {
     return actions;
 }
 
+/// Puts a model at a level node, as its child, and starts its first clip so that no instance moves
+/// in step with another.
+core::Result<ecs::Entity> PlaceModel(scene::Scene& scene, ecs::Entity node, const std::string& path,
+                                     std::minstd_rand& random) {
+    core::Result<const renderer::Model*> model = scene.Assets().LoadModel(path);
+    if (!model) {
+        return tl::unexpected(std::move(model.error()));
+    }
+    ecs::World& world = scene.World();
+    core::Result<ecs::Entity> instance = renderer::Instantiate(world, **model);
+    if (!instance) {
+        return instance;
+    }
+    if (core::Result<void> attached = world.SetParent(*instance, node); !attached) {
+        return tl::unexpected(std::move(attached.error()));
+    }
+    if (animation::Animator* animator = world.TryGet<animation::Animator>(*instance)) {
+        const animation::ClipSet& clips = animator->Clips();
+        if (!clips.clips.empty()) {
+            std::uniform_real_distribution<float> start(0.0f, clips.clips.front().duration);
+            animator->Play(clips.clips.front().name, {.fade = 0.0f, .startTime = start(random)});
+        }
+    }
+    return instance;
+}
+
+/// Zombies face the player they see, wait, and strike when the player comes close.
+void UpdateZombies(scene::Scene& scene, ecs::Entity playerEntity, float delta) {
+    ecs::World& world = scene.World();
+    const glm::vec3 eye = world.Get<ecs::LocalTransform>(playerEntity).translation;
+    world.Each<Zombie, ecs::LocalTransform>(
+        [&](ecs::Entity /*entity*/, const Zombie& zombie, ecs::LocalTransform& transform) {
+            animation::Animator* animator = world.TryGet<animation::Animator>(zombie.model);
+            if (animator == nullptr) {
+                return;
+            }
+            glm::vec3 toPlayer = eye - transform.translation;
+            toPlayer.y = 0.0f;
+            const float distance = glm::length(toPlayer);
+            if (distance > kZombieSight || distance < 0.01f) {
+                animator->Play("wait", {.fade = kZombieFade});
+                return;
+            }
+            // The model looks down -Z, like the camera.
+            const glm::vec3 forward = transform.rotation * math::kForward;
+            const float wanted = std::atan2(-toPlayer.x, -toPlayer.z);
+            const float current = std::atan2(-forward.x, -forward.z);
+            const float turn = std::remainder(wanted - current, glm::two_pi<float>());
+            const float step = std::clamp(turn, -kZombieTurnSpeed * delta, kZombieTurnSpeed * delta);
+            transform.rotation = glm::angleAxis(current + step, math::kUp);
+            animator->Play(distance < kZombieReach ? "attack" : "wait", {.fade = kZombieFade});
+        });
+}
+
 void Teleport(scene::Scene& scene, ecs::Entity entity, const glm::vec3& eye) {
     Player& player = scene.World().Get<Player>(entity);
     player.feet = eye - math::kUp * player.eyeHeight;
@@ -546,7 +614,7 @@ void Teleport(scene::Scene& scene, ecs::Entity entity, const glm::vec3& eye) {
     scene.Physics().SetCharacterPosition(player.character, player.feet);
 }
 
-core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const renderer::Model& model) {
+core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const renderer::Model& model, std::string_view levelPath) {
     ecs::World& world = scene.World();
     core::Result<ecs::Entity> root = renderer::Instantiate(world, model);
     if (!root) {
@@ -588,9 +656,30 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const renderer::Model&
             lockedDoors.push_back(Number(node, "id", 0));
         }
     }
+    // Models that the level places, such as zombies, are found next to it.
+    const std::string directory = std::filesystem::path(levelPath).parent_path().generic_string();
+    std::minstd_rand random{std::random_device{}()};
     for (const auto& [entity, name] : nodes) {
         const NodeDescription node = Parse(name);
         const glm::vec3 position = world.Get<ecs::LocalTransform>(entity).translation;
+        if (const auto file = node.attributes.find("model"); file != node.attributes.end()) {
+            const std::string path =
+                directory.empty() ? std::string(file->second) : directory + "/" + std::string(file->second);
+            core::Result<ecs::Entity> instance = PlaceModel(scene, entity, path, random);
+            if (!instance) {
+                return tl::unexpected(std::move(instance.error()));
+            }
+            if (node.kind == "zombie") {
+                world.Add<Zombie>(entity, *instance);
+                // The legacy editor left zombies above the floor, and gravity brought them down. They
+                // do not move until Phase 6.4 makes them characters, so they are put on the floor once.
+                const glm::vec3 above = position + math::kUp * kZombieFloorSearch;
+                if (const std::optional<physics::RayHit> floor =
+                        physics.CastRay(above, -math::kUp, kZombieFloorSearch + kZombieFloorDrop)) {
+                    world.Get<ecs::LocalTransform>(entity).translation = floor->position;
+                }
+            }
+        }
         if (node.kind == "player") {
             eye = position;
             if (const std::optional<physics::RayHit> floor = physics.CastRay(position, -math::kUp, 20.0f)) {
@@ -668,6 +757,11 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
     systems.Add("Look", [&, player](ecs::World& world, core::Seconds delta) {
         if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
             LookAround(entity, scene, input, actions, settings.mouseSensitivity, static_cast<float>(delta.count()));
+        }
+    });
+    systems.Add("Zombies", [&scene, player](ecs::World& world, core::Seconds delta) {
+        if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
+            UpdateZombies(scene, entity, static_cast<float>(delta.count()));
         }
     });
     systems.Add("Pickups", [&scene, player](ecs::World& world, core::Seconds delta) {

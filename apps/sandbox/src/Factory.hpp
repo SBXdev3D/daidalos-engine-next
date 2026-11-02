@@ -13,6 +13,7 @@
 #include <glm/vec3.hpp>
 
 #include <string>
+#include <string_view>
 
 namespace sandbox {
 
@@ -71,10 +72,11 @@ struct Settings {
 void Teleport(daidalos::scene::Scene& scene, daidalos::ecs::Entity entity, const glm::vec3& eye);
 
 /// Creates the entities of a level: the player, the doors, the ladders and the pickups are found by
-/// the names of the model's nodes, and the "level" node is what the player walks on. Returns the
+/// the names of the model's nodes, and the "level" node is what the player walks on. Nodes with a
+/// "model" attribute get that model, from the level's directory: zombies and fans. Returns the
 /// player's entity.
-[[nodiscard]] daidalos::core::Result<daidalos::ecs::Entity> BuildLevel(daidalos::scene::Scene& scene,
-                                                                       const daidalos::renderer::Model& model);
+[[nodiscard]] daidalos::core::Result<daidalos::ecs::Entity>
+BuildLevel(daidalos::scene::Scene& scene, const daidalos::renderer::Model& model, std::string_view levelPath);
 
 /// What the input does to the world. The input and the actions must outlive the scene.
 void AddSystems(daidalos::scene::Scene& scene, const daidalos::input::InputState& input,

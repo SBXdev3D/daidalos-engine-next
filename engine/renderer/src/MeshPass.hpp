@@ -49,6 +49,8 @@ private:
     struct Mesh {
         rhi::BufferHandle vertices;
         rhi::BufferHandle indices;
+        /// Joints and weights of each vertex, read by the vertex shader. Null for a rigid mesh.
+        rhi::BufferHandle skin;
         std::uint32_t indexCount = 0;
     };
     struct Material {
@@ -60,6 +62,8 @@ private:
         rhi::BufferHandle frame;
         rhi::BufferHandle instances;
         std::uint64_t instanceCapacity = 0;
+        rhi::BufferHandle joints;
+        std::uint64_t jointCapacity = 0;
     };
 
     MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
@@ -67,7 +71,8 @@ private:
     [[nodiscard]] core::Result<rhi::PipelineHandle> BuildPipeline(std::span<const std::uint32_t> vertexShader,
                                                                   std::span<const std::uint32_t> fragmentShader,
                                                                   rhi::CullMode cull);
-    [[nodiscard]] core::Result<void> PrepareFrameSlot(FrameSlot& slot, std::uint64_t instanceCount);
+    [[nodiscard]] core::Result<void> PrepareFrameSlot(FrameSlot& slot, std::uint64_t instanceCount,
+                                                      std::uint64_t jointCount);
     /// Makes room for a material at this index of the table.
     [[nodiscard]] core::Result<void> ReserveMaterialSlot(std::uint32_t index);
     [[nodiscard]] std::uint32_t TextureIndex(rhi::TextureHandle texture) const;

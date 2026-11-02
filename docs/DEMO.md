@@ -31,7 +31,7 @@ flowchart LR
 | Phase | The demo gains | Status |
 |---|---|---|
 | 5: Scene | The level in the new engine, background loading, restart, doors, pickups, red card, darkness | Done |
-| 6: Physics and audio | Walking with collisions, jumps, crouching, ladders and solid doors, sound (done), then zombies with skeletal animation, hitscan weapons, damage and death | In progress |
+| 6: Physics, audio and animation | Walking with collisions, jumps, crouching, ladders and solid doors, sound, skinned zombies and turning fans (done), then hitscan weapons, zombies that hunt, damage and death | In progress |
 | 7: Modern rendering | Real lights replacing the fog, the flashlight's shadow, rotating alarms, normal maps, ambient occlusion, particles for smoke, blood and green fog | |
 | 8: GUI | The game's own HUD, crosshair, menus and loading screen | |
 | 9: AI, cinematics, optimization | Security camera, opening camera flight, better zombie navigation, culling | |
@@ -55,7 +55,9 @@ build/windows-msvc/apps/sandbox/Release/sandbox.exe
 
 If the level is missing, the sandbox shows a test floor. Other glTF files can be tried with `+sandbox.scene <path>`.
 
-`scripts/import_legacy_level.py` is not part of running the demo. It converts the legacy level again, or brings more legacy content over, such as the models Phase 6 needs.
+`scripts/import_legacy_level.py` is not part of running the demo. It converts the legacy level again, or brings more legacy content over. It also bakes the animated MilkShape models to glTF files of their own: the zombie, the fans and the handgun, whose clips are the frame ranges the legacy game played.
+
+For now, zombies only turn to face the player within 12 m, and strike at the air within 2 m. They hunt in the next step of Phase 6.
 
 | Control | Action |
 |---|---|

@@ -55,7 +55,8 @@ public:
 
     /// Runs the fixed systems, then moves the physics to where they left the entities.
     void RunFixedStep(core::Seconds step);
-    /// fixedAlpha is how far this frame is into the next fixed step, in [0, 1).
+    /// Runs the frame systems, then plays the animations. fixedAlpha is how far this frame is into the
+    /// next fixed step, in [0, 1).
     void RunFrame(core::Seconds delta, float fixedAlpha = 0.0f);
     /// For frame systems that draw between two fixed steps.
     [[nodiscard]] float FixedAlpha() const { return m_fixedAlpha; }

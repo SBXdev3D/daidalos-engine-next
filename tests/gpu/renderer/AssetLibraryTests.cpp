@@ -2,6 +2,7 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
+#include <daidalos/animation/Animation.hpp>
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/platform/Platform.hpp>
 #include <daidalos/renderer/AssetLibrary.hpp>
@@ -142,4 +143,47 @@ TEST(Instantiate, BuildsTheHierarchyWithOneEntityPerExtraPart) {
 
     EXPECT_TRUE(world.Destroy(*root));
     EXPECT_EQ(world.Count<renderer::MeshRenderer>(), 0U);
+}
+
+TEST_F(AssetLibraryTest, SkinnedModelIsAnimatedAndDrawn) {
+    AssetLibrary library(*m_renderer, kAssets);
+    const core::Result<const Model*> model = library.LoadModel("skinned.gltf");
+    ASSERT_TRUE(model.has_value()) << core::Format(model.error());
+    ASSERT_EQ((*model)->skins.size(), 1U);
+    ASSERT_NE((*model)->clips, nullptr);
+    EXPECT_EQ((*model)->clips->clips.size(), 3U);
+
+    ecs::World world;
+    const core::Result<ecs::Entity> root = renderer::Instantiate(world, **model);
+    ASSERT_TRUE(root.has_value());
+    auto* animator = world.TryGet<animation::Animator>(*root);
+    ASSERT_NE(animator, nullptr);
+    ecs::Entity body;
+    ecs::Entity hand;
+    world.Each<renderer::NodeName>([&](ecs::Entity entity, const renderer::NodeName& name) {
+        body = name.value == "Body" ? entity : body;
+        hand = name.value == "Hand" ? entity : hand;
+    });
+    const auto* skinned = world.TryGet<renderer::SkinnedMeshRenderer>(body);
+    ASSERT_NE(skinned, nullptr);
+    ASSERT_EQ(skinned->joints.size(), 2U);
+    EXPECT_EQ(skinned->joints[1], hand);
+    EXPECT_FALSE(world.Has<renderer::MeshRenderer>(body));
+
+    ASSERT_TRUE(animator->Play("lift"));
+    animation::UpdateAnimators(world, 1.0f);
+    EXPECT_EQ(world.Get<ecs::LocalTransform>(hand).translation, glm::vec3(0.0f, 2.0f, 0.0f));
+
+    const ecs::Entity camera = world.Create();
+    ecs::LocalTransform transform;
+    transform.translation = {0.0f, 0.0f, 5.0f};
+    world.Add<ecs::LocalTransform>(camera, transform);
+    world.Add<renderer::Camera>(camera);
+    ecs::PropagateTransforms(world);
+    renderer::SceneView view;
+    renderer::ExtractScene(world, view);
+    EXPECT_EQ(view.jointMatrices.size(), 2U);
+    for (int frame = 0; frame < 3; ++frame) {
+        ASSERT_TRUE(m_renderer->Render(view).has_value());
+    }
 }
