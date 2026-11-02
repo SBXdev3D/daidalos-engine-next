@@ -211,6 +211,29 @@ private:
         return {};
     }
 
+#if DAI_DEV_TOOLS
+    /// A cross in the middle of the screen, and red over everything for a moment after a wound.
+    static void DrawCrosshairAndWounds(const sandbox::Player& player) {
+        ImDrawList& draw = *ImGui::GetForegroundDrawList();
+        const ImVec2 size = ImGui::GetIO().DisplaySize;
+        if (player.hurtTime > 0.0f || player.dead) {
+            const float strength = player.dead ? 0.35f : 0.45f * player.hurtTime / 0.35f;
+            draw.AddRectFilled(ImVec2(0.0f, 0.0f), size, ImGui::GetColorU32(ImVec4(0.7f, 0.0f, 0.0f, strength)));
+        }
+        if (player.dead) {
+            return;
+        }
+        const ImVec2 center(size.x * 0.5f, size.y * 0.5f);
+        const ImU32 color = ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.8f));
+        constexpr float kGap = 3.0f;
+        constexpr float kLength = 7.0f;
+        draw.AddLine(ImVec2(center.x - kGap - kLength, center.y), ImVec2(center.x - kGap, center.y), color, 1.5f);
+        draw.AddLine(ImVec2(center.x + kGap, center.y), ImVec2(center.x + kGap + kLength, center.y), color, 1.5f);
+        draw.AddLine(ImVec2(center.x, center.y - kGap - kLength), ImVec2(center.x, center.y - kGap), color, 1.5f);
+        draw.AddLine(ImVec2(center.x, center.y + kGap), ImVec2(center.x, center.y + kGap + kLength), color, 1.5f);
+    }
+#endif
+
     void DrawHud(app::Application& app) {
 #if DAI_DEV_TOOLS
         // A stand-in until the game has its own HUD (docs/DEMO.md).
@@ -226,7 +249,11 @@ private:
         if (scene::Scene* current = app.CurrentScene()) {
             current->World().Each<sandbox::Player>([](ecs::Entity /*entity*/, const sandbox::Player& player) {
                 ImGui::Text("Health %d   Armor %d", player.health, player.armor);
-                ImGui::Text("Ammo: handgun %d, shotgun %d", player.handgunAmmo, player.shotgunAmmo);
+                const sandbox::WeaponState& weapon = player.weapons[static_cast<std::size_t>(player.weapon)];
+                ImGui::Text("%s %d / %d%s", player.weapon == sandbox::WeaponKind::Handgun ? "Handgun" : "Shotgun",
+                            weapon.magazine, weapon.reserve, player.reloading ? "   reloading" : "");
+                ImGui::Text("Zombies %d / %d", player.kills, player.zombieCount);
+                DrawCrosshairAndWounds(player);
                 ImGui::Text("%s%s", player.hasFlashlight ? "[Flashlight] " : "", player.hasRedCard ? "[Red card]" : "");
                 if (player.messageTime > 0.0f) {
                     ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", player.message.c_str());
@@ -235,6 +262,7 @@ private:
         }
         ImGui::TextDisabled(
             "WASD: move. Shift: run. Space: jump. C: crouch. E: use. F: flashlight. F5: restart. Tab: free the mouse.");
+        ImGui::TextDisabled("Left button: fire. R: reload. 1, 2, Q or the wheel: weapons.");
         if (const std::string& error = app.Renderer().ShaderError(); !error.empty()) {
             ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "Shader reload failed:");
             ImGui::TextUnformatted(error.c_str());

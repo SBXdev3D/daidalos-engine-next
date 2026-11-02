@@ -31,7 +31,7 @@ flowchart LR
 | Phase | The demo gains | Status |
 |---|---|---|
 | 5: Scene | The level in the new engine, background loading, restart, doors, pickups, red card, darkness | Done |
-| 6: Physics, audio and animation | Walking with collisions, jumps, crouching, ladders and solid doors, sound, skinned zombies and turning fans (done), then hitscan weapons, zombies that hunt, damage and death | In progress |
+| 6: Physics, audio and animation | Walking with collisions, jumps, crouching, ladders and solid doors, sound, skinned zombies and turning fans, hitscan handgun and shotgun, zombies that hunt, wounds and death | Done |
 | 7: Modern rendering | Real lights replacing the fog, the flashlight's shadow, rotating alarms, normal maps, ambient occlusion, particles for smoke, blood and green fog | |
 | 8: GUI | The game's own HUD, crosshair, menus and loading screen | |
 | 9: AI, cinematics, optimization | Security camera, opening camera flight, better zombie navigation, culling | |
@@ -42,7 +42,7 @@ Zombies come earlier than the roadmap's AI phase, because a shooter with no one 
 
 - **Pace.** Faster movement, more enemies, ambushes when doors open: closer to Doom than to the original's slow zombies.
 - **Feel.** Hit feedback, screen flash on damage, stronger recoil and sway.
-- **Structure.** The factory level has shotgun ammunition, but no shotgun to pick up. The remake gets a shotgun pickup, a clear exit and an end-of-level summary of kills, items and time.
+- **Structure.** The factory level has shotgun ammunition, but no shotgun to pick up. The remake has a shotgun next to the shells, and still needs a clear exit and an end-of-level summary of kills, items and time.
 - **Sound.** Spatial audio is done. Occlusion by doors can come later, with rays from the listener.
 
 ## Running it
@@ -57,7 +57,17 @@ If the level is missing, the sandbox shows a test floor. Other glTF files can be
 
 `scripts/import_legacy_level.py` is not part of running the demo. It converts the legacy level again, or brings more legacy content over. It also bakes the animated MilkShape models to glTF files of their own: the zombie, the fans and the handgun, whose clips are the frame ranges the legacy game played.
 
-For now, zombies only turn to face the player within 12 m, and strike at the air within 2 m. They hunt in the next step of Phase 6.
+## The fight
+
+The numbers come from the original's code, except where the table says otherwise.
+
+| | How it works |
+|---|---|
+| Handgun | 12 rounds, 10 damage, a shot every 0.35 s, reloads in 1.5 s (2 s in the original). Starts loaded, with nothing to reload it |
+| Shotgun | 7 shells, 5 pellets of 12 damage, a shot every 1.2 s, reloads in 2.8 s. It lies next to the shotgun shells: the original had it in its code, but nowhere to pick it up, and no model. `scripts/make_shotgun.py` builds one |
+| Aim | Rays from the eyes, spread as the original spread its bullets, up to 35 m. A shot is heard by zombies within 20 m |
+| Zombies | 50 health. They see 12 m ahead, within 60° of where they face, if nothing is in between. They walk at 1.3 m/s, faster than the original's 0.7, straight at the player: there is no path finding. They strike for 12 every 1.5 s within 1.4 m, look for a lost player for 9 s, then go back to waiting, or to their patrol |
+| Wounds | Armor takes half of each wound while it lasts. At 0 health the player falls, and F5 starts again |
 
 | Control | Action |
 |---|---|
@@ -67,6 +77,9 @@ For now, zombies only turn to face the player within 12 m, and strike at the air
 | Space | Jump |
 | C, left Ctrl | Crouch |
 | W on a ladder | Climb up, or down when looking down |
+| Left button, right trigger | Fire |
+| R, right shoulder | Reload |
+| 1, 2, Q, wheel, D-pad up | Change weapons |
 | E | Use a door |
 | F | Flashlight |
 | F5 | Restart |

@@ -1,6 +1,6 @@
 # Architecture
 
-How the engine is built today, through the physics, audio and animation parts of Phase 6. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
+How the engine is built today, through Phase 6: physics, audio and animation, and the sandbox's fighting. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
 
 ## Modules
 
@@ -79,7 +79,7 @@ To keep the graph readable, it omits the links to `core` and `logging` that near
 | `resources` | Asset paths, caches, decoding of files into plain CPU data | fastgltf, KTX, stb |
 | `rhi` | Vulkan 1.3 device, swapchain, buffers, textures, pipelines, command lists | Vulkan, volk, VMA |
 | `renderer` | Mesh pass, skinning, materials, asset library, cameras, ECS extraction, shader hot reload | |
-| `physics` | Collisions and queries of a scene, with Jolt hidden inside | ADR-0018 |
+| `physics` | Collisions, characters and ray queries of a scene, with Jolt hidden inside | ADR-0018 |
 | `audio` | Output, mixing, clips and voices of a scene, silent without an output | miniaudio, stb_vorbis |
 | `animation` | Clips sampled from glTF, an animator that plays and blends them on joint entities | |
 | `scene` | A world with its assets, physics, sounds, systems, active camera and atmosphere | |
@@ -220,7 +220,6 @@ CI runs on pull requests and on `main`: Windows MSVC and Linux Clang, in Debug, 
 
 - No tool produces KTX2 files yet, although the loader reads them.
 - Lighting, clustering and ambient occlusion do not exist yet (Phase 7). Materials carry all the PBR data already, and the sandbox simulates darkness with fog, with one spot light without shadows for its flashlight.
-- Rays pass through characters, so weapons cannot hit them yet (Phase 6).
 - Sound passes through walls and doors: there is no occlusion.
 - Volumes are read at startup and cannot change during play.
 - Joint matrices are computed and uploaded for every skinned mesh, even out of view, and collisions use the bind pose of skinned meshes.
