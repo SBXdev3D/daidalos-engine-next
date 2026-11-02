@@ -94,9 +94,10 @@ public:
     /// Moves the kinematic bodies by the fixed step.
     void Step(float step);
 
-    /// The closest hit along a unit direction. Characters are not hit.
-    [[nodiscard]] std::optional<RayHit> CastRay(const glm::vec3& origin, const glm::vec3& direction,
-                                                float maxDistance) const;
+    /// The closest hit along a unit direction. Characters are hit through their CharacterBody, and the
+    /// ignored body is not hit at all: a character looking or shooting ignores its own.
+    [[nodiscard]] std::optional<RayHit> CastRay(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
+                                                BodyId ignore = {}) const;
 
     /// Adds a character whose feet are at position.
     [[nodiscard]] CharacterId AddCharacter(const CharacterConfig& config, const glm::vec3& position);
@@ -106,6 +107,9 @@ public:
     /// on the floor. Its vertical speed is the game's: gravity is applied by the caller.
     void MoveCharacter(CharacterId character, const glm::vec3& velocity, float step);
     void SetCharacterPosition(CharacterId character, const glm::vec3& position);
+    /// The body that follows the character, which rays hit. It collides with nothing, so
+    /// characters only push each other through their own test.
+    [[nodiscard]] BodyId CharacterBody(CharacterId character) const;
     /// Where the feet are.
     [[nodiscard]] glm::vec3 CharacterPosition(CharacterId character) const;
     /// The velocity left after the last move: hitting a wall or a ceiling takes speed away.
