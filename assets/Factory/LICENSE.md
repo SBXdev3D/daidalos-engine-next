@@ -4,7 +4,7 @@ These terms cover this directory. The repository's CC BY-NC-SA 4.0 licence does 
 
 | Content | Origin | Terms |
 |---|---|---|
-| Geometry (`Factory.gltf`, `Factory.bin`) | Made by the project's author | Same as the repository |
+| Geometry and animations (`Factory`, `zombie`, `fan` and `handgun`, `.gltf` and `.bin`) | Made by the project's author | Same as the repository |
 | `handgun_ammo_d.png` | Made by the project's author | Same as the repository |
 | Other textures | Free textures from a website | Free licence that allows commercial use |
 | `Sounds/` | Free sounds, and `enter_the_maze.ogg` converted from the original WAV | Free licence that allows commercial use |
