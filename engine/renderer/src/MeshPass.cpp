@@ -31,6 +31,7 @@ struct MeshPushConstants {
     std::uint32_t materialBuffer;
     std::uint32_t instanceIndex;
     std::uint32_t materialIndex;
+    std::uint32_t jointBuffer;
 };
 
 struct FrameData {
@@ -49,7 +50,12 @@ struct FrameData {
 
 struct InstanceData {
     glm::mat4 world;
+    std::uint32_t skinBuffer;
+    std::uint32_t firstJoint; // kNoJoints for a rigid draw.
+    std::array<std::uint32_t, 2> padding;
 };
+static_assert(sizeof(InstanceData) == 80);
+static_assert(sizeof(resources::SkinWeights) == 24, "Matches SkinVertex in MeshTypes.hlsli");
 
 struct GpuMaterial {
     glm::vec4 baseColorFactor;
@@ -71,6 +77,7 @@ static_assert(sizeof(GpuMaterial) == 80);
 constexpr std::uint32_t kNoTexture = 0xFFFFFFFF;
 constexpr std::uint32_t kInitialMaterialCapacity = 64;
 constexpr std::uint64_t kInitialInstanceCapacity = 256;
+constexpr std::uint64_t kInitialJointCapacity = 256;
 
 } // namespace
 
@@ -93,11 +100,13 @@ MeshPass::~MeshPass() {
     m_meshes.ForEach([this](const Mesh& mesh) {
         m_device->DestroyBuffer(mesh.vertices);
         m_device->DestroyBuffer(mesh.indices);
+        m_device->DestroyBuffer(mesh.skin);
     });
     m_device->DestroyBuffer(m_materialTable);
     for (const FrameSlot& slot : m_frameSlots) {
         m_device->DestroyBuffer(slot.frame);
         m_device->DestroyBuffer(slot.instances);
+        m_device->DestroyBuffer(slot.joints);
     }
 }
 
@@ -153,6 +162,7 @@ core::Result<void> MeshPass::ReplaceShaders(std::span<const std::uint32_t> verte
 
 core::Result<MeshHandle> MeshPass::CreateMesh(const resources::MeshData& data, const std::string& name) {
     DAI_ASSERT(!data.vertices.empty() && !data.indices.empty(), "A mesh cannot be empty");
+    DAI_ASSERT(data.skin.empty() || data.skin.size() == data.vertices.size(), "A skin needs one entry per vertex");
 
     const auto vertexBytes = std::as_bytes(std::span(data.vertices));
     const auto indexBytes = std::as_bytes(std::span(data.indices));
@@ -176,18 +186,32 @@ core::Result<MeshHandle> MeshPass::CreateMesh(const resources::MeshData& data, c
     core::Result<void> uploaded = m_device->UploadBuffer(*vertices, vertexBytes).and_then([&] {
         return m_device->UploadBuffer(*indices, indexBytes);
     });
+    rhi::BufferHandle skin;
+    if (uploaded && !data.skin.empty()) {
+        const auto skinBytes = std::as_bytes(std::span(data.skin));
+        core::Result<rhi::BufferHandle> created =
+            m_device->CreateBuffer({.size = skinBytes.size(),
+                                    .usage = rhi::BufferUsage::Storage | rhi::BufferUsage::TransferDst,
+                                    .name = std::format("{} skin", name)});
+        uploaded = created.and_then([&](rhi::BufferHandle buffer) {
+            skin = buffer;
+            return m_device->UploadBuffer(buffer, skinBytes);
+        });
+    }
     if (!uploaded) {
         m_device->DestroyBuffer(*vertices);
         m_device->DestroyBuffer(*indices);
+        m_device->DestroyBuffer(skin);
         return tl::unexpected(std::move(uploaded.error()));
     }
-    return m_meshes.Insert({*vertices, *indices, static_cast<std::uint32_t>(data.indices.size())});
+    return m_meshes.Insert({*vertices, *indices, skin, static_cast<std::uint32_t>(data.indices.size())});
 }
 
 void MeshPass::DestroyMesh(MeshHandle mesh) {
     if (const std::optional<Mesh> removed = m_meshes.Remove(mesh)) {
         m_device->DestroyBuffer(removed->vertices);
         m_device->DestroyBuffer(removed->indices);
+        m_device->DestroyBuffer(removed->skin);
     }
 }
 
@@ -252,7 +276,7 @@ void MeshPass::DestroyMaterial(MaterialHandle material) {
     m_materials.Remove(material);
 }
 
-core::Result<void> MeshPass::PrepareFrameSlot(FrameSlot& slot, std::uint64_t instanceCount) {
+core::Result<void> MeshPass::PrepareFrameSlot(FrameSlot& slot, std::uint64_t instanceCount, std::uint64_t jointCount) {
     if (!slot.frame) {
         core::Result<rhi::BufferHandle> frame = m_device->CreateBuffer({.size = sizeof(FrameData),
                                                                         .usage = rhi::BufferUsage::Storage,
@@ -276,6 +300,19 @@ core::Result<void> MeshPass::PrepareFrameSlot(FrameSlot& slot, std::uint64_t ins
         slot.instances = *instances;
         slot.instanceCapacity = capacity;
     }
+    if (slot.jointCapacity < jointCount) {
+        const std::uint64_t capacity = std::max({kInitialJointCapacity, jointCount, slot.jointCapacity * 2});
+        core::Result<rhi::BufferHandle> joints = m_device->CreateBuffer({.size = capacity * sizeof(glm::mat4),
+                                                                         .usage = rhi::BufferUsage::Storage,
+                                                                         .memory = rhi::MemoryLocation::CpuToGpu,
+                                                                         .name = "Joints"});
+        if (!joints) {
+            return tl::unexpected(std::move(joints.error()));
+        }
+        m_device->DestroyBuffer(slot.joints);
+        slot.joints = *joints;
+        slot.jointCapacity = capacity;
+    }
     return {};
 }
 
@@ -286,7 +323,8 @@ core::Result<void> MeshPass::Record(rhi::CommandList& commands, const SceneView&
     }
     FrameSlot& slot = m_frameSlots[m_nextFrameSlot];
     m_nextFrameSlot = (m_nextFrameSlot + 1) % rhi::kFramesInFlight;
-    if (core::Result<void> prepared = PrepareFrameSlot(slot, std::max<std::uint64_t>(view.draws.size(), 1));
+    if (core::Result<void> prepared = PrepareFrameSlot(slot, std::max<std::uint64_t>(view.draws.size(), 1),
+                                                       std::max<std::uint64_t>(view.jointMatrices.size(), 1));
         !prepared) {
         return prepared;
     }
@@ -306,6 +344,10 @@ core::Result<void> MeshPass::Record(rhi::CommandList& commands, const SceneView&
                           std::cos(spot.outerAngle)};
     std::memcpy(m_device->Mapped(slot.frame).data(), &frame, sizeof(frame));
     auto* instances = reinterpret_cast<InstanceData*>(m_device->Mapped(slot.instances).data());
+    if (!view.jointMatrices.empty()) {
+        std::memcpy(m_device->Mapped(slot.joints).data(), view.jointMatrices.data(),
+                    view.jointMatrices.size() * sizeof(glm::mat4));
+    }
 
     MeshPushConstants push{
         .frameBuffer = m_device->StorageIndex(slot.frame),
@@ -313,6 +355,7 @@ core::Result<void> MeshPass::Record(rhi::CommandList& commands, const SceneView&
         .materialBuffer = m_device->StorageIndex(m_materialTable),
         .instanceIndex = 0,
         .materialIndex = 0,
+        .jointBuffer = m_device->StorageIndex(slot.joints),
     };
     rhi::PipelineHandle bound;
     for (const DrawItem& draw : view.draws) {
@@ -327,7 +370,10 @@ core::Result<void> MeshPass::Record(rhi::CommandList& commands, const SceneView&
             commands.BindPipeline(pipeline);
             bound = pipeline;
         }
-        instances[push.instanceIndex] = {draw.world};
+        // A skinned draw needs the skin of its mesh, and joints that the view holds. Otherwise it is rigid.
+        const bool skinned = mesh->skin && draw.firstJoint != kNoJoints && draw.firstJoint < view.jointMatrices.size();
+        instances[push.instanceIndex] = {
+            draw.world, skinned ? m_device->StorageIndex(mesh->skin) : 0, skinned ? draw.firstJoint : kNoJoints, {}};
         push.materialIndex = material.Index();
         commands.BindVertexBuffer(mesh->vertices);
         commands.BindIndexBuffer(mesh->indices, rhi::IndexType::Uint32);

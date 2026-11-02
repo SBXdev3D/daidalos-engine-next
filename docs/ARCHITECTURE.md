@@ -1,6 +1,6 @@
 # Architecture
 
-How the engine is built today, through the physics and audio parts of Phase 6. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
+How the engine is built today, through the physics, audio and animation parts of Phase 6. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
 
 ## Modules
 
@@ -24,6 +24,7 @@ flowchart TD
     subgraph world [World and data]
         physics
         audio
+        animation
         ecs
         resources
         input
@@ -42,6 +43,10 @@ flowchart TD
     scene --> ecs
     scene --> physics
     scene --> audio
+    scene --> animation
+    renderer --> animation
+    animation --> ecs
+    animation --> resources
     physics --> ecs
     audio --> ecs
     app -.-> debugui
@@ -73,9 +78,10 @@ To keep the graph readable, it omits the links to `core` and `logging` that near
 | `ecs` | Entities, sparse-set components, schedule, hierarchy, transform propagation | |
 | `resources` | Asset paths, caches, decoding of files into plain CPU data | fastgltf, KTX, stb |
 | `rhi` | Vulkan 1.3 device, swapchain, buffers, textures, pipelines, command lists | Vulkan, volk, VMA |
-| `renderer` | Mesh pass, materials, asset library, cameras, ECS extraction, shader hot reload | |
+| `renderer` | Mesh pass, skinning, materials, asset library, cameras, ECS extraction, shader hot reload | |
 | `physics` | Collisions and queries of a scene, with Jolt hidden inside | ADR-0018 |
 | `audio` | Output, mixing, clips and voices of a scene, silent without an output | miniaudio, stb_vorbis |
+| `animation` | Clips sampled from glTF, an animator that plays and blends them on joint entities | |
 | `scene` | A world with its assets, physics, sounds, systems, active camera and atmosphere | |
 | `debugui` | Dear ImGui overlay drawn through the RHI | Dear ImGui |
 | `app` | Ordered startup with rollback, main loop, current scene | |
@@ -121,8 +127,8 @@ sequenceDiagram
         A->>S: Fixed systems, then physics
     end
     A->>G: OnUpdate
-    A->>S: Frame systems
-    A->>S: Extract: transforms, SceneView, sounds and listener
+    A->>S: Frame systems, then animators
+    A->>S: Extract: transforms, SceneView with joint matrices, sounds and listener
     A->>G: OnRender
     A->>R: Render(SceneView, overlay)
     R->>R: Reload changed shaders
@@ -138,15 +144,27 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     F["glTF, PNG, JPEG, KTX2<br/>under assets/"] -->|"LoadModelFile<br/>LoadImageFile<br/>on a worker"| C["ModelData, ImageData<br/>plain CPU data"]
-    C -->|"AssetLibrary<br/>on the main thread"| G["Meshes, materials, textures<br/>owned by handles"]
-    G -->|"Instantiate"| E["Entities with<br/>LocalTransform, MeshRenderer"]
+    C -->|"AssetLibrary<br/>on the main thread"| G["Meshes, materials, textures<br/>owned by handles,<br/>skins and clips"]
+    G -->|"Instantiate"| E["Entities with LocalTransform,<br/>MeshRenderer or SkinnedMeshRenderer,<br/>Animator on the root"]
     E -->|"ExtractScene"| S["SceneView<br/>DrawItem list"]
     S -->|"MeshPass::Record"| V["GPU commands"]
 ```
 
 An asset's identity is its normalized path relative to the asset root. The case must match the file on disk, so a mismatch fails on Windows as well as on Linux. A shared texture is uploaded once. `LoadModel` does all of this at once, and `LoadModelAsync` keeps the main thread running during the first arrow. Loading a replacement level happens in a second scene, which takes over when it is ready.
 
-The sandbox's level comes from the legacy engine, through `scripts/import_legacy_level.py`: a single glTF file, whose node names tell the game what each node is (ADR-0017).
+The sandbox's level comes from the legacy engine, through `scripts/import_legacy_level.py`: a single glTF file, whose node names tell the game what each node is (ADR-0017). Animated models have their own glTF files, which the level points to with `model=` in a node's name.
+
+## Animation
+
+Joints are entities, so animation only writes transforms, and everything else is the usual path (ADR-0020).
+
+```mermaid
+flowchart LR
+    A["Animator<br/>on the model's root"] -->|"samples and blends clips"| L["LocalTransform<br/>of joint entities"]
+    L -->|"PropagateTransforms"| W["WorldTransform"]
+    W -->|"ExtractScene"| J["jointMatrices:<br/>world × inverse bind"]
+    J --> V["Vertex shader:<br/>four joints per vertex,<br/>by weight"]
+```
 
 ## Who owns what
 
@@ -180,7 +198,9 @@ The renderer uses bindless access: one descriptor set holds every texture and st
 ```mermaid
 flowchart LR
     P["Push constants<br/>buffer and element indices"] --> FB["FrameData<br/>view-projection"]
-    P --> IB["InstanceData<br/>world matrix"]
+    P --> IB["InstanceData<br/>world matrix, skin, first joint"]
+    IB --> SB["Skin of the mesh<br/>joints and weights per vertex"]
+    IB --> JB["Joint matrices<br/>of the frame"]
     P --> MB["MaterialData<br/>factors and texture indices"]
     MB --> T["Bindless texture array"]
 ```
@@ -203,7 +223,7 @@ CI runs on pull requests and on `main`: Windows MSVC and Linux Clang, in Debug, 
 - Rays pass through characters, so weapons cannot hit them yet (Phase 6).
 - Sound passes through walls and doors: there is no occlusion.
 - Volumes are read at startup and cannot change during play.
-- Meshes cannot be animated (Phase 6).
+- Joint matrices are computed and uploaded for every skinned mesh, even out of view, and collisions use the bind pose of skinned meshes.
 - Nothing culls: every `DrawItem` is drawn.
 - There are no text input events, so ImGui text fields do not work.
 - Creating a model's GPU objects still happens all at once on the main thread, which can cause a hitch at the end of a load.

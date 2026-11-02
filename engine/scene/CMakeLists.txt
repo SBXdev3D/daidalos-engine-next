@@ -3,6 +3,7 @@ dai_add_module(NAME scene
         include/daidalos/scene/Scene.hpp
         src/Scene.cpp
     PUBLIC_DEPS
+        daidalos::animation
         daidalos::audio
         daidalos::core
         daidalos::ecs

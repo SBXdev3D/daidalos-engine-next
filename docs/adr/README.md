@@ -23,3 +23,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0017](0017-scenes.md) | Scenes own a world and its assets, glTF plus code, no scene file format | Accepted |
 | [0018](0018-physics.md) | Jolt with virtual characters, one physics world per scene | Accepted |
 | [0019](0019-audio.md) | miniaudio, an engine per application and a sound world per scene | Accepted |
+| [0020](0020-animation.md) | Own skeletal animation, joints as entities, skinning in the vertex shader | Accepted |

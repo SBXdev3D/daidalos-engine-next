@@ -89,6 +89,87 @@ def quad_gltf(image_uri=None, with_normals=True):
     return gltf
 
 
+def skinned_gltf():
+    """The quad, skinned to two joints: "Hip" at the origin holds its bottom, and "Hand" one meter up
+    holds its top. A third node, outside the scene, is moved by a channel that must be ignored.
+    Animations: "lift" raises the hand linearly, "snap" turns the hip in steps, "spline" moves the hip
+    with cubic spline keys."""
+    data = bytearray(quad_buffer())
+
+    def add(payload):
+        data.extend(bytes(-len(data) % 4))
+        offset = len(data)
+        data.extend(payload)
+        return {"buffer": 0, "byteOffset": offset, "byteLength": len(payload)}
+
+    def floats(values):
+        return b"".join(struct.pack("<f", value) for value in values)
+
+    views = [
+        {"buffer": 0, "byteOffset": 0, "byteLength": 48},
+        {"buffer": 0, "byteOffset": 48, "byteLength": 48},
+        {"buffer": 0, "byteOffset": 96, "byteLength": 32},
+        {"buffer": 0, "byteOffset": 128, "byteLength": 12},
+        # Bottom vertices on the hip, top ones on the hand. The last one has weights that do not add up.
+        add(struct.pack("<16B", 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)),
+        add(floats([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0])),
+        # Column-major inverse bind matrices: identity, then one meter down.
+        add(floats([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] + [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -1, 0, 1])),
+        add(floats([0, 1, 2])),
+        add(floats([0, 1, 0, 0, 2, 0, 0, 3, 0])),
+        add(floats([0, 1])),
+        add(floats([0, 0, 0, 1, 0, 0.7071068, 0, 0.7071068])),
+        # Cubic spline: in-tangent, value, out-tangent for each of two keys.
+        add(floats([9, 9, 9, 1, 0, 0, 9, 9, 9, 9, 9, 9, 2, 0, 0, 9, 9, 9])),
+    ]
+    accessors = [
+        {"bufferView": 0, "componentType": 5126, "count": 4, "type": "VEC3", "min": [-1, -1, 0], "max": [1, 1, 0]},
+        {"bufferView": 1, "componentType": 5126, "count": 4, "type": "VEC3"},
+        {"bufferView": 2, "componentType": 5126, "count": 4, "type": "VEC2"},
+        {"bufferView": 3, "componentType": 5123, "count": 6, "type": "SCALAR"},
+        {"bufferView": 4, "componentType": 5121, "count": 4, "type": "VEC4"},
+        {"bufferView": 5, "componentType": 5126, "count": 4, "type": "VEC4"},
+        {"bufferView": 6, "componentType": 5126, "count": 2, "type": "MAT4"},
+        {"bufferView": 7, "componentType": 5126, "count": 3, "type": "SCALAR", "min": [0], "max": [2]},
+        {"bufferView": 8, "componentType": 5126, "count": 3, "type": "VEC3"},
+        {"bufferView": 9, "componentType": 5126, "count": 2, "type": "SCALAR", "min": [0], "max": [1]},
+        {"bufferView": 10, "componentType": 5126, "count": 2, "type": "VEC4"},
+        {"bufferView": 11, "componentType": 5126, "count": 6, "type": "VEC3"},
+    ]
+    return {
+        "asset": {"version": "2.0"},
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": [
+            {"name": "Character", "children": [2, 1]},
+            {"name": "Body", "mesh": 0, "skin": 0},
+            {"name": "Hip", "children": [3]},
+            {"name": "Hand", "translation": [0, 1, 0]},
+            {"name": "Elsewhere"},
+        ],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0, "NORMAL": 1, "TEXCOORD_0": 2, "JOINTS_0": 4,
+                                                   "WEIGHTS_0": 5}, "indices": 3}]}],
+        "skins": [{"joints": [2, 3], "inverseBindMatrices": 6}],
+        "animations": [
+            {"name": "lift", "samplers": [{"input": 7, "output": 8}],
+             "channels": [{"sampler": 0, "target": {"node": 3, "path": "translation"}},
+                          {"sampler": 0, "target": {"node": 4, "path": "translation"}}]},
+            {"name": "snap", "samplers": [{"input": 9, "output": 10, "interpolation": "STEP"}],
+             "channels": [{"sampler": 0, "target": {"node": 2, "path": "rotation"}}]},
+            {"name": "spline", "samplers": [{"input": 9, "output": 11, "interpolation": "CUBICSPLINE"}],
+             "channels": [{"sampler": 0, "target": {"node": 2, "path": "translation"}}]},
+        ],
+        "accessors": accessors,
+        "bufferViews": views,
+        "buffers": [
+            {
+                "byteLength": len(data),
+                "uri": "data:application/octet-stream;base64," + base64.b64encode(bytes(data)).decode(),
+            }
+        ],
+    }
+
+
 def main():
     # Left column red, right column blue, with an opaque top row and a half transparent bottom row.
     write_png(HERE / "checker.png", 2, 2, [255, 0, 0, 255, 0, 0, 255, 255, 255, 0, 0, 128, 0, 0, 255, 128])
@@ -103,6 +184,7 @@ def main():
     broken = quad_gltf()
     broken["nodes"][1]["children"] = [0]
     save("cycle.gltf", broken)
+    save("skinned.gltf", skinned_gltf())
     (HERE / "broken.gltf").write_text("{ this is not JSON\n", encoding="utf-8")
 
 

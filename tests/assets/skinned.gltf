@@ -1,0 +1,298 @@
+{
+ "asset": {
+  "version": "2.0"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "name": "Character",
+   "children": [
+    2,
+    1
+   ]
+  },
+  {
+   "name": "Body",
+   "mesh": 0,
+   "skin": 0
+  },
+  {
+   "name": "Hip",
+   "children": [
+    3
+   ]
+  },
+  {
+   "name": "Hand",
+   "translation": [
+    0,
+    1,
+    0
+   ]
+  },
+  {
+   "name": "Elsewhere"
+  }
+ ],
+ "meshes": [
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2,
+      "JOINTS_0": 4,
+      "WEIGHTS_0": 5
+     },
+     "indices": 3
+    }
+   ]
+  }
+ ],
+ "skins": [
+  {
+   "joints": [
+    2,
+    3
+   ],
+   "inverseBindMatrices": 6
+  }
+ ],
+ "animations": [
+  {
+   "name": "lift",
+   "samplers": [
+    {
+     "input": 7,
+     "output": 8
+    }
+   ],
+   "channels": [
+    {
+     "sampler": 0,
+     "target": {
+      "node": 3,
+      "path": "translation"
+     }
+    },
+    {
+     "sampler": 0,
+     "target": {
+      "node": 4,
+      "path": "translation"
+     }
+    }
+   ]
+  },
+  {
+   "name": "snap",
+   "samplers": [
+    {
+     "input": 9,
+     "output": 10,
+     "interpolation": "STEP"
+    }
+   ],
+   "channels": [
+    {
+     "sampler": 0,
+     "target": {
+      "node": 2,
+      "path": "rotation"
+     }
+    }
+   ]
+  },
+  {
+   "name": "spline",
+   "samplers": [
+    {
+     "input": 9,
+     "output": 11,
+     "interpolation": "CUBICSPLINE"
+    }
+   ],
+   "channels": [
+    {
+     "sampler": 0,
+     "target": {
+      "node": 2,
+      "path": "translation"
+     }
+    }
+   ]
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 4,
+   "type": "VEC3",
+   "min": [
+    -1,
+    -1,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    0
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 4,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 4,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5123,
+   "count": 6,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 4,
+   "componentType": 5121,
+   "count": 4,
+   "type": "VEC4"
+  },
+  {
+   "bufferView": 5,
+   "componentType": 5126,
+   "count": 4,
+   "type": "VEC4"
+  },
+  {
+   "bufferView": 6,
+   "componentType": 5126,
+   "count": 2,
+   "type": "MAT4"
+  },
+  {
+   "bufferView": 7,
+   "componentType": 5126,
+   "count": 3,
+   "type": "SCALAR",
+   "min": [
+    0
+   ],
+   "max": [
+    2
+   ]
+  },
+  {
+   "bufferView": 8,
+   "componentType": 5126,
+   "count": 3,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 9,
+   "componentType": 5126,
+   "count": 2,
+   "type": "SCALAR",
+   "min": [
+    0
+   ],
+   "max": [
+    1
+   ]
+  },
+  {
+   "bufferView": 10,
+   "componentType": 5126,
+   "count": 2,
+   "type": "VEC4"
+  },
+  {
+   "bufferView": 11,
+   "componentType": 5126,
+   "count": 6,
+   "type": "VEC3"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteOffset": 0,
+   "byteLength": 48
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 48,
+   "byteLength": 48
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 96,
+   "byteLength": 32
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 128,
+   "byteLength": 12
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 140,
+   "byteLength": 16
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 156,
+   "byteLength": 64
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 220,
+   "byteLength": 128
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 348,
+   "byteLength": 12
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 360,
+   "byteLength": 36
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 396,
+   "byteLength": 8
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 404,
+   "byteLength": 32
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 436,
+   "byteLength": 72
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 508,
+   "uri": "data:application/octet-stream;base64,AACAvwAAgL8AAAAAAACAPwAAgL8AAAAAAACAPwAAgD8AAAAAAACAvwAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAgD8AAIA/AACAPwAAgD8AAAAAAAAAAAAAAAAAAAEAAgAAAAIAAwAAAAAAAAAAAAEAAAABAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAIA/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAACAvwAAAAAAAIA/AAAAAAAAgD8AAABAAAAAAAAAgD8AAAAAAAAAAAAAAEAAAAAAAAAAAAAAQEAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAPQENT8AAAAA9AQ1PwAAEEEAABBBAAAQQQAAgD8AAAAAAAAAAAAAEEEAABBBAAAQQQAAEEEAABBBAAAQQQAAAEAAAAAAAAAAAAAAEEEAABBBAAAQQQ=="
+  }
+ ]
+}

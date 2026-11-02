@@ -10,6 +10,7 @@
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 
+#include <cstdint>
 #include <optional>
 #include <vector>
 
@@ -22,10 +23,16 @@ struct CameraView {
     float nearPlane = 0.0f;
 };
 
+/// Marks a draw that is not skinned.
+inline constexpr std::uint32_t kNoJoints = 0xFFFFFFFF;
+
 struct DrawItem {
     MeshHandle mesh;
     glm::mat4 world{1.0f};
     MaterialHandle material;
+    /// Index into SceneView::jointMatrices of the first matrix of a skinned draw, whose world matrix
+    /// is then ignored.
+    std::uint32_t firstJoint = kNoJoints;
 };
 
 /// Distance fog: surfaces fade into the color, which is also what is seen where nothing is drawn.
@@ -55,11 +62,14 @@ struct SceneView {
     /// Nothing is drawn without a camera.
     std::optional<CameraView> camera;
     std::vector<DrawItem> draws;
+    /// For each joint of the skinned draws: its world matrix times its inverse bind matrix.
+    std::vector<glm::mat4> jointMatrices;
     Atmosphere atmosphere;
     std::optional<SpotLight> spotLight;
 };
 
-/// Fills the view from the entities with a WorldTransform and a Camera or MeshRenderer. Run it after
+/// Fills the view from the entities with a WorldTransform and a Camera, MeshRenderer or
+/// SkinnedMeshRenderer. A joint that is gone counts as the skinned entity itself. Run it after
 /// ecs::PropagateTransforms. The view goes through the given camera entity if it is alive and has a
 /// Camera. Otherwise, the camera with the lowest entity index is used.
 /// The vectors of the view are reused, so that a view kept between frames does not reallocate.

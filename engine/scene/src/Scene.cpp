@@ -2,6 +2,7 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
+#include <daidalos/animation/Animation.hpp>
 #include <daidalos/core/Profile.hpp>
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/scene/Scene.hpp>
@@ -26,6 +27,7 @@ void Scene::RunFixedStep(core::Seconds step) {
 void Scene::RunFrame(core::Seconds delta, float fixedAlpha) {
     m_fixedAlpha = fixedAlpha;
     m_frameSystems.Run(m_world, delta);
+    animation::UpdateAnimators(m_world, static_cast<float>(delta.count()));
 }
 
 void Scene::Extract(renderer::SceneView& view) {

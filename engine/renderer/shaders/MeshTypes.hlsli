@@ -14,6 +14,7 @@ struct MeshPushConstants {
     uint materialBuffer;
     uint instanceIndex;
     uint materialIndex;
+    uint jointBuffer;
 };
 
 struct FrameData {
@@ -30,8 +31,29 @@ struct FrameData {
     float spotCosOuter;
 };
 
+static const uint kNoJoints = 0xFFFFFFFF;
+
 struct InstanceData {
     float4x4 world;
+    uint skinBuffer;
+    uint firstJoint; // kNoJoints for a rigid draw.
+    uint2 padding;
+};
+
+// One per joint of the frame's skinned draws: its world matrix times its inverse bind matrix.
+struct JointData {
+    float4x4 matrix;
+};
+
+// Matches resources::SkinWeights: four 16-bit joint indices, then four weights. The weights are
+// separate floats, so that the structure keeps the 24 bytes of its twin.
+struct SkinVertex {
+    uint joints01;
+    uint joints23;
+    float weight0;
+    float weight1;
+    float weight2;
+    float weight3;
 };
 
 static const uint kNoTexture = 0xFFFFFFFF;
@@ -57,6 +79,8 @@ struct MaterialData {
 [[vk::binding(2, 0)]] StructuredBuffer<FrameData> g_frames[];
 [[vk::binding(2, 0)]] StructuredBuffer<InstanceData> g_instances[];
 [[vk::binding(2, 0)]] StructuredBuffer<MaterialData> g_materials[];
+[[vk::binding(2, 0)]] StructuredBuffer<JointData> g_joints[];
+[[vk::binding(2, 0)]] StructuredBuffer<SkinVertex> g_skins[];
 
 // Matches rhi::SamplerIndex.
 static const uint kSamplerLinearRepeat = 1;
