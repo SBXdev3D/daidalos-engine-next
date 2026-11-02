@@ -23,6 +23,7 @@ Drafts of my Patreon posts about building Daidalos Engine Next. Each post is cop
 | 015 | [When a file is missing](posts/015-when-a-file-is-missing.md) | Then and now: errors | Draft |
 | 016 | [Who owns this texture?](posts/016-who-owns-this-texture.md) | Then and now: ownership | Draft |
 | 017 | [The factory finds its voice](posts/017-the-factory-finds-its-voice.md) | Progress, Phase 6.2 | Draft, 1 passage for me to write |
+| 018 | [The zombies wake up](posts/018-the-zombies-wake-up.md) | Progress, Phase 6.3 | Draft, 1 passage for me to write |
 
 ## Layout
 
