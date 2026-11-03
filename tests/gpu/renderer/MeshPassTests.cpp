@@ -215,6 +215,7 @@ TEST_F(MeshPassTest, WorldMatrixMovesTheMesh) {
 SceneView LitView(const CameraView& camera, renderer::DrawItem draw, const renderer::Light& light) {
     SceneView view{camera, {draw}};
     view.atmosphere.ambient = glm::vec3(0.0f);
+    view.atmosphere.ambientBelow = glm::vec3(0.0f);
     view.lights.push_back(light);
     return view;
 }
@@ -228,8 +229,28 @@ TEST_F(MeshPassTest, WithoutLightsTheAmbientLightShowsTheBaseColor) {
     EXPECT_NEAR(Pixel(32, 32).g, 64, 6);
 
     view.atmosphere.ambient = glm::vec3(0.0f);
+    view.atmosphere.ambientBelow = glm::vec3(0.0f);
     Render(view);
     EXPECT_EQ(Pixel(32, 32), glm::ivec3(0));
+}
+
+TEST_F(MeshPassTest, AmbientLightFromAboveLightsWhatFacesUp) {
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
+    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
+    const auto shade = [&](float degrees) {
+        SceneView view{
+            TestCamera(),
+            {{mesh, glm::rotate(glm::mat4(1.0f), glm::radians(degrees), glm::vec3(1.0f, 0.0f, 0.0f)), white}}};
+        view.atmosphere.ambient = glm::vec3(1.0f);
+        view.atmosphere.ambientBelow = glm::vec3(0.0f);
+        Render(view);
+        return Pixel(32, 32).r;
+    };
+    const int facingUp = shade(-60.0f);
+    const int facingCamera = shade(0.0f);
+    const int facingDown = shade(60.0f);
+    EXPECT_GT(facingUp, facingCamera + 30);
+    EXPECT_GT(facingCamera, facingDown + 30);
 }
 
 TEST_F(MeshPassTest, NormalsFollowTheWorldRotation) {
