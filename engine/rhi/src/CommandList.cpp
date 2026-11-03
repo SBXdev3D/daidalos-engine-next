@@ -102,26 +102,29 @@ void CommandList::Discard(TextureHandle texture, TextureState state) {
 
 void CommandList::BeginRendering(const RenderingDesc& desc) {
     Device::Impl& device = *m_recording->device;
-    const TextureData& color = device.textures.Get(desc.colorTarget);
-    DAI_ASSERT(color.state == TextureState::ColorTarget, "The color target must be in the ColorTarget state");
-
-    VkRenderingAttachmentInfo colorAttachment{
-        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = color.view,
-        .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        .loadOp = desc.clearColor.has_value() ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-    };
-    if (desc.clearColor.has_value()) {
-        const glm::vec4& clear = *desc.clearColor;
-        colorAttachment.clearValue.color = {{clear.r, clear.g, clear.b, clear.a}};
+    DAI_ASSERT(desc.colorTarget || desc.depthTarget, "Rendering needs a color target, a depth target or both");
+    Extent extent;
+    VkRenderingAttachmentInfo colorAttachment{.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+    if (desc.colorTarget) {
+        const TextureData& color = device.textures.Get(desc.colorTarget);
+        DAI_ASSERT(color.state == TextureState::ColorTarget, "The color target must be in the ColorTarget state");
+        extent = color.extent;
+        colorAttachment.imageView = color.view;
+        colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        colorAttachment.loadOp = desc.clearColor.has_value() ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        if (desc.clearColor.has_value()) {
+            const glm::vec4& clear = *desc.clearColor;
+            colorAttachment.clearValue.color = {{clear.r, clear.g, clear.b, clear.a}};
+        }
     }
 
     VkRenderingAttachmentInfo depthAttachment{.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     if (desc.depthTarget) {
         const TextureData& depth = device.textures.Get(desc.depthTarget);
         DAI_ASSERT(depth.state == TextureState::DepthTarget, "The depth target must be in the DepthTarget state");
-        DAI_ASSERT(depth.extent == color.extent, "The color and depth targets must have the same size");
+        DAI_ASSERT(!desc.colorTarget || depth.extent == extent, "The color and depth targets must have the same size");
+        extent = depth.extent;
         depthAttachment.imageView = depth.view;
         depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
         depthAttachment.loadOp = desc.clearDepth.has_value() ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
@@ -131,20 +134,25 @@ void CommandList::BeginRendering(const RenderingDesc& desc) {
 
     const VkRenderingInfo renderingInfo{
         .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-        .renderArea = {{0, 0}, {color.extent.width, color.extent.height}},
+        .renderArea = {{0, 0}, {extent.width, extent.height}},
         .layerCount = 1,
-        .colorAttachmentCount = 1,
+        .colorAttachmentCount = desc.colorTarget ? 1U : 0U,
         .pColorAttachments = &colorAttachment,
         .pDepthAttachment = desc.depthTarget ? &depthAttachment : nullptr,
     };
     vkCmdBeginRendering(m_recording->commands, &renderingInfo);
 
+    SetViewport(0, 0, extent.width, extent.height);
+}
+
+void CommandList::SetViewport(std::int32_t x, std::int32_t y, std::uint32_t width, std::uint32_t height) {
     // The one place where clip-space Y is flipped (CONVENTIONS.md, section 5).
-    const auto width = static_cast<float>(color.extent.width);
-    const auto height = static_cast<float>(color.extent.height);
-    const VkViewport viewport{0.0f, height, width, -height, 0.0f, 1.0f};
+    const auto left = static_cast<float>(x);
+    const auto top = static_cast<float>(y);
+    const auto fullHeight = static_cast<float>(height);
+    const VkViewport viewport{left, top + fullHeight, static_cast<float>(width), -fullHeight, 0.0f, 1.0f};
     vkCmdSetViewport(m_recording->commands, 0, 1, &viewport);
-    const VkRect2D scissor{{0, 0}, {color.extent.width, color.extent.height}};
+    const VkRect2D scissor{{x, y}, {width, height}};
     vkCmdSetScissor(m_recording->commands, 0, 1, &scissor);
 }
 

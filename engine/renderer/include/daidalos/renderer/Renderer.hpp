@@ -25,6 +25,10 @@ struct RendererConfig {
     bool vsync = true;
     /// Multiplies the light before tonemapping.
     float exposure = 1.0f;
+    /// Anisotropic filtering of textures, from 1 (off) to 16.
+    float anisotropy = 16.0f;
+    /// Multiplies the tilt of every normal map: 0 flattens them, 1 keeps them as authored.
+    float normalStrength = 1.0f;
 };
 
 /// How long a pass took on the GPU.
@@ -59,6 +63,7 @@ public:
 
     void SetVsync(bool vsync);
     void SetExposure(float exposure);
+    void SetNormalStrength(float strength);
 
     /// GPU time of each pass of a recent frame, which the GPU finished a frame or two ago. Empty on a
     /// device without timestamps, and for the first frames.

@@ -30,6 +30,8 @@ struct MeshRenderer {
     renderer::MeshHandle mesh;
     /// Null for the default material: plain white.
     renderer::MaterialHandle material;
+    /// False for what must not darken the scene, such as a weapon held in front of the camera.
+    bool castsShadows = true;
 };
 
 /// ECS component: draws a mesh that follows joints, which are other entities (ADR-0020). The entity's
@@ -42,6 +44,7 @@ struct SkinnedMeshRenderer {
     /// For each joint, from the space of the mesh to the space of the joint in the bind pose. Shared by
     /// every instance of the model.
     std::shared_ptr<const std::vector<glm::mat4>> inverseBindMatrices;
+    bool castsShadows = true;
 };
 
 /// ECS component: the name of the model node an entity comes from, for the code that builds on a level.
@@ -64,6 +67,8 @@ struct Light {
     float innerAngle = glm::radians(20.0f);
     float outerAngle = glm::radians(30.0f);
     bool enabled = true;
+    /// Spot lights only, within the renderer's budget of shadow maps (ADR-0023).
+    bool castsShadows = false;
 };
 
 /// ECS component: the entity's LocalTransform moves a kinematic body of the scene's physics. The entity

@@ -29,7 +29,8 @@ void ExtractLights(ecs::World& world, renderer::SceneView& view) {
                                    .range = light.range,
                                    .falloff = light.falloff,
                                    .innerAngle = light.innerAngle,
-                                   .outerAngle = light.outerAngle});
+                                   .outerAngle = light.outerAngle,
+                                   .castsShadows = light.castsShadows});
         });
 }
 
@@ -56,7 +57,10 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
     view.draws.reserve(world.Count<MeshRenderer>());
     world.Each<ecs::WorldTransform, MeshRenderer>(
         [&](ecs::Entity /*entity*/, const ecs::WorldTransform& transform, const MeshRenderer& component) {
-            view.draws.push_back({component.mesh, transform.matrix, component.material});
+            view.draws.push_back({.mesh = component.mesh,
+                                  .world = transform.matrix,
+                                  .material = component.material,
+                                  .castsShadows = component.castsShadows});
         });
 
     world.Each<ecs::WorldTransform, SkinnedMeshRenderer>(
@@ -69,8 +73,11 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
                     (inverseBind != nullptr && index < inverseBind->size()) ? (*inverseBind)[index] : glm::mat4(1.0f);
                 view.jointMatrices.push_back((joint != nullptr ? joint->matrix : transform.matrix) * bind);
             }
-            view.draws.push_back({component.mesh, transform.matrix, component.material,
-                                  component.joints.empty() ? renderer::kNoJoints : firstJoint});
+            view.draws.push_back({.mesh = component.mesh,
+                                  .world = transform.matrix,
+                                  .material = component.material,
+                                  .firstJoint = component.joints.empty() ? renderer::kNoJoints : firstJoint,
+                                  .castsShadows = component.castsShadows});
         });
     ExtractLights(world, view);
 }

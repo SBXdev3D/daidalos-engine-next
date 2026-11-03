@@ -30,7 +30,7 @@ constexpr rhi::Format kDepthFormat = rhi::Format::D32Float;
 /// Lighting is computed in HDR, then tonemapped into the swapchain (ADR-0022).
 constexpr rhi::Format kHdrFormat = rhi::Format::Rgba16Float;
 /// The passes timed on the GPU, in order: each ends at a timestamp, after the one at the start.
-constexpr std::array<std::string_view, 3> kTimedPasses{"Meshes", "Tonemap", "Overlay"};
+constexpr std::array<std::string_view, 4> kTimedPasses{"Shadows", "Meshes", "Tonemap", "Overlay"};
 
 // Matches TonemapPushConstants in shaders/Tonemap.hlsl.
 struct TonemapPushConstants {
@@ -152,6 +152,7 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     deviceConfig.validation = config.validation;
     deviceConfig.instanceExtensions = std::move(extensions);
     deviceConfig.presentation = true;
+    deviceConfig.anisotropy = config.anisotropy;
     DAI_TRY_ASSIGN(rhi::Device device, rhi::Device::Create(deviceConfig));
 
     const platform::Extent size = window.PixelSize();
@@ -171,6 +172,7 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
                                   }));
     DAI_TRY_ASSIGN(MeshPass meshPass, MeshPass::Create(impl->device, kHdrFormat, kDepthFormat));
     impl->meshPass.emplace(std::move(meshPass));
+    impl->meshPass->SetNormalStrength(config.normalStrength);
 
 #if DAI_DEV_TOOLS
     // Installed builds have no sources to watch: they keep the embedded shaders.
@@ -211,6 +213,10 @@ void Renderer::SetExposure(float exposure) {
     m_impl->exposure = exposure;
 }
 
+void Renderer::SetNormalStrength(float strength) {
+    m_impl->meshPass->SetNormalStrength(strength);
+}
+
 std::span<const PassTime> Renderer::GpuTimes() const {
     return m_impl->gpuTimesValid ? std::span<const PassTime>(m_impl->gpuTimes) : std::span<const PassTime>();
 }
@@ -236,14 +242,21 @@ core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder
     rhi::CommandList& commands = frame.commands;
     commands.WriteTimestamp();
     if (status) {
+        const float aspect = static_cast<float>(frame.extent.width) / static_cast<float>(frame.extent.height);
+        status = impl.meshPass->Prepare(view, aspect);
+    }
+    if (status) {
+        impl.meshPass->RecordShadows(commands);
+    }
+    commands.WriteTimestamp();
+    if (status) {
         commands.Discard(impl.hdr, rhi::TextureState::ColorTarget);
         commands.Discard(impl.depth, rhi::TextureState::DepthTarget);
         commands.BeginRendering({.colorTarget = impl.hdr,
                                  .clearColor = glm::vec4(view.atmosphere.fogColor, 1.0f),
                                  .depthTarget = impl.depth,
                                  .clearDepth = 0.0f});
-        const float aspect = static_cast<float>(frame.extent.width) / static_cast<float>(frame.extent.height);
-        status = impl.meshPass->Record(commands, view, aspect);
+        impl.meshPass->Record(commands);
         commands.EndRendering();
     }
     commands.WriteTimestamp();

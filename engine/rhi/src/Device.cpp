@@ -323,10 +323,18 @@ core::Result<void> Device::Impl::CreateLogicalDevice(const DeviceConfig& config)
         .runtimeDescriptorArray = VK_TRUE,
         .timelineSemaphore = VK_TRUE,
     };
+    VkPhysicalDeviceFeatures supported{};
+    vkGetPhysicalDeviceFeatures(physicalDevice, &supported);
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+    const bool anisotropic = config.anisotropy > 1.0f && supported.samplerAnisotropy == VK_TRUE;
+    info.anisotropy = anisotropic ? std::min(config.anisotropy, properties.limits.maxSamplerAnisotropy) : 1.0f;
+
     const VkPhysicalDeviceFeatures2 features{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
         .pNext = &features12,
-        .features = {.textureCompressionBC = VK_TRUE,
+        .features = {.samplerAnisotropy = anisotropic ? VK_TRUE : VK_FALSE,
+                     .textureCompressionBC = VK_TRUE,
                      .shaderSampledImageArrayDynamicIndexing = VK_TRUE,
                      .shaderStorageBufferArrayDynamicIndexing = VK_TRUE},
     };
@@ -437,6 +445,9 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
             .addressModeU = address,
             .addressModeV = address,
             .addressModeW = address,
+            // Sharp textures on surfaces seen at a grazing angle, such as floors.
+            .anisotropyEnable = (filter == VK_FILTER_LINEAR && info.anisotropy > 1.0f) ? VK_TRUE : VK_FALSE,
+            .maxAnisotropy = info.anisotropy,
             .maxLod = VK_LOD_CLAMP_NONE,
         };
         return vkCreateSampler(device, &createInfo, nullptr, &sampler);
@@ -453,6 +464,23 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
     }
     if (const VkResult result = createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                                               samplers[static_cast<std::size_t>(SamplerIndex::NearestClamp)]);
+        result != VK_SUCCESS) {
+        return tl::unexpected(VulkanError("vkCreateSampler", result));
+    }
+
+    const VkSamplerCreateInfo shadowInfo{
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .compareEnable = VK_TRUE,
+        .compareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
+    };
+    if (const VkResult result = vkCreateSampler(device, &shadowInfo, nullptr,
+                                                &samplers[static_cast<std::size_t>(SamplerIndex::ShadowCompare)]);
         result != VK_SUCCESS) {
         return tl::unexpected(VulkanError("vkCreateSampler", result));
     }
@@ -709,8 +737,8 @@ core::Result<Device> Device::Create(const DeviceConfig& config) {
     DAI_TRY(impl->CreateAllocator());
     DAI_TRY(impl->CreateFrameResources());
     DAI_TRY(impl->CreateGlobalDescriptors());
-    DAI_LOG_INFO(kModule, "Vulkan device '{}', validation {}", impl->info.name,
-                 impl->info.validationEnabled ? "on" : "off");
+    DAI_LOG_INFO(kModule, "Vulkan device '{}', validation {}, anisotropy {}x", impl->info.name,
+                 impl->info.validationEnabled ? "on" : "off", impl->info.anisotropy);
     return Device(std::move(impl));
 }
 

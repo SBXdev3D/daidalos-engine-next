@@ -117,13 +117,15 @@ protected:
     void Render(const SceneView& view) {
         ASSERT_TRUE(Device()
                         .Submit([&](rhi::CommandList& commands) {
+                            EXPECT_TRUE(m_pass->Prepare(view, 1.0f).has_value());
+                            m_pass->RecordShadows(commands);
                             commands.Discard(m_color, rhi::TextureState::ColorTarget);
                             commands.Discard(m_depth, rhi::TextureState::DepthTarget);
                             commands.BeginRendering({.colorTarget = m_color,
                                                      .clearColor = kBackground,
                                                      .depthTarget = m_depth,
                                                      .clearDepth = 0.0f});
-                            EXPECT_TRUE(m_pass->Record(commands, view, 1.0f).has_value());
+                            m_pass->Record(commands);
                             commands.EndRendering();
                             commands.Transition(m_color, rhi::TextureState::TransferSrc);
                             commands.CopyTextureToBuffer(m_color, m_readback);
@@ -307,6 +309,41 @@ TEST_F(MeshPassTest, NormalMapTiltsTheSurface) {
     EXPECT_LT(leaningLeft, flat);
     Device().DestroyTexture(rightTexture);
     Device().DestroyTexture(leftTexture);
+}
+
+TEST_F(MeshPassTest, SpotLightCastsTheShadowOfWhatStandsInItsWay) {
+    // A floor facing the camera, lit from the right by a spot, and a small panel 1 m in front of it. The
+    // panel's shadow falls left of the panel, from x = -1.4 to -0.1, where the camera sees the floor.
+    const MeshHandle floor = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
+    const MeshHandle panel = Mesh(MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 1.0f));
+    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
+    renderer::Light light{.type = renderer::LightType::Spot,
+                          .position = {3.0f, 0.0f, 5.0f},
+                          .direction = glm::normalize(glm::vec3(-3.0f, 0.0f, -5.0f)),
+                          .range = 20.0f,
+                          .falloff = 1.0f,
+                          .innerAngle = glm::radians(40.0f),
+                          .outerAngle = glm::radians(45.0f)};
+    bool panelCastsShadows = true;
+    const auto render = [&] {
+        SceneView view = LitView(TestCamera(), {floor, glm::mat4(1.0f), white}, light);
+        view.draws.push_back({.mesh = panel, .material = white, .castsShadows = panelCastsShadows});
+        Render(view);
+    };
+
+    render();
+    const int withoutShadows = Pixel(20, 32).r;
+    light.castsShadows = true;
+    render();
+    EXPECT_GT(withoutShadows, 100);
+    EXPECT_LT(Pixel(20, 32).r, 10);  // In the shadow.
+    EXPECT_GT(Pixel(48, 32).r, 100); // The floor on the light's side stays lit.
+    EXPECT_GT(Pixel(32, 32).r, 100); // So does the panel itself.
+
+    // A draw that does not cast shadows lets the light through.
+    panelCastsShadows = false;
+    render();
+    EXPECT_GT(Pixel(20, 32).r, 100);
 }
 
 TEST_F(MeshPassTest, DestroyedMeshIsSkipped) {

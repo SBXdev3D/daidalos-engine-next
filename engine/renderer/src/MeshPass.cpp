@@ -9,8 +9,11 @@
 #include <daidalos/math/Projection.hpp>
 #include <daidalos/rhi/Spirv.hpp>
 
+#include <glm/ext/matrix_transform.hpp>
 #include <shaders/Mesh.ps.spv.h>
 #include <shaders/Mesh.vs.spv.h>
+#include <shaders/ShadowMap.ps.spv.h>
+#include <shaders/ShadowMap.vs.spv.h>
 
 #include <algorithm>
 #include <array>
@@ -32,6 +35,7 @@ struct MeshPushConstants {
     std::uint32_t instanceIndex;
     std::uint32_t materialIndex;
     std::uint32_t jointBuffer;
+    std::uint32_t shadowIndex;
 };
 
 struct FrameData {
@@ -42,6 +46,10 @@ struct FrameData {
     std::uint32_t lightCount;
     glm::vec3 ambient;
     std::uint32_t lightBuffer;
+    std::uint32_t shadowBuffer;
+    std::uint32_t shadowAtlas;
+    float shadowTexel;
+    float normalStrength;
 };
 
 struct LightData {
@@ -52,9 +60,45 @@ struct LightData {
     glm::vec3 color;
     float cosOuter; // kPointLight for a point light.
     float cosInner;
-    std::array<std::uint32_t, 3> padding;
+    std::uint32_t shadow;
+    std::array<std::uint32_t, 2> padding;
 };
 static_assert(sizeof(LightData) == 64);
+
+struct ShadowData {
+    glm::mat4 viewProjection;
+    glm::vec2 atlasOffset;
+    float atlasScale;
+    float normalOffset;
+};
+static_assert(sizeof(ShadowData) == 80);
+
+constexpr std::uint32_t kNoShadow = 0xFFFFFFFF;
+/// The atlas holds kMaxShadowedLights tiles, two by two.
+constexpr std::uint32_t kShadowAtlasSize = 2048;
+constexpr std::uint32_t kShadowTileSize = kShadowAtlasSize / 2;
+// Against shadow acne: depth bias in the shadow map (reverse-Z, so negative), and receivers pushed along
+// their normal by this many texels.
+constexpr float kShadowDepthBias = -2.0f;
+constexpr float kShadowSlopeBias = -2.5f;
+constexpr float kShadowNormalOffsetTexels = 1.5f;
+/// A spot light's shadow map covers its cone; wider cones are capped here.
+constexpr float kMaxShadowHalfAngle = glm::radians(80.0f);
+constexpr float kShadowNearPlane = 0.1f; // Meters.
+
+ShadowData ShadowFor(const Light& light, std::uint32_t tile) {
+    const glm::vec3 direction = glm::normalize(light.direction);
+    const glm::vec3 up = std::abs(direction.y) > 0.99f ? glm::vec3(1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+    const glm::mat4 view = glm::lookAtRH(light.position, light.position + direction, up);
+    const float halfAngle = std::clamp(light.outerAngle, glm::radians(1.0f), kMaxShadowHalfAngle);
+    // Nearer than this, nothing casts a shadow: a lamp's own shade, around the light, would darken it.
+    const float nearPlane = std::min(kShadowNearPlane, light.range * 0.5f);
+    const glm::mat4 projection = math::PerspectiveReverseZ(halfAngle * 2.0f, 1.0f, nearPlane, light.range);
+    // One texel of the map covers this much, per meter from the light.
+    const float texelAngle = 2.0f * std::tan(halfAngle) / static_cast<float>(kShadowTileSize);
+    return {projection * view, glm::vec2(static_cast<float>(tile % 2), static_cast<float>(tile / 2)) * 0.5f, 0.5f,
+            kShadowNormalOffsetTexels * texelAngle};
+}
 
 /// The cosine of the outer angle of a point light: every direction is inside.
 constexpr float kPointLight = -2.0f;
@@ -68,6 +112,7 @@ LightData ToGpu(const Light& light) {
             light.color,
             spot ? std::cos(light.outerAngle) : kPointLight,
             spot ? std::cos(light.innerAngle) : kPointLight + 1.0f,
+            kNoShadow,
             {}};
 }
 
@@ -112,8 +157,9 @@ MeshPass::MeshPass(MeshPass&& other) noexcept
     : m_device(other.m_device), m_colorFormat(other.m_colorFormat), m_depthFormat(other.m_depthFormat),
       m_pipeline(std::exchange(other.m_pipeline, {})),
       m_doubleSidedPipeline(std::exchange(other.m_doubleSidedPipeline, {})),
-      m_meshes(std::exchange(other.m_meshes, {})), m_materials(std::exchange(other.m_materials, {})),
-      m_materialTable(std::exchange(other.m_materialTable, {})),
+      m_shadowPipeline(std::exchange(other.m_shadowPipeline, {})),
+      m_shadowAtlas(std::exchange(other.m_shadowAtlas, {})), m_meshes(std::exchange(other.m_meshes, {})),
+      m_materials(std::exchange(other.m_materials, {})), m_materialTable(std::exchange(other.m_materialTable, {})),
       m_materialCapacity(std::exchange(other.m_materialCapacity, 0)),
       m_defaultMaterial(std::exchange(other.m_defaultMaterial, {})),
       m_frameSlots(std::exchange(other.m_frameSlots, {})), m_nextFrameSlot(other.m_nextFrameSlot) {}
@@ -132,16 +178,51 @@ MeshPass::~MeshPass() {
         m_device->DestroyBuffer(slot.instances);
         m_device->DestroyBuffer(slot.joints);
         m_device->DestroyBuffer(slot.lights);
+        m_device->DestroyBuffer(slot.shadows);
     }
+    m_device->DestroyPipeline(m_shadowPipeline);
+    m_device->DestroyTexture(m_shadowAtlas);
 }
 
 core::Result<MeshPass> MeshPass::Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat) {
     MeshPass pass(device, colorFormat, depthFormat);
     DAI_TRY(pass.ReplaceShaders(rhi::ToSpirv(kMeshVsSpirv), rhi::ToSpirv(kMeshPsSpirv)));
+    DAI_TRY(pass.CreateShadowResources());
     // Plain white plastic. glTF's default material is a metal, which looks black without reflections.
     DAI_TRY_ASSIGN(MaterialHandle defaultMaterial, pass.CreateMaterial({.metallicFactor = 0.0f}));
     pass.m_defaultMaterial = defaultMaterial;
     return pass;
+}
+
+core::Result<void> MeshPass::CreateShadowResources() {
+    using resources::Vertex;
+    DAI_TRY_ASSIGN(
+        m_shadowPipeline,
+        m_device->CreatePipeline({
+            .vertexShader = rhi::ToSpirv(kShadowMapVsSpirv),
+            .fragmentShader = rhi::ToSpirv(kShadowMapPsSpirv),
+            .vertexStride = sizeof(Vertex),
+            .vertexAttributes = {{0, rhi::Format::Rgb32Float, static_cast<std::uint32_t>(offsetof(Vertex, position))},
+                                 {2, rhi::Format::Rg32Float, static_cast<std::uint32_t>(offsetof(Vertex, uv))}},
+            .depthFormat = rhi::Format::D32Float,
+            .depthBias = kShadowDepthBias,
+            .depthBiasSlope = kShadowSlopeBias,
+            // Level walls have one side: culling would let light through them.
+            .cull = rhi::CullMode::None,
+            .name = "Shadow map",
+        }));
+    DAI_TRY_ASSIGN(m_shadowAtlas,
+                   m_device->CreateTexture({.extent = {kShadowAtlasSize, kShadowAtlasSize},
+                                            .format = rhi::Format::D32Float,
+                                            .usage = rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled,
+                                            .name = "Shadow atlas"}));
+    for (FrameSlot& slot : m_frameSlots) {
+        DAI_TRY_ASSIGN(slot.shadows, m_device->CreateBuffer({.size = kMaxShadowedLights * sizeof(ShadowData),
+                                                             .usage = rhi::BufferUsage::Storage,
+                                                             .memory = rhi::MemoryLocation::CpuToGpu,
+                                                             .name = "Shadows"}));
+    }
+    return {};
 }
 
 core::Result<rhi::PipelineHandle> MeshPass::BuildPipeline(std::span<const std::uint32_t> vertexShader,
@@ -317,8 +398,25 @@ core::Result<void> MeshPass::PrepareFrameSlot(FrameSlot& slot, const SceneView& 
     return {};
 }
 
-core::Result<void> MeshPass::Record(rhi::CommandList& commands, const SceneView& view, float aspect) {
-    DAI_PROFILE_SCOPE("renderer::MeshPass");
+std::vector<std::uint32_t> ChooseShadowedLights(std::span<const Light> lights, const glm::vec3& camera,
+                                                std::size_t max) {
+    std::vector<std::uint32_t> chosen;
+    for (std::uint32_t index = 0; index < lights.size(); ++index) {
+        if (lights[index].castsShadows && lights[index].type == LightType::Spot) {
+            chosen.push_back(index);
+        }
+    }
+    const auto distance = [&](std::uint32_t index) { return glm::distance(lights[index].position, camera); };
+    std::ranges::stable_sort(chosen, {}, distance);
+    chosen.resize(std::min(chosen.size(), max));
+    return chosen;
+}
+
+core::Result<void> MeshPass::Prepare(const SceneView& view, float aspect) {
+    DAI_PROFILE_SCOPE("renderer::MeshPass::Prepare");
+    m_prepared = nullptr;
+    m_shadowCount = 0;
+    m_sorted.clear();
     if (!view.camera.has_value()) {
         return {};
     }
@@ -327,34 +425,37 @@ core::Result<void> MeshPass::Record(rhi::CommandList& commands, const SceneView&
     DAI_TRY(PrepareFrameSlot(slot, view));
 
     const CameraView& camera = *view.camera;
+    const glm::vec3 cameraPosition = glm::inverse(camera.view)[3];
     const FrameData frame{math::InfinitePerspectiveReverseZ(camera.verticalFov, aspect, camera.nearPlane) * camera.view,
-                          glm::vec3(glm::inverse(camera.view)[3]),
+                          cameraPosition,
                           view.atmosphere.fogDensity,
                           view.atmosphere.fogColor,
                           static_cast<std::uint32_t>(view.lights.size()),
                           view.atmosphere.ambient,
-                          m_device->StorageIndex(slot.lights)};
+                          m_device->StorageIndex(slot.lights),
+                          m_device->StorageIndex(slot.shadows),
+                          m_device->BindlessIndex(m_shadowAtlas),
+                          1.0f / static_cast<float>(kShadowAtlasSize),
+                          m_normalStrength};
     std::memcpy(m_device->Mapped(slot.frame).data(), &frame, sizeof(frame));
+
     auto* lights = reinterpret_cast<LightData*>(m_device->Mapped(slot.lights).data());
     for (std::size_t index = 0; index < view.lights.size(); ++index) {
         lights[index] = ToGpu(view.lights[index]);
     }
-    auto* instances = reinterpret_cast<InstanceData*>(m_device->Mapped(slot.instances).data());
+    auto* shadows = reinterpret_cast<ShadowData*>(m_device->Mapped(slot.shadows).data());
+    for (const std::uint32_t light : ChooseShadowedLights(view.lights, cameraPosition, kMaxShadowedLights)) {
+        lights[light].shadow = m_shadowCount;
+        shadows[m_shadowCount] = ShadowFor(view.lights[light], m_shadowCount);
+        ++m_shadowCount;
+    }
     if (!view.jointMatrices.empty()) {
         std::memcpy(m_device->Mapped(slot.joints).data(), view.jointMatrices.data(),
                     view.jointMatrices.size() * sizeof(glm::mat4));
     }
 
-    MeshPushConstants push{
-        .frameBuffer = m_device->StorageIndex(slot.frame),
-        .instanceBuffer = m_device->StorageIndex(slot.instances),
-        .materialBuffer = m_device->StorageIndex(m_materialTable),
-        .instanceIndex = 0,
-        .materialIndex = 0,
-        .jointBuffer = m_device->StorageIndex(slot.joints),
-    };
-    // Sorted, so that the pipeline and the buffers change as rarely as possible.
-    m_sorted.clear();
+    // Sorted, so that the pipeline and the buffers change as rarely as possible. Instance i is the i-th
+    // sorted draw, for the shadow maps and the meshes alike.
     for (std::uint32_t index = 0; index < view.draws.size(); ++index) {
         const DrawItem& draw = view.draws[index];
         if (m_meshes.TryGet(draw.mesh) == nullptr) {
@@ -362,17 +463,87 @@ core::Result<void> MeshPass::Record(rhi::CommandList& commands, const SceneView&
         }
         const MaterialHandle material = m_materials.TryGet(draw.material) ? draw.material : m_defaultMaterial;
         const std::uint64_t doubleSided = m_materials.Get(material).doubleSided ? 1 : 0;
-        m_sorted.push_back({(doubleSided << 32U) | draw.mesh.Index(), index, material});
+        m_sorted.push_back({(doubleSided << 32U) | draw.mesh.Index(), draw.mesh, material, index, draw.castsShadows});
     }
     std::ranges::sort(m_sorted, {}, &SortedDraw::key);
+    auto* instances = reinterpret_cast<InstanceData*>(m_device->Mapped(slot.instances).data());
+    for (std::size_t index = 0; index < m_sorted.size(); ++index) {
+        const DrawItem& draw = view.draws[m_sorted[index].draw];
+        const Mesh& mesh = m_meshes.Get(draw.mesh);
+        // A skinned draw needs the skin of its mesh, and joints that the view holds. Otherwise it is rigid.
+        const bool skinned = mesh.skin && draw.firstJoint != kNoJoints && draw.firstJoint < view.jointMatrices.size();
+        instances[index] = {
+            draw.world, skinned ? m_device->StorageIndex(mesh.skin) : 0, skinned ? draw.firstJoint : kNoJoints, {}};
+    }
+    m_prepared = &slot;
+    return {};
+}
 
+void MeshPass::RecordShadows(rhi::CommandList& commands) {
+    DAI_PROFILE_SCOPE("renderer::MeshPass::RecordShadows");
+    if (m_prepared == nullptr || m_shadowCount == 0) {
+        return;
+    }
+    commands.Discard(m_shadowAtlas, rhi::TextureState::DepthTarget);
+    commands.BeginRendering({.depthTarget = m_shadowAtlas, .clearDepth = 0.0f});
+    commands.BindPipeline(m_shadowPipeline);
+    MeshPushConstants push{
+        .frameBuffer = m_device->StorageIndex(m_prepared->frame),
+        .instanceBuffer = m_device->StorageIndex(m_prepared->instances),
+        .materialBuffer = m_device->StorageIndex(m_materialTable),
+        .instanceIndex = 0,
+        .materialIndex = 0,
+        .jointBuffer = m_device->StorageIndex(m_prepared->joints),
+        .shadowIndex = 0,
+    };
+    for (std::uint32_t shadow = 0; shadow < m_shadowCount; ++shadow) {
+        commands.SetViewport(static_cast<std::int32_t>((shadow % 2) * kShadowTileSize),
+                             static_cast<std::int32_t>((shadow / 2) * kShadowTileSize), kShadowTileSize,
+                             kShadowTileSize);
+        push.shadowIndex = shadow;
+        MeshHandle boundMesh;
+        for (std::uint32_t index = 0; index < m_sorted.size(); ++index) {
+            const SortedDraw& draw = m_sorted[index];
+            if (!draw.castsShadows) {
+                continue;
+            }
+            const Mesh& mesh = m_meshes.Get(draw.mesh);
+            if (draw.mesh != boundMesh) {
+                commands.BindVertexBuffer(mesh.vertices);
+                commands.BindIndexBuffer(mesh.indices, rhi::IndexType::Uint32);
+                boundMesh = draw.mesh;
+            }
+            push.instanceIndex = index;
+            push.materialIndex = draw.material.Index();
+            commands.Push(push);
+            commands.DrawIndexed(mesh.indexCount);
+        }
+    }
+    commands.EndRendering();
+    commands.Transition(m_shadowAtlas, rhi::TextureState::ShaderRead);
+}
+
+void MeshPass::Record(rhi::CommandList& commands) {
+    DAI_PROFILE_SCOPE("renderer::MeshPass::Record");
+    if (m_prepared == nullptr) {
+        return;
+    }
+    MeshPushConstants push{
+        .frameBuffer = m_device->StorageIndex(m_prepared->frame),
+        .instanceBuffer = m_device->StorageIndex(m_prepared->instances),
+        .materialBuffer = m_device->StorageIndex(m_materialTable),
+        .instanceIndex = 0,
+        .materialIndex = 0,
+        .jointBuffer = m_device->StorageIndex(m_prepared->joints),
+        .shadowIndex = 0,
+    };
     rhi::PipelineHandle boundPipeline;
     MeshHandle boundMesh;
-    for (const SortedDraw& sorted : m_sorted) {
-        const DrawItem& draw = view.draws[sorted.draw];
+    for (std::uint32_t index = 0; index < m_sorted.size(); ++index) {
+        const SortedDraw& draw = m_sorted[index];
         const Mesh& mesh = m_meshes.Get(draw.mesh);
         const rhi::PipelineHandle pipeline =
-            m_materials.Get(sorted.material).doubleSided ? m_doubleSidedPipeline : m_pipeline;
+            m_materials.Get(draw.material).doubleSided ? m_doubleSidedPipeline : m_pipeline;
         if (pipeline != boundPipeline) {
             commands.BindPipeline(pipeline);
             boundPipeline = pipeline;
@@ -382,16 +553,11 @@ core::Result<void> MeshPass::Record(rhi::CommandList& commands, const SceneView&
             commands.BindIndexBuffer(mesh.indices, rhi::IndexType::Uint32);
             boundMesh = draw.mesh;
         }
-        // A skinned draw needs the skin of its mesh, and joints that the view holds. Otherwise it is rigid.
-        const bool skinned = mesh.skin && draw.firstJoint != kNoJoints && draw.firstJoint < view.jointMatrices.size();
-        instances[push.instanceIndex] = {
-            draw.world, skinned ? m_device->StorageIndex(mesh.skin) : 0, skinned ? draw.firstJoint : kNoJoints, {}};
-        push.materialIndex = sorted.material.Index();
+        push.instanceIndex = index;
+        push.materialIndex = draw.material.Index();
         commands.Push(push);
         commands.DrawIndexed(mesh.indexCount);
-        ++push.instanceIndex;
     }
-    return {};
 }
 
 } // namespace daidalos::renderer

@@ -70,6 +70,8 @@ public:
             static_cast<float>(app.CVars().Register<double>("sandbox.mouse", 0.0025, "Radians per mouse unit").Get());
         m_settings.darkness = static_cast<float>(
             app.CVars().Register<double>("sandbox.darkness", 1.0, "Multiplies the darkness; 0 shows the level").Get());
+        m_settings.startWithFlashlight =
+            app.CVars().Register<bool>("sandbox.flashlight", false, "Start with the flashlight on").Get();
         m_settings.ambient =
             static_cast<float>(app.CVars()
                                    .Register<double>("sandbox.ambient", 0.1,
@@ -301,7 +303,8 @@ int main(int argc, char** argv) {
     config.log.minimumLevel = logging::Level::Debug;
     config.log.filePath = "sandbox.log";
     config.crashDumpDirectory = "crashdumps";
-    config.configFile = "sandbox.cfg";
+    // Next to the executable, where the build leaves a commented copy of apps/sandbox/sandbox.cfg.
+    config.configFile = platform::ExecutableDirectory() / "sandbox.cfg";
     config.arguments.assign(argv + 1, argv + argc);
     config.window.title = "Daidalos Sandbox";
     config.rendering = true;

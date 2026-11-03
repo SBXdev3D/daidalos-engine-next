@@ -32,7 +32,7 @@ flowchart LR
 |---|---|---|
 | 5: Scene | The level in the new engine, background loading, restart, doors, pickups, red card, darkness | Done |
 | 6: Physics, audio and animation | Walking with collisions, jumps, crouching, ladders and solid doors, sound, skinned zombies and turning fans, hitscan handgun and shotgun, zombies that hunt, wounds and death | Done |
-| 7: Modern rendering | Real lights replacing the fog, the flashlight's shadow, rotating alarms, normal maps, ambient occlusion, particles for smoke, blood and green fog | 7.1 done: lights, alarms, normal maps |
+| 7: Modern rendering | Real lights replacing the fog, the flashlight's shadow, rotating alarms, normal maps, ambient occlusion, particles for smoke, blood and green fog | 7.1 and 7.2 done: lights, alarms, normal maps, shadows |
 | 8: GUI | The game's own HUD, crosshair, menus and loading screen | |
 | 9: AI, cinematics, optimization | Security camera, opening camera flight, better zombie navigation, culling | |
 
@@ -86,7 +86,7 @@ The numbers come from the original's code, except where the table says otherwise
 | Tab | Free the mouse |
 | Escape | Quit |
 
-`sandbox.start` places the player, with `x y z yaw pitch` in meters and degrees, and `sandbox.darkness 0` lights the whole level. `sandbox.ambient` sets how much light reaches everywhere in the dark, 0.1 by default, and 0 for pitch black away from lamps. Both are useful to reach a place quickly. The value of `sandbox.start` holds spaces, so it is quoted on the command line: `+sandbox.start "31.5 4.3 -54 0 -25"` looks down at a lit ceiling spot, whose room has its floor at 2.8 m, and `+sandbox.start "0 1.5 -36 0 10"` faces the turning alarms.
+The sandbox reads its settings from `sandbox.cfg` next to the executable, which the build copies from `apps/sandbox/sandbox.cfg` the first time and leaves alone afterwards, and the command line overrides it with `+name value`. `sandbox.start` places the player, with `x y z yaw pitch` in meters and degrees, and `sandbox.darkness 0` lights the whole level. `sandbox.flashlight true` starts with the flashlight on. `sandbox.ambient` sets how much light reaches everywhere in the dark, 0.1 by default, and 0 for pitch black away from lamps. Both are useful to reach a place quickly. The value of `sandbox.start` holds spaces, so it is quoted on the command line: `+sandbox.start "31.5 4.3 -54 0 -25"` looks down at a lit ceiling spot, whose room has its floor at 2.8 m, and `+sandbox.start "0 1.5 -36 0 10"` faces the turning alarms.
 
 ## Assets
 

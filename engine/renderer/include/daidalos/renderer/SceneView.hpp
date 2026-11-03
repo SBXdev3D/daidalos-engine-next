@@ -9,6 +9,7 @@
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -40,6 +41,8 @@ struct DrawItem {
     /// Index into SceneView::jointMatrices of the first matrix of a skinned draw, whose world matrix
     /// is then ignored.
     std::uint32_t firstJoint = kNoJoints;
+    /// Drawn into the shadow maps too.
+    bool castsShadows = true;
 };
 
 /// Light that reaches every surface, and distance fog: surfaces fade into the fog color, which is
@@ -71,7 +74,13 @@ struct Light {
     /// Spot lights: radians from the axis, full light inside the inner angle, none outside the outer.
     float innerAngle = 0.0f;
     float outerAngle = 0.0f;
+    /// Spot lights only. Of the lights that ask for a shadow, the renderer gives one to the
+    /// kMaxShadowedLights nearest the camera (ADR-0023).
+    bool castsShadows = false;
 };
+
+/// Shadow maps that a frame can draw.
+inline constexpr std::size_t kMaxShadowedLights = 4;
 
 /// What the renderer draws in one frame. It holds copies, so that rendering never touches the ECS
 /// (OVERVIEW §10.12).

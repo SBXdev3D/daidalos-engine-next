@@ -10,6 +10,7 @@
 #include <daidalos/logging/Log.hpp>
 #include <daidalos/math/Axes.hpp>
 #include <daidalos/scene/AssetLibrary.hpp>
+#include <daidalos/scene/Components.hpp>
 
 #include <glm/common.hpp>
 #include <glm/ext/quaternion_trigonometric.hpp>
@@ -516,6 +517,14 @@ void SetUpCombat(scene::Scene& scene, ecs::Entity playerEntity, const std::strin
             continue;
         }
         arsenal.models[kind] = *instance;
+        // Held right in front of the flashlight, a weapon would cast a shadow over half the room.
+        world.Each<scene::MeshRenderer>([&world, root = *instance](ecs::Entity entity, scene::MeshRenderer& renderer) {
+            renderer.castsShadows = renderer.castsShadows && !world.IsDescendantOf(entity, root);
+        });
+        world.Each<scene::SkinnedMeshRenderer>(
+            [&world, root = *instance](ecs::Entity entity, scene::SkinnedMeshRenderer& renderer) {
+                renderer.castsShadows = renderer.castsShadows && !world.IsDescendantOf(entity, root);
+            });
     }
     const Arsenal& added = world.Add<Arsenal>(playerEntity, std::move(arsenal));
     PlaceWeapons(world, world.Get<Player>(playerEntity), added);

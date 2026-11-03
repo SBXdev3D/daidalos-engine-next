@@ -136,8 +136,11 @@ enum class CullMode { None, Front, Back };
 enum class BlendMode { Opaque, Alpha };
 
 /// Indices into the sampler array of the global descriptor set, declared as
-/// [[vk::binding(1, 0)]] SamplerState g_samplers[3] in shaders.
-enum class SamplerIndex : std::uint32_t { LinearClamp, LinearRepeat, NearestClamp };
+/// [[vk::binding(1, 0)]] SamplerState g_samplers[4] in shaders. ShadowCompare is a comparison sampler,
+/// declared as SamplerComparisonState on the same binding: it passes where the reference depth is
+/// nearer than or as near as the stored one (reverse-Z), and filters the four results bilinearly.
+enum class SamplerIndex : std::uint32_t { LinearClamp, LinearRepeat, NearestClamp, ShadowCompare };
+inline constexpr std::uint32_t kSamplerCount = 4;
 
 struct VertexAttribute {
     std::uint32_t location = 0;
@@ -154,9 +157,14 @@ struct GraphicsPipelineDesc {
     std::span<const std::uint32_t> fragmentShader;
     std::uint32_t vertexStride = 0;
     std::vector<VertexAttribute> vertexAttributes;
+    /// Undefined for a pipeline that only writes depth, such as a shadow map's.
     Format colorFormat = Format::Undefined;
     /// Undefined when the pipeline renders without a depth target.
     Format depthFormat = Format::Undefined;
+    /// Added to the depth written, in units of the smallest depth step, and per unit of slope. Reverse-Z:
+    /// negative values push surfaces away from the viewer.
+    float depthBias = 0.0f;
+    float depthBiasSlope = 0.0f;
     /// Reverse-Z comparison (CONVENTIONS.md, section 5). Ignored without a depth target.
     bool depthTest = true;
     bool depthWrite = true;

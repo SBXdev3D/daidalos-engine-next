@@ -21,6 +21,7 @@ struct CommandRecording;
 } // namespace detail
 
 struct RenderingDesc {
+    /// Null to render depth only.
     TextureHandle colorTarget;
     /// Clears the color target. Without it, the previous content is kept.
     std::optional<glm::vec4> clearColor;
@@ -44,8 +45,11 @@ public:
     void Discard(TextureHandle texture, TextureState state);
 
     /// Sets the viewport (flipped once to make clip-space Y point up, CONVENTIONS.md section 5) and
-    /// the scissor to the size of the color target.
+    /// the scissor to the size of the targets.
     void BeginRendering(const RenderingDesc& desc);
+    /// Draws into a part of the targets only, in pixels from their top-left corner. Clip-space Y still
+    /// points up. Also sets the scissor to that part.
+    void SetViewport(std::int32_t x, std::int32_t y, std::uint32_t width, std::uint32_t height);
     void EndRendering();
 
     void BindPipeline(PipelineHandle pipeline);

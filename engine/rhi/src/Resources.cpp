@@ -416,6 +416,9 @@ core::Result<PipelineHandle> Device::CreatePipeline(const GraphicsPipelineDesc& 
         .polygonMode = VK_POLYGON_MODE_FILL,
         .cullMode = cullMode,
         .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        .depthBiasEnable = (desc.depthBias != 0.0f || desc.depthBiasSlope != 0.0f) ? VK_TRUE : VK_FALSE,
+        .depthBiasConstantFactor = desc.depthBias,
+        .depthBiasSlopeFactor = desc.depthBiasSlope,
         .lineWidth = 1.0f,
     };
     const VkPipelineMultisampleStateCreateInfo multisample{
@@ -442,7 +445,7 @@ core::Result<PipelineHandle> Device::CreatePipeline(const GraphicsPipelineDesc& 
     };
     const VkPipelineColorBlendStateCreateInfo blend{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .attachmentCount = 1,
+        .attachmentCount = (desc.colorFormat != Format::Undefined) ? 1U : 0U,
         .pAttachments = &blendAttachment,
     };
     const std::array<VkDynamicState, 2> dynamicStates{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
@@ -454,7 +457,7 @@ core::Result<PipelineHandle> Device::CreatePipeline(const GraphicsPipelineDesc& 
     const VkFormat colorFormat = ToVulkan(desc.colorFormat);
     const VkPipelineRenderingCreateInfo rendering{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-        .colorAttachmentCount = 1,
+        .colorAttachmentCount = (desc.colorFormat != Format::Undefined) ? 1U : 0U,
         .pColorAttachmentFormats = &colorFormat,
         .depthAttachmentFormat = ToVulkan(desc.depthFormat),
     };

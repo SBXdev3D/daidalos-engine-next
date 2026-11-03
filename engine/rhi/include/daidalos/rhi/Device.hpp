@@ -30,11 +30,15 @@ struct DeviceConfig {
     std::vector<std::string> instanceExtensions;
     /// Requires a device that can present to a Swapchain. Off for headless use.
     bool presentation = false;
+    /// Anisotropic filtering of the linear samplers, from 1 (off) to 16, clamped to what the device allows.
+    float anisotropy = 16.0f;
 };
 
 struct DeviceInfo {
     std::string name;
     bool validationEnabled = false;
+    /// The anisotropy the linear samplers use: 1 when it is off or unsupported.
+    float anisotropy = 1.0f;
 };
 
 /// One frame being recorded.
