@@ -193,6 +193,8 @@ core::Result<void> Application::LoadConfiguration() {
                                                        "Main window width, in screen coordinates");
         m_windowHeight = m_cvars.Register<std::int64_t>("window.height", m_config.window.height,
                                                         "Main window height, in screen coordinates");
+        m_fullscreen = m_cvars.Register<bool>("window.fullscreen", m_config.window.fullscreen,
+                                              "Cover the display without borders, at its own resolution");
         m_vsync = m_cvars.Register<bool>("renderer.vsync", true, "Synchronize presentation with the display");
         m_exposure = m_cvars.Register<double>("renderer.exposure", 1.0, "Multiplies the light before tonemapping");
         m_anisotropy = m_cvars.Register<std::int64_t>(
@@ -250,6 +252,7 @@ core::Result<void> Application::CreateMainWindow() {
     }
     config.width = *width;
     config.height = *height;
+    config.fullscreen = m_fullscreen->Get();
     config.vulkan = m_config.rendering;
 
     DAI_TRY_ASSIGN(platform::Window window, platform::Window::Create(*m_platform, config));
@@ -329,6 +332,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     };
 #endif
 
+    m_window->SetFullscreen(m_fullscreen->Get());
     m_renderer->SetVsync(m_vsync->Get());
     m_renderer->SetExposure(static_cast<float>(m_exposure->Get()));
     m_renderer->SetNormalStrength(static_cast<float>(m_normalStrength->Get()));

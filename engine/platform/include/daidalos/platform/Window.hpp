@@ -23,6 +23,8 @@ struct WindowConfig {
     std::uint32_t width = 1280;
     std::uint32_t height = 720;
     bool resizable = true;
+    /// Covers its display, without borders, at the display's own resolution.
+    bool fullscreen = false;
     /// Prepares the window for a Vulkan surface. Creation fails on video drivers without Vulkan
     /// support, such as "dummy".
     bool vulkan = false;
@@ -46,6 +48,7 @@ public:
     /// Size of the drawable area in pixels.
     [[nodiscard]] Extent PixelSize() const;
     [[nodiscard]] bool IsMinimized() const;
+    [[nodiscard]] bool IsFullscreen() const;
     [[nodiscard]] std::string Title() const;
 
     void SetTitle(std::string_view title);
@@ -53,6 +56,9 @@ public:
     void SetMouseCaptured(bool captured);
     /// Resizes the window, in screen coordinates, and waits for the system to apply it.
     void SetSize(Extent size);
+    /// Covers the display without borders, or goes back to a window, and waits for the system to apply
+    /// it. Does nothing if the window is already so.
+    void SetFullscreen(bool fullscreen);
 
     /// Instance extensions that a Vulkan surface for this window needs.
     /// The window must have been created with WindowConfig::vulkan.
