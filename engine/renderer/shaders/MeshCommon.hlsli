@@ -1,0 +1,93 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+
+#ifndef DAIDALOS_MESH_COMMON_HLSLI
+#define DAIDALOS_MESH_COMMON_HLSLI
+
+// What the depth pre-pass and the mesh pass share: the vertex shader, compiled once and used by both
+// pipelines so that their depths match exactly, and the surface of a pixel (ADR-0024).
+
+#include "MeshTypes.hlsli"
+
+static const float kPi = 3.14159265;
+
+struct VertexInput {
+    [[vk::location(0)]] float3 position : POSITION;
+    [[vk::location(1)]] float3 normal : NORMAL;
+    [[vk::location(2)]] float2 uv : TEXCOORD;
+    [[vk::location(3)]] float4 tangent : TANGENT;
+};
+
+struct VertexOutput {
+    float4 clipPosition : SV_Position;
+    [[vk::location(0)]] float3 worldNormal : NORMAL;
+    [[vk::location(1)]] float2 uv : TEXCOORD;
+    [[vk::location(2)]] float3 worldPosition : POSITION;
+    [[vk::location(3)]] float4 worldTangent : TANGENT;
+};
+
+// Transforms a normal with the cofactor matrix, which stays correct under non-uniform scale and
+// needs no inverse.
+float3 TransformNormal(float4x4 world, float3 normal) {
+    const float3 x = float3(world[0][0], world[1][0], world[2][0]);
+    const float3 y = float3(world[0][1], world[1][1], world[2][1]);
+    const float3 z = float3(world[0][2], world[1][2], world[2][2]);
+    return cross(y, z) * normal.x + cross(z, x) * normal.y + cross(x, y) * normal.z;
+}
+
+VertexOutput VSMain(VertexInput input, uint vertexId : SV_VertexID) {
+    const float4x4 viewProjection = g_frames[g_push.frameBuffer][0].viewProjection;
+    const InstanceData instance = g_instances[g_push.instanceBuffer][g_push.instanceIndex];
+    const float4x4 world = WorldMatrix(instance, vertexId);
+
+    VertexOutput output;
+    const float4 worldPosition = mul(world, float4(input.position, 1.0));
+    output.clipPosition = mul(viewProjection, worldPosition);
+    output.worldNormal = TransformNormal(world, input.normal);
+    // A tangent lies in the surface, so it follows the matrix itself.
+    output.worldTangent = float4(mul((float3x3)world, input.tangent.xyz), input.tangent.w);
+    output.uv = input.uv;
+    output.worldPosition = worldPosition.xyz;
+    return output;
+}
+
+float4 SampleTexture(uint texture, float2 uv, float4 fallback) {
+    return texture != kNoTexture ? g_textures[texture].Sample(g_samplers[kSamplerLinearRepeat], uv) : fallback;
+}
+
+// The normal map, in the tangent frame of glTF: the bitangent is cross(normal, tangent) * w. Only red and
+// green are read, and blue is rebuilt, so that two-channel compression works too.
+float3 ApplyNormalMap(MaterialData material, float strength, float3 normal, float4 tangent, float2 uv) {
+    if (material.normalTexture == kNoTexture || dot(tangent.xyz, tangent.xyz) == 0.0) {
+        return normal;
+    }
+    const float3 t = normalize(tangent.xyz - normal * dot(normal, tangent.xyz));
+    const float3 b = cross(normal, t) * (tangent.w < 0.0 ? -1.0 : 1.0);
+    float2 xy = SampleTexture(material.normalTexture, uv, float4(0.5, 0.5, 1.0, 1.0)).rg * 2.0 - 1.0;
+    xy *= material.normalScale * strength;
+    const float z = sqrt(saturate(1.0 - dot(xy, xy)));
+    return normalize(t * xy.x + b * xy.y + normal * z);
+}
+
+// The base color of a pixel, after the alpha test of the material: discarded below the cutoff.
+float4 BaseColor(MaterialData material, float2 uv) {
+    const float4 baseColor = material.baseColorFactor * SampleTexture(material.baseColorTexture, uv, float4(1.0, 1.0, 1.0, 1.0));
+    if (baseColor.a < material.alphaCutoff) {
+        discard;
+    }
+    return baseColor;
+}
+
+// The normal of a pixel, facing the viewer on the back of a double-sided material, with its normal map.
+float3 SurfaceNormal(VertexOutput input, bool isFrontFace, MaterialData material, float normalStrength) {
+    float3 normal = normalize(input.worldNormal);
+    float4 tangent = input.worldTangent;
+    if (!isFrontFace) {
+        normal = -normal;
+        tangent.w = -tangent.w;
+    }
+    return ApplyNormalMap(material, normalStrength, normal, tangent, input.uv);
+}
+
+#endif

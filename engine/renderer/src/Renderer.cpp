@@ -18,6 +18,7 @@
 #include <optional>
 #include <utility>
 
+#include "AmbientOcclusionPass.hpp"
 #include "MeshPass.hpp"
 #include "ShaderCompiler.hpp"
 
@@ -30,7 +31,8 @@ constexpr rhi::Format kDepthFormat = rhi::Format::D32Float;
 /// Lighting is computed in HDR, then tonemapped into the swapchain (ADR-0022).
 constexpr rhi::Format kHdrFormat = rhi::Format::Rgba16Float;
 /// The passes timed on the GPU, in order: each ends at a timestamp, after the one at the start.
-constexpr std::array<std::string_view, 4> kTimedPasses{"Shadows", "Meshes", "Tonemap", "Overlay"};
+constexpr std::array<std::string_view, 6> kTimedPasses{"Shadows", "Prepass", "Occlusion",
+                                                       "Meshes",  "Tonemap", "Overlay"};
 
 // Matches TonemapPushConstants in shaders/Tonemap.hlsl.
 struct TonemapPushConstants {
@@ -53,12 +55,14 @@ struct Renderer::Impl {
             DAI_LOG_ERROR(kModule, "Shutting down with a failed device: {}", core::Format(idle.error()));
         }
         meshPass.reset();
+        ambientOcclusionPass.reset();
         device.DestroyPipeline(tonemap);
         device.DestroyTexture(depth);
+        device.DestroyTexture(normals);
         device.DestroyTexture(hdr);
     }
 
-    /// The HDR and depth targets follow the size of the back buffer.
+    /// The targets follow the size of the back buffer.
     core::Result<void> ResizeTargets(rhi::Extent extent);
     /// Reads the timestamps of the last finished frame into gpuTimes.
     void ReadGpuTimes();
@@ -68,9 +72,13 @@ struct Renderer::Impl {
     rhi::Device device;
     rhi::Swapchain swapchain;
     std::optional<MeshPass> meshPass;
+    std::optional<AmbientOcclusionPass> ambientOcclusionPass;
+    bool ambientOcclusion = true;
     rhi::PipelineHandle tonemap;
     rhi::TextureHandle hdr;
     rhi::TextureHandle depth;
+    /// World normals of the pre-pass.
+    rhi::TextureHandle normals;
     rhi::Extent targetExtent;
     bool vsync;
     float exposure = 1.0f;
@@ -88,13 +96,20 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
         return {};
     }
     device.DestroyTexture(depth);
+    device.DestroyTexture(normals);
     device.DestroyTexture(hdr);
     depth = {};
+    normals = {};
     hdr = {};
-    DAI_TRY_ASSIGN(
-        depth,
-        device.CreateTexture(
-            {.extent = extent, .format = kDepthFormat, .usage = rhi::TextureUsage::DepthTarget, .name = "Depth"}));
+    DAI_TRY_ASSIGN(normals, device.CreateTexture({.extent = extent,
+                                                  .format = MeshPass::kNormalFormat,
+                                                  .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
+                                                  .name = "Normals"}));
+    DAI_TRY(ambientOcclusionPass->Resize(extent));
+    DAI_TRY_ASSIGN(depth, device.CreateTexture({.extent = extent,
+                                                .format = kDepthFormat,
+                                                .usage = rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled,
+                                                .name = "Depth"}));
     DAI_TRY_ASSIGN(hdr, device.CreateTexture({.extent = extent,
                                               .format = kHdrFormat,
                                               .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
@@ -172,6 +187,9 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
                                   }));
     DAI_TRY_ASSIGN(MeshPass meshPass, MeshPass::Create(impl->device, kHdrFormat, kDepthFormat));
     impl->meshPass.emplace(std::move(meshPass));
+    DAI_TRY_ASSIGN(AmbientOcclusionPass ambientOcclusionPass, AmbientOcclusionPass::Create(impl->device));
+    impl->ambientOcclusionPass.emplace(std::move(ambientOcclusionPass));
+    impl->ambientOcclusion = config.ambientOcclusion;
     impl->meshPass->SetNormalStrength(config.normalStrength);
 
 #if DAI_DEV_TOOLS
@@ -213,6 +231,10 @@ void Renderer::SetExposure(float exposure) {
     m_impl->exposure = exposure;
 }
 
+void Renderer::SetAmbientOcclusion(bool enabled) {
+    m_impl->ambientOcclusion = enabled;
+}
+
 void Renderer::SetNormalStrength(float strength) {
     m_impl->meshPass->SetNormalStrength(strength);
 }
@@ -242,20 +264,38 @@ core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder
     rhi::CommandList& commands = frame.commands;
     commands.WriteTimestamp();
     if (status) {
-        const float aspect = static_cast<float>(frame.extent.width) / static_cast<float>(frame.extent.height);
-        status = impl.meshPass->Prepare(view, aspect);
+        const rhi::TextureHandle occlusion =
+            impl.ambientOcclusion ? impl.ambientOcclusionPass->Output() : rhi::TextureHandle{};
+        status = impl.meshPass->Prepare(view, {.extent = frame.extent, .occlusion = occlusion});
     }
     if (status) {
         impl.meshPass->RecordShadows(commands);
     }
     commands.WriteTimestamp();
     if (status) {
-        commands.Discard(impl.hdr, rhi::TextureState::ColorTarget);
+        commands.Discard(impl.normals, rhi::TextureState::ColorTarget);
         commands.Discard(impl.depth, rhi::TextureState::DepthTarget);
-        commands.BeginRendering({.colorTarget = impl.hdr,
-                                 .clearColor = glm::vec4(view.atmosphere.fogColor, 1.0f),
+        commands.BeginRendering({.colorTarget = impl.normals,
+                                 .clearColor = glm::vec4(0.5f, 1.0f, 0.5f, 1.0f),
                                  .depthTarget = impl.depth,
                                  .clearDepth = 0.0f});
+        impl.meshPass->RecordPrepass(commands);
+        commands.EndRendering();
+    }
+    commands.WriteTimestamp();
+    const bool hasFrame = status && view.camera.has_value();
+    if (hasFrame && impl.ambientOcclusion) {
+        commands.Transition(impl.depth, rhi::TextureState::ShaderRead);
+        commands.Transition(impl.normals, rhi::TextureState::ShaderRead);
+        impl.ambientOcclusionPass->Record(commands, impl.meshPass->FrameDataIndex(), impl.depth, impl.normals);
+        commands.Transition(impl.depth, rhi::TextureState::DepthTarget);
+    }
+    commands.WriteTimestamp();
+    if (status) {
+        commands.Discard(impl.hdr, rhi::TextureState::ColorTarget);
+        commands.BeginRendering({.colorTarget = impl.hdr,
+                                 .clearColor = glm::vec4(view.atmosphere.fogColor, 1.0f),
+                                 .depthTarget = impl.depth});
         impl.meshPass->Record(commands);
         commands.EndRendering();
     }

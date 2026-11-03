@@ -47,6 +47,8 @@ enum class Format {
     Rgba32Float,
     /// High dynamic range color, for lighting before tonemapping.
     Rgba16Float,
+    /// One channel, such as ambient occlusion.
+    R8Unorm,
     D32Float,
     /// Block-compressed formats, with blocks of 4x4 pixels.
     Bc5Unorm,

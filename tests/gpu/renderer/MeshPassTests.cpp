@@ -79,6 +79,13 @@ protected:
             {.extent = kExtent, .format = kDepthFormat, .usage = rhi::TextureUsage::DepthTarget, .name = "Depth"});
         ASSERT_TRUE(depth.has_value());
         m_depth = *depth;
+        const core::Result<rhi::TextureHandle> normals =
+            Device().CreateTexture({.extent = kExtent,
+                                    .format = MeshPass::kNormalFormat,
+                                    .usage = rhi::TextureUsage::ColorTarget,
+                                    .name = "Normals"});
+        ASSERT_TRUE(normals.has_value());
+        m_normals = *normals;
         const core::Result<rhi::BufferHandle> readback =
             Device().CreateBuffer({.size = std::uint64_t{kExtent.width} * kExtent.height * 4,
                                    .usage = rhi::BufferUsage::TransferDst,
@@ -93,6 +100,7 @@ protected:
             m_pass.reset();
             Device().DestroyTexture(m_color);
             Device().DestroyTexture(m_depth);
+            Device().DestroyTexture(m_normals);
             Device().DestroyBuffer(m_readback);
         }
         GpuTest::TearDown();
@@ -117,14 +125,19 @@ protected:
     void Render(const SceneView& view) {
         ASSERT_TRUE(Device()
                         .Submit([&](rhi::CommandList& commands) {
-                            EXPECT_TRUE(m_pass->Prepare(view, 1.0f).has_value());
+                            EXPECT_TRUE(m_pass->Prepare(view, {.extent = kExtent}).has_value());
                             m_pass->RecordShadows(commands);
-                            commands.Discard(m_color, rhi::TextureState::ColorTarget);
+                            commands.Discard(m_normals, rhi::TextureState::ColorTarget);
                             commands.Discard(m_depth, rhi::TextureState::DepthTarget);
-                            commands.BeginRendering({.colorTarget = m_color,
-                                                     .clearColor = kBackground,
+                            commands.BeginRendering({.colorTarget = m_normals,
+                                                     .clearColor = glm::vec4(0.0f),
                                                      .depthTarget = m_depth,
                                                      .clearDepth = 0.0f});
+                            m_pass->RecordPrepass(commands);
+                            commands.EndRendering();
+                            commands.Discard(m_color, rhi::TextureState::ColorTarget);
+                            commands.BeginRendering(
+                                {.colorTarget = m_color, .clearColor = kBackground, .depthTarget = m_depth});
                             m_pass->Record(commands);
                             commands.EndRendering();
                             commands.Transition(m_color, rhi::TextureState::TransferSrc);
@@ -146,6 +159,7 @@ protected:
     std::optional<MeshPass> m_pass;
     rhi::TextureHandle m_color;
     rhi::TextureHandle m_depth;
+    rhi::TextureHandle m_normals;
     rhi::BufferHandle m_readback;
 };
 
@@ -378,17 +392,15 @@ TEST_F(MeshPassTest, ReloadedShadersAreUsedByTheNextFrame) {
     const std::filesystem::path directory = std::filesystem::temp_directory_path() / "daidalos-reload-test";
     std::filesystem::create_directories(directory);
     const std::filesystem::path source = directory / "Green.hlsl";
+    // The vertex shader of the mesh pass, which the pre-pass shares, and a pixel shader of its own.
     std::ofstream(source) << R"(
-#include "MeshTypes.hlsli"
-float4 VSMain(float3 position : POSITION) : SV_Position {
-    const float4x4 viewProjection = g_frames[g_push.frameBuffer][0].viewProjection;
-    const float4x4 world = g_instances[g_push.instanceBuffer][g_push.instanceIndex].world;
-    return mul(viewProjection, mul(world, float4(position, 1.0)));
-}
-float4 PSMain() : SV_Target { return float4(0.0, 1.0, 0.0, 1.0); }
+#include "MeshCommon.hlsli"
+float4 PSMain(VertexOutput input) : SV_Target { return float4(0.0, 1.0, 0.0, 1.0); }
 )";
-    std::filesystem::copy_file(std::filesystem::path(DAI_SHADER_SOURCE_DIR) / "MeshTypes.hlsli",
-                               directory / "MeshTypes.hlsli", std::filesystem::copy_options::overwrite_existing);
+    for (const char* include : {"MeshTypes.hlsli", "MeshCommon.hlsli"}) {
+        std::filesystem::copy_file(std::filesystem::path(DAI_SHADER_SOURCE_DIR) / include, directory / include,
+                                   std::filesystem::copy_options::overwrite_existing);
+    }
 
     const auto vertex = renderer::CompileShader(DAI_DXC_PATH, source, renderer::ShaderStage::Vertex);
     ASSERT_TRUE(vertex.has_value()) << core::Format(vertex.error());

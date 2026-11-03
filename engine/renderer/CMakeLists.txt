@@ -4,6 +4,8 @@ dai_add_module(NAME renderer
         include/daidalos/renderer/Primitives.hpp
         include/daidalos/renderer/Renderer.hpp
         include/daidalos/renderer/SceneView.hpp
+        src/AmbientOcclusionPass.cpp
+        src/AmbientOcclusionPass.hpp
         src/Material.cpp
         src/MeshPass.cpp
         src/MeshPass.hpp
@@ -18,8 +20,9 @@ dai_add_module(NAME renderer
         daidalos::rhi)
 
 dai_add_shaders(TARGET daidalos_renderer
-    SOURCES shaders/Mesh.hlsl shaders/ShadowMap.hlsl shaders/Tonemap.hlsl
-    INCLUDES shaders/MeshTypes.hlsli)
+    SOURCES shaders/Mesh.hlsl shaders/Prepass.hlsl shaders/ShadowMap.hlsl shaders/Ssao.hlsl shaders/SsaoBlur.hlsl
+        shaders/Tonemap.hlsl
+    INCLUDES shaders/AmbientOcclusion.hlsli shaders/MeshCommon.hlsli shaders/MeshTypes.hlsli)
 
 target_compile_definitions(daidalos_renderer
     PUBLIC DAI_DEV_TOOLS=$<BOOL:${DAI_ENABLE_DEV_TOOLS}>
