@@ -81,6 +81,11 @@ public:
     /// tries again.
     [[nodiscard]] core::Result<const Model*> LoadModel(std::string_view path);
 
+    /// Returns a texture, loading it the first time, such as the image of particles. The handle lives as
+    /// long as the library.
+    [[nodiscard]] core::Result<rhi::TextureHandle>
+    LoadTexture(std::string_view path, resources::TextureUse use = resources::TextureUse::Color);
+
     /// Same as LoadModel, but files are read and decoded on a worker, so that the main thread keeps
     /// running. The function is called on the main thread, from WorkerPool::Deliver, or at once if the
     /// model is already there or the path is invalid. It is not called once the library is destroyed.

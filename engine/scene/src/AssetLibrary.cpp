@@ -189,6 +189,14 @@ core::Result<const Model*> AssetLibrary::Build(std::string key, core::Result<Dec
     return &m_models.Insert(std::move(key), std::move(model));
 }
 
+core::Result<rhi::TextureHandle> AssetLibrary::LoadTexture(std::string_view path, resources::TextureUse use) {
+    DAI_TRY_ASSIGN(std::string identity, resources::NormalizeAssetPath(path));
+    DAI_TRY_ASSIGN(std::filesystem::path file, resources::ResolveAssetPath(m_root, identity));
+    std::string key = std::format("{}|{}", identity, ToString(use));
+    DecodedImage image{identity, std::move(key), resources::LoadImageFile(file, use)};
+    return FindOrCreateTexture(image);
+}
+
 core::Result<const Model*> AssetLibrary::LoadModel(std::string_view path) {
     DAI_PROFILE_SCOPE("scene::LoadModel");
     DAI_TRY_ASSIGN(std::string key, resources::NormalizeAssetPath(path));

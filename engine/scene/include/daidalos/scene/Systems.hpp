@@ -9,6 +9,8 @@
 #include <daidalos/physics/PhysicsWorld.hpp>
 #include <daidalos/renderer/SceneView.hpp>
 
+#include <vector>
+
 namespace daidalos::scene {
 
 // What ties the entities to the renderer, the physics and the sounds. Scene runs them at the right
@@ -20,6 +22,10 @@ namespace daidalos::scene {
 /// Camera. Otherwise, the camera with the lowest entity index is used.
 /// The vectors of the view are reused, so that a view kept between frames does not reallocate.
 void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity activeCamera = {});
+
+/// Adds the particles that each enabled ParticleEmitter emits over delta seconds, at its world transform.
+/// Run it after ecs::PropagateTransforms.
+void EmitParticles(ecs::World& world, float delta, std::vector<renderer::ParticleSpawn>& spawns);
 
 /// Moves the body of each entity with a KinematicBody to its LocalTransform.
 void SyncKinematicBodies(ecs::World& world, physics::PhysicsWorld& physics, float step);
