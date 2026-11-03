@@ -57,7 +57,7 @@ struct WeaponState {
 
 /// The player's state, as a component of the camera entity.
 struct Player {
-    daidalos::physics::CharacterId character;
+    daidalos::physics::CharacterHandle character;
     /// Where the feet were after the last two fixed steps: the camera draws in between.
     glm::vec3 previousFeet{0.0f};
     glm::vec3 feet{0.0f};

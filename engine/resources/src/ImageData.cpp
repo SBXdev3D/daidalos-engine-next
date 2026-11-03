@@ -82,26 +82,26 @@ core::Result<ImageData> DecodeKtx2(std::span<const std::byte> bytes, TextureUse 
         ktxTexture2_CreateFromMemory(reinterpret_cast<const ktx_uint8_t*>(bytes.data()), bytes.size(),
                                      KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &created);
     if (opened != KTX_SUCCESS) {
-        return core::MakeError(core::ErrorCode::ParseError, std::string(kModule),
+        return core::MakeError(core::ErrorCode::ParseError, kModule,
                                std::format("KTX2 image '{}': {}", name, ktxErrorString(opened)));
     }
     const std::unique_ptr<ktxTexture2, KtxDeleter> texture(created);
 
     if (texture->numDimensions != 2 || texture->isArray || texture->isCubemap) {
-        return core::MakeError(core::ErrorCode::NotSupported, std::string(kModule),
+        return core::MakeError(core::ErrorCode::NotSupported, kModule,
                                std::format("KTX2 image '{}' is not a plain 2D texture", name));
     }
     if (ktxTexture2_NeedsTranscoding(texture.get())) {
         const ktx_transcode_fmt_e target = (use == TextureUse::Normal) ? KTX_TTF_BC5_RG : KTX_TTF_BC7_RGBA;
         const ktx_error_code_e transcoded = ktxTexture2_TranscodeBasis(texture.get(), target, 0);
         if (transcoded != KTX_SUCCESS) {
-            return core::MakeError(core::ErrorCode::ParseError, std::string(kModule),
+            return core::MakeError(core::ErrorCode::ParseError, kModule,
                                    std::format("Transcoding KTX2 image '{}': {}", name, ktxErrorString(transcoded)));
         }
     }
     const std::optional<PixelFormat> format = ToPixelFormat(texture->vkFormat);
     if (!format.has_value()) {
-        return core::MakeError(core::ErrorCode::NotSupported, std::string(kModule),
+        return core::MakeError(core::ErrorCode::NotSupported, kModule,
                                std::format("KTX2 image '{}' has unsupported format {}", name, texture->vkFormat));
     }
 
@@ -115,7 +115,7 @@ core::Result<ImageData> DecodeKtx2(std::span<const std::byte> bytes, TextureUse 
         ktx_size_t offset = 0;
         const ktx_error_code_e located = ktxTexture_GetImageOffset(ktxTexture(texture.get()), level, 0, 0, &offset);
         if (located != KTX_SUCCESS) {
-            return core::MakeError(core::ErrorCode::ParseError, std::string(kModule),
+            return core::MakeError(core::ErrorCode::ParseError, kModule,
                                    std::format("KTX2 image '{}': {}", name, ktxErrorString(located)));
         }
         const ktx_size_t size = ktxTexture_GetImageSize(ktxTexture(texture.get()), level);
@@ -134,7 +134,7 @@ core::Result<ImageData> DecodeWithStb(std::span<const std::byte> bytes, TextureU
                               &height, &channels, 4),
         &stbi_image_free);
     if (decoded == nullptr) {
-        return core::MakeError(core::ErrorCode::ParseError, std::string(kModule),
+        return core::MakeError(core::ErrorCode::ParseError, kModule,
                                std::format("Image '{}': {}", name, stbi_failure_reason()));
     }
 
@@ -215,14 +215,14 @@ core::Result<ImageData> DecodeImage(std::span<const std::byte> bytes, TextureUse
 core::Result<ImageData> LoadImageFile(const std::filesystem::path& path, TextureUse use) {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file) {
-        return core::MakeError(core::ErrorCode::NotFound, std::string(kModule),
+        return core::MakeError(core::ErrorCode::NotFound, kModule,
                                std::format("Cannot open image file '{}'", ToUtf8(path)));
     }
     std::vector<std::byte> bytes(static_cast<std::size_t>(file.tellg()));
     file.seekg(0);
     file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     if (!file) {
-        return core::MakeError(core::ErrorCode::IoError, std::string(kModule),
+        return core::MakeError(core::ErrorCode::IoError, kModule,
                                std::format("Cannot read image file '{}'", ToUtf8(path)));
     }
     return DecodeImage(bytes, use, ToUtf8(path));

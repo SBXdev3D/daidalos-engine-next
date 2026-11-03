@@ -187,27 +187,19 @@ private:
     }
 
     static core::Result<void> BuildTestFloor(app::Application& app, scene::Scene& target) {
-        core::Result<renderer::MeshHandle> cube = app.Renderer().CreateMesh(renderer::MakeCube(), "Test floor");
-        if (!cube) {
-            return tl::unexpected(std::move(cube.error()));
-        }
+        DAI_TRY_ASSIGN(renderer::MeshHandle cube, app.Renderer().CreateMesh(renderer::MakeCube(), "Test floor"));
         ecs::World& world = target.World();
         const ecs::Entity floor = world.Create();
         ecs::LocalTransform transform;
         transform.translation = {0.0f, -0.05f, 0.0f};
         transform.scale = {12.0f, 0.1f, 12.0f};
         world.Add<ecs::LocalTransform>(floor, transform);
-        world.Add<scene::MeshRenderer>(floor, *cube);
+        world.Add<scene::MeshRenderer>(floor, cube);
         const std::array<glm::vec3, 4> corners{glm::vec3(-6.0f, 0.0f, -6.0f), glm::vec3(-6.0f, 0.0f, 6.0f),
                                                glm::vec3(6.0f, 0.0f, 6.0f), glm::vec3(6.0f, 0.0f, -6.0f)};
         const std::array<std::uint32_t, 6> triangles{0, 1, 2, 0, 2, 3};
-        if (core::Result<physics::BodyId> body = target.Physics().AddStaticMesh(corners, triangles); !body) {
-            return tl::unexpected(std::move(body.error()));
-        }
-        core::Result<ecs::Entity> player = sandbox::BuildLevel(target, scene::Model{}, "");
-        if (!player) {
-            return tl::unexpected(std::move(player.error()));
-        }
+        DAI_TRY(target.Physics().AddStaticMesh(corners, triangles));
+        DAI_TRY(sandbox::BuildLevel(target, scene::Model{}, ""));
         return {};
     }
 

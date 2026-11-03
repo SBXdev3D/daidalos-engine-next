@@ -75,7 +75,7 @@ std::string_view ToString(Level level) noexcept {
 core::Result<void> Initialize(const LogConfig& config) {
     const std::scoped_lock lock(g_mutex);
     if (g_state) {
-        return core::MakeError(core::ErrorCode::InvalidState, std::string(kModule), "Logging is already initialized");
+        return core::MakeError(core::ErrorCode::InvalidState, kModule, "Logging is already initialized");
     }
 
     auto state = std::make_unique<LogState>();
@@ -98,7 +98,7 @@ core::Result<void> Initialize(const LogConfig& config) {
             state->logger->flush_on(spdlog::level::warn);
         }
     } catch (const std::exception& exception) {
-        return core::MakeError(core::ErrorCode::IoError, std::string(kModule),
+        return core::MakeError(core::ErrorCode::IoError, kModule,
                                "Cannot open log output '" + config.filePath.string() + "': " + exception.what());
     }
 

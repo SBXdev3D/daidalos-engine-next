@@ -65,12 +65,11 @@ core::Result<void> Renderer::Impl::ResizeDepth(rhi::Extent extent) {
     }
     device.DestroyTexture(depth);
     depth = {};
-    core::Result<rhi::TextureHandle> created = device.CreateTexture(
-        {.extent = extent, .format = kDepthFormat, .usage = rhi::TextureUsage::DepthTarget, .name = "Depth"});
-    if (!created) {
-        return tl::unexpected(std::move(created.error()));
-    }
-    depth = *created;
+    DAI_TRY_ASSIGN(
+        rhi::TextureHandle created,
+        device.CreateTexture(
+            {.extent = extent, .format = kDepthFormat, .usage = rhi::TextureUsage::DepthTarget, .name = "Depth"}));
+    depth = created;
     depthExtent = extent;
     return {};
 }
@@ -107,34 +106,23 @@ void Renderer::Impl::ReloadShaders() {
 }
 
 core::Result<Renderer> Renderer::Create(platform::Window& window, const RendererConfig& config) {
-    core::Result<std::vector<std::string>> extensions = window.VulkanInstanceExtensions();
-    if (!extensions) {
-        return tl::unexpected(std::move(extensions.error()));
-    }
+    DAI_TRY_ASSIGN(std::vector<std::string> extensions, window.VulkanInstanceExtensions());
 
     rhi::DeviceConfig deviceConfig;
     deviceConfig.validation = config.validation;
-    deviceConfig.instanceExtensions = std::move(*extensions);
+    deviceConfig.instanceExtensions = std::move(extensions);
     deviceConfig.presentation = true;
-    core::Result<rhi::Device> device = rhi::Device::Create(deviceConfig);
-    if (!device) {
-        return tl::unexpected(std::move(device.error()));
-    }
+    DAI_TRY_ASSIGN(rhi::Device device, rhi::Device::Create(deviceConfig));
 
     const platform::Extent size = window.PixelSize();
-    core::Result<rhi::Swapchain> swapchain = rhi::Swapchain::Create(
-        *device, [&window](std::uintptr_t instance) { return window.CreateVulkanSurface(instance); },
-        {{size.width, size.height}, config.vsync});
-    if (!swapchain) {
-        return tl::unexpected(std::move(swapchain.error()));
-    }
+    DAI_TRY_ASSIGN(rhi::Swapchain swapchain,
+                   rhi::Swapchain::Create(
+                       device, [&window](std::uintptr_t instance) { return window.CreateVulkanSurface(instance); },
+                       {{size.width, size.height}, config.vsync}));
 
-    auto impl = std::make_unique<Impl>(window, std::move(*device), std::move(*swapchain), config.vsync);
-    core::Result<MeshPass> meshPass = MeshPass::Create(impl->device, impl->swapchain.ColorFormat(), kDepthFormat);
-    if (!meshPass) {
-        return tl::unexpected(std::move(meshPass.error()));
-    }
-    impl->meshPass.emplace(std::move(*meshPass));
+    auto impl = std::make_unique<Impl>(window, std::move(device), std::move(swapchain), config.vsync);
+    DAI_TRY_ASSIGN(MeshPass meshPass, MeshPass::Create(impl->device, impl->swapchain.ColorFormat(), kDepthFormat));
+    impl->meshPass.emplace(std::move(meshPass));
 
 #if DAI_DEV_TOOLS
     // Installed builds have no sources to watch: they keep the embedded shaders.
@@ -152,33 +140,27 @@ Renderer& Renderer::operator=(Renderer&& other) noexcept = default;
 Renderer::~Renderer() = default;
 
 core::Result<MeshHandle> Renderer::CreateMesh(const resources::MeshData& data, const std::string& name) {
-    DAI_ASSERT(m_impl, "Renderer used after being moved from");
     return m_impl->meshPass->CreateMesh(data, name);
 }
 
 void Renderer::DestroyMesh(MeshHandle mesh) {
-    DAI_ASSERT(m_impl, "Renderer used after being moved from");
     m_impl->meshPass->DestroyMesh(mesh);
 }
 
 core::Result<MaterialHandle> Renderer::CreateMaterial(const MaterialDesc& desc) {
-    DAI_ASSERT(m_impl, "Renderer used after being moved from");
     return m_impl->meshPass->CreateMaterial(desc);
 }
 
 void Renderer::DestroyMaterial(MaterialHandle material) {
-    DAI_ASSERT(m_impl, "Renderer used after being moved from");
     m_impl->meshPass->DestroyMaterial(material);
 }
 
 void Renderer::SetVsync(bool vsync) {
-    DAI_ASSERT(m_impl, "Renderer used after being moved from");
     m_impl->vsync = vsync;
 }
 
 core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder& overlay) {
     DAI_PROFILE_SCOPE("renderer::Render");
-    DAI_ASSERT(m_impl, "Renderer used after being moved from");
     Impl& impl = *m_impl;
 
     impl.ReloadShaders();
@@ -186,14 +168,11 @@ core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder
     const platform::Extent size = impl.window->PixelSize();
     impl.swapchain.Configure({{size.width, size.height}, impl.vsync});
 
-    core::Result<std::optional<rhi::Frame>> begun = impl.device.BeginFrame(&impl.swapchain);
-    if (!begun) {
-        return tl::unexpected(std::move(begun.error()));
-    }
-    if (!begun->has_value()) {
+    DAI_TRY_ASSIGN(std::optional<rhi::Frame> begun, impl.device.BeginFrame(&impl.swapchain));
+    if (!begun.has_value()) {
         return {}; // Nothing can be drawn this frame.
     }
-    rhi::Frame& frame = **begun;
+    rhi::Frame& frame = *begun;
 
     // A failure from here on still ends the frame: the acquired image must be presented.
     core::Result<void> status = impl.ResizeDepth(frame.extent);
@@ -221,17 +200,14 @@ core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder
 }
 
 rhi::Device& Renderer::Device() {
-    DAI_ASSERT(m_impl, "Renderer used after being moved from");
     return m_impl->device;
 }
 
 rhi::Format Renderer::ColorFormat() const {
-    DAI_ASSERT(m_impl, "Renderer used after being moved from");
     return m_impl->swapchain.ColorFormat();
 }
 
 const std::string& Renderer::ShaderError() const {
-    DAI_ASSERT(m_impl, "Renderer used after being moved from");
     return m_impl->shaderError;
 }
 

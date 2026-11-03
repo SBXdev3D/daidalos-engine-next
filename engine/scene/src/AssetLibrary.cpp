@@ -53,16 +53,10 @@ AssetLibrary::~AssetLibrary() {
 core::Result<AssetLibrary::DecodedModel> AssetLibrary::Decode(const std::filesystem::path& root,
                                                               const std::string& key) {
     DAI_PROFILE_SCOPE("scene::DecodeModel");
-    core::Result<std::filesystem::path> file = resources::ResolveAssetPath(root, key);
-    if (!file) {
-        return tl::unexpected(std::move(file.error()));
-    }
-    core::Result<resources::ModelData> data = resources::LoadModelFile(*file);
-    if (!data) {
-        return tl::unexpected(std::move(data.error()));
-    }
+    DAI_TRY_ASSIGN(std::filesystem::path file, resources::ResolveAssetPath(root, key));
+    DAI_TRY_ASSIGN(resources::ModelData data, resources::LoadModelFile(file));
 
-    DecodedModel decoded{std::move(*data), {}};
+    DecodedModel decoded{std::move(data), {}};
     decoded.images.reserve(decoded.data.images.size());
     for (std::uint32_t index = 0; index < decoded.data.images.size(); ++index) {
         const resources::ImageSource& source = decoded.data.images[index];
@@ -74,19 +68,13 @@ core::Result<AssetLibrary::DecodedModel> AssetLibrary::Decode(const std::filesys
             continue;
         }
         // The identity of a file comes from the root, whichever model refers to it.
-        core::Result<std::string> normalized =
-            resources::NormalizeAssetPath(resources::ToUtf8(source.file.lexically_relative(root)));
-        if (!normalized) {
-            return tl::unexpected(std::move(normalized.error()));
-        }
-        core::Result<std::filesystem::path> resolved = resources::ResolveAssetPath(root, *normalized);
-        if (!resolved) {
-            return tl::unexpected(std::move(resolved.error()));
-        }
+        DAI_TRY_ASSIGN(std::string normalized,
+                       resources::NormalizeAssetPath(resources::ToUtf8(source.file.lexically_relative(root))));
+        DAI_TRY_ASSIGN(std::filesystem::path resolved, resources::ResolveAssetPath(root, normalized));
         // A file used in two ways is two textures: the use decides how it is decoded.
-        std::string textureKey = std::format("{}|{}", *normalized, ToString(source.use));
+        std::string textureKey = std::format("{}|{}", normalized, ToString(source.use));
         decoded.images.push_back(
-            {std::move(*normalized), std::move(textureKey), resources::LoadImageFile(*resolved, source.use)});
+            {std::move(normalized), std::move(textureKey), resources::LoadImageFile(resolved, source.use)});
     }
     return decoded;
 }
@@ -112,11 +100,8 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
     std::vector<rhi::TextureHandle> textures;
     textures.reserve(decoded.images.size());
     for (DecodedImage& image : decoded.images) {
-        core::Result<rhi::TextureHandle> texture = FindOrCreateTexture(image);
-        if (!texture) {
-            return tl::unexpected(std::move(texture.error()));
-        }
-        textures.push_back(*texture);
+        DAI_TRY_ASSIGN(rhi::TextureHandle texture, FindOrCreateTexture(image));
+        textures.push_back(texture);
     }
     const auto textureOf = [&textures](const std::optional<std::uint32_t>& image) {
         return image.has_value() ? textures[*image] : rhi::TextureHandle{};
@@ -140,26 +125,20 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
         desc.normalTexture = textureOf(material.normalImage);
         desc.occlusionTexture = textureOf(material.occlusionImage);
         desc.emissiveTexture = textureOf(material.emissiveImage);
-        core::Result<renderer::MaterialHandle> created = m_renderer->CreateMaterial(desc);
-        if (!created) {
-            return tl::unexpected(std::move(created.error()));
-        }
-        m_materials.push_back(*created);
-        materials.push_back(*created);
+        DAI_TRY_ASSIGN(renderer::MaterialHandle created, m_renderer->CreateMaterial(desc));
+        m_materials.push_back(created);
+        materials.push_back(created);
     }
 
     std::vector<Model::Part> parts;
     parts.reserve(data.primitives.size());
     for (std::size_t index = 0; index < data.primitives.size(); ++index) {
         const resources::ModelPrimitive& primitive = data.primitives[index];
-        core::Result<renderer::MeshHandle> mesh =
-            m_renderer->CreateMesh(primitive.mesh, std::format("{} #{}", key, index));
-        if (!mesh) {
-            return tl::unexpected(std::move(mesh.error()));
-        }
-        m_meshes.push_back(*mesh);
+        DAI_TRY_ASSIGN(renderer::MeshHandle mesh,
+                       m_renderer->CreateMesh(primitive.mesh, std::format("{} #{}", key, index)));
+        m_meshes.push_back(mesh);
         Model::Part& part = parts.emplace_back();
-        part.mesh = *mesh;
+        part.mesh = mesh;
         part.material = primitive.material.has_value() ? materials[*primitive.material] : renderer::MaterialHandle{};
         part.positions.reserve(primitive.mesh.vertices.size());
         for (const resources::Vertex& vertex : primitive.mesh.vertices) {
@@ -203,30 +182,24 @@ core::Result<const Model*> AssetLibrary::Build(std::string key, core::Result<Dec
         return tl::unexpected(std::move(decoded.error()));
     }
     const auto start = std::chrono::steady_clock::now();
-    core::Result<Model> model = BuildModel(*decoded, key);
-    if (!model) {
-        return tl::unexpected(std::move(model.error()));
-    }
+    DAI_TRY_ASSIGN(Model model, BuildModel(*decoded, key));
     // The time spent on the main thread, creating GPU objects: what a load costs the frame loop.
     const std::chrono::duration<double, std::milli> built = std::chrono::steady_clock::now() - start;
     DAI_LOG_INFO(kModule,
                  "Loaded model '{}': {} meshes, {} materials, {} images, {} skins, {} animations, built in {:.1f} ms",
                  key, decoded->data.primitives.size(), decoded->data.materials.size(), decoded->data.images.size(),
                  decoded->data.skins.size(), decoded->data.animations.size(), built.count());
-    return &m_models.Insert(std::move(key), std::move(*model));
+    return &m_models.Insert(std::move(key), std::move(model));
 }
 
 core::Result<const Model*> AssetLibrary::LoadModel(std::string_view path) {
     DAI_PROFILE_SCOPE("scene::LoadModel");
-    core::Result<std::string> key = resources::NormalizeAssetPath(path);
-    if (!key) {
-        return tl::unexpected(std::move(key.error()));
-    }
-    if (const Model* found = m_models.Find(*key)) {
+    DAI_TRY_ASSIGN(std::string key, resources::NormalizeAssetPath(path));
+    if (const Model* found = m_models.Find(key)) {
         return found;
     }
-    core::Result<DecodedModel> decoded = Decode(m_root, *key);
-    return Build(std::move(*key), std::move(decoded));
+    core::Result<DecodedModel> decoded = Decode(m_root, key);
+    return Build(std::move(key), std::move(decoded));
 }
 
 void AssetLibrary::LoadModelAsync(std::string_view path, core::WorkerPool& workers,
@@ -266,9 +239,7 @@ core::Result<ecs::Entity> Instantiate(ecs::World& world, const Model& model) {
         static_cast<math::Transform&>(transform) = node.local;
         world.Add<ecs::LocalTransform>(entity, transform);
         const ecs::Entity parent = node.parent.has_value() ? entities[*node.parent] : root;
-        if (core::Result<void> attached = world.SetParent(entity, parent); !attached) {
-            return tl::unexpected(std::move(attached.error()));
-        }
+        DAI_TRY(world.SetParent(entity, parent));
         entities.push_back(entity);
         if (!node.name.empty()) {
             world.Add<NodeName>(entity, node.name);
@@ -280,9 +251,7 @@ core::Result<ecs::Entity> Instantiate(ecs::World& world, const Model& model) {
             if (index > 0) {
                 holder = world.Create();
                 world.Add<ecs::LocalTransform>(holder);
-                if (core::Result<void> attached = world.SetParent(holder, entity); !attached) {
-                    return tl::unexpected(std::move(attached.error()));
-                }
+                DAI_TRY(world.SetParent(holder, entity));
             }
             if (node.skin.has_value() && *node.skin < model.skins.size()) {
                 world.Add<SkinnedMeshRenderer>(holder, part.mesh, part.material, std::vector<ecs::Entity>{},

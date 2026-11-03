@@ -25,7 +25,7 @@ constexpr std::string_view kModule = "audio";
 constexpr std::size_t kMaxVoices = 64;
 
 core::Error AudioError(core::ErrorCode code, const std::string& message, ma_result result) {
-    return core::Error{code, std::string(kModule), std::format("{}: {}", message, ma_result_description(result))};
+    return core::Error{code, kModule, std::format("{}: {}", message, ma_result_description(result))};
 }
 
 /// A miniaudio sound, which must not move once it is initialized.
@@ -181,8 +181,8 @@ core::Result<ClipHandle> SoundWorld::Load(std::string_view path, const ClipOptio
 
     const std::filesystem::path file = state.root / path;
     if (std::error_code error; !std::filesystem::is_regular_file(file, error)) {
-        return tl::unexpected(core::Error{core::ErrorCode::NotFound, std::string(kModule),
-                                          std::format("Missing sound '{}'", file.generic_string())});
+        return tl::unexpected(
+            core::Error{core::ErrorCode::NotFound, kModule, std::format("Missing sound '{}'", file.generic_string())});
     }
 
     if (const ma_result result = ProbeFile(file); result != MA_SUCCESS) {

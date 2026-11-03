@@ -100,7 +100,7 @@ enum class ZombieState : std::uint8_t { Waiting, Patrolling, Chasing, Attacking,
 /// ECS component on a zombie's level node, whose child is the model.
 struct Zombie {
     ecs::Entity model;
-    physics::CharacterId character;
+    physics::CharacterHandle character;
     physics::BodyId body;
     ZombieState state = ZombieState::Waiting;
     int health = 50;

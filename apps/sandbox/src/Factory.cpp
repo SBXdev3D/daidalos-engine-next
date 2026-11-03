@@ -566,18 +566,13 @@ namespace {
 
 /// Puts a model at a level node, as its child.
 core::Result<ecs::Entity> PlaceModel(scene::Scene& scene, ecs::Entity node, const std::string& path) {
-    core::Result<const scene::Model*> model = scene.Assets().LoadModel(path);
-    if (!model) {
-        return tl::unexpected(std::move(model.error()));
-    }
+    DAI_TRY_ASSIGN(const scene::Model* model, scene.Assets().LoadModel(path));
     ecs::World& world = scene.World();
-    core::Result<ecs::Entity> instance = scene::Instantiate(world, **model);
+    core::Result<ecs::Entity> instance = scene::Instantiate(world, *model);
     if (!instance) {
         return instance;
     }
-    if (core::Result<void> attached = world.SetParent(*instance, node); !attached) {
-        return tl::unexpected(std::move(attached.error()));
-    }
+    DAI_TRY(world.SetParent(*instance, node));
     return instance;
 }
 
@@ -618,10 +613,7 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
             continue;
         }
         for (const scene::Model::Part& part : node.parts) {
-            if (core::Result<physics::BodyId> body = physics.AddStaticMesh(part.positions, part.indices, node.local);
-                !body) {
-                return tl::unexpected(std::move(body.error()));
-            }
+            DAI_TRY(physics.AddStaticMesh(part.positions, part.indices, node.local));
         }
     }
 
@@ -656,16 +648,13 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
         if (const auto file = node.attributes.find("model"); file != node.attributes.end()) {
             const std::string path =
                 directory.empty() ? std::string(file->second) : directory + "/" + std::string(file->second);
-            core::Result<ecs::Entity> instance = PlaceModel(scene, entity, path);
-            if (!instance) {
-                return tl::unexpected(std::move(instance.error()));
-            }
+            DAI_TRY_ASSIGN(ecs::Entity instance, PlaceModel(scene, entity, path));
             if (node.kind == "zombie") {
                 const auto patrol = node.attributes.find("patrol");
-                AddZombie(scene, entity, *instance, patrol == node.attributes.end() ? "" : patrol->second);
+                AddZombie(scene, entity, instance, patrol == node.attributes.end() ? "" : patrol->second);
                 ++world.Get<Player>(playerEntity).zombieCount;
             } else if (node.kind == "fan") {
-                PlayForever(world, *instance, random);
+                PlayForever(world, instance, random);
             }
         }
         if (node.kind == "player") {
@@ -704,12 +693,9 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
                     math::Transform transform;
                     transform.translation = position;
                     const glm::vec3 halfExtents = glm::max((high - low) * 0.5f, glm::vec3(0.05f));
-                    core::Result<physics::BodyId> box =
-                        physics.AddKinematicBox(halfExtents, (low + high) * 0.5f, transform);
-                    if (!box) {
-                        return tl::unexpected(std::move(box.error()));
-                    }
-                    world.Add<scene::KinematicBody>(entity, *box);
+                    DAI_TRY_ASSIGN(physics::BodyId box,
+                                   physics.AddKinematicBox(halfExtents, (low + high) * 0.5f, transform));
+                    world.Add<scene::KinematicBody>(entity, box);
                 }
             }
         }

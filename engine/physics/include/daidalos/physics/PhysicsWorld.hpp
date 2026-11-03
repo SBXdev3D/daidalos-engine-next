@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <daidalos/core/Handle.hpp>
 #include <daidalos/core/Result.hpp>
 #include <daidalos/math/Transform.hpp>
 
@@ -26,14 +27,9 @@ struct BodyId {
     bool operator==(const BodyId&) const = default;
 };
 
+struct CharacterTag;
 /// A character of a PhysicsWorld. The default value is no character.
-struct CharacterId {
-    static constexpr std::uint32_t kInvalid = 0xFFFFFFFFu;
-    std::uint32_t value = kInvalid;
-
-    [[nodiscard]] bool IsValid() const { return value != kInvalid; }
-    bool operator==(const CharacterId&) const = default;
-};
+using CharacterHandle = core::Handle<CharacterTag>;
 
 struct RayHit {
     glm::vec3 position{0.0f};
@@ -94,25 +90,25 @@ public:
                                                 BodyId ignore = {}) const;
 
     /// Adds a character whose feet are at position.
-    [[nodiscard]] CharacterId AddCharacter(const CharacterConfig& config, const glm::vec3& position);
-    void RemoveCharacter(CharacterId character);
+    [[nodiscard]] CharacterHandle AddCharacter(const CharacterConfig& config, const glm::vec3& position);
+    void RemoveCharacter(CharacterHandle character);
 
     /// Moves the character for one fixed step, sliding along what it hits, climbing steps and staying
     /// on the floor. Its vertical speed is the game's: gravity is applied by the caller.
-    void MoveCharacter(CharacterId character, const glm::vec3& velocity, float step);
-    void SetCharacterPosition(CharacterId character, const glm::vec3& position);
+    void MoveCharacter(CharacterHandle character, const glm::vec3& velocity, float step);
+    void SetCharacterPosition(CharacterHandle character, const glm::vec3& position);
     /// The body that follows the character, which rays hit. It collides with nothing, so
     /// characters only push each other through their own test.
-    [[nodiscard]] BodyId CharacterBody(CharacterId character) const;
+    [[nodiscard]] BodyId CharacterBody(CharacterHandle character) const;
     /// Where the feet are.
-    [[nodiscard]] glm::vec3 CharacterPosition(CharacterId character) const;
+    [[nodiscard]] glm::vec3 CharacterPosition(CharacterHandle character) const;
     /// The velocity left after the last move: hitting a wall or a ceiling takes speed away.
-    [[nodiscard]] glm::vec3 CharacterVelocity(CharacterId character) const;
+    [[nodiscard]] glm::vec3 CharacterVelocity(CharacterHandle character) const;
     /// True when standing on walkable ground.
-    [[nodiscard]] bool IsOnGround(CharacterId character) const;
+    [[nodiscard]] bool IsOnGround(CharacterHandle character) const;
     /// Changes the height from the feet up. Returns false and changes nothing if there is no room,
     /// for example when standing up under a pipe.
-    bool SetCharacterHeight(CharacterId character, float height);
+    bool SetCharacterHeight(CharacterHandle character, float height);
 
 private:
     struct State;

@@ -30,7 +30,8 @@ enum class ErrorCode {
 /// (path, entity, operation) to diagnose it.
 struct Error {
     ErrorCode code = ErrorCode::Unknown;
-    std::string module;
+    /// A string literal, such as "renderer": module names are never built at run time.
+    std::string_view module;
     std::string message;
 };
 

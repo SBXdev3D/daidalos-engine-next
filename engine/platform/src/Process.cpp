@@ -35,7 +35,7 @@ core::Result<ProcessResult> RunProcess(std::span<const std::string> arguments) {
     SDL_Process* process = SDL_CreateProcessWithProperties(properties);
     SDL_DestroyProperties(properties);
     if (process == nullptr) {
-        return core::MakeError(core::ErrorCode::IoError, std::string(kModule),
+        return core::MakeError(core::ErrorCode::IoError, kModule,
                                std::format("Cannot run '{}': {}", arguments[0], SDL_GetError()));
     }
 
@@ -44,7 +44,7 @@ core::Result<ProcessResult> RunProcess(std::span<const std::string> arguments) {
     void* output = SDL_ReadProcess(process, &size, &exitCode);
     SDL_DestroyProcess(process);
     if (output == nullptr) {
-        return core::MakeError(core::ErrorCode::IoError, std::string(kModule),
+        return core::MakeError(core::ErrorCode::IoError, kModule,
                                std::format("Cannot read the output of '{}': {}", arguments[0], SDL_GetError()));
     }
 

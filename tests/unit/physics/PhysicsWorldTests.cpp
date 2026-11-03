@@ -32,7 +32,7 @@ BodyId AddFloor(PhysicsWorld& physics) {
 }
 
 /// Moves the character for a number of steps, under gravity.
-void Walk(PhysicsWorld& physics, CharacterId character, const glm::vec3& horizontal, int steps) {
+void Walk(PhysicsWorld& physics, CharacterHandle character, const glm::vec3& horizontal, int steps) {
     for (int step = 0; step < steps; ++step) {
         const float fall =
             physics.IsOnGround(character) ? 0.0f : physics.CharacterVelocity(character).y - kGravity * kStep;
@@ -95,7 +95,7 @@ TEST(PhysicsWorld, RemovedBodyIsNoLongerHit) {
 TEST(PhysicsWorld, CharacterFallsAndStandsOnTheFloor) {
     PhysicsWorld physics;
     AddFloor(physics);
-    const CharacterId character = physics.AddCharacter({}, {0.0f, 2.0f, 0.0f});
+    const CharacterHandle character = physics.AddCharacter({}, {0.0f, 2.0f, 0.0f});
     EXPECT_FALSE(physics.IsOnGround(character));
 
     Walk(physics, character, glm::vec3(0.0f), 120);
@@ -107,7 +107,7 @@ TEST(PhysicsWorld, CharacterFallsAndStandsOnTheFloor) {
 TEST(PhysicsWorld, CharacterWalksAtItsSpeed) {
     PhysicsWorld physics;
     AddFloor(physics);
-    const CharacterId character = physics.AddCharacter({}, {0.0f, 0.1f, 0.0f});
+    const CharacterHandle character = physics.AddCharacter({}, {0.0f, 0.1f, 0.0f});
     Walk(physics, character, glm::vec3(0.0f), 30);
     const float start = physics.CharacterPosition(character).x;
 
@@ -123,7 +123,7 @@ TEST(PhysicsWorld, KinematicBoxBlocksTheCharacterUntilItMoves) {
     door.translation = {2.0f, 1.0f, 0.0f};
     core::Result<BodyId> box = physics.AddKinematicBox({0.1f, 1.0f, 5.0f}, {}, door);
     ASSERT_TRUE(box.has_value());
-    const CharacterId character = physics.AddCharacter({}, {0.0f, 0.1f, 0.0f});
+    const CharacterHandle character = physics.AddCharacter({}, {0.0f, 0.1f, 0.0f});
 
     Walk(physics, character, {3.0f, 0.0f, 0.0f}, 120);
     EXPECT_LT(physics.CharacterPosition(character).x, 1.6f);
@@ -149,7 +149,7 @@ TEST(PhysicsWorld, CharacterCannotStandUpUnderACeiling) {
     physics.Step(kStep);
 
     CharacterConfig config;
-    const CharacterId character = physics.AddCharacter(config, {10.0f, 0.1f, 0.0f});
+    const CharacterHandle character = physics.AddCharacter(config, {10.0f, 0.1f, 0.0f});
     Walk(physics, character, glm::vec3(0.0f), 30);
     EXPECT_TRUE(physics.SetCharacterHeight(character, 0.9f));
     Walk(physics, character, {-3.0f, 0.0f, 0.0f}, 120);
@@ -169,7 +169,7 @@ TEST(PhysicsWorld, CeilingStopsAJump) {
     const std::array<std::uint32_t, 6> indices{0, 1, 2, 0, 2, 3};
     ASSERT_TRUE(physics.AddStaticMesh(positions, indices).has_value());
     physics.Step(kStep);
-    const CharacterId character = physics.AddCharacter({}, {0.0f, 0.1f, 0.0f});
+    const CharacterHandle character = physics.AddCharacter({}, {0.0f, 0.1f, 0.0f});
     Walk(physics, character, glm::vec3(0.0f), 30);
     ASSERT_TRUE(physics.IsOnGround(character));
 
@@ -185,7 +185,7 @@ TEST(PhysicsWorld, CharacterLeavesTheGroundWhenJumping) {
     PhysicsWorld physics;
     AddFloor(physics);
     physics.Step(kStep);
-    const CharacterId character = physics.AddCharacter({}, {0.0f, 0.1f, 0.0f});
+    const CharacterHandle character = physics.AddCharacter({}, {0.0f, 0.1f, 0.0f});
     Walk(physics, character, glm::vec3(0.0f), 30);
     ASSERT_TRUE(physics.IsOnGround(character));
 
@@ -212,8 +212,8 @@ TEST(PhysicsWorld, CharacterClimbsASmallStepButNotAWall) {
     box(1.5f, 6.0f);
     physics.Step(kStep);
 
-    const CharacterId climber = physics.AddCharacter({}, {0.0f, 0.1f, 0.0f});
-    const CharacterId blocked = physics.AddCharacter({}, {0.0f, 0.1f, 6.0f});
+    const CharacterHandle climber = physics.AddCharacter({}, {0.0f, 0.1f, 0.0f});
+    const CharacterHandle blocked = physics.AddCharacter({}, {0.0f, 0.1f, 6.0f});
     Walk(physics, climber, {3.0f, 0.0f, 0.0f}, 60);
     Walk(physics, blocked, {3.0f, 0.0f, 0.0f}, 60);
 
@@ -223,7 +223,7 @@ TEST(PhysicsWorld, CharacterClimbsASmallStepButNotAWall) {
 
 TEST(PhysicsWorld, RayHitsACharacterThroughItsBody) {
     PhysicsWorld physics;
-    const CharacterId character = physics.AddCharacter({}, {0.0f, 0.0f, 0.0f});
+    const CharacterHandle character = physics.AddCharacter({}, {0.0f, 0.0f, 0.0f});
     const std::optional<RayHit> hit = physics.CastRay({-5.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, 10.0f);
     ASSERT_TRUE(hit.has_value());
     EXPECT_EQ(hit->body, physics.CharacterBody(character));
@@ -234,7 +234,7 @@ TEST(PhysicsWorld, RayHitsACharacterThroughItsBody) {
 TEST(PhysicsWorld, RayIgnoresTheGivenBody) {
     PhysicsWorld physics;
     const BodyId floor = AddFloor(physics);
-    const CharacterId character = physics.AddCharacter({}, {0.0f, 0.0f, 0.0f});
+    const CharacterHandle character = physics.AddCharacter({}, {0.0f, 0.0f, 0.0f});
     // From inside the character, down to the floor.
     const std::optional<RayHit> hit =
         physics.CastRay({0.0f, 1.0f, 0.0f}, {0.0f, -1.0f, 0.0f}, 5.0f, physics.CharacterBody(character));
@@ -245,7 +245,7 @@ TEST(PhysicsWorld, RayIgnoresTheGivenBody) {
 TEST(PhysicsWorld, CharacterBodyFollowsTheCharacter) {
     PhysicsWorld physics;
     AddFloor(physics);
-    const CharacterId character = physics.AddCharacter({}, {0.0f, 0.1f, 0.0f});
+    const CharacterHandle character = physics.AddCharacter({}, {0.0f, 0.1f, 0.0f});
     Walk(physics, character, {3.0f, 0.0f, 0.0f}, 60);
     const glm::vec3 feet = physics.CharacterPosition(character);
 
@@ -258,7 +258,7 @@ TEST(PhysicsWorld, CharacterBodyFollowsTheCharacter) {
 TEST(PhysicsWorld, CrouchingLowersTheBody) {
     PhysicsWorld physics;
     AddFloor(physics);
-    const CharacterId character = physics.AddCharacter({}, {0.0f, 0.1f, 0.0f});
+    const CharacterHandle character = physics.AddCharacter({}, {0.0f, 0.1f, 0.0f});
     Walk(physics, character, glm::vec3(0.0f), 30);
     const auto headHit = [&] { return physics.CastRay({-5.0f, 1.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, 10.0f).has_value(); };
     EXPECT_TRUE(headHit());
@@ -269,15 +269,15 @@ TEST(PhysicsWorld, CrouchingLowersTheBody) {
 TEST(PhysicsWorld, CharactersStillBlockEachOther) {
     PhysicsWorld physics;
     AddFloor(physics);
-    const CharacterId walker = physics.AddCharacter({}, {-3.0f, 0.1f, 0.0f});
-    const CharacterId standing = physics.AddCharacter({}, {0.0f, 0.1f, 0.0f});
+    const CharacterHandle walker = physics.AddCharacter({}, {-3.0f, 0.1f, 0.0f});
+    const CharacterHandle standing = physics.AddCharacter({}, {0.0f, 0.1f, 0.0f});
     Walk(physics, walker, {3.0f, 0.0f, 0.0f}, 120);
     EXPECT_LT(physics.CharacterPosition(walker).x, physics.CharacterPosition(standing).x - 0.6f);
 }
 
 TEST(PhysicsWorld, RemovedCharacterIsNoLongerHit) {
     PhysicsWorld physics;
-    const CharacterId character = physics.AddCharacter({}, {0.0f, 0.0f, 0.0f});
+    const CharacterHandle character = physics.AddCharacter({}, {0.0f, 0.0f, 0.0f});
     physics.RemoveCharacter(character);
     EXPECT_FALSE(physics.CastRay({-5.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, 10.0f).has_value());
 }

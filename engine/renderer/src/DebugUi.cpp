@@ -168,14 +168,11 @@ core::Result<void> DebugUi::Impl::Reserve(GeometryBuffers& geometry, std::size_t
         device->DestroyBuffer(geometry.vertices);
         geometry.vertices = {};
         geometry.vertexCapacity = 0;
-        core::Result<rhi::BufferHandle> buffer = device->CreateBuffer({.size = capacity * sizeof(ImDrawVert),
+        DAI_TRY_ASSIGN(rhi::BufferHandle buffer, device->CreateBuffer({.size = capacity * sizeof(ImDrawVert),
                                                                        .usage = rhi::BufferUsage::Vertex,
                                                                        .memory = rhi::MemoryLocation::CpuToGpu,
-                                                                       .name = "DebugUi vertices"});
-        if (!buffer) {
-            return tl::unexpected(std::move(buffer.error()));
-        }
-        geometry.vertices = *buffer;
+                                                                       .name = "DebugUi vertices"}));
+        geometry.vertices = buffer;
         geometry.vertexCapacity = capacity;
     }
     if (indices > geometry.indexCapacity) {
@@ -183,14 +180,11 @@ core::Result<void> DebugUi::Impl::Reserve(GeometryBuffers& geometry, std::size_t
         device->DestroyBuffer(geometry.indices);
         geometry.indices = {};
         geometry.indexCapacity = 0;
-        core::Result<rhi::BufferHandle> buffer = device->CreateBuffer({.size = capacity * sizeof(ImDrawIdx),
+        DAI_TRY_ASSIGN(rhi::BufferHandle buffer, device->CreateBuffer({.size = capacity * sizeof(ImDrawIdx),
                                                                        .usage = rhi::BufferUsage::Index,
                                                                        .memory = rhi::MemoryLocation::CpuToGpu,
-                                                                       .name = "DebugUi indices"});
-        if (!buffer) {
-            return tl::unexpected(std::move(buffer.error()));
-        }
-        geometry.indices = *buffer;
+                                                                       .name = "DebugUi indices"}));
+        geometry.indices = buffer;
         geometry.indexCapacity = capacity;
     }
     return {};
@@ -210,42 +204,36 @@ core::Result<DebugUi> DebugUi::Create(rhi::Device& device, rhi::Format colorForm
     int width = 0;
     int height = 0;
     io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
-    core::Result<rhi::TextureHandle> font =
+    DAI_TRY_ASSIGN(
+        rhi::TextureHandle font,
         device.CreateTexture({.extent = {static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)},
                               .format = rhi::Format::Rgba8Unorm,
                               .usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDst,
-                              .name = "DebugUi font"});
-    if (!font) {
-        return tl::unexpected(std::move(font.error()));
-    }
-    impl->font = *font;
+                              .name = "DebugUi font"}));
+    impl->font = font;
     const auto byteCount = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4;
-    if (core::Result<void> uploaded = device.UploadTexture(*font, std::as_bytes(std::span(pixels, byteCount)));
-        !uploaded) {
-        return tl::unexpected(std::move(uploaded.error()));
-    }
-    io.Fonts->SetTexID(ToTextureId(device.BindlessIndex(*font)));
+    DAI_TRY(device.UploadTexture(font, std::as_bytes(std::span(pixels, byteCount))));
+    io.Fonts->SetTexID(ToTextureId(device.BindlessIndex(font)));
 
     const std::vector<std::uint32_t> vertexShader = rhi::ToSpirv(kDebugUiVsSpirv);
     const std::vector<std::uint32_t> fragmentShader = rhi::ToSpirv(kDebugUiPsSpirv);
-    core::Result<rhi::PipelineHandle> pipeline = device.CreatePipeline({
-        .vertexShader = vertexShader,
-        .fragmentShader = fragmentShader,
-        .vertexStride = sizeof(ImDrawVert),
-        .vertexAttributes = {{0, rhi::Format::Rg32Float, static_cast<std::uint32_t>(offsetof(ImDrawVert, pos))},
-                             {1, rhi::Format::Rg32Float, static_cast<std::uint32_t>(offsetof(ImDrawVert, uv))},
-                             {2, rhi::Format::Rgba8Unorm, static_cast<std::uint32_t>(offsetof(ImDrawVert, col))}},
-        .colorFormat = colorFormat,
-        .depthTest = false,
-        .depthWrite = false,
-        .cull = rhi::CullMode::None,
-        .blend = rhi::BlendMode::Alpha,
-        .name = "DebugUi",
-    });
-    if (!pipeline) {
-        return tl::unexpected(std::move(pipeline.error()));
-    }
-    impl->pipeline = *pipeline;
+    DAI_TRY_ASSIGN(
+        rhi::PipelineHandle pipeline,
+        device.CreatePipeline({
+            .vertexShader = vertexShader,
+            .fragmentShader = fragmentShader,
+            .vertexStride = sizeof(ImDrawVert),
+            .vertexAttributes = {{0, rhi::Format::Rg32Float, static_cast<std::uint32_t>(offsetof(ImDrawVert, pos))},
+                                 {1, rhi::Format::Rg32Float, static_cast<std::uint32_t>(offsetof(ImDrawVert, uv))},
+                                 {2, rhi::Format::Rgba8Unorm, static_cast<std::uint32_t>(offsetof(ImDrawVert, col))}},
+            .colorFormat = colorFormat,
+            .depthTest = false,
+            .depthWrite = false,
+            .cull = rhi::CullMode::None,
+            .blend = rhi::BlendMode::Alpha,
+            .name = "DebugUi",
+        }));
+    impl->pipeline = pipeline;
     return DebugUi(std::move(impl));
 }
 
@@ -255,7 +243,6 @@ DebugUi& DebugUi::operator=(DebugUi&& other) noexcept = default;
 DebugUi::~DebugUi() = default;
 
 void DebugUi::ProcessEvent(const platform::Event& event) {
-    DAI_ASSERT(m_impl, "DebugUi used after being moved from");
     ImGuiIO& io = ImGui::GetIO();
     std::visit(
         [&io](const auto& value) {
@@ -288,7 +275,6 @@ void DebugUi::ProcessEvent(const platform::Event& event) {
 }
 
 void DebugUi::BeginFrame(std::chrono::duration<double> delta, platform::Extent windowSize, platform::Extent pixelSize) {
-    DAI_ASSERT(m_impl, "DebugUi used after being moved from");
     ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = ImVec2(static_cast<float>(windowSize.width), static_cast<float>(windowSize.height));
     if (windowSize.width != 0 && windowSize.height != 0) {
@@ -302,13 +288,11 @@ void DebugUi::BeginFrame(std::chrono::duration<double> delta, platform::Extent w
 }
 
 void DebugUi::EndFrame() {
-    DAI_ASSERT(m_impl, "DebugUi used after being moved from");
     ImGui::Render();
 }
 
 core::Result<void> DebugUi::Draw(rhi::CommandList& commands, rhi::Extent extent) {
     DAI_PROFILE_SCOPE("debugui::Draw");
-    DAI_ASSERT(m_impl, "DebugUi used after being moved from");
     const ImDrawData* drawData = ImGui::GetDrawData();
     if (drawData == nullptr || drawData->TotalVtxCount == 0) {
         return {};
@@ -371,12 +355,10 @@ core::Result<void> DebugUi::Draw(rhi::CommandList& commands, rhi::Extent extent)
 }
 
 bool DebugUi::WantsMouse() const {
-    DAI_ASSERT(m_impl, "DebugUi used after being moved from");
     return ImGui::GetIO().WantCaptureMouse;
 }
 
 bool DebugUi::WantsKeyboard() const {
-    DAI_ASSERT(m_impl, "DebugUi used after being moved from");
     return ImGui::GetIO().WantCaptureKeyboard;
 }
 

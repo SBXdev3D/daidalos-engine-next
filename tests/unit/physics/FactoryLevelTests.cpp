@@ -45,7 +45,7 @@ protected:
         m_physics.Step(kStep);
     }
 
-    void Settle(CharacterId character) {
+    void Settle(CharacterHandle character) {
         for (int step = 0; step < 180; ++step) {
             const float fall =
                 m_physics.IsOnGround(character) ? 0.0f : m_physics.CharacterVelocity(character).y - kGravity * kStep;
@@ -60,7 +60,7 @@ protected:
 } // namespace
 
 TEST_F(FactoryLevel, PlayerStandsOnTheFloorAtTheStart) {
-    const CharacterId player = m_physics.AddCharacter({}, m_start);
+    const CharacterHandle player = m_physics.AddCharacter({}, m_start);
     Settle(player);
     EXPECT_TRUE(m_physics.IsOnGround(player));
     EXPECT_GT(m_physics.CharacterPosition(player).y, -1.0f) << "The player fell through the floor";

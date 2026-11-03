@@ -131,15 +131,14 @@ bool CrashDumpsSupported() noexcept {
 
 core::Result<void> InstallCrashHandler(const CrashHandlerConfig& config) {
     if (s_crash.installed) {
-        return core::MakeError(core::ErrorCode::InvalidState, std::string(kModule),
-                               "A crash handler is already installed");
+        return core::MakeError(core::ErrorCode::InvalidState, kModule, "A crash handler is already installed");
     }
 
     std::error_code error;
     std::filesystem::create_directories(config.dumpDirectory, error);
     const std::filesystem::path directory = std::filesystem::absolute(config.dumpDirectory, error);
     if (error) {
-        return core::MakeError(core::ErrorCode::IoError, std::string(kModule),
+        return core::MakeError(core::ErrorCode::IoError, kModule,
                                std::format("Cannot create the crash dump directory '{}': {}",
                                            config.dumpDirectory.generic_string(), error.message()));
     }
@@ -147,7 +146,7 @@ core::Result<void> InstallCrashHandler(const CrashHandlerConfig& config) {
     const std::wstring directoryText = directory.wstring();
     const std::wstring prefixText = std::filesystem::path(config.filePrefix).wstring();
     if (directoryText.size() >= s_crash.directory.size() || prefixText.size() >= s_crash.filePrefix.size()) {
-        return core::MakeError(core::ErrorCode::InvalidArgument, std::string(kModule),
+        return core::MakeError(core::ErrorCode::InvalidArgument, kModule,
                                "Crash dump directory or file prefix is too long");
     }
 
@@ -194,8 +193,7 @@ bool CrashDumpsSupported() noexcept {
 
 core::Result<void> InstallCrashHandler(const CrashHandlerConfig&) {
     if (s_installed) {
-        return core::MakeError(core::ErrorCode::InvalidState, std::string(kModule),
-                               "A crash handler is already installed");
+        return core::MakeError(core::ErrorCode::InvalidState, kModule, "A crash handler is already installed");
     }
     s_installed = true;
     DAI_LOG_DEBUG(kModule, "Crash dumps are not supported on this system; core dumps are left to the OS");

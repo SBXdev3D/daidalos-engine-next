@@ -35,7 +35,7 @@ core::Result<std::uint32_t> WindowDimension(const core::CVar<std::int64_t>& cvar
     const std::int64_t value = cvar.Get();
     if (value < 1 || value > kMaxWindowSize) {
         return core::MakeError(
-            core::ErrorCode::InvalidArgument, std::string(kModule),
+            core::ErrorCode::InvalidArgument, kModule,
             std::format("{} is {}; it must be between 1 and {}", cvar.Name(), value, kMaxWindowSize));
     }
     return static_cast<std::uint32_t>(value);
@@ -100,11 +100,8 @@ core::Result<void> Application::Run(IApplicationHandler& handler) {
     startup.Add(
         "platform",
         [this]() -> core::Result<void> {
-            core::Result<platform::Platform> created = platform::Platform::Create(m_config.platform);
-            if (!created) {
-                return tl::unexpected(std::move(created.error()));
-            }
-            m_platform.emplace(std::move(*created));
+            DAI_TRY_ASSIGN(platform::Platform created, platform::Platform::Create(m_config.platform));
+            m_platform.emplace(std::move(created));
             return {};
         },
         [this] { m_platform.reset(); });
@@ -201,11 +198,8 @@ core::Result<void> Application::CreateMainWindow() {
     config.height = *height;
     config.vulkan = m_config.rendering;
 
-    core::Result<platform::Window> window = platform::Window::Create(*m_platform, config);
-    if (!window) {
-        return tl::unexpected(std::move(window.error()));
-    }
-    m_window.emplace(std::move(*window));
+    DAI_TRY_ASSIGN(platform::Window window, platform::Window::Create(*m_platform, config));
+    m_window.emplace(std::move(window));
     return {};
 }
 
@@ -229,24 +223,18 @@ core::Result<void> Application::CreateRenderer() {
     if (!m_config.rendering) {
         return {};
     }
-    core::Result<renderer::Renderer> created =
-        renderer::Renderer::Create(*m_window, {.validation = m_validation->Get(), .vsync = m_vsync->Get()});
-    if (!created) {
-        return tl::unexpected(std::move(created.error()));
-    }
-    m_renderer.emplace(std::move(*created));
+    DAI_TRY_ASSIGN(renderer::Renderer created,
+                   renderer::Renderer::Create(*m_window, {.validation = m_validation->Get(), .vsync = m_vsync->Get()}));
+    m_renderer.emplace(std::move(created));
     return {};
 }
 
 core::Result<void> Application::CreateDebugOverlay() {
 #if DAI_DEV_TOOLS
     if (m_renderer.has_value()) {
-        core::Result<debugui::DebugUi> created =
-            debugui::DebugUi::Create(m_renderer->Device(), m_renderer->ColorFormat());
-        if (!created) {
-            return tl::unexpected(std::move(created.error()));
-        }
-        m_debugUi.emplace(std::move(*created));
+        DAI_TRY_ASSIGN(debugui::DebugUi created,
+                       debugui::DebugUi::Create(m_renderer->Device(), m_renderer->ColorFormat()));
+        m_debugUi.emplace(std::move(created));
     }
 #endif
     return {};

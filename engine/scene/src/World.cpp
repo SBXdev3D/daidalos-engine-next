@@ -26,7 +26,7 @@ namespace {
 constexpr std::string_view kModule = "ecs";
 
 tl::unexpected<core::Error> HierarchyError(std::string message) {
-    return core::MakeError(core::ErrorCode::InvalidArgument, std::string(kModule), std::move(message));
+    return core::MakeError(core::ErrorCode::InvalidArgument, kModule, std::move(message));
 }
 
 } // namespace

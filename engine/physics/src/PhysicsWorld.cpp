@@ -4,6 +4,7 @@
 
 #include <daidalos/core/Assert.hpp>
 #include <daidalos/core/Profile.hpp>
+#include <daidalos/core/SlotPool.hpp>
 #include <daidalos/logging/Log.hpp>
 #include <daidalos/physics/PhysicsWorld.hpp>
 
@@ -33,7 +34,6 @@
 #include <cstdarg>
 #include <cstdio>
 #include <format>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -152,11 +152,7 @@ struct PhysicsWorld::State {
         system.SetGravity(JPH::Vec3::sZero()); // The game applies its own to characters.
     }
 
-    [[nodiscard]] Character& Find(CharacterId id) {
-        const auto found = characters.find(id.value);
-        DAI_ASSERT(found != characters.end(), "Unknown character");
-        return found->second;
-    }
+    [[nodiscard]] Character& Find(CharacterHandle character) { return characters.Get(character); }
 
     [[nodiscard]] static JPH::Ref<JPH::Shape> MakeCharacterShape(const CharacterConfig& config, float height) {
         // The origin of the shape is at the feet.
@@ -175,8 +171,7 @@ struct PhysicsWorld::State {
     JPH::JobSystemSingleThreaded jobs;
     JPH::PhysicsSystem system;
     JPH::CharacterVsCharacterCollisionSimple characterCollisions;
-    std::unordered_map<std::uint32_t, Character> characters;
-    std::uint32_t nextCharacter = 0;
+    core::SlotPool<Character, CharacterTag> characters;
 };
 
 PhysicsWorld::PhysicsWorld() {
@@ -188,7 +183,7 @@ PhysicsWorld::~PhysicsWorld() {
     if (!m_state) {
         return;
     }
-    m_state->characters.clear();
+    m_state->characters = {}; // Before the bodies: each character has one.
     JPH::BodyInterface& bodies = m_state->system.GetBodyInterface();
     JPH::BodyIDVector all;
     m_state->system.GetBodies(all);
@@ -258,7 +253,7 @@ void PhysicsWorld::RemoveBody(BodyId body) {
 
 std::size_t PhysicsWorld::BodyCount() const {
     // The bodies inside characters are not counted: they come and go with their characters.
-    return m_state->system.GetNumBodies() - m_state->characters.size();
+    return m_state->system.GetNumBodies() - m_state->characters.Size();
 }
 
 void PhysicsWorld::MoveKinematic(BodyId body, const glm::vec3& position, const glm::quat& rotation, float step) {
@@ -301,7 +296,7 @@ std::optional<RayHit> PhysicsWorld::CastRay(const glm::vec3& origin, const glm::
     return hit;
 }
 
-CharacterId PhysicsWorld::AddCharacter(const CharacterConfig& config, const glm::vec3& position) {
+CharacterHandle PhysicsWorld::AddCharacter(const CharacterConfig& config, const glm::vec3& position) {
     JPH::Ref<JPH::CharacterVirtualSettings> settings = new JPH::CharacterVirtualSettings();
     settings->mShape = State::MakeCharacterShape(config, config.height);
     settings->mMaxSlopeAngle = glm::radians(config.maxSlopeDegrees);
@@ -317,17 +312,15 @@ CharacterId PhysicsWorld::AddCharacter(const CharacterConfig& config, const glm:
     character.controller->SetCharacterVsCharacterCollision(&m_state->characterCollisions);
     m_state->characterCollisions.Add(character.controller);
 
-    const CharacterId id{m_state->nextCharacter++};
-    m_state->characters.emplace(id.value, std::move(character));
-    return id;
+    return m_state->characters.Insert(std::move(character));
 }
 
-void PhysicsWorld::RemoveCharacter(CharacterId character) {
+void PhysicsWorld::RemoveCharacter(CharacterHandle character) {
     m_state->characterCollisions.Remove(m_state->Find(character).controller);
-    m_state->characters.erase(character.value);
+    m_state->characters.Remove(character);
 }
 
-void PhysicsWorld::MoveCharacter(CharacterId id, const glm::vec3& velocity, float step) {
+void PhysicsWorld::MoveCharacter(CharacterHandle id, const glm::vec3& velocity, float step) {
     DAI_PROFILE_SCOPE("physics::MoveCharacter");
     State::Character& character = m_state->Find(id);
     JPH::CharacterVirtual& controller = *character.controller;
@@ -344,29 +337,29 @@ void PhysicsWorld::MoveCharacter(CharacterId id, const glm::vec3& velocity, floa
     character.velocity = (ToGlm(JPH::Vec3(controller.GetPosition())) - start) / step;
 }
 
-void PhysicsWorld::SetCharacterPosition(CharacterId character, const glm::vec3& position) {
+void PhysicsWorld::SetCharacterPosition(CharacterHandle character, const glm::vec3& position) {
     State::Character& found = m_state->Find(character);
     found.controller->SetPosition(JPH::RVec3(ToJolt(position)));
     found.velocity = glm::vec3(0.0f);
 }
 
-BodyId PhysicsWorld::CharacterBody(CharacterId character) const {
+BodyId PhysicsWorld::CharacterBody(CharacterHandle character) const {
     return BodyId{m_state->Find(character).controller->GetInnerBodyID().GetIndexAndSequenceNumber()};
 }
 
-glm::vec3 PhysicsWorld::CharacterPosition(CharacterId character) const {
+glm::vec3 PhysicsWorld::CharacterPosition(CharacterHandle character) const {
     return ToGlm(JPH::Vec3(m_state->Find(character).controller->GetPosition()));
 }
 
-glm::vec3 PhysicsWorld::CharacterVelocity(CharacterId character) const {
+glm::vec3 PhysicsWorld::CharacterVelocity(CharacterHandle character) const {
     return m_state->Find(character).velocity;
 }
 
-bool PhysicsWorld::IsOnGround(CharacterId character) const {
+bool PhysicsWorld::IsOnGround(CharacterHandle character) const {
     return m_state->Find(character).controller->GetGroundState() == JPH::CharacterBase::EGroundState::OnGround;
 }
 
-bool PhysicsWorld::SetCharacterHeight(CharacterId id, float height) {
+bool PhysicsWorld::SetCharacterHeight(CharacterHandle id, float height) {
     State::Character& character = m_state->Find(id);
     JPH::PhysicsSystem& system = m_state->system;
     const JPH::Ref<JPH::Shape> shape = State::MakeCharacterShape(character.config, height);

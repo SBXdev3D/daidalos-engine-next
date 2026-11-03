@@ -96,7 +96,7 @@ std::string_view TypeDescription(const CVarValue& value) {
 
 Error InvalidValue(const CVarEntry& entry, std::string_view text) {
     return Error{
-        ErrorCode::ParseError, std::string(kModule),
+        ErrorCode::ParseError, kModule,
         std::format("Invalid value '{}' for '{}': expected {}", text, entry.name, TypeDescription(entry.value))};
 }
 
@@ -140,7 +140,7 @@ const CVarEntry& CVarRegistry::Add(std::string_view name, CVarValue defaultValue
 
 Result<void> CVarRegistry::Set(std::string_view name, std::string_view text) {
     if (!IsValidName(name)) {
-        return MakeError(ErrorCode::InvalidArgument, std::string(kModule),
+        return MakeError(ErrorCode::InvalidArgument, kModule,
                          std::format("Invalid cvar name '{}': use lowercase letters, digits, '_' and '.'", name));
     }
 
@@ -168,8 +168,7 @@ Result<void> CVarRegistry::ParseConfig(std::string_view text, std::string_view s
         text = (lineEnd == std::string_view::npos) ? std::string_view{} : text.substr(lineEnd + 1);
 
         const auto lineError = [&](std::string_view message) {
-            return MakeError(ErrorCode::ParseError, std::string(kModule),
-                             std::format("{}:{}: {}", sourceName, lineNumber, message));
+            return MakeError(ErrorCode::ParseError, kModule, std::format("{}:{}: {}", sourceName, lineNumber, message));
         };
 
         line = Trim(line);
@@ -210,18 +209,18 @@ Result<void> CVarRegistry::ParseConfig(std::string_view text, std::string_view s
 Result<void> CVarRegistry::LoadConfigFile(const std::filesystem::path& path) {
     std::error_code error;
     if (!std::filesystem::is_regular_file(path, error)) {
-        return MakeError(ErrorCode::NotFound, std::string(kModule),
+        return MakeError(ErrorCode::NotFound, kModule,
                          std::format("Config file '{}' not found", path.generic_string()));
     }
 
     std::ifstream file(path, std::ios::binary);
     if (!file) {
-        return MakeError(ErrorCode::IoError, std::string(kModule),
+        return MakeError(ErrorCode::IoError, kModule,
                          std::format("Cannot open config file '{}'", path.generic_string()));
     }
     const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     if (file.bad()) {
-        return MakeError(ErrorCode::IoError, std::string(kModule),
+        return MakeError(ErrorCode::IoError, kModule,
                          std::format("Cannot read config file '{}'", path.generic_string()));
     }
     return ParseConfig(text, path.generic_string());
@@ -234,7 +233,7 @@ Result<void> CVarRegistry::ApplyCommandLine(std::span<const std::string> argumen
             continue;
         }
         if (i + 1 == arguments.size()) {
-            return MakeError(ErrorCode::InvalidArgument, std::string(kModule),
+            return MakeError(ErrorCode::InvalidArgument, kModule,
                              std::format("Missing value after '{}' on the command line", argument));
         }
         if (Result<void> result = Set(std::string_view(argument).substr(1), arguments[i + 1]); !result) {
