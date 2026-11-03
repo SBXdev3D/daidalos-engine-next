@@ -11,7 +11,7 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0005](0005-math-and-coordinates.md) | GLM, right-handed, Y-up, reverse-Z | Accepted |
 | [0006](0006-ecs.md) | Custom sparse-set ECS with generational handles | Accepted |
 | [0007](0007-rendering-api.md) | Vulkan 1.3 as the single rendering API, concrete RHI | Accepted, amended |
-| [0008](0008-clustered-forward.md) | Clustered forward rendering | Accepted |
+| [0008](0008-clustered-forward.md) | Clustered forward rendering | Accepted, amended |
 | [0009](0009-shaders.md) | HLSL compiled to SPIR-V with DXC from vcpkg, hot reload | Accepted, amended |
 | [0010](0010-asset-formats.md) | glTF 2.0 + KTX2 in UASTC, transcoded at load | Accepted, amended |
 | [0011](0011-threading-model.md) | Main-thread logic, one asset worker pool | Accepted |
@@ -27,3 +27,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0021](0021-module-consolidation.md) | Nine modules, each a layer or a wall around a library | Accepted |
 | [0022](0022-lighting-and-materials.md) | HDR, PBR, legacy light units, glTF normal maps with MikkTSpace | Accepted, amended |
 | [0023](0023-shadows.md) | Spot-light shadows: four per frame in one atlas, nearest first | Accepted |
+| [0024](0024-prepass-and-ambient-occlusion.md) | Depth pre-pass, half-resolution SSAO, ambient light from above and below | Accepted |

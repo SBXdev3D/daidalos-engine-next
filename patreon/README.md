@@ -28,6 +28,7 @@ Drafts of my Patreon posts about building Daidalos Engine Next. Each post is cop
 | 020 | [Spring cleaning](posts/020-spring-cleaning.md) | Progress, audit before Phase 7 | Draft, 1 passage for me to write |
 | 021 | [The lights come on](posts/021-the-lights-come-on.md) | Progress, Phase 7.1 | Draft, 1 passage for me to write |
 | 022 | [Light stops at the walls](posts/022-shadows.md) | Progress, Phase 7.2 | Draft, 1 passage for me to write |
+| 023 | [Corners and creases](posts/023-corners-and-creases.md) | Progress, Phase 7.3 | Draft, 1 passage for me to write |
 
 ## Layout
 
