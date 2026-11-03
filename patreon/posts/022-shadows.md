@@ -14,6 +14,8 @@ Last time the factory's lamps came back on, but their light went straight throug
 
 *Still no screenshot, for the same licence reason as before.*
 
+The old engine had these shadows too: its first lit render had a fan throwing a moving shadow on the room, the flashlight cast shadows, and the alarms swept red light through the bars, the pillars and the crates.
+
 ## Four shadows at a time
 
 Each shadow costs a picture of the scene seen from the light, every frame. So there's a budget: **the four lights nearest to you get a shadow**, among those that ask for one. The flashlight, being in your hand, always comes first. The other lamps still light their rooms, just without shadows, until you walk closer.

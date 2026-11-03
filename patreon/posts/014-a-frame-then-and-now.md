@@ -38,4 +38,6 @@ The Phase 7 plan is **clustered forward**: the view is cut into small cells, eac
 
 That's still a plan. None of it exists yet, and it won't have earned this comparison until it runs in the factory with real lights.
 
-[TO WRITE: memories of the old renderer, and which effect from it I most want back.]
+The old renderer came out of my university classes on DirectX 9 and shaders, in 2010. Daidalos DX was where I put them to use: dynamic lights, soft shadows, normal mapping. The very first render with lighting and shadows had a turning fan in it, throwing its moving shadow on the room. Then came bars, because light running through bars looks good, and the bonus items, which were what I tested specular highlights on. The engine that followed drew each object once per light with HLSL 3.0 shaders, added a deferred path for scenes with many lights, a flashlight that cast shadows, and alarms that swept red light through the bars, the pillars and the crates.
+
+[TO WRITE: which effect from the old renderer I most want back.]

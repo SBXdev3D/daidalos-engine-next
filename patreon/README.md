@@ -2,11 +2,34 @@
 
 Drafts of my Patreon posts about building Daidalos Engine Next. Each post is copied to Patreon by hand, with its images uploaded from `images/`.
 
+## Context
+Note to claude : take inspiration of the descriptions and images on the provided links, but don't publish the link in the posts (my real name is here).
+
+I'm SBX, a software engineer of 14+ years.
+In 2008, I starting getting interested in game development and decided to learn 3D programming.
+While learning, I decided to take inspiration on of my favorite game : Doom, as my first project.
+- Full 3D, OpenGL (without shaders), SDL, BSP Tree etc
+- I coded everything myself
+http://stephane-baudoux.com/#!/project/daidalos
+
+In 2010, I started learning advanced 3D programming in university : Rasterization, DirectX9, Shaders.
+I decided to push my project further with a DirectX9 rewritten Daidalos : DaidalosDX
+http://stephane-baudoux.com/#!/project/daidalosdx
+
+In 2011, I decided I wanted to go further : why not make my own 3D engine ?
+I wanted to learn everything : I/O, texture loading, sounds, animations, dynamic lighning, collisions, gui etc.
+http://stephane-baudoux.com/#!/project/daidalosengine
+I continued working on it for several years, improving the engine, until my time constraints couldn't allow me anymore : I was not a student anymore but a software engineer.
+
+After a hiatus of several years, wanting to work on the project but couldn't because of time constraints, came AI.
+I decided in 2026 to resume working on my project, but it was old : old c++, old graphical library.
+With my acquired knowledge and with the help of Claude Code, I decided to redo everything bug more modern : here comes Daidalos Engine Next.
+
 ## Posts
 
 | # | Post | Topic | Status |
 |---|---|---|---|
-| 001 | [Why I'm rebuilding my engine](posts/001-why-im-rebuilding-my-engine.md) | Introduction | Draft, 2 passages for me to write |
+| 001 | [Why I'm rebuilding my engine](posts/001-why-im-rebuilding-my-engine.md) | Introduction | Draft, 1 passage for me to write |
 | 002 | [How the engine fits together](posts/002-how-the-engine-fits-together.md) | Architecture | Draft |
 | 003 | [The road ahead](posts/003-the-road-ahead.md) | Roadmap | Draft |
 | 004 | [From an empty repository to a first frame](posts/004-from-empty-repository-to-first-frame.md) | Progress, Phases 0 to 3 | Draft, 1 passage for me to write |

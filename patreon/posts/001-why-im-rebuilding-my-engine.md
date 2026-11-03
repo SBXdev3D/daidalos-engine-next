@@ -9,11 +9,21 @@ images: [sandbox-phase-3.png]
 
 Hello, and welcome to the development diary of Daidalos Engine Next.
 
-Daidalos is a real-time 3D engine that I write myself in C++. The copyright line at the top of its source files starts in 2011, so this is not a new idea of mine. "Next" is the point of this project: I'm rebuilding it from the ground up on modern foundations.
+I'm SBX, a software engineer for more than 14 years. Daidalos is a real-time 3D engine that I write myself in C++. The copyright line at the top of its source files starts in 2011, so this is not a new idea of mine. "Next" is the point of this project: I'm rebuilding it from the ground up on modern foundations.
 
-[TO WRITE: the story of the original Daidalos. What it was, what I made with it, why I set it aside.]
+## Where Daidalos comes from
 
-[TO WRITE: why now, and what I hope to make with it.]
+In 2008, I got interested in game development and decided to learn 3D programming. To learn, I took inspiration from one of my favorite games, Doom, and made it my first project: Daidalos, an old-school first-person shooter mock-up in C++ and OpenGL, in the spirit of Doom and Wolfenstein 3D. You are trapped in labyrinthine levels and fight your way through the creatures that haunt them, picking up what helps you on the way. It was fully 3D, used OpenGL without shaders, SDL and a BSP tree, and I coded everything myself.
+
+In 2010, I learned advanced 3D programming at university: rasterization, DirectX 9, shaders. So I pushed the project further and rewrote it with DirectX 9: Daidalos DX, with dynamic lights and soft shadows, normal mapping and a BSP tree.
+
+In 2011, I wanted to go further still: why not make my own 3D engine? I wanted to learn everything an engine does: file loading, textures, sound, animation, dynamic lighting, collisions, user interface. That became Daidalos Engine, a DirectX 9 engine that took everything from Daidalos DX and made it generic: forward and deferred rendering, HLSL shaders for dynamic lights and soft shadows, BSP collisions, a particle engine for smoke and fire, and the beginnings of a level editor. I kept working on it for several years, until time ran out: I wasn't a student anymore, but a software engineer.
+
+## Why now
+
+For years after that, I wanted to get back to the project but couldn't find the time. Then came AI. In 2026, I decided to resume it, but it had aged: old C++, an old graphics library. With what I've learned since, and with the help of Claude Code, I decided to redo everything, more modern. That's Daidalos Engine Next.
+
+[TO WRITE: what I hope to make with it.]
 
 ![The engine today: a few cubes, a free camera and a debug overlay](../images/sandbox-phase-3.png)
 

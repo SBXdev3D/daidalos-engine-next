@@ -9,7 +9,9 @@ credits: ""
 
 # The old factory wakes up
 
-[TO WRITE: what this old demo means to me, when I made it, and how it felt to see it again.]
+The factory is the demo level of the old Daidalos Engine, the DirectX 9 engine I started in 2011 after two earlier versions of Daidalos: lamps and alarms throwing light through bars, crates you can jump on, a fan that turns.
+
+[TO WRITE: what this old demo means to me, and how it felt to see it again.]
 
 The rebuilt engine now runs a real level. Not a test scene: the factory from the demo I made with the old Daidalos engine, inspired by Doom and Quake. From now on, the sandbox is that demo's remake, and every phase of the roadmap has to make it better.
 
