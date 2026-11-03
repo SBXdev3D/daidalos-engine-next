@@ -24,7 +24,7 @@ Until Phase 7, the factory's darkness was fog, with one cone of light cut throug
 - With about 14 lights, the mesh pass of the factory costs 0.74 ms of GPU time at 1280×720 on an RTX 3090 in Release, and the tonemap pass 0.06 ms.
 - Shading a pixel costs one loop iteration per light in the frame until clustering, which caps practical light counts at a few dozen.
 - A normal-mapped mesh without tangents can gain vertices, where MikkTSpace splits its seams.
-- Lights do not cast shadows yet: they pass through walls (Phase 7.2).
+- Lights did not cast shadows yet: ADR-0023 adds them to spot lights.
 
 ## Alternatives considered
 
