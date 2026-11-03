@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "AmbientOcclusionPass.hpp"
 #include "GpuFixture.hpp"
 #include "MeshPass.hpp"
 #include "ShaderCompiler.hpp"
@@ -75,14 +76,17 @@ protected:
                                     .name = "Color"});
         ASSERT_TRUE(color.has_value());
         m_color = *color;
-        const core::Result<rhi::TextureHandle> depth = Device().CreateTexture(
-            {.extent = kExtent, .format = kDepthFormat, .usage = rhi::TextureUsage::DepthTarget, .name = "Depth"});
+        const core::Result<rhi::TextureHandle> depth =
+            Device().CreateTexture({.extent = kExtent,
+                                    .format = kDepthFormat,
+                                    .usage = rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled,
+                                    .name = "Depth"});
         ASSERT_TRUE(depth.has_value());
         m_depth = *depth;
         const core::Result<rhi::TextureHandle> normals =
             Device().CreateTexture({.extent = kExtent,
                                     .format = MeshPass::kNormalFormat,
-                                    .usage = rhi::TextureUsage::ColorTarget,
+                                    .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
                                     .name = "Normals"});
         ASSERT_TRUE(normals.has_value());
         m_normals = *normals;
@@ -379,6 +383,54 @@ TEST_F(MeshPassTest, SpotLightCastsTheShadowOfWhatStandsInItsWay) {
     panelCastsShadows = false;
     render();
     EXPECT_GT(Pixel(20, 32).r, 100);
+}
+
+TEST_F(MeshPassTest, AmbientOcclusionDarkensACreaseAndNotAnOpenWall) {
+    // A back wall facing the camera, and a side wall standing out of it at x = -1, from y = 0 to 2. Along
+    // the line where they meet, the hemisphere above the back wall is half closed; far to the right, open.
+    const MeshHandle back = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
+    const MeshHandle side = Mesh(MakeQuad(-4.0f, 4.0f, 0.0f, 2.0f, 0.0f));
+    const glm::mat4 standing = glm::rotate(glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 0.0f, 0.0f)),
+                                           glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
+    const SceneView view{TestCamera(), {{back, glm::mat4(1.0f), white}, {side, standing, white}}};
+    Render(view);
+
+    core::Result<renderer::AmbientOcclusionPass> created = renderer::AmbientOcclusionPass::Create(Device());
+    ASSERT_TRUE(created.has_value()) << core::Format(created.error());
+    renderer::AmbientOcclusionPass& occlusion = *created;
+    ASSERT_TRUE(occlusion.Resize(kExtent).has_value());
+    constexpr std::uint32_t kHalf = kExtent.width / 2;
+    const core::Result<rhi::BufferHandle> readback = Device().CreateBuffer({.size = kHalf * kHalf,
+                                                                            .usage = rhi::BufferUsage::TransferDst,
+                                                                            .memory = rhi::MemoryLocation::GpuToCpu,
+                                                                            .name = "Occlusion readback"});
+    ASSERT_TRUE(readback.has_value());
+    ASSERT_TRUE(Device()
+                    .Submit([&](rhi::CommandList& commands) {
+                        commands.Transition(m_depth, rhi::TextureState::ShaderRead);
+                        commands.Transition(m_normals, rhi::TextureState::ShaderRead);
+                        occlusion.Record(commands, m_pass->FrameDataIndex(), m_depth, m_normals);
+                        commands.Transition(occlusion.Output(), rhi::TextureState::TransferSrc);
+                        commands.CopyTextureToBuffer(occlusion.Output(), *readback);
+                    })
+                    .has_value());
+
+    const auto open = [&](std::uint32_t x, std::uint32_t y) {
+        return static_cast<int>(
+            reinterpret_cast<const std::uint8_t*>(Device().Mapped(*readback).data())[std::size_t{y} * kHalf + x]);
+    };
+    // The crease is a third of the way across, in the upper half; the open wall is at the right.
+    std::string row;
+    for (std::uint32_t x = 0; x < kHalf; ++x) {
+        row += std::to_string(open(x, 10)) + " ";
+    }
+    const int crease = open(12, 10);
+    const int openWall = open(28, 10);
+    SCOPED_TRACE(row);
+    EXPECT_GT(openWall, 240) << "an open wall stays open";
+    EXPECT_LT(crease, openWall - 30) << "the crease is darker";
+    Device().DestroyBuffer(*readback);
 }
 
 TEST_F(MeshPassTest, DestroyedMeshIsSkipped) {

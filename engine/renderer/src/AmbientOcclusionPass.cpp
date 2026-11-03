@@ -83,7 +83,9 @@ core::Result<void> AmbientOcclusionPass::Resize(rhi::Extent frame) {
     const rhi::Extent half{std::max(frame.width / 2, 1U), std::max(frame.height / 2, 1U)};
     const rhi::TextureDesc desc{.extent = half,
                                 .format = rhi::Format::R8Unorm,
-                                .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
+                                // TransferSrc lets tests and captures read it back.
+                                .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled |
+                                         rhi::TextureUsage::TransferSrc,
                                 .name = "Ambient occlusion"};
     DAI_TRY_ASSIGN(m_raw, m_device->CreateTexture(desc));
     DAI_TRY_ASSIGN(m_blurred, m_device->CreateTexture(desc));
