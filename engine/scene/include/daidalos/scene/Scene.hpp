@@ -9,9 +9,9 @@
 #include <daidalos/ecs/Schedule.hpp>
 #include <daidalos/ecs/World.hpp>
 #include <daidalos/physics/PhysicsWorld.hpp>
-#include <daidalos/renderer/AssetLibrary.hpp>
 #include <daidalos/renderer/Renderer.hpp>
-#include <daidalos/renderer/Scene.hpp>
+#include <daidalos/renderer/SceneView.hpp>
+#include <daidalos/scene/AssetLibrary.hpp>
 
 #include <filesystem>
 #include <optional>
@@ -33,7 +33,7 @@ public:
     Scene& operator=(const Scene&) = delete;
 
     [[nodiscard]] ecs::World& World() { return m_world; }
-    [[nodiscard]] renderer::AssetLibrary& Assets() { return m_assets; }
+    [[nodiscard]] AssetLibrary& Assets() { return m_assets; }
     [[nodiscard]] physics::PhysicsWorld& Physics() { return m_physics; }
     [[nodiscard]] audio::SoundWorld& Sounds() { return m_sounds; }
 
@@ -66,7 +66,7 @@ public:
 
 private:
     // In this order, so that entities are gone before the assets they refer to.
-    renderer::AssetLibrary m_assets;
+    AssetLibrary m_assets;
     ecs::World m_world;
     physics::PhysicsWorld m_physics;
     audio::SoundWorld m_sounds;

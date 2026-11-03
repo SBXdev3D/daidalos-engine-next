@@ -9,7 +9,7 @@
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/logging/Log.hpp>
 #include <daidalos/math/Axes.hpp>
-#include <daidalos/renderer/AssetLibrary.hpp>
+#include <daidalos/scene/AssetLibrary.hpp>
 
 #include <glm/common.hpp>
 #include <glm/ext/quaternion_trigonometric.hpp>
@@ -100,7 +100,7 @@ enum class ZombieState : std::uint8_t { Waiting, Patrolling, Chasing, Attacking,
 /// ECS component on a zombie's level node, whose child is the model.
 struct Zombie {
     ecs::Entity model;
-    physics::CharacterId character;
+    physics::CharacterHandle character;
     physics::BodyId body;
     ZombieState state = ZombieState::Waiting;
     int health = 50;
@@ -501,12 +501,12 @@ void SetUpCombat(scene::Scene& scene, ecs::Entity playerEntity, const std::strin
     for (std::size_t kind = 0; kind < kWeaponKinds; ++kind) {
         const std::string file = kWeapons[kind].model;
         const std::string path = directory.empty() ? file : directory + "/" + file;
-        core::Result<const renderer::Model*> model = scene.Assets().LoadModel(path);
+        core::Result<const scene::Model*> model = scene.Assets().LoadModel(path);
         if (!model) {
             DAI_LOG_WARNING("sandbox", "No model for a weapon: {}", core::Format(model.error()));
             continue;
         }
-        core::Result<ecs::Entity> instance = renderer::Instantiate(world, **model);
+        core::Result<ecs::Entity> instance = scene::Instantiate(world, **model);
         if (!instance || !world.SetParent(*instance, playerEntity)) {
             DAI_LOG_WARNING("sandbox", "Cannot hold the weapon '{}'", path);
             continue;

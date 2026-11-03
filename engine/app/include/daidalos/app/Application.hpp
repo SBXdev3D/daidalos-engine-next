@@ -14,7 +14,7 @@
 #include <daidalos/platform/Platform.hpp>
 #include <daidalos/platform/Window.hpp>
 #include <daidalos/renderer/Renderer.hpp>
-#include <daidalos/renderer/Scene.hpp>
+#include <daidalos/renderer/SceneView.hpp>
 #include <daidalos/scene/Scene.hpp>
 #if DAI_DEV_TOOLS
 #include <daidalos/debugui/DebugUi.hpp>
@@ -78,8 +78,8 @@ struct ApplicationConfig {
 /// Starts the engine, runs the main loop and shuts everything down in reverse order.
 ///
 /// Startup order: logging, crash handler, configuration (cvars), platform, main window, worker pool,
-/// audio, renderer, debug overlay, scene slot, handler.
-/// If a step fails, the steps already started are stopped (StartupSequence) and Run returns the error.
+/// audio, renderer, debug overlay, handler. The scene, if any, is the first to go.
+/// If a step fails, the steps already started are stopped in reverse order and Run returns the error.
 /// The loop ends when the main window is closed, the system asks to quit, RequestQuit is called, or
 /// rendering fails, in which case Run returns that error after shutting down.
 class Application {
@@ -124,6 +124,10 @@ public:
     [[nodiscard]] const ApplicationConfig& Config() const noexcept { return m_config; }
 
 private:
+    /// Starts each step in order. Stop releases what a failure left started.
+    core::Result<void> Start(IApplicationHandler& handler);
+    /// Stops whatever is started, in reverse order.
+    void Stop();
     core::Result<void> LoadConfiguration();
     core::Result<void> CreateMainWindow();
     void CreateAudio();
@@ -160,6 +164,8 @@ private:
     input::InputState m_input;
     std::optional<core::Error> m_failure;
     bool m_quitRequested = false;
+    bool m_loggingStarted = false;
+    bool m_crashHandlerInstalled = false;
     bool m_running = false;
 };
 

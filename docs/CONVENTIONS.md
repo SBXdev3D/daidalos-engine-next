@@ -12,7 +12,7 @@ Each rule that can be checked by a test should have one (see "Tested by" notes).
 
 | Element | Convention | Example |
 |---|---|---|
-| Namespaces | `daidalos::<module>`, lowercase | `daidalos::ecs` |
+| Namespaces | `daidalos::<area>`, lowercase, one per header folder | `daidalos::ecs`, `daidalos::math` |
 | Types (class, struct, enum) | PascalCase, no prefix | `Window`, `FrameTimer`, `KeyCode` |
 | Pure interfaces | `I` prefix | `IResourceLoader` |
 | Functions and methods | PascalCase | `CreateEntity()` |
@@ -42,15 +42,16 @@ Every source file starts with:
 
 ```text
 engine/<module>/
-  include/daidalos/<module>/   public headers, included as <daidalos/<module>/X.hpp>
-  src/                         private headers and sources
-tests/unit/<module>/           unit tests for that module
+  include/daidalos/<namespace>/   public headers, included as <daidalos/<namespace>/X.hpp>
+  src/                            private headers and sources
+tests/unit/<module>/              unit tests for that module
 ```
 
-- Each module is one static library target, `daidalos::<module>`.
+- Each module is one static library target, `daidalos::<module>`. A new module is created only for a real layer or to hide a large third-party library (ADR-0021); anything else goes into an existing module.
+- Header folders follow namespaces, and a module can own several: `core` holds `core::`, `logging::` and `math::`, `platform` holds `input::`, `renderer` holds `debugui::`, and `scene` holds `ecs::` and `animation::`.
 - Dependencies are declared only with `target_link_libraries`. A module must not include another module's headers without linking it.
-- Third-party types (SDL, Vulkan, spdlog, Jolt, miniaudio) must not appear in public headers, except GLM math types (ADR-0005) and `tl::expected` through `Result` (ADR-0003). Code that draws debug panels calls Dear ImGui directly: `daidalos::debugui` links it publicly, and it exists only in builds with `DAI_DEV_TOOLS`. The profiling macros in `daidalos/core/Profile.hpp` expand to Tracy calls in profile builds; no Tracy type is named in engine headers.
-- GLM is used through `daidalos::math`, which sets its configuration macros for every target that links it. Code does not link `glm::glm` directly.
+- Third-party types (SDL, Vulkan, spdlog, Jolt, miniaudio) must not appear in public headers, except GLM math types (ADR-0005) and `tl::expected` through `Result` (ADR-0003). Code that draws debug panels calls Dear ImGui directly: `daidalos::renderer` links it publicly in builds with `DAI_DEV_TOOLS`, the only builds with `debugui::`. The profiling macros in `daidalos/core/Profile.hpp` expand to Tracy calls in profile builds; no Tracy type is named in engine headers.
+- GLM is used through `daidalos::core`, which sets its configuration macros for every target that links it. Code does not link `glm::glm` directly.
 - Tests of a module's private code (for example `platform`'s SDL event translation) add the module's `src/` directory to the test target's include path. Only tests may do this.
 
 ## 3. Ownership and lifetime
@@ -69,7 +70,8 @@ tests/unit/<module>/           unit tests for that module
 - `DAI_ASSERT(condition, message)` checks programming errors and invariants. It is never used for failures caused by data, files, or devices.
 - No exception crosses a module boundary. Code that calls a throwing API catches at the call site and returns an `Error`.
 - Logging goes through the engine facade: `DAI_LOG_INFO("module", "message {}", value)`. Logging does not replace returning an error.
-- Startup steps that can fail are added to an `app::StartupSequence`, which stops the steps already started when a later one fails.
+- A step whose only reaction to a failure is to pass it on uses `DAI_TRY(expression)`, or `DAI_TRY_ASSIGN(Type name, expression)` to keep the value. A step that must undo something first keeps an explicit `if`.
+- Startup steps are written in order, and a single function stops whatever is started, in reverse order: `app::Application::Start` and `Stop` are the model. Owned objects held in `std::optional` make that function a list of `reset()` calls.
 
 ## 4.1. Configuration variables
 

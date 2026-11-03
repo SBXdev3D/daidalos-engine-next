@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
 #include <daidalos/app/Application.hpp>
-#include <daidalos/app/StartupSequence.hpp>
 #include <daidalos/core/Assert.hpp>
 #include <daidalos/core/Profile.hpp>
 #include <daidalos/platform/CrashHandler.hpp>
@@ -35,10 +34,19 @@ core::Result<std::uint32_t> WindowDimension(const core::CVar<std::int64_t>& cvar
     const std::int64_t value = cvar.Get();
     if (value < 1 || value > kMaxWindowSize) {
         return core::MakeError(
-            core::ErrorCode::InvalidArgument, std::string(kModule),
+            core::ErrorCode::InvalidArgument, kModule,
             std::format("{} is {}; it must be between 1 and {}", cvar.Name(), value, kMaxWindowSize));
     }
     return static_cast<std::uint32_t>(value);
+}
+
+// Names the step in the message of its failure: "Starting renderer failed: ...".
+template <class T>
+core::Result<T> Starting(std::string_view step, core::Result<T> result) {
+    if (!result) {
+        result.error().message = std::format("Starting {} failed: {}", step, result.error().message);
+    }
+    return result;
 }
 
 } // namespace
@@ -85,80 +93,64 @@ core::Result<void> Application::Run(IApplicationHandler& handler) {
     m_failure.reset();
     m_input = {};
 
-    StartupSequence startup;
-    startup.Add("logging", [this] { return logging::Initialize(m_config.log); }, [] { logging::Shutdown(); });
-    startup.Add(
-        "crash handler",
-        [this]() -> core::Result<void> {
-            if (m_config.crashDumpDirectory.empty()) {
-                return {};
-            }
-            return platform::InstallCrashHandler({m_config.crashDumpDirectory, "crash"});
-        },
-        [] { platform::UninstallCrashHandler(); });
-    startup.Add("configuration", [this] { return LoadConfiguration(); });
-    startup.Add(
-        "platform",
-        [this]() -> core::Result<void> {
-            core::Result<platform::Platform> created = platform::Platform::Create(m_config.platform);
-            if (!created) {
-                return tl::unexpected(std::move(created.error()));
-            }
-            m_platform.emplace(std::move(*created));
-            return {};
-        },
-        [this] { m_platform.reset(); });
-    startup.Add("main window", [this] { return CreateMainWindow(); }, [this] { m_window.reset(); });
-    startup.Add(
-        "worker pool",
-        [this]() -> core::Result<void> {
-            const std::uint32_t cores = std::thread::hardware_concurrency();
-            m_workers.emplace(std::clamp<std::uint32_t>(cores > 1 ? cores - 1 : 1, 1, kMaxWorkerThreads));
-            return {};
-        },
-        [this] { m_workers.reset(); });
-    startup.Add(
-        "audio",
-        [this]() -> core::Result<void> {
-            CreateAudio();
-            return {};
-        },
-        [this] { m_audio.reset(); });
-    startup.Add("renderer", [this] { return CreateRenderer(); }, [this] { m_renderer.reset(); });
-    startup.Add(
-        "debug overlay", [this] { return CreateDebugOverlay(); },
-        [this] {
-#if DAI_DEV_TOOLS
-            m_debugUi.reset();
-#endif
-        });
-    // The handler creates the scene, and can fail halfway. Stopping this step is what releases it
-    // before the renderer, whichever way the application ends.
-    startup.Add(
-        "scene", []() -> core::Result<void> { return {}; },
-        [this] {
-            m_pendingScene.reset();
-            m_scenePending = false;
-            m_currentScene.reset();
-        });
-    startup.Add(
-        "application", [this, &handler] { return handler.OnStart(*this); },
-        [this, &handler] { handler.OnStop(*this); });
-
-    core::Result<void> result = startup.Start();
+    core::Result<void> result = Start(handler);
     if (result) {
         ReportConfigurationProblems();
         DAI_LOG_INFO(kModule, "Running");
         MainLoop(handler);
         DAI_LOG_INFO(kModule, "Shutting down");
-        startup.Stop();
+        handler.OnStop(*this);
     }
+    Stop();
 
     m_running = false;
     if (m_failure.has_value()) {
         return tl::unexpected(std::move(*m_failure));
     }
     return result;
+}
+
+core::Result<void> Application::Start(IApplicationHandler& handler) {
+    DAI_TRY(Starting("logging", logging::Initialize(m_config.log)));
+    m_loggingStarted = true;
+    if (!m_config.crashDumpDirectory.empty()) {
+        DAI_TRY(Starting("crash handler", platform::InstallCrashHandler({m_config.crashDumpDirectory, "crash"})));
+        m_crashHandlerInstalled = true;
+    }
+    DAI_TRY(Starting("configuration", LoadConfiguration()));
+
+    DAI_TRY_ASSIGN(platform::Platform platform, Starting("platform", platform::Platform::Create(m_config.platform)));
+    m_platform.emplace(std::move(platform));
+    DAI_TRY(Starting("main window", CreateMainWindow()));
+
+    const std::uint32_t cores = std::thread::hardware_concurrency();
+    m_workers.emplace(std::clamp<std::uint32_t>(cores > 1 ? cores - 1 : 1, 1, kMaxWorkerThreads));
+    CreateAudio();
+    DAI_TRY(Starting("renderer", CreateRenderer()));
+    DAI_TRY(Starting("debug overlay", CreateDebugOverlay()));
+    return Starting("application", handler.OnStart(*this));
+}
+
+void Application::Stop() {
+    // The scene first, because its assets and sounds belong to the renderer and the audio engine. The
+    // handler may have created one before failing in OnStart.
+    m_pendingScene.reset();
+    m_scenePending = false;
+    m_currentScene.reset();
+#if DAI_DEV_TOOLS
+    m_debugUi.reset();
+#endif
+    m_renderer.reset();
+    m_audio.reset();
+    m_workers.reset();
+    m_window.reset();
+    m_platform.reset();
+    if (std::exchange(m_crashHandlerInstalled, false)) {
+        platform::UninstallCrashHandler();
+    }
+    if (std::exchange(m_loggingStarted, false)) {
+        logging::Shutdown();
+    }
 }
 
 core::Result<void> Application::LoadConfiguration() {
@@ -201,11 +193,8 @@ core::Result<void> Application::CreateMainWindow() {
     config.height = *height;
     config.vulkan = m_config.rendering;
 
-    core::Result<platform::Window> window = platform::Window::Create(*m_platform, config);
-    if (!window) {
-        return tl::unexpected(std::move(window.error()));
-    }
-    m_window.emplace(std::move(*window));
+    DAI_TRY_ASSIGN(platform::Window window, platform::Window::Create(*m_platform, config));
+    m_window.emplace(std::move(window));
     return {};
 }
 
@@ -229,24 +218,18 @@ core::Result<void> Application::CreateRenderer() {
     if (!m_config.rendering) {
         return {};
     }
-    core::Result<renderer::Renderer> created =
-        renderer::Renderer::Create(*m_window, {.validation = m_validation->Get(), .vsync = m_vsync->Get()});
-    if (!created) {
-        return tl::unexpected(std::move(created.error()));
-    }
-    m_renderer.emplace(std::move(*created));
+    DAI_TRY_ASSIGN(renderer::Renderer created,
+                   renderer::Renderer::Create(*m_window, {.validation = m_validation->Get(), .vsync = m_vsync->Get()}));
+    m_renderer.emplace(std::move(created));
     return {};
 }
 
 core::Result<void> Application::CreateDebugOverlay() {
 #if DAI_DEV_TOOLS
     if (m_renderer.has_value()) {
-        core::Result<debugui::DebugUi> created =
-            debugui::DebugUi::Create(m_renderer->Device(), m_renderer->ColorFormat());
-        if (!created) {
-            return tl::unexpected(std::move(created.error()));
-        }
-        m_debugUi.emplace(std::move(*created));
+        DAI_TRY_ASSIGN(debugui::DebugUi created,
+                       debugui::DebugUi::Create(m_renderer->Device(), m_renderer->ColorFormat()));
+        m_debugUi.emplace(std::move(created));
     }
 #endif
     return {};

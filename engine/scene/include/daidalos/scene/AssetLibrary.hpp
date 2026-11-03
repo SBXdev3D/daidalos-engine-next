@@ -9,9 +9,9 @@
 #include <daidalos/core/WorkerPool.hpp>
 #include <daidalos/ecs/World.hpp>
 #include <daidalos/math/Transform.hpp>
-#include <daidalos/renderer/Components.hpp>
 #include <daidalos/renderer/Renderer.hpp>
 #include <daidalos/resources/Cache.hpp>
+#include <daidalos/scene/Components.hpp>
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
@@ -26,13 +26,13 @@
 #include <string_view>
 #include <vector>
 
-namespace daidalos::renderer {
+namespace daidalos::scene {
 
 /// A model on the GPU, owned by an AssetLibrary.
 struct Model {
     struct Part {
-        MeshHandle mesh;
-        MaterialHandle material;
+        renderer::MeshHandle mesh;
+        renderer::MaterialHandle material;
         /// The triangles, also kept on the CPU for collisions and queries. Skinned ones are in their
         /// bind pose.
         std::vector<glm::vec3> positions;
@@ -47,10 +47,13 @@ struct Model {
         std::string name;
         std::optional<std::uint32_t> parent;
         math::Transform local;
-        std::vector<Part> parts;
+        /// Indices into parts. Several nodes can draw the same part.
+        std::vector<std::uint32_t> parts;
         /// Index into skins, if the parts follow joints.
         std::optional<std::uint32_t> skin;
     };
+    /// One per glTF primitive, each stored once.
+    std::vector<Part> parts;
     /// Parents come before their children.
     std::vector<Node> nodes;
     std::vector<Skin> skins;
@@ -68,7 +71,7 @@ struct Model {
 /// worker pools it was given.
 class AssetLibrary {
 public:
-    AssetLibrary(Renderer& renderer, std::filesystem::path root);
+    AssetLibrary(renderer::Renderer& renderer, std::filesystem::path root);
     AssetLibrary(const AssetLibrary&) = delete;
     AssetLibrary& operator=(const AssetLibrary&) = delete;
     ~AssetLibrary();
@@ -111,12 +114,12 @@ private:
     [[nodiscard]] core::Result<rhi::TextureHandle> FindOrCreateTexture(DecodedImage& image);
     [[nodiscard]] core::Result<Model> BuildModel(DecodedModel& decoded, const std::string& key);
 
-    Renderer* m_renderer;
+    renderer::Renderer* m_renderer;
     std::filesystem::path m_root;
     resources::Cache<Model> m_models;
     resources::Cache<rhi::TextureHandle> m_textures;
-    std::vector<MeshHandle> m_meshes;
-    std::vector<MaterialHandle> m_materials;
+    std::vector<renderer::MeshHandle> m_meshes;
+    std::vector<renderer::MaterialHandle> m_materials;
     std::vector<PendingLoad> m_pending;
 };
 
@@ -126,4 +129,4 @@ private:
 /// gets an animation::Animator for its nodes.
 [[nodiscard]] core::Result<ecs::Entity> Instantiate(ecs::World& world, const Model& model);
 
-} // namespace daidalos::renderer
+} // namespace daidalos::scene

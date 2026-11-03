@@ -29,3 +29,7 @@ Phase 6 needs a player who walks through the level, doors that block the way, an
 Weapons must hit zombies, and zombies must see the player. Each character now has a Jolt inner body, the same capsule, which follows it and changes with its height when it crouches. Inner bodies live in a layer of their own that collides with nothing, so characters still push each other only through `CharacterVsCharacterCollisionSimple`, and never through each other's bodies. `PhysicsWorld::CharacterBody` returns a character's body, and `CastRay` takes a body to ignore, so a character looking or shooting does not hit itself. `BodyCount` does not count inner bodies.
 
 Testing rays against capsules in game code was the alternative: it needs no physics change, but each query would have to merge two answers, the world's and the characters', and walls would not hide characters unless both were compared.
+
+## Amendment (2026-11-03): no ECS in physics
+
+`KinematicBody` and `SyncKinematicBodies` moved to `scene` (ADR-0021), so `physics` depends on `core` only. Characters are `core::Handle`s from a slot pool, like other engine objects, so a stale character is detected. `BodyId` still wraps Jolt's body ID, which already carries a generation.

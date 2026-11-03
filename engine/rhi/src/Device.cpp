@@ -139,8 +139,7 @@ core::Error VulkanError(std::string_view operation, VkResult result) {
     const core::ErrorCode code = (result == VK_ERROR_OUT_OF_DEVICE_MEMORY || result == VK_ERROR_OUT_OF_HOST_MEMORY)
                                      ? core::ErrorCode::OutOfMemory
                                      : core::ErrorCode::DeviceError;
-    return core::Error{code, std::string(kModule),
-                       std::format("{} failed with VkResult {}", operation, static_cast<int>(result))};
+    return core::Error{code, kModule, std::format("{} failed with VkResult {}", operation, static_cast<int>(result))};
 }
 
 Device::Impl::~Impl() {
@@ -187,15 +186,14 @@ Device::Impl::~Impl() {
 
 core::Result<void> Device::Impl::CreateInstance(const DeviceConfig& config) {
     if (const VkResult result = volkInitialize(); result != VK_SUCCESS) {
-        return core::MakeError(core::ErrorCode::NotSupported, std::string(kModule),
+        return core::MakeError(core::ErrorCode::NotSupported, kModule,
                                "No Vulkan loader found: install a graphics driver with Vulkan support");
     }
 
     std::uint32_t version = 0;
     if (vkEnumerateInstanceVersion == nullptr || vkEnumerateInstanceVersion(&version) != VK_SUCCESS ||
         version < VK_API_VERSION_1_3) {
-        return core::MakeError(core::ErrorCode::NotSupported, std::string(kModule),
-                               "The Vulkan loader does not support Vulkan 1.3");
+        return core::MakeError(core::ErrorCode::NotSupported, kModule, "The Vulkan loader does not support Vulkan 1.3");
     }
 
     std::vector<const char*> extensions;
@@ -244,8 +242,7 @@ core::Result<void> Device::Impl::CreateInstance(const DeviceConfig& config) {
     };
     if (const VkResult result = vkCreateInstance(&createInfo, nullptr, &instance); result != VK_SUCCESS) {
         if (result == VK_ERROR_INCOMPATIBLE_DRIVER) {
-            return core::MakeError(core::ErrorCode::NotSupported, std::string(kModule),
-                                   "No Vulkan 1.3 driver is available");
+            return core::MakeError(core::ErrorCode::NotSupported, kModule, "No Vulkan 1.3 driver is available");
         }
         return tl::unexpected(VulkanError("vkCreateInstance", result));
     }
@@ -267,7 +264,7 @@ core::Result<void> Device::Impl::SelectPhysicalDevice(const DeviceConfig& config
     std::vector<VkPhysicalDevice> devices(count);
     vkEnumeratePhysicalDevices(instance, &count, devices.data());
     if (devices.empty()) {
-        return core::MakeError(core::ErrorCode::NotSupported, std::string(kModule), "No Vulkan device found");
+        return core::MakeError(core::ErrorCode::NotSupported, kModule, "No Vulkan device found");
     }
 
     std::string rejected;
@@ -293,7 +290,7 @@ core::Result<void> Device::Impl::SelectPhysicalDevice(const DeviceConfig& config
         }
     }
     if (physicalDevice == VK_NULL_HANDLE) {
-        return core::MakeError(core::ErrorCode::NotSupported, std::string(kModule),
+        return core::MakeError(core::ErrorCode::NotSupported, kModule,
                                std::format("No suitable Vulkan device:{}", rejected));
     }
     return {};
@@ -579,21 +576,99 @@ void Device::Impl::CollectGarbage(std::uint64_t completed) {
     }
 }
 
+core::Result<std::uint64_t> Device::Impl::SubmitCommands(VkCommandBuffer commands) {
+    const std::uint64_t value = NextTimelineValue();
+    const VkCommandBufferSubmitInfo commandInfo{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+        .commandBuffer = commands,
+    };
+    const VkSemaphoreSubmitInfo signal{
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+        .semaphore = timeline,
+        .value = value,
+        .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+    };
+    const VkSubmitInfo2 submitInfo{
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+        .commandBufferInfoCount = 1,
+        .pCommandBufferInfos = &commandInfo,
+        .signalSemaphoreInfoCount = 1,
+        .pSignalSemaphoreInfos = &signal,
+    };
+    if (const VkResult result = vkQueueSubmit2(queue, 1, &submitInfo, VK_NULL_HANDLE); result != VK_SUCCESS) {
+        return tl::unexpected(VulkanError("vkQueueSubmit2", result));
+    }
+    submittedValue = value;
+    return value;
+}
+
+core::Result<CommandList> Device::Impl::UploadCommands() {
+    DAI_ASSERT(!frameOpen, "Uploads are not allowed between BeginFrame and EndFrame");
+    if (uploads.commands == VK_NULL_HANDLE) {
+        const VkCommandBufferAllocateInfo allocateInfo{
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool = immediatePool,
+            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1,
+        };
+        VkCommandBuffer commands = VK_NULL_HANDLE;
+        if (const VkResult result = vkAllocateCommandBuffers(device, &allocateInfo, &commands); result != VK_SUCCESS) {
+            return tl::unexpected(VulkanError("vkAllocateCommandBuffers", result));
+        }
+        const VkCommandBufferBeginInfo beginInfo{
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        };
+        if (const VkResult result = vkBeginCommandBuffer(commands, &beginInfo); result != VK_SUCCESS) {
+            vkFreeCommandBuffers(device, immediatePool, 1, &commands);
+            return tl::unexpected(VulkanError("vkBeginCommandBuffer", result));
+        }
+        uploads = {this, commands};
+    }
+    return CommandList(uploads);
+}
+
+core::Result<void> Device::Impl::FlushUploads() {
+    if (uploads.commands == VK_NULL_HANDLE) {
+        return {};
+    }
+    const VkCommandBuffer commands = std::exchange(uploads.commands, VK_NULL_HANDLE);
+    // Released once the copies are done, like the staging buffers they read.
+    Defer([this, commands] { vkFreeCommandBuffers(device, immediatePool, 1, &commands); });
+
+    // Later submissions on this queue read what the copies wrote: vertices, indices, storage buffers.
+    const VkMemoryBarrier2 barrier{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+        .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+        .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        .dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
+    };
+    const VkDependencyInfo dependency{
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &barrier,
+    };
+    vkCmdPipelineBarrier2(commands, &dependency);
+    if (const VkResult result = vkEndCommandBuffer(commands); result != VK_SUCCESS) {
+        return tl::unexpected(VulkanError("vkEndCommandBuffer", result));
+    }
+    DAI_TRY(SubmitCommands(commands));
+    return {};
+}
+
 core::Result<Device> Device::Create(const DeviceConfig& config) {
     if (s_deviceExists.exchange(true)) {
-        return core::MakeError(core::ErrorCode::InvalidState, std::string(kModule), "A Device already exists");
+        return core::MakeError(core::ErrorCode::InvalidState, kModule, "A Device already exists");
     }
 
     auto impl = std::make_unique<Impl>();
-    core::Result<void> created = impl->CreateInstance(config)
-                                     .and_then([&] { return impl->SelectPhysicalDevice(config); })
-                                     .and_then([&] { return impl->CreateLogicalDevice(config); })
-                                     .and_then([&] { return impl->CreateAllocator(); })
-                                     .and_then([&] { return impl->CreateFrameResources(); })
-                                     .and_then([&] { return impl->CreateGlobalDescriptors(); });
-    if (!created) {
-        return tl::unexpected(std::move(created.error()));
-    }
+    DAI_TRY(impl->CreateInstance(config));
+    DAI_TRY(impl->SelectPhysicalDevice(config));
+    DAI_TRY(impl->CreateLogicalDevice(config));
+    DAI_TRY(impl->CreateAllocator());
+    DAI_TRY(impl->CreateFrameResources());
+    DAI_TRY(impl->CreateGlobalDescriptors());
     DAI_LOG_INFO(kModule, "Vulkan device '{}', validation {}", impl->info.name,
                  impl->info.validationEnabled ? "on" : "off");
     return Device(std::move(impl));
@@ -611,50 +686,38 @@ Device::~Device() {
 }
 
 const DeviceInfo& Device::Info() const {
-    DAI_ASSERT(m_impl, "Device used after being moved from");
     return m_impl->info;
 }
 
 std::uint64_t Device::ValidationErrorCount() const {
-    DAI_ASSERT(m_impl, "Device used after being moved from");
     return m_impl->validationErrors.load();
 }
 
 std::uint64_t Device::PresentedFrameCount() const {
-    DAI_ASSERT(m_impl, "Device used after being moved from");
     return m_impl->presentedFrames;
 }
 
 std::size_t Device::PendingDestructionCount() const {
-    DAI_ASSERT(m_impl, "Device used after being moved from");
     return m_impl->deferred.size();
 }
 
 core::Result<std::optional<Frame>> Device::BeginFrame(Swapchain* swapchain) {
     DAI_PROFILE_SCOPE("rhi::BeginFrame");
-    DAI_ASSERT(m_impl, "Device used after being moved from");
     DAI_ASSERT(!m_impl->frameOpen, "BeginFrame called twice without EndFrame");
 
+    DAI_TRY(m_impl->FlushUploads());
     Impl::FrameSlot& slot = m_impl->frames[m_impl->frameIndex];
-    if (core::Result<void> waited = m_impl->WaitForValue(slot.submittedValue); !waited) {
-        return tl::unexpected(std::move(waited.error()));
-    }
-    core::Result<std::uint64_t> completed = m_impl->CompletedValue();
-    if (!completed) {
-        return tl::unexpected(std::move(completed.error()));
-    }
-    m_impl->CollectGarbage(*completed);
+    DAI_TRY(m_impl->WaitForValue(slot.submittedValue));
+    DAI_TRY_ASSIGN(std::uint64_t completed, m_impl->CompletedValue());
+    m_impl->CollectGarbage(completed);
 
     Frame frame{CommandList(slot.recording), TextureHandle{}, Extent{}};
     if (swapchain != nullptr) {
-        core::Result<TextureHandle> image = swapchain->m_impl->Acquire(m_impl->frameIndex);
-        if (!image) {
-            return tl::unexpected(std::move(image.error()));
-        }
-        if (image->IsNull()) {
+        DAI_TRY_ASSIGN(TextureHandle image, swapchain->m_impl->Acquire(m_impl->frameIndex));
+        if (image.IsNull()) {
             return std::optional<Frame>{};
         }
-        frame.backBuffer = *image;
+        frame.backBuffer = image;
         frame.extent = swapchain->m_impl->extent;
     }
 
@@ -674,7 +737,6 @@ core::Result<std::optional<Frame>> Device::BeginFrame(Swapchain* swapchain) {
 
 core::Result<void> Device::EndFrame(Swapchain* swapchain) {
     DAI_PROFILE_SCOPE("rhi::EndFrame");
-    DAI_ASSERT(m_impl, "Device used after being moved from");
     DAI_ASSERT(m_impl->frameOpen, "EndFrame called without BeginFrame");
 
     Impl::FrameSlot& slot = m_impl->frames[m_impl->frameIndex];
@@ -730,9 +792,9 @@ core::Result<void> Device::EndFrame(Swapchain* swapchain) {
 }
 
 core::Result<void> Device::Submit(const std::function<void(CommandList&)>& record) {
-    DAI_ASSERT(m_impl, "Device used after being moved from");
     // A frame being recorded expects the next timeline value, which this submission would take.
     DAI_ASSERT(!m_impl->frameOpen, "Device::Submit is not allowed between BeginFrame and EndFrame");
+    DAI_TRY(m_impl->FlushUploads());
 
     const VkCommandBufferAllocateInfo allocateInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -769,34 +831,13 @@ core::Result<void> Device::Submit(const std::function<void(CommandList&)>& recor
         return tl::unexpected(VulkanError("vkEndCommandBuffer", result));
     }
 
-    const std::uint64_t value = m_impl->NextTimelineValue();
-    const VkCommandBufferSubmitInfo commandInfo{
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-        .commandBuffer = commands,
-    };
-    const VkSemaphoreSubmitInfo signal{
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-        .semaphore = m_impl->timeline,
-        .value = value,
-        .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-    };
-    const VkSubmitInfo2 submitInfo{
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-        .commandBufferInfoCount = 1,
-        .pCommandBufferInfos = &commandInfo,
-        .signalSemaphoreInfoCount = 1,
-        .pSignalSemaphoreInfos = &signal,
-    };
-    if (const VkResult result = vkQueueSubmit2(m_impl->queue, 1, &submitInfo, VK_NULL_HANDLE); result != VK_SUCCESS) {
-        return tl::unexpected(VulkanError("vkQueueSubmit2", result));
-    }
-    m_impl->submittedValue = value;
+    DAI_TRY_ASSIGN(const std::uint64_t value, m_impl->SubmitCommands(commands));
     return m_impl->WaitForValue(value);
 }
 
 core::Result<void> Device::WaitIdle() {
-    DAI_ASSERT(m_impl, "Device used after being moved from");
     DAI_ASSERT(!m_impl->frameOpen, "WaitIdle is not allowed between BeginFrame and EndFrame");
+    DAI_TRY(m_impl->FlushUploads());
     if (const VkResult result = vkDeviceWaitIdle(m_impl->device); result != VK_SUCCESS) {
         return tl::unexpected(VulkanError("vkDeviceWaitIdle", result));
     }

@@ -24,3 +24,7 @@ OVERVIEW §7.3 requires an explicit error strategy and left the use of exception
 
 - Exceptions everywhere: hidden control flow, harder to reason about across module and thread boundaries.
 - Error codes with out-parameters: easy to ignore and verbose.
+
+## Amendment (2026-11-03): one-line forwarding, literal module names
+
+Most failures are passed on unchanged, which took four lines each time. `DAI_TRY(expression)` returns the error of a `Result`, and `DAI_TRY_ASSIGN(Type name, expression)` also declares its value. A step that must undo something before returning keeps an explicit `if`. `Error::module` is a `std::string_view`, because module names are always string literals.

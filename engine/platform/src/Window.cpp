@@ -46,11 +46,10 @@ struct Window::Impl {
 };
 
 core::Result<Window> Window::Create(Platform& platform, const WindowConfig& config) {
-    DAI_ASSERT(platform.m_state, "Platform used after being moved from");
 
     constexpr auto kMaxSize = static_cast<std::uint32_t>(std::numeric_limits<int>::max());
     if (config.width == 0 || config.height == 0 || config.width > kMaxSize || config.height > kMaxSize) {
-        return core::MakeError(core::ErrorCode::InvalidArgument, std::string(kModule),
+        return core::MakeError(core::ErrorCode::InvalidArgument, kModule,
                                std::format("Invalid window size {}x{}", config.width, config.height));
     }
 
@@ -66,7 +65,7 @@ core::Result<Window> Window::Create(Platform& platform, const WindowConfig& conf
         SDL_CreateWindow(config.title.c_str(), static_cast<int>(config.width), static_cast<int>(config.height), flags);
     if (window == nullptr) {
         return core::MakeError(
-            core::ErrorCode::DeviceError, std::string(kModule),
+            core::ErrorCode::DeviceError, kModule,
             std::format("Cannot create a {}x{} window: {}", config.width, config.height, SDL_GetError()));
     }
 
@@ -80,12 +79,10 @@ Window& Window::operator=(Window&& other) noexcept = default;
 Window::~Window() = default;
 
 WindowId Window::Id() const {
-    DAI_ASSERT(m_impl, "Window used after being moved from");
     return static_cast<WindowId>(SDL_GetWindowID(m_impl->window));
 }
 
 Extent Window::Size() const {
-    DAI_ASSERT(m_impl, "Window used after being moved from");
     int width = 0;
     int height = 0;
     SDL_GetWindowSize(m_impl->window, &width, &height);
@@ -93,7 +90,6 @@ Extent Window::Size() const {
 }
 
 Extent Window::PixelSize() const {
-    DAI_ASSERT(m_impl, "Window used after being moved from");
     int width = 0;
     int height = 0;
     SDL_GetWindowSizeInPixels(m_impl->window, &width, &height);
@@ -101,53 +97,46 @@ Extent Window::PixelSize() const {
 }
 
 bool Window::IsMinimized() const {
-    DAI_ASSERT(m_impl, "Window used after being moved from");
     return (SDL_GetWindowFlags(m_impl->window) & SDL_WINDOW_MINIMIZED) != 0;
 }
 
 std::string Window::Title() const {
-    DAI_ASSERT(m_impl, "Window used after being moved from");
     return SDL_GetWindowTitle(m_impl->window);
 }
 
 void Window::SetMouseCaptured(bool captured) {
-    DAI_ASSERT(m_impl, "Window used after being moved from");
     SDL_SetWindowRelativeMouseMode(m_impl->window, captured);
 }
 
 void Window::SetTitle(std::string_view title) {
-    DAI_ASSERT(m_impl, "Window used after being moved from");
     SDL_SetWindowTitle(m_impl->window, std::string(title).c_str());
 }
 
 void Window::SetSize(Extent size) {
-    DAI_ASSERT(m_impl, "Window used after being moved from");
     SDL_SetWindowSize(m_impl->window, static_cast<int>(size.width), static_cast<int>(size.height));
     SDL_SyncWindow(m_impl->window);
 }
 
 core::Result<std::vector<std::string>> Window::VulkanInstanceExtensions() const {
-    DAI_ASSERT(m_impl, "Window used after being moved from");
     DAI_ASSERT((SDL_GetWindowFlags(m_impl->window) & SDL_WINDOW_VULKAN) != 0,
                "The window was not created with WindowConfig::vulkan");
 
     Uint32 count = 0;
     const char* const* extensions = SDL_Vulkan_GetInstanceExtensions(&count);
     if (extensions == nullptr) {
-        return core::MakeError(core::ErrorCode::NotSupported, std::string(kModule),
+        return core::MakeError(core::ErrorCode::NotSupported, kModule,
                                std::format("Cannot list the Vulkan surface extensions: {}", SDL_GetError()));
     }
     return std::vector<std::string>(extensions, extensions + count);
 }
 
 core::Result<std::uint64_t> Window::CreateVulkanSurface(std::uintptr_t instance) const {
-    DAI_ASSERT(m_impl, "Window used after being moved from");
     DAI_ASSERT((SDL_GetWindowFlags(m_impl->window) & SDL_WINDOW_VULKAN) != 0,
                "The window was not created with WindowConfig::vulkan");
 
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     if (!SDL_Vulkan_CreateSurface(m_impl->window, reinterpret_cast<VkInstance>(instance), nullptr, &surface)) {
-        return core::MakeError(core::ErrorCode::DeviceError, std::string(kModule),
+        return core::MakeError(core::ErrorCode::DeviceError, kModule,
                                std::format("Cannot create a Vulkan surface: {}", SDL_GetError()));
     }
     return reinterpret_cast<std::uint64_t>(surface);

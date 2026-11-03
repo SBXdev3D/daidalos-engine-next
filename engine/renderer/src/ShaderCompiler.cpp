@@ -34,7 +34,7 @@ core::Result<std::vector<std::uint32_t>> CompileShader(const std::filesystem::pa
     std::filesystem::create_directories(outputDirectory, error);
     if (error) {
         return core::MakeError(
-            core::ErrorCode::IoError, std::string(kModule),
+            core::ErrorCode::IoError, kModule,
             std::format("Cannot create '{}': {}", outputDirectory.generic_string(), error.message()));
     }
     const std::filesystem::path output =
@@ -45,17 +45,14 @@ core::Result<std::vector<std::uint32_t>> CompileShader(const std::filesystem::pa
     arguments.insert(arguments.end(), {"-T", vertex ? "vs_6_7" : "ps_6_7", "-E", vertex ? "VSMain" : "PSMain", "-I",
                                        source.parent_path().string(), "-Fo", output.string(), source.string()});
 
-    core::Result<platform::ProcessResult> compiled = platform::RunProcess(arguments);
-    if (!compiled) {
-        return tl::unexpected(std::move(compiled.error()));
-    }
-    if (compiled->exitCode != 0) {
-        return core::MakeError(core::ErrorCode::ParseError, std::string(kModule), std::move(compiled->output));
+    DAI_TRY_ASSIGN(platform::ProcessResult compiled, platform::RunProcess(arguments));
+    if (compiled.exitCode != 0) {
+        return core::MakeError(core::ErrorCode::ParseError, kModule, std::move(compiled.output));
     }
 
     std::ifstream file(output, std::ios::binary | std::ios::ate);
     if (!file) {
-        return core::MakeError(core::ErrorCode::IoError, std::string(kModule),
+        return core::MakeError(core::ErrorCode::IoError, kModule,
                                std::format("Cannot read '{}'", output.generic_string()));
     }
     const auto size = static_cast<std::size_t>(file.tellg());

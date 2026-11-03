@@ -1,11 +1,26 @@
+# The game world: entities, animation, and what ties them to the renderer, physics and audio.
 dai_add_module(NAME scene
     SOURCES
+        include/daidalos/animation/Animation.hpp
+        include/daidalos/ecs/ComponentPool.hpp
+        include/daidalos/ecs/Entity.hpp
+        include/daidalos/ecs/Schedule.hpp
+        include/daidalos/ecs/Transform.hpp
+        include/daidalos/ecs/World.hpp
+        include/daidalos/scene/AssetLibrary.hpp
+        include/daidalos/scene/Components.hpp
         include/daidalos/scene/Scene.hpp
+        include/daidalos/scene/Systems.hpp
+        src/Animation.cpp
+        src/AssetLibrary.cpp
         src/Scene.cpp
+        src/Schedule.cpp
+        src/Systems.cpp
+        src/Transform.cpp
+        src/World.cpp
     PUBLIC_DEPS
-        daidalos::animation
         daidalos::audio
         daidalos::core
-        daidalos::ecs
         daidalos::physics
-        daidalos::renderer)
+        daidalos::renderer
+        daidalos::resources)

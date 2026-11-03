@@ -797,7 +797,7 @@ ResourceManager
     └── SceneLoader
 ```
 
-Decided in ADR-0016: there is no loader registry and no resource manager. Typed functions decode files into plain CPU data, typed caches store values by identity, and `renderer::AssetLibrary` turns them into GPU objects.
+Decided in ADR-0016: there is no loader registry and no resource manager. Typed functions decode files into plain CPU data, typed caches store values by identity, and `scene::AssetLibrary` turns them into GPU objects.
 
 ## 9.3. Resource identity
 

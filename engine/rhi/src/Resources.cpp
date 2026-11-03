@@ -122,7 +122,6 @@ Format FromVulkan(VkFormat format) {
 }
 
 core::Result<BufferHandle> Device::CreateBuffer(const BufferDesc& desc) {
-    DAI_ASSERT(m_impl, "Device used after being moved from");
     DAI_ASSERT(desc.size > 0, "A buffer cannot be empty");
 
     const VkBufferCreateInfo bufferInfo{
@@ -144,7 +143,7 @@ core::Result<BufferHandle> Device::CreateBuffer(const BufferDesc& desc) {
     const bool storage = HasFlag(desc.usage, BufferUsage::Storage);
     if (storage && m_impl->freeStorageIndices.empty()) {
         return core::MakeError(
-            core::ErrorCode::OutOfMemory, std::string(kModule),
+            core::ErrorCode::OutOfMemory, kModule,
             std::format("Buffer '{}': all {} storage buffer slots are in use", desc.name, kMaxBindlessBuffers));
     }
 
@@ -181,7 +180,6 @@ core::Result<BufferHandle> Device::CreateBuffer(const BufferDesc& desc) {
 }
 
 void Device::DestroyBuffer(BufferHandle buffer) {
-    DAI_ASSERT(m_impl, "Device used after being moved from");
     if (const std::optional<BufferData> data = m_impl->buffers.Remove(buffer)) {
         // The storage slot is released with the buffer: frames in flight may still read it.
         Impl* impl = m_impl.get();
@@ -195,34 +193,30 @@ void Device::DestroyBuffer(BufferHandle buffer) {
 }
 
 std::span<std::byte> Device::Mapped(BufferHandle buffer) {
-    DAI_ASSERT(m_impl, "Device used after being moved from");
     const BufferData& data = m_impl->buffers.Get(buffer);
     DAI_ASSERT(!data.mapped.empty(), "The buffer is not in CPU-visible memory");
     return data.mapped;
 }
 
 core::Result<void> Device::UploadBuffer(BufferHandle buffer, std::span<const std::byte> data) {
-    DAI_ASSERT(m_impl, "Device used after being moved from");
     DAI_ASSERT(m_impl->buffers.Get(buffer).size >= data.size(), "The data does not fit in the buffer");
     DAI_ASSERT(HasFlag(m_impl->buffers.Get(buffer).usage, BufferUsage::TransferDst),
                "The buffer needs BufferUsage::TransferDst");
 
-    core::Result<BufferHandle> staging = CreateBuffer({.size = data.size(),
+    DAI_TRY_ASSIGN(BufferHandle staging, CreateBuffer({.size = data.size(),
                                                        .usage = BufferUsage::TransferSrc,
                                                        .memory = MemoryLocation::CpuToGpu,
-                                                       .name = "Staging"});
-    if (!staging) {
-        return tl::unexpected(std::move(staging.error()));
+                                                       .name = "Staging"}));
+    std::memcpy(Mapped(staging).data(), data.data(), data.size());
+    core::Result<CommandList> commands = m_impl->UploadCommands();
+    if (commands) {
+        commands->CopyBuffer(staging, buffer, data.size());
     }
-    std::memcpy(Mapped(*staging).data(), data.data(), data.size());
-    core::Result<void> submitted =
-        Submit([&](CommandList& commands) { commands.CopyBuffer(*staging, buffer, data.size()); });
-    DestroyBuffer(*staging);
-    return submitted;
+    DestroyBuffer(staging); // Released once the copy is done.
+    return commands ? core::Result<void>{} : tl::unexpected(std::move(commands.error()));
 }
 
 core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
-    DAI_ASSERT(m_impl, "Device used after being moved from");
     DAI_ASSERT(desc.extent.width > 0 && desc.extent.height > 0, "A texture cannot be empty");
     DAI_ASSERT(desc.format != Format::Undefined, "A texture needs a format");
     DAI_ASSERT(desc.mipLevels > 0, "A texture has at least one mip level");
@@ -230,7 +224,7 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
     const bool sampled = HasFlag(desc.usage, TextureUsage::Sampled);
     if (sampled && m_impl->freeBindlessIndices.empty()) {
         return core::MakeError(
-            core::ErrorCode::OutOfMemory, std::string(kModule),
+            core::ErrorCode::OutOfMemory, kModule,
             std::format("Texture '{}': all {} bindless slots are in use", desc.name, kMaxBindlessTextures));
     }
 
@@ -301,7 +295,6 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
 }
 
 void Device::DestroyTexture(TextureHandle texture) {
-    DAI_ASSERT(m_impl, "Device used after being moved from");
     if (const std::optional<TextureData> data = m_impl->textures.Remove(texture)) {
         DAI_ASSERT(data->allocation != nullptr, "Swapchain images belong to the swapchain");
         // The bindless slot is released with the image: frames in flight may still read it.
@@ -317,7 +310,6 @@ void Device::DestroyTexture(TextureHandle texture) {
 }
 
 core::Result<void> Device::UploadTexture(TextureHandle texture, std::span<const std::byte> pixels) {
-    DAI_ASSERT(m_impl, "Device used after being moved from");
     const TextureData& data = m_impl->textures.Get(texture);
     std::uint64_t expectedSize = 0;
     for (std::uint32_t level = 0; level < data.mipLevels; ++level) {
@@ -325,39 +317,34 @@ core::Result<void> Device::UploadTexture(TextureHandle texture, std::span<const 
     }
     DAI_ASSERT(pixels.size() == expectedSize, "The pixels do not match the size of the texture");
 
-    core::Result<BufferHandle> staging = CreateBuffer({.size = pixels.size(),
+    DAI_TRY_ASSIGN(BufferHandle staging, CreateBuffer({.size = pixels.size(),
                                                        .usage = BufferUsage::TransferSrc,
                                                        .memory = MemoryLocation::CpuToGpu,
-                                                       .name = "Staging"});
-    if (!staging) {
-        return tl::unexpected(std::move(staging.error()));
+                                                       .name = "Staging"}));
+    std::memcpy(Mapped(staging).data(), pixels.data(), pixels.size());
+    core::Result<CommandList> commands = m_impl->UploadCommands();
+    if (commands) {
+        commands->Transition(texture, TextureState::TransferDst);
+        commands->CopyBufferToTexture(staging, texture);
+        commands->Transition(texture, TextureState::ShaderRead);
     }
-    std::memcpy(Mapped(*staging).data(), pixels.data(), pixels.size());
-    core::Result<void> submitted = Submit([&](CommandList& commands) {
-        commands.Transition(texture, TextureState::TransferDst);
-        commands.CopyBufferToTexture(*staging, texture);
-        commands.Transition(texture, TextureState::ShaderRead);
-    });
-    DestroyBuffer(*staging);
-    return submitted;
+    DestroyBuffer(staging); // Released once the copy is done.
+    return commands ? core::Result<void>{} : tl::unexpected(std::move(commands.error()));
 }
 
 std::uint32_t Device::StorageIndex(BufferHandle buffer) const {
-    DAI_ASSERT(m_impl, "Device used after being moved from");
     const BufferData& data = m_impl->buffers.Get(buffer);
     DAI_ASSERT(HasFlag(data.usage, BufferUsage::Storage), "The buffer is not a storage buffer");
     return data.storageIndex;
 }
 
 std::uint32_t Device::BindlessIndex(TextureHandle texture) const {
-    DAI_ASSERT(m_impl, "Device used after being moved from");
     const TextureData& data = m_impl->textures.Get(texture);
     DAI_ASSERT(HasFlag(data.usage, TextureUsage::Sampled), "The texture is not sampled");
     return data.bindlessIndex;
 }
 
 core::Result<PipelineHandle> Device::CreatePipeline(const GraphicsPipelineDesc& desc) {
-    DAI_ASSERT(m_impl, "Device used after being moved from");
 
     const auto createModule = [this](std::span<const std::uint32_t> code, VkShaderModule& module) {
         const VkShaderModuleCreateInfo moduleInfo{
@@ -496,7 +483,6 @@ core::Result<PipelineHandle> Device::CreatePipeline(const GraphicsPipelineDesc& 
 }
 
 void Device::DestroyPipeline(PipelineHandle pipeline) {
-    DAI_ASSERT(m_impl, "Device used after being moved from");
     if (const std::optional<PipelineData> data = m_impl->pipelines.Remove(pipeline)) {
         m_impl->Defer([device = m_impl->device, data = *data] { vkDestroyPipeline(device, data.pipeline, nullptr); });
     }

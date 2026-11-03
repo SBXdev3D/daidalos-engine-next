@@ -8,7 +8,7 @@
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/logging/Log.hpp>
 #include <daidalos/math/Axes.hpp>
-#include <daidalos/renderer/Components.hpp>
+#include <daidalos/scene/Components.hpp>
 
 #include <glm/common.hpp>
 #include <glm/ext/quaternion_trigonometric.hpp>
@@ -261,7 +261,7 @@ void StartLoopedSounds(scene::Scene& scene, ecs::Entity playerEntity) {
                                                                   .maxDistance = sound.maxDistance}));
         });
     for (const auto& [entity, voice] : started) {
-        world.Add<audio::SoundEmitter>(entity, voice);
+        world.Add<scene::SoundEmitter>(entity, voice);
     }
 }
 
@@ -566,18 +566,13 @@ namespace {
 
 /// Puts a model at a level node, as its child.
 core::Result<ecs::Entity> PlaceModel(scene::Scene& scene, ecs::Entity node, const std::string& path) {
-    core::Result<const renderer::Model*> model = scene.Assets().LoadModel(path);
-    if (!model) {
-        return tl::unexpected(std::move(model.error()));
-    }
+    DAI_TRY_ASSIGN(const scene::Model* model, scene.Assets().LoadModel(path));
     ecs::World& world = scene.World();
-    core::Result<ecs::Entity> instance = renderer::Instantiate(world, **model);
+    core::Result<ecs::Entity> instance = scene::Instantiate(world, *model);
     if (!instance) {
         return instance;
     }
-    if (core::Result<void> attached = world.SetParent(*instance, node); !attached) {
-        return tl::unexpected(std::move(attached.error()));
-    }
+    DAI_TRY(world.SetParent(*instance, node));
     return instance;
 }
 
@@ -602,33 +597,31 @@ void Teleport(scene::Scene& scene, ecs::Entity entity, const glm::vec3& eye) {
     scene.Physics().SetCharacterPosition(player.character, player.feet);
 }
 
-core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const renderer::Model& model, std::string_view levelPath) {
+core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& model, std::string_view levelPath) {
     ecs::World& world = scene.World();
-    core::Result<ecs::Entity> root = renderer::Instantiate(world, model);
+    core::Result<ecs::Entity> root = scene::Instantiate(world, model);
     if (!root) {
         return root;
     }
     physics::PhysicsWorld& physics = scene.Physics();
 
     // What the game needs from the geometry: the level to walk on, and the size of the doors.
-    std::map<std::string_view, const renderer::Model::Node*> modelNodes;
-    for (const renderer::Model::Node& node : model.nodes) {
+    std::map<std::string_view, const scene::Model::Node*> modelNodes;
+    for (const scene::Model::Node& node : model.nodes) {
         modelNodes.emplace(node.name, &node);
         if (node.name != "level") {
             continue;
         }
-        for (const renderer::Model::Part& part : node.parts) {
-            if (core::Result<physics::BodyId> body = physics.AddStaticMesh(part.positions, part.indices, node.local);
-                !body) {
-                return tl::unexpected(std::move(body.error()));
-            }
+        for (const std::uint32_t index : node.parts) {
+            const scene::Model::Part& part = model.parts[index];
+            DAI_TRY(physics.AddStaticMesh(part.positions, part.indices, node.local));
         }
     }
 
     ecs::Entity playerEntity = world.Create();
     glm::vec3 eye{0.0f, kEyeHeight, 3.0f};
     world.Add<Player>(playerEntity);
-    world.Add<renderer::Camera>(playerEntity);
+    world.Add<scene::Camera>(playerEntity);
     physics::CharacterConfig body;
     body.height = kStandHeight;
     world.Get<Player>(playerEntity).character = physics.AddCharacter(body, eye - math::kUp * kEyeHeight);
@@ -639,8 +632,8 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const renderer::Model&
 
     std::vector<int> lockedDoors;
     std::vector<std::pair<ecs::Entity, std::string>> nodes;
-    world.Each<renderer::NodeName>(
-        [&nodes](ecs::Entity entity, const renderer::NodeName& name) { nodes.emplace_back(entity, name.value); });
+    world.Each<scene::NodeName>(
+        [&nodes](ecs::Entity entity, const scene::NodeName& name) { nodes.emplace_back(entity, name.value); });
     for (const auto& [entity, name] : nodes) {
         const NodeDescription node = Parse(name);
         if (node.kind == "card_reader") {
@@ -656,16 +649,13 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const renderer::Model&
         if (const auto file = node.attributes.find("model"); file != node.attributes.end()) {
             const std::string path =
                 directory.empty() ? std::string(file->second) : directory + "/" + std::string(file->second);
-            core::Result<ecs::Entity> instance = PlaceModel(scene, entity, path);
-            if (!instance) {
-                return tl::unexpected(std::move(instance.error()));
-            }
+            DAI_TRY_ASSIGN(ecs::Entity instance, PlaceModel(scene, entity, path));
             if (node.kind == "zombie") {
                 const auto patrol = node.attributes.find("patrol");
-                AddZombie(scene, entity, *instance, patrol == node.attributes.end() ? "" : patrol->second);
+                AddZombie(scene, entity, instance, patrol == node.attributes.end() ? "" : patrol->second);
                 ++world.Get<Player>(playerEntity).zombieCount;
             } else if (node.kind == "fan") {
-                PlayForever(world, *instance, random);
+                PlayForever(world, instance, random);
             }
         }
         if (node.kind == "player") {
@@ -694,8 +684,8 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const renderer::Model&
             if (const auto found = modelNodes.find(name); found != modelNodes.end()) {
                 glm::vec3 low(std::numeric_limits<float>::max());
                 glm::vec3 high(std::numeric_limits<float>::lowest());
-                for (const renderer::Model::Part& part : found->second->parts) {
-                    for (const glm::vec3& vertex : part.positions) {
+                for (const std::uint32_t index : found->second->parts) {
+                    for (const glm::vec3& vertex : model.parts[index].positions) {
                         low = glm::min(low, vertex);
                         high = glm::max(high, vertex);
                     }
@@ -704,12 +694,9 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const renderer::Model&
                     math::Transform transform;
                     transform.translation = position;
                     const glm::vec3 halfExtents = glm::max((high - low) * 0.5f, glm::vec3(0.05f));
-                    core::Result<physics::BodyId> box =
-                        physics.AddKinematicBox(halfExtents, (low + high) * 0.5f, transform);
-                    if (!box) {
-                        return tl::unexpected(std::move(box.error()));
-                    }
-                    world.Add<physics::KinematicBody>(entity, *box);
+                    DAI_TRY_ASSIGN(physics::BodyId box,
+                                   physics.AddKinematicBox(halfExtents, (low + high) * 0.5f, transform));
+                    world.Add<scene::KinematicBody>(entity, box);
                 }
             }
         }

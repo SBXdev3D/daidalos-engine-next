@@ -4,8 +4,7 @@
 
 #pragma once
 
-#include <daidalos/ecs/World.hpp>
-#include <daidalos/renderer/Components.hpp>
+#include <daidalos/core/Handle.hpp>
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
@@ -15,6 +14,14 @@
 #include <vector>
 
 namespace daidalos::renderer {
+
+struct MeshTag;
+/// A mesh owned by the Renderer.
+using MeshHandle = core::Handle<MeshTag>;
+
+struct MaterialTag;
+/// A material owned by the Renderer.
+using MaterialHandle = core::Handle<MaterialTag>;
 
 struct CameraView {
     /// World space to camera space.
@@ -67,12 +74,5 @@ struct SceneView {
     Atmosphere atmosphere;
     std::optional<SpotLight> spotLight;
 };
-
-/// Fills the view from the entities with a WorldTransform and a Camera, MeshRenderer or
-/// SkinnedMeshRenderer. A joint that is gone counts as the skinned entity itself. Run it after
-/// ecs::PropagateTransforms. The view goes through the given camera entity if it is alive and has a
-/// Camera. Otherwise, the camera with the lowest entity index is used.
-/// The vectors of the view are reused, so that a view kept between frames does not reallocate.
-void ExtractScene(ecs::World& world, SceneView& view, ecs::Entity activeCamera = {});
 
 } // namespace daidalos::renderer

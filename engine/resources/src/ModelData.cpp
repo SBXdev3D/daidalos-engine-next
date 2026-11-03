@@ -51,7 +51,7 @@ private:
     core::Result<MeshData> ReadPrimitive(const fastgltf::Primitive& primitive, const std::string& name) const;
 
     [[nodiscard]] tl::unexpected<core::Error> Invalid(const std::string& message) const {
-        return core::MakeError(core::ErrorCode::ParseError, std::string(kModule),
+        return core::MakeError(core::ErrorCode::ParseError, kModule,
                                std::format("Model '{}': {}", m_fileName, message));
     }
 
@@ -112,12 +112,9 @@ core::Result<std::optional<std::uint32_t>> ModelBuilder::AddTexture(std::size_t 
     if (const auto found = m_images.find(key); found != m_images.end()) {
         return found->second;
     }
-    core::Result<ImageSource> source = MakeImageSource(*image, use);
-    if (!source) {
-        return tl::unexpected(std::move(source.error()));
-    }
+    DAI_TRY_ASSIGN(ImageSource source, MakeImageSource(*image, use));
     const auto index = static_cast<std::uint32_t>(m_model.images.size());
-    m_model.images.push_back(std::move(*source));
+    m_model.images.push_back(std::move(source));
     m_images.emplace(key, index);
     return index;
 }
@@ -280,13 +277,10 @@ core::Result<void> ModelBuilder::AddMeshes() {
                 DAI_LOG_WARNING(kModule, "Model '{}': skipping {}, which is not made of triangles", m_fileName, name);
                 continue;
             }
-            core::Result<MeshData> data = ReadPrimitive(primitive, name);
-            if (!data) {
-                return tl::unexpected(std::move(data.error()));
-            }
+            DAI_TRY_ASSIGN(MeshData data, ReadPrimitive(primitive, name));
 
             ModelPrimitive added;
-            added.mesh = std::move(*data);
+            added.mesh = std::move(data);
             if (primitive.materialIndex.has_value()) {
                 added.material = static_cast<std::uint32_t>(*primitive.materialIndex);
             }
@@ -465,28 +459,18 @@ core::Result<void> ModelBuilder::AddAnimations() {
 }
 
 core::Result<ModelData> ModelBuilder::Build() {
-    if (core::Result<void> result = AddMaterials(); !result) {
-        return tl::unexpected(std::move(result.error()));
-    }
-    if (core::Result<void> result = AddMeshes(); !result) {
-        return tl::unexpected(std::move(result.error()));
-    }
+    DAI_TRY(AddMaterials());
+    DAI_TRY(AddMeshes());
     if (m_asset.scenes.empty()) {
         return Invalid("it has no scene");
     }
     const fastgltf::Scene& scene = m_asset.scenes[m_asset.defaultScene.value_or(0)];
     m_nodeIndices.assign(m_asset.nodes.size(), std::nullopt);
     for (const std::size_t root : scene.nodeIndices) {
-        if (core::Result<void> result = AddNode(root, std::nullopt, 0); !result) {
-            return tl::unexpected(std::move(result.error()));
-        }
+        DAI_TRY(AddNode(root, std::nullopt, 0));
     }
-    if (core::Result<void> result = AddSkins(); !result) {
-        return tl::unexpected(std::move(result.error()));
-    }
-    if (core::Result<void> result = AddAnimations(); !result) {
-        return tl::unexpected(std::move(result.error()));
-    }
+    DAI_TRY(AddSkins());
+    DAI_TRY(AddAnimations());
     return std::move(m_model);
 }
 
@@ -496,14 +480,12 @@ core::Result<ModelData> LoadModelFile(const std::filesystem::path& path) {
     DAI_PROFILE_SCOPE("resources::LoadModelFile");
     const std::string fileName = ToUtf8(path);
     if (!std::filesystem::is_regular_file(path)) {
-        return core::MakeError(core::ErrorCode::NotFound, std::string(kModule),
-                               std::format("Model file '{}' not found", fileName));
+        return core::MakeError(core::ErrorCode::NotFound, kModule, std::format("Model file '{}' not found", fileName));
     }
 
     fastgltf::GltfFileStream stream(path);
     if (!stream.isOpen()) {
-        return core::MakeError(core::ErrorCode::IoError, std::string(kModule),
-                               std::format("Cannot open model file '{}'", fileName));
+        return core::MakeError(core::ErrorCode::IoError, kModule, std::format("Cannot open model file '{}'", fileName));
     }
 
     fastgltf::Parser parser(fastgltf::Extensions::KHR_texture_basisu);
@@ -512,7 +494,7 @@ core::Result<ModelData> LoadModelFile(const std::filesystem::path& path) {
                                            fastgltf::Options::GenerateMeshIndices;
     fastgltf::Expected<fastgltf::Asset> asset = parser.loadGltf(stream, path.parent_path(), kOptions);
     if (asset.error() != fastgltf::Error::None) {
-        return core::MakeError(core::ErrorCode::ParseError, std::string(kModule),
+        return core::MakeError(core::ErrorCode::ParseError, kModule,
                                std::format("Model '{}': {}", fileName, fastgltf::getErrorMessage(asset.error())));
     }
     return ModelBuilder(asset.get(), path.parent_path(), fileName).Build();

@@ -7,7 +7,7 @@
 #include <daidalos/core/Result.hpp>
 #include <daidalos/core/SlotPool.hpp>
 #include <daidalos/renderer/Material.hpp>
-#include <daidalos/renderer/Scene.hpp>
+#include <daidalos/renderer/SceneView.hpp>
 #include <daidalos/resources/ModelData.hpp>
 #include <daidalos/rhi/Device.hpp>
 
@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace daidalos::renderer {
 
@@ -90,6 +91,15 @@ private:
     MaterialHandle m_defaultMaterial;
     std::array<FrameSlot, rhi::kFramesInFlight> m_frameSlots;
     std::uint32_t m_nextFrameSlot = 0;
+    /// A draw of the view, in the order Record issues it.
+    struct SortedDraw {
+        /// The pipeline, then the mesh: what changes least often comes first.
+        std::uint64_t key;
+        std::uint32_t draw;
+        MaterialHandle material;
+    };
+    /// Reused from frame to frame.
+    std::vector<SortedDraw> m_sorted;
 };
 
 } // namespace daidalos::renderer

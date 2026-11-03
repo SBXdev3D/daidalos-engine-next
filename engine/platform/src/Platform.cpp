@@ -85,7 +85,7 @@ detail::PlatformState::~PlatformState() {
 
 core::Result<Platform> Platform::Create(const PlatformConfig& config) {
     if (s_platformExists.exchange(true)) {
-        return core::MakeError(core::ErrorCode::InvalidState, std::string(kModule), "A Platform already exists");
+        return core::MakeError(core::ErrorCode::InvalidState, kModule, "A Platform already exists");
     }
 
     SDL_SetMainReady();
@@ -99,7 +99,7 @@ core::Result<Platform> Platform::Create(const PlatformConfig& config) {
         std::string message = std::format("Cannot initialize SDL video: {}", SDL_GetError());
         SDL_Quit();
         s_platformExists.store(false);
-        return core::MakeError(core::ErrorCode::DeviceError, std::string(kModule), std::move(message));
+        return core::MakeError(core::ErrorCode::DeviceError, kModule, std::move(message));
     }
 
     auto state = std::make_unique<detail::PlatformState>();
@@ -133,12 +133,10 @@ Platform& Platform::operator=(Platform&& other) noexcept = default;
 Platform::~Platform() = default;
 
 void Platform::PollEvents(std::vector<Event>& events) {
-    DAI_ASSERT(m_state, "Platform used after being moved from");
     AppendPendingEvents(*m_state, events);
 }
 
 void Platform::WaitEvents(std::chrono::milliseconds timeout, std::vector<Event>& events) {
-    DAI_ASSERT(m_state, "Platform used after being moved from");
     const auto milliseconds = static_cast<Sint32>(
         std::clamp<std::chrono::milliseconds::rep>(timeout.count(), 0, std::numeric_limits<Sint32>::max()));
     // Waiting with a null event leaves the event in the queue for AppendPendingEvents.
@@ -147,12 +145,10 @@ void Platform::WaitEvents(std::chrono::milliseconds timeout, std::vector<Event>&
 }
 
 bool Platform::GamepadsAvailable() const {
-    DAI_ASSERT(m_state, "Platform used after being moved from");
     return m_state->gamepadsAvailable;
 }
 
 std::string_view Platform::VideoDriver() const {
-    DAI_ASSERT(m_state, "Platform used after being moved from");
     return m_state->videoDriver;
 }
 

@@ -7,7 +7,7 @@
 #include <daidalos/ecs/World.hpp>
 #include <daidalos/input/ActionMap.hpp>
 #include <daidalos/physics/PhysicsWorld.hpp>
-#include <daidalos/renderer/AssetLibrary.hpp>
+#include <daidalos/scene/AssetLibrary.hpp>
 #include <daidalos/scene/Scene.hpp>
 
 #include <glm/vec3.hpp>
@@ -57,7 +57,7 @@ struct WeaponState {
 
 /// The player's state, as a component of the camera entity.
 struct Player {
-    daidalos::physics::CharacterId character;
+    daidalos::physics::CharacterHandle character;
     /// Where the feet were after the last two fixed steps: the camera draws in between.
     glm::vec3 previousFeet{0.0f};
     glm::vec3 feet{0.0f};
@@ -112,7 +112,7 @@ void Teleport(daidalos::scene::Scene& scene, daidalos::ecs::Entity entity, const
 /// "model" attribute get that model, from the level's directory: zombies and fans. Returns the
 /// player's entity.
 [[nodiscard]] daidalos::core::Result<daidalos::ecs::Entity>
-BuildLevel(daidalos::scene::Scene& scene, const daidalos::renderer::Model& model, std::string_view levelPath);
+BuildLevel(daidalos::scene::Scene& scene, const daidalos::scene::Model& model, std::string_view levelPath);
 
 /// What the input does to the world. The input and the actions must outlive the scene.
 void AddSystems(daidalos::scene::Scene& scene, const daidalos::input::InputState& input,

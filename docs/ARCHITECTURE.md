@@ -4,106 +4,59 @@ How the engine is built today, through Phase 6: physics, audio and animation, an
 
 ## Modules
 
-Each module is a static library in `engine/<module>/`, with public headers in `include/daidalos/<module>/`. An arrow means "links to". The graph comes from the `CMakeLists.txt` files, and it has no cycles.
+Each module is a static library in `engine/<module>/`. A module exists only if it is a real layer, or if it hides a large third-party library (ADR-0021). An arrow means "links to". The graph comes from the `CMakeLists.txt` files, and it has no cycles.
 
 ```mermaid
 flowchart TD
     sandbox["apps/sandbox"] --> app
-
-    subgraph application [Application]
-        app
-        scene
-        debugui["debugui<br/>(development builds)"]
-    end
-
-    subgraph rendering [Rendering]
-        renderer
-        rhi
-    end
-
-    subgraph world [World and data]
-        physics
-        audio
-        animation
-        ecs
-        resources
-        input
-    end
-
-    subgraph foundation [Foundation]
-        platform
-        logging
-        math
-        core
-    end
-
     app --> scene
-    app --> input
     scene --> renderer
-    scene --> ecs
     scene --> physics
     scene --> audio
-    scene --> animation
-    renderer --> animation
-    animation --> ecs
-    animation --> resources
-    physics --> ecs
-    audio --> ecs
-    app -.-> debugui
-    app --> renderer
-    debugui --> rhi
-    debugui --> platform
     renderer --> rhi
-    renderer --> ecs
-    renderer --> resources
     renderer --> platform
-    input --> platform
-    ecs --> math
-    resources --> math
-    rhi --> math
-    platform --> math
-    logging --> core
-    math -. private .-> core
+    renderer --> resources
+    rhi --> core
+    platform --> core
+    resources --> core
+    physics --> core
+    audio --> core
 ```
 
-To keep the graph readable, it omits the links to `core` and `logging` that nearly every module has.
+Every module also links to `core`; the graph only shows it for the bottom row.
 
 | Module | Responsibility | Third-party libraries it hides |
 |---|---|---|
-| `core` | `Result`, `Error`, `DAI_ASSERT`, generational handles, slot pool, frame timer, worker pool, cvars, profiling macros | tl::expected and Tracy (both public) |
-| `logging` | Logging facade | spdlog |
-| `math` | Conventions, transforms, reverse-Z projections, bounding boxes | GLM (public, on purpose: ADR-0005) |
-| `platform` | Window, events, Vulkan surface, processes, crash dumps | SDL3 |
-| `input` | Held, pressed and released state for keyboard, mouse and gamepads, and actions | |
-| `ecs` | Entities, sparse-set components, schedule, hierarchy, transform propagation | |
+| `core` | `Result`, `Error`, `DAI_ASSERT`, `DAI_TRY`, handles, slot pool, frame timer, worker pool, cvars, profiling macros, logging (`logging::`), conventions, transforms, projections and boxes (`math::`) | spdlog; GLM, tl::expected and Tracy are public on purpose |
+| `platform` | Window, events, Vulkan surface, processes, crash dumps, and keyboard, mouse and gamepad state with actions (`input::`) | SDL3 |
 | `resources` | Asset paths, caches, decoding of files into plain CPU data | fastgltf, KTX, stb |
-| `rhi` | Vulkan 1.3 device, swapchain, buffers, textures, pipelines, command lists | Vulkan, volk, VMA |
-| `renderer` | Mesh pass, skinning, materials, asset library, cameras, ECS extraction, shader hot reload | |
-| `physics` | Collisions, characters and ray queries of a scene, with Jolt hidden inside | ADR-0018 |
+| `rhi` | Vulkan 1.3 device, swapchain, buffers, textures, pipelines, command lists, batched uploads | Vulkan, volk, VMA |
+| `renderer` | Draws a `SceneView`: mesh pass, skinning, materials, shader hot reload, and the debug overlay (`debugui::`, development builds) | Dear ImGui |
+| `physics` | Collisions, characters and ray queries of a scene | Jolt |
 | `audio` | Output, mixing, clips and voices of a scene, silent without an output | miniaudio, stb_vorbis |
-| `animation` | Clips sampled from glTF, an animator that plays and blends them on joint entities | |
-| `scene` | A world with its assets, physics, sounds, systems, active camera and atmosphere | |
-| `debugui` | Dear ImGui overlay drawn through the RHI | Dear ImGui |
-| `app` | Ordered startup with rollback, main loop, current scene | |
+| `scene` | Entities (`ecs::`), animation (`animation::`), the asset library, the engine's components, the systems that tie entities to the renderer, physics and sounds, and the scene itself | |
+| `app` | Startup and shutdown in order, main loop, current scene | |
+
+Headers are included by namespace, not by module: `<daidalos/math/Transform.hpp>` lives in `core`, and `<daidalos/ecs/World.hpp>` in `scene`.
 
 Three rules keep this graph healthy:
 
-- **Nothing below `renderer` knows about Vulkan.** `rhi` hides it completely, with concrete classes and no virtual interface (ADR-0007).
-- **`rhi` does not depend on `platform`.** It receives a callback that creates the surface, so it can run with no window. The GPU tests rely on this.
-- **`resources` does not depend on `rhi`.** It produces plain CPU data, and `renderer` turns that into GPU objects (ADR-0016).
+- **Only `scene` knows about entities.** The renderer draws a `SceneView` of copies, and physics and audio know bodies and voices. `scene::ExtractScene`, `SyncKinematicBodies` and `SyncSoundEmitters` connect them to the ECS.
+- **Nothing above `rhi` knows about Vulkan.** `rhi` hides it completely, with concrete classes and no virtual interface (ADR-0007). It does not depend on `platform`: it receives a callback that creates the surface, so it can run with no window, which the GPU tests rely on.
+- **`resources` does not depend on `rhi`.** It produces plain CPU data, and `scene::AssetLibrary` turns that into GPU objects through the renderer (ADR-0016).
 
 ## Startup and shutdown
 
-`app::Application::Run` starts each step in order. If a step fails, the steps that already started are stopped in reverse order, so nothing runs half-initialized. A normal shutdown takes the same path.
+`app::Application::Start` starts each step in order. If a step fails, `Stop` releases whatever is started, in reverse order, so nothing runs half-initialized. A normal shutdown calls the same `Stop`.
 
 ```mermaid
 flowchart LR
     A[logging] --> B[crash handler] --> C[configuration] --> D[platform] --> E[main window] --> W[worker pool]
-    W --> AU[audio] --> F[renderer] --> G[debug overlay] --> S[scene slot] --> H["application<br/>OnStart"]
-    H -. "failure or shutdown:<br/>stop in reverse order" .-> A
+    W --> AU[audio] --> F[renderer] --> G[debug overlay] --> H["application<br/>OnStart"]
+    H -. "failure or shutdown:<br/>scene first, then reverse order" .-> A
 ```
 
-The game plugs in through `app::IApplicationHandler`: `OnStart`, `OnEvent`, `OnFixedUpdate`, `OnUpdate`, `OnRender` and `OnStop`. It usually gives the application a `scene::Scene`, which the application then runs. The scene slot makes sure that the scene goes before the renderer and the audio engine, even if `OnStart` fails. A machine with no audio output only gets a warning, and its scenes stay silent (ADR-0019).
+The game plugs in through `app::IApplicationHandler`: `OnStart`, `OnEvent`, `OnFixedUpdate`, `OnUpdate`, `OnRender` and `OnStop`. It usually gives the application a `scene::Scene`, which the application then runs. `Stop` releases the scene before anything else, because its assets and sounds belong to the renderer and the audio engine, even if `OnStart` failed halfway. A machine with no audio output only gets a warning, and its scenes stay silent (ADR-0019).
 
 ## One frame
 
@@ -145,12 +98,12 @@ sequenceDiagram
 flowchart LR
     F["glTF, PNG, JPEG, KTX2<br/>under assets/"] -->|"LoadModelFile<br/>LoadImageFile<br/>on a worker"| C["ModelData, ImageData<br/>plain CPU data"]
     C -->|"AssetLibrary<br/>on the main thread"| G["Meshes, materials, textures<br/>owned by handles,<br/>skins and clips"]
-    G -->|"Instantiate"| E["Entities with LocalTransform,<br/>MeshRenderer or SkinnedMeshRenderer,<br/>Animator on the root"]
-    E -->|"ExtractScene"| S["SceneView<br/>DrawItem list"]
+    G -->|"scene::Instantiate"| E["Entities with LocalTransform,<br/>MeshRenderer or SkinnedMeshRenderer,<br/>Animator on the root"]
+    E -->|"scene::ExtractScene"| S["SceneView<br/>DrawItem list"]
     S -->|"MeshPass::Record"| V["GPU commands"]
 ```
 
-An asset's identity is its normalized path relative to the asset root. The case must match the file on disk, so a mismatch fails on Windows as well as on Linux. A shared texture is uploaded once. `LoadModel` does all of this at once, and `LoadModelAsync` keeps the main thread running during the first arrow. Loading a replacement level happens in a second scene, which takes over when it is ready.
+An asset's identity is its normalized path relative to the asset root. The case must match the file on disk, so a mismatch fails on Windows as well as on Linux. A shared texture is uploaded once. `LoadModel` does all of this at once, and `LoadModelAsync` keeps the main thread running during the first arrow. The uploads of the second arrow are only recorded: they reach the GPU together, ahead of the next frame, and nothing waits for them. Loading a replacement level happens in a second scene, which takes over when it is ready.
 
 The sandbox's level comes from the legacy engine, through `scripts/import_legacy_level.py`: a single glTF file, whose node names tell the game what each node is (ADR-0017). Animated models have their own glTF files, which the level points to with `model=` in a node's name.
 
@@ -189,7 +142,7 @@ Solid arrows own, and dotted arrows only refer. GPU objects are never held by po
 
 - A draw with a destroyed mesh is skipped, and a draw with a destroyed material uses the default one, so unloading assets before entities is safe.
 - `Destroy*` invalidates the handle at once. The GPU object is released when the timeline semaphore shows that the GPU has finished with it.
-- The renderer must outlive every `AssetLibrary`, which the application's scene slot guarantees. There is no reference counting and no eviction (ADR-0016).
+- The renderer must outlive every `AssetLibrary`, which `Application::Stop` guarantees by releasing the scene first. There is no reference counting and no eviction (ADR-0016).
 
 ## How the GPU reads its data
 
@@ -212,7 +165,7 @@ flowchart LR
 | Location | What it covers | Needs a GPU |
 |---|---|---|
 | `tests/unit/<module>/` | Logic of one module, one executable per module | No |
-| `tests/gpu/<module>/` | `rhi`, `renderer`, `scene` and `debugui` on a real driver, with no mock device | Yes, or lavapipe on Linux |
+| `tests/gpu/<module>/` | `rhi`, `renderer` (with the debug overlay) and `scene` on a real driver, with no mock device | Yes, or lavapipe on Linux |
 
 CI runs on pull requests and on `main`: Windows MSVC and Linux Clang, in Debug, Release, ASan and Profile, plus a formatting check. Linux runs all GPU tests on lavapipe, under a virtual display. Windows runners have no Vulkan, so they skip those tests.
 
@@ -225,5 +178,5 @@ CI runs on pull requests and on `main`: Windows MSVC and Linux Clang, in Debug, 
 - Joint matrices are computed and uploaded for every skinned mesh, even out of view, and collisions use the bind pose of skinned meshes.
 - Nothing culls: every `DrawItem` is drawn.
 - There are no text input events, so ImGui text fields do not work.
-- Creating a model's GPU objects still happens all at once on the main thread, which can cause a hitch at the end of a load.
+- Creating a model's GPU objects still happens on the main thread: about 10 ms for the Factory level in Release, which is less than a frame at 60 Hz but more than one at 144 Hz.
 - Levels can only carry gameplay data in the names of glTF nodes.

@@ -112,15 +112,9 @@ MeshPass::~MeshPass() {
 
 core::Result<MeshPass> MeshPass::Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat) {
     MeshPass pass(device, colorFormat, depthFormat);
-    core::Result<void> built = pass.ReplaceShaders(rhi::ToSpirv(kMeshVsSpirv), rhi::ToSpirv(kMeshPsSpirv));
-    if (!built) {
-        return tl::unexpected(std::move(built.error()));
-    }
-    core::Result<MaterialHandle> defaultMaterial = pass.CreateMaterial({});
-    if (!defaultMaterial) {
-        return tl::unexpected(std::move(defaultMaterial.error()));
-    }
-    pass.m_defaultMaterial = *defaultMaterial;
+    DAI_TRY(pass.ReplaceShaders(rhi::ToSpirv(kMeshVsSpirv), rhi::ToSpirv(kMeshPsSpirv)));
+    DAI_TRY_ASSIGN(MaterialHandle defaultMaterial, pass.CreateMaterial({}));
+    pass.m_defaultMaterial = defaultMaterial;
     return pass;
 }
 
@@ -144,18 +138,15 @@ core::Result<rhi::PipelineHandle> MeshPass::BuildPipeline(std::span<const std::u
 
 core::Result<void> MeshPass::ReplaceShaders(std::span<const std::uint32_t> vertexShader,
                                             std::span<const std::uint32_t> fragmentShader) {
-    core::Result<rhi::PipelineHandle> pipeline = BuildPipeline(vertexShader, fragmentShader, rhi::CullMode::Back);
-    if (!pipeline) {
-        return tl::unexpected(std::move(pipeline.error()));
-    }
+    DAI_TRY_ASSIGN(rhi::PipelineHandle pipeline, BuildPipeline(vertexShader, fragmentShader, rhi::CullMode::Back));
     core::Result<rhi::PipelineHandle> doubleSided = BuildPipeline(vertexShader, fragmentShader, rhi::CullMode::None);
     if (!doubleSided) {
-        m_device->DestroyPipeline(*pipeline);
+        m_device->DestroyPipeline(pipeline);
         return tl::unexpected(std::move(doubleSided.error()));
     }
     m_device->DestroyPipeline(m_pipeline);
     m_device->DestroyPipeline(m_doubleSidedPipeline);
-    m_pipeline = *pipeline;
+    m_pipeline = pipeline;
     m_doubleSidedPipeline = *doubleSided;
     return {};
 }
@@ -167,23 +158,20 @@ core::Result<MeshHandle> MeshPass::CreateMesh(const resources::MeshData& data, c
     const auto vertexBytes = std::as_bytes(std::span(data.vertices));
     const auto indexBytes = std::as_bytes(std::span(data.indices));
 
-    core::Result<rhi::BufferHandle> vertices =
-        m_device->CreateBuffer({.size = vertexBytes.size(),
-                                .usage = rhi::BufferUsage::Vertex | rhi::BufferUsage::TransferDst,
-                                .name = std::format("{} vertices", name)});
-    if (!vertices) {
-        return tl::unexpected(std::move(vertices.error()));
-    }
+    DAI_TRY_ASSIGN(rhi::BufferHandle vertices,
+                   m_device->CreateBuffer({.size = vertexBytes.size(),
+                                           .usage = rhi::BufferUsage::Vertex | rhi::BufferUsage::TransferDst,
+                                           .name = std::format("{} vertices", name)}));
     core::Result<rhi::BufferHandle> indices =
         m_device->CreateBuffer({.size = indexBytes.size(),
                                 .usage = rhi::BufferUsage::Index | rhi::BufferUsage::TransferDst,
                                 .name = std::format("{} indices", name)});
     if (!indices) {
-        m_device->DestroyBuffer(*vertices);
+        m_device->DestroyBuffer(vertices);
         return tl::unexpected(std::move(indices.error()));
     }
 
-    core::Result<void> uploaded = m_device->UploadBuffer(*vertices, vertexBytes).and_then([&] {
+    core::Result<void> uploaded = m_device->UploadBuffer(vertices, vertexBytes).and_then([&] {
         return m_device->UploadBuffer(*indices, indexBytes);
     });
     rhi::BufferHandle skin;
@@ -199,12 +187,12 @@ core::Result<MeshHandle> MeshPass::CreateMesh(const resources::MeshData& data, c
         });
     }
     if (!uploaded) {
-        m_device->DestroyBuffer(*vertices);
+        m_device->DestroyBuffer(vertices);
         m_device->DestroyBuffer(*indices);
         m_device->DestroyBuffer(skin);
         return tl::unexpected(std::move(uploaded.error()));
     }
-    return m_meshes.Insert({*vertices, *indices, skin, static_cast<std::uint32_t>(data.indices.size())});
+    return m_meshes.Insert({vertices, *indices, skin, static_cast<std::uint32_t>(data.indices.size())});
 }
 
 void MeshPass::DestroyMesh(MeshHandle mesh) {
@@ -224,20 +212,17 @@ core::Result<void> MeshPass::ReserveMaterialSlot(std::uint32_t index) {
         return {};
     }
     const std::uint32_t capacity = std::max(kInitialMaterialCapacity, m_materialCapacity * 2);
-    core::Result<rhi::BufferHandle> table = m_device->CreateBuffer({.size = capacity * sizeof(GpuMaterial),
+    DAI_TRY_ASSIGN(rhi::BufferHandle table, m_device->CreateBuffer({.size = capacity * sizeof(GpuMaterial),
                                                                     .usage = rhi::BufferUsage::Storage,
                                                                     .memory = rhi::MemoryLocation::CpuToGpu,
-                                                                    .name = "Materials"});
-    if (!table) {
-        return tl::unexpected(std::move(table.error()));
-    }
+                                                                    .name = "Materials"}));
     if (m_materialTable) {
         // Frames in flight keep reading the old table, which goes away after them.
-        std::memcpy(m_device->Mapped(*table).data(), m_device->Mapped(m_materialTable).data(),
+        std::memcpy(m_device->Mapped(table).data(), m_device->Mapped(m_materialTable).data(),
                     m_materialCapacity * sizeof(GpuMaterial));
         m_device->DestroyBuffer(m_materialTable);
     }
-    m_materialTable = *table;
+    m_materialTable = table;
     m_materialCapacity = capacity;
     return {};
 }
@@ -278,39 +263,30 @@ void MeshPass::DestroyMaterial(MaterialHandle material) {
 
 core::Result<void> MeshPass::PrepareFrameSlot(FrameSlot& slot, std::uint64_t instanceCount, std::uint64_t jointCount) {
     if (!slot.frame) {
-        core::Result<rhi::BufferHandle> frame = m_device->CreateBuffer({.size = sizeof(FrameData),
+        DAI_TRY_ASSIGN(rhi::BufferHandle frame, m_device->CreateBuffer({.size = sizeof(FrameData),
                                                                         .usage = rhi::BufferUsage::Storage,
                                                                         .memory = rhi::MemoryLocation::CpuToGpu,
-                                                                        .name = "Frame data"});
-        if (!frame) {
-            return tl::unexpected(std::move(frame.error()));
-        }
-        slot.frame = *frame;
+                                                                        .name = "Frame data"}));
+        slot.frame = frame;
     }
     if (slot.instanceCapacity < instanceCount) {
         const std::uint64_t capacity = std::max({kInitialInstanceCapacity, instanceCount, slot.instanceCapacity * 2});
-        core::Result<rhi::BufferHandle> instances = m_device->CreateBuffer({.size = capacity * sizeof(InstanceData),
+        DAI_TRY_ASSIGN(rhi::BufferHandle instances, m_device->CreateBuffer({.size = capacity * sizeof(InstanceData),
                                                                             .usage = rhi::BufferUsage::Storage,
                                                                             .memory = rhi::MemoryLocation::CpuToGpu,
-                                                                            .name = "Instances"});
-        if (!instances) {
-            return tl::unexpected(std::move(instances.error()));
-        }
+                                                                            .name = "Instances"}));
         m_device->DestroyBuffer(slot.instances);
-        slot.instances = *instances;
+        slot.instances = instances;
         slot.instanceCapacity = capacity;
     }
     if (slot.jointCapacity < jointCount) {
         const std::uint64_t capacity = std::max({kInitialJointCapacity, jointCount, slot.jointCapacity * 2});
-        core::Result<rhi::BufferHandle> joints = m_device->CreateBuffer({.size = capacity * sizeof(glm::mat4),
+        DAI_TRY_ASSIGN(rhi::BufferHandle joints, m_device->CreateBuffer({.size = capacity * sizeof(glm::mat4),
                                                                          .usage = rhi::BufferUsage::Storage,
                                                                          .memory = rhi::MemoryLocation::CpuToGpu,
-                                                                         .name = "Joints"});
-        if (!joints) {
-            return tl::unexpected(std::move(joints.error()));
-        }
+                                                                         .name = "Joints"}));
         m_device->DestroyBuffer(slot.joints);
-        slot.joints = *joints;
+        slot.joints = joints;
         slot.jointCapacity = capacity;
     }
     return {};
@@ -357,28 +333,42 @@ core::Result<void> MeshPass::Record(rhi::CommandList& commands, const SceneView&
         .materialIndex = 0,
         .jointBuffer = m_device->StorageIndex(slot.joints),
     };
-    rhi::PipelineHandle bound;
-    for (const DrawItem& draw : view.draws) {
-        const Mesh* mesh = m_meshes.TryGet(draw.mesh);
-        if (mesh == nullptr) {
+    // Sorted, so that the pipeline and the buffers change as rarely as possible.
+    m_sorted.clear();
+    for (std::uint32_t index = 0; index < view.draws.size(); ++index) {
+        const DrawItem& draw = view.draws[index];
+        if (m_meshes.TryGet(draw.mesh) == nullptr) {
             continue;
         }
         const MaterialHandle material = m_materials.TryGet(draw.material) ? draw.material : m_defaultMaterial;
+        const std::uint64_t doubleSided = m_materials.Get(material).doubleSided ? 1 : 0;
+        m_sorted.push_back({(doubleSided << 32U) | draw.mesh.Index(), index, material});
+    }
+    std::ranges::sort(m_sorted, {}, &SortedDraw::key);
+
+    rhi::PipelineHandle boundPipeline;
+    MeshHandle boundMesh;
+    for (const SortedDraw& sorted : m_sorted) {
+        const DrawItem& draw = view.draws[sorted.draw];
+        const Mesh& mesh = m_meshes.Get(draw.mesh);
         const rhi::PipelineHandle pipeline =
-            m_materials.TryGet(material)->doubleSided ? m_doubleSidedPipeline : m_pipeline;
-        if (pipeline != bound) {
+            m_materials.Get(sorted.material).doubleSided ? m_doubleSidedPipeline : m_pipeline;
+        if (pipeline != boundPipeline) {
             commands.BindPipeline(pipeline);
-            bound = pipeline;
+            boundPipeline = pipeline;
+        }
+        if (draw.mesh != boundMesh) {
+            commands.BindVertexBuffer(mesh.vertices);
+            commands.BindIndexBuffer(mesh.indices, rhi::IndexType::Uint32);
+            boundMesh = draw.mesh;
         }
         // A skinned draw needs the skin of its mesh, and joints that the view holds. Otherwise it is rigid.
-        const bool skinned = mesh->skin && draw.firstJoint != kNoJoints && draw.firstJoint < view.jointMatrices.size();
+        const bool skinned = mesh.skin && draw.firstJoint != kNoJoints && draw.firstJoint < view.jointMatrices.size();
         instances[push.instanceIndex] = {
-            draw.world, skinned ? m_device->StorageIndex(mesh->skin) : 0, skinned ? draw.firstJoint : kNoJoints, {}};
-        push.materialIndex = material.Index();
-        commands.BindVertexBuffer(mesh->vertices);
-        commands.BindIndexBuffer(mesh->indices, rhi::IndexType::Uint32);
+            draw.world, skinned ? m_device->StorageIndex(mesh.skin) : 0, skinned ? draw.firstJoint : kNoJoints, {}};
+        push.materialIndex = sorted.material.Index();
         commands.Push(push);
-        commands.DrawIndexed(mesh->indexCount);
+        commands.DrawIndexed(mesh.indexCount);
         ++push.instanceIndex;
     }
     return {};

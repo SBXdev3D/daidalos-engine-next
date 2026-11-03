@@ -187,9 +187,7 @@ core::Result<TextureHandle> Swapchain::Impl::Acquire(std::uint32_t frameIndex) {
         if (config.extent.width == 0 || config.extent.height == 0) {
             return TextureHandle{};
         }
-        if (core::Result<void> recreated = Recreate(); !recreated) {
-            return tl::unexpected(std::move(recreated.error()));
-        }
+        DAI_TRY(Recreate());
         if (outdated) {
             return TextureHandle{};
         }
@@ -236,37 +234,30 @@ core::Result<void> Swapchain::Impl::Present() {
 
 core::Result<Swapchain> Swapchain::Create(Device& device, const SurfaceFactory& createSurface,
                                           const SwapchainConfig& config) {
-    DAI_ASSERT(device.m_impl, "Device used after being moved from");
     Device::Impl& deviceImpl = *device.m_impl;
 
-    core::Result<std::uint64_t> surface = createSurface(reinterpret_cast<std::uintptr_t>(deviceImpl.instance));
-    if (!surface) {
-        return tl::unexpected(std::move(surface.error()));
-    }
+    DAI_TRY_ASSIGN(std::uint64_t surface, createSurface(reinterpret_cast<std::uintptr_t>(deviceImpl.instance)));
 
     auto impl = std::make_unique<Impl>();
     impl->device = &deviceImpl;
     ++deviceImpl.swapchains;
-    impl->surface = reinterpret_cast<VkSurfaceKHR>(*surface);
+    impl->surface = reinterpret_cast<VkSurfaceKHR>(surface);
     impl->config = config;
 
     VkBool32 supported = VK_FALSE;
     vkGetPhysicalDeviceSurfaceSupportKHR(deviceImpl.physicalDevice, deviceImpl.queueFamily, impl->surface, &supported);
     if (supported == VK_FALSE) {
-        return core::MakeError(core::ErrorCode::NotSupported, std::string(kModule),
+        return core::MakeError(core::ErrorCode::NotSupported, kModule,
                                std::format("'{}' cannot present to this window", deviceImpl.info.name));
     }
     const std::optional<VkSurfaceFormatKHR> format = ChooseFormat(deviceImpl.physicalDevice, impl->surface);
     if (!format.has_value()) {
-        return core::MakeError(core::ErrorCode::NotSupported, std::string(kModule),
-                               "The window has no 8-bit sRGB surface format");
+        return core::MakeError(core::ErrorCode::NotSupported, kModule, "The window has no 8-bit sRGB surface format");
     }
     impl->surfaceFormat = *format;
 
     if (config.extent.width != 0 && config.extent.height != 0) {
-        if (core::Result<void> created = impl->Recreate(); !created) {
-            return tl::unexpected(std::move(created.error()));
-        }
+        DAI_TRY(impl->Recreate());
     }
     return Swapchain(std::move(impl));
 }
@@ -277,7 +268,6 @@ Swapchain& Swapchain::operator=(Swapchain&& other) noexcept = default;
 Swapchain::~Swapchain() = default;
 
 void Swapchain::Configure(const SwapchainConfig& config) {
-    DAI_ASSERT(m_impl, "Swapchain used after being moved from");
     if (config.extent != m_impl->config.extent || config.vsync != m_impl->config.vsync) {
         m_impl->config = config;
         m_impl->outdated = true;
@@ -285,12 +275,10 @@ void Swapchain::Configure(const SwapchainConfig& config) {
 }
 
 Format Swapchain::ColorFormat() const {
-    DAI_ASSERT(m_impl, "Swapchain used after being moved from");
     return FromVulkan(m_impl->surfaceFormat.format);
 }
 
 Extent Swapchain::CurrentExtent() const {
-    DAI_ASSERT(m_impl, "Swapchain used after being moved from");
     return m_impl->extent;
 }
 
