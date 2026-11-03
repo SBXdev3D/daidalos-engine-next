@@ -69,7 +69,8 @@ tests/unit/<module>/           unit tests for that module
 - `DAI_ASSERT(condition, message)` checks programming errors and invariants. It is never used for failures caused by data, files, or devices.
 - No exception crosses a module boundary. Code that calls a throwing API catches at the call site and returns an `Error`.
 - Logging goes through the engine facade: `DAI_LOG_INFO("module", "message {}", value)`. Logging does not replace returning an error.
-- Startup steps that can fail are added to an `app::StartupSequence`, which stops the steps already started when a later one fails.
+- A step whose only reaction to a failure is to pass it on uses `DAI_TRY(expression)`, or `DAI_TRY_ASSIGN(Type name, expression)` to keep the value. A step that must undo something first keeps an explicit `if`.
+- Startup steps are written in order, and a single function stops whatever is started, in reverse order: `app::Application::Start` and `Stop` are the model. Owned objects held in `std::optional` make that function a list of `reset()` calls.
 
 ## 4.1. Configuration variables
 
