@@ -81,6 +81,10 @@ public:
     /// tries again.
     [[nodiscard]] core::Result<const Model*> LoadModel(std::string_view path);
 
+    /// Creates a particle effect that the library owns and releases with its other assets.
+    [[nodiscard]] core::Result<renderer::ParticleEffectHandle>
+    CreateParticleEffect(const renderer::ParticleEffectDesc& desc);
+
     /// Returns a texture, loading it the first time, such as the image of particles. The handle lives as
     /// long as the library.
     [[nodiscard]] core::Result<rhi::TextureHandle>
@@ -125,6 +129,7 @@ private:
     resources::Cache<rhi::TextureHandle> m_textures;
     std::vector<renderer::MeshHandle> m_meshes;
     std::vector<renderer::MaterialHandle> m_materials;
+    std::vector<renderer::ParticleEffectHandle> m_particleEffects;
     std::vector<PendingLoad> m_pending;
 };
 

@@ -229,6 +229,126 @@ ecs::Entity AddLight(ecs::World& world, ecs::Entity parent, const glm::vec3& off
     return entity;
 }
 
+/// The effects of the legacy game's particle templates, in meters and seconds: lengths were 0.35 m per
+/// unit and times milliseconds. Every one uses a cell of the author's atlas, a grid of 4 by 4: cell 0 is a
+/// soft puff, 1 a hard white disc, 3 a rough bright burst.
+ParticleEffects MakeParticleEffects(scene::Scene& scene, const std::string& directory) {
+    ParticleEffects effects;
+    const core::Result<rhi::TextureHandle> atlas =
+        scene.Assets().LoadTexture(directory.empty() ? "particles.png" : directory + "/particles.png");
+    if (!atlas) {
+        DAI_LOG_WARNING("sandbox", "No particles: {}", core::Format(atlas.error()));
+        return effects;
+    }
+    const auto create = [&](renderer::ParticleEffectDesc desc) {
+        desc.texture = *atlas;
+        desc.columns = 4;
+        core::Result<renderer::ParticleEffectHandle> effect = scene.Assets().CreateParticleEffect(desc);
+        if (!effect) {
+            DAI_LOG_WARNING("sandbox", "A particle effect is missing: {}", core::Format(effect.error()));
+        }
+        return effect.value_or(renderer::ParticleEffectHandle{});
+    };
+    // The atlas's puffs are grey already: colors above it tint them.
+    const glm::vec4 green{0.5f, 1.0f, 0.5f, 0.2f};
+    effects.smokeLeak = create({.cell = 0,
+                                .startColor = {1.0f, 1.0f, 1.0f, 0.15f},
+                                .endColor = {1.0f, 1.0f, 1.0f, 0.0f},
+                                .lifetime = {2.0f, 6.0f},
+                                .size = {0.5f, 0.8f},
+                                .growth = 4.0f,
+                                .spawnRadius = 0.1f,
+                                .direction = {0.0f, 0.0f, -1.0f},
+                                .spread = 0.35f,
+                                .speed = {0.3f, 0.6f},
+                                .rotationSpeed = 0.2f,
+                                .softness = 0.5f});
+    effects.greenSmoke = create({.cell = 0,
+                                 .startColor = green,
+                                 .endColor = {green.r, green.g, green.b, 0.0f},
+                                 .lifetime = {0.5f, 5.0f},
+                                 .size = {1.4f, 1.4f},
+                                 .growth = 2.0f,
+                                 .spawnBox = {3.5f, 0.0f, 1.75f},
+                                 .speed = {0.7f, 1.05f},
+                                 .rotationSpeed = 0.2f,
+                                 .softness = 0.5f});
+    effects.greenFog = create({.cell = 0,
+                               .startColor = {green.r, green.g, green.b, 0.4f},
+                               .endColor = {green.r, green.g, green.b, 0.0f},
+                               .lifetime = {0.5f, 4.0f},
+                               .size = {2.1f, 2.1f},
+                               .growth = 1.33f,
+                               .spawnBox = {3.5f, 0.0f, 3.5f},
+                               .speed = {0.035f, 0.035f},
+                               .rotationSpeed = 0.1f,
+                               .softness = 0.8f});
+    effects.blood = create({.cell = 0,
+                            .startColor = {0.6f, 0.08f, 0.08f, 0.8f},
+                            .endColor = {0.4f, 0.05f, 0.05f, 0.0f},
+                            .collides = true,
+                            .bounce = 0.1f,
+                            .lifetime = {0.3f, 0.6f},
+                            .size = {0.04f, 0.07f},
+                            .growth = 2.0f,
+                            .spawnRadius = 0.035f,
+                            .spread = 1.2f,
+                            .speed = {0.7f, 3.5f},
+                            .gravity = 1.0f,
+                            .drag = 0.2f,
+                            .softness = 0.05f});
+    effects.sparks = create({.cell = 1,
+                             .startColor = {3.0f, 2.6f, 1.2f, 1.0f},
+                             .endColor = {3.0f, 1.5f, 0.5f, 0.0f},
+                             .additive = true,
+                             .lit = false,
+                             .collides = true,
+                             .bounce = 0.4f,
+                             .lifetime = {0.15f, 0.4f},
+                             .size = {0.03f, 0.05f},
+                             .spread = 1.2f,
+                             .speed = {1.5f, 4.0f},
+                             .gravity = 1.0f,
+                             .softness = 0.02f});
+    effects.gunSmoke = create({.cell = 0,
+                               .startColor = {1.0f, 1.0f, 1.0f, 0.12f},
+                               .endColor = {1.0f, 1.0f, 1.0f, 0.0f},
+                               .lifetime = {1.5f, 2.5f},
+                               .size = {0.04f, 0.06f},
+                               .growth = 3.0f,
+                               .spawnRadius = 0.035f,
+                               .speed = {0.14f, 0.28f},
+                               .drag = 0.2f,
+                               .rotationSpeed = 0.5f,
+                               .softness = 0.1f});
+    effects.muzzleFlash = create({.cell = 3,
+                                  .startColor = {2.5f, 2.2f, 1.0f, 1.0f},
+                                  .endColor = {2.5f, 1.6f, 0.6f, 0.0f},
+                                  .additive = true,
+                                  .lit = false,
+                                  .lifetime = {0.06f, 0.08f},
+                                  .size = {0.05f, 0.08f},
+                                  .spawnRadius = 0.02f,
+                                  .softness = 0.02f});
+    return effects;
+}
+
+/// A level emitter, by the name of its legacy template, at the rate the legacy game emitted.
+void AddParticleEmitter(ecs::World& world, ecs::Entity entity, const NodeDescription& node,
+                        const ParticleEffects& effects) {
+    const auto found = node.attributes.find("effect");
+    const std::string_view name = found == node.attributes.end() ? std::string_view{} : found->second;
+    if (name == "smokeLeakEmitter") {
+        world.Add<scene::ParticleEmitter>(entity, effects.smokeLeak, 12.0f);
+    } else if (name == "smokeGreenEmitter") {
+        world.Add<scene::ParticleEmitter>(entity, effects.greenSmoke, 100.0f);
+    } else if (name == "fogGreenEmitter") {
+        world.Add<scene::ParticleEmitter>(entity, effects.greenFog, 50.0f);
+    } else {
+        DAI_LOG_WARNING("sandbox", "Unknown particle effect '{}'", name);
+    }
+}
+
 /// A ceiling lamp of the level, which shines straight down.
 void AddSpotLight(ecs::World& world, ecs::Entity lamp, const NodeDescription& node) {
     const float angle = glm::radians(Number(node, "light_angle", 20.0f));
@@ -746,6 +866,7 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
             lockedDoors.push_back(Number(node, "id", 0));
         }
     }
+    const ParticleEffects& effects = world.Add<ParticleEffects>(playerEntity, MakeParticleEffects(scene, directory));
     // After the level's nodes are listed: the weapons have named nodes too, which are not the level's.
     SetUpCombat(scene, playerEntity, directory);
     std::minstd_rand random{std::random_device{}()};
@@ -774,6 +895,8 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
             AddAlarmLights(world, entity, node);
         } else if (node.kind == "spot") {
             AddSpotLight(world, entity, node);
+        } else if (node.kind == "particles") {
+            AddParticleEmitter(world, entity, node, effects);
         } else if (node.kind == "fan") {
             world.Add<LoopedSound>(entity, bank.fan, 0.7f, 1.0f, 20.0f);
         } else if (node.kind == "ladder") {

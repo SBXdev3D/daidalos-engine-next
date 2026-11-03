@@ -40,7 +40,10 @@ AssetLibrary::~AssetLibrary() {
     for (const PendingLoad& load : m_pending) {
         load.workers->Cancel(load.job);
     }
-    // Materials first: they refer to the textures.
+    // Effects and materials first: they refer to the textures.
+    for (const renderer::ParticleEffectHandle effect : m_particleEffects) {
+        m_renderer->DestroyParticleEffect(effect);
+    }
     for (const renderer::MaterialHandle material : m_materials) {
         m_renderer->DestroyMaterial(material);
     }
@@ -187,6 +190,13 @@ core::Result<const Model*> AssetLibrary::Build(std::string key, core::Result<Dec
                  key, decoded->data.primitives.size(), decoded->data.materials.size(), decoded->data.images.size(),
                  decoded->data.skins.size(), decoded->data.animations.size(), built.count());
     return &m_models.Insert(std::move(key), std::move(model));
+}
+
+core::Result<renderer::ParticleEffectHandle>
+AssetLibrary::CreateParticleEffect(const renderer::ParticleEffectDesc& desc) {
+    DAI_TRY_ASSIGN(renderer::ParticleEffectHandle effect, m_renderer->CreateParticleEffect(desc));
+    m_particleEffects.push_back(effect);
+    return effect;
 }
 
 core::Result<rhi::TextureHandle> AssetLibrary::LoadTexture(std::string_view path, resources::TextureUse use) {
