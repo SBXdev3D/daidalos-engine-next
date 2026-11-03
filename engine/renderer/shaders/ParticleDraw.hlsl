@@ -42,6 +42,8 @@ VertexOutput VSMain(uint vertexId : SV_VertexID, uint instance : SV_InstanceID) 
     const float2 cell = float2(effect.cell % effect.columns, effect.cell / effect.columns);
     output.uv = (cell + (corner * float2(0.5, -0.5) + 0.5)) * cellSize;
     output.color = lerp(effect.startColor, effect.endColor, life);
+    // Fades in over the first tenth of its life, so that a stream does not start with a hard edge.
+    output.color.a *= saturate(life * 10.0);
     output.worldPosition = world;
     output.effect = particle.effect;
     return output;

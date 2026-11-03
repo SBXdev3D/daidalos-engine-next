@@ -112,7 +112,11 @@ constexpr std::uint32_t kGroupSize = 64;
 constexpr std::uint32_t kGroups = (kMaxParticles + kGroupSize - 1) / kGroupSize;
 constexpr std::uint32_t kInitialEffectCapacity = 16;
 constexpr std::uint64_t kInitialSpawnCapacity = 64;
-static_assert(std::has_single_bit(kMaxParticles), "The bitonic sort needs a power of two");
+// The sort's groups, as in ParticleSort.hlsl: each sorts kSortLocal keys in its own memory.
+constexpr std::uint32_t kSortThreads = 1024;
+constexpr std::uint32_t kSortLocal = 2 * kSortThreads;
+static_assert(std::has_single_bit(kMaxParticles) && kMaxParticles >= kSortLocal,
+              "The bitonic sort needs a power of two, of whole groups");
 
 } // namespace
 
@@ -334,16 +338,22 @@ core::Result<void> ParticlePass::Simulate(rhi::CommandList& commands, std::span<
     commands.Dispatch(kGroups);
     commands.Barrier();
 
-    // Bitonic sort over the whole pool: the slots past the alive particles sort last.
+    // Bitonic sort over the whole pool: the slots past the alive particles sort last. Groups sort
+    // kSortLocal keys in their own memory; only the longer steps need a dispatch each.
     commands.BindPipeline(m_sort);
-    for (std::uint32_t block = 2; block <= kMaxParticles; block *= 2) {
-        for (std::uint32_t step = block / 2; step > 0; step /= 2) {
-            push.sortBlock = block;
-            push.sortStep = step;
-            commands.Push(push);
-            commands.Dispatch(kGroups);
-            commands.Barrier();
+    const auto sort = [&](std::uint32_t block, std::uint32_t step) {
+        push.sortBlock = block;
+        push.sortStep = step;
+        commands.Push(push);
+        commands.Dispatch(step == 0 ? kMaxParticles / kSortLocal : kMaxParticles / 2 / kSortThreads);
+        commands.Barrier();
+    };
+    sort(std::min(kSortLocal, kMaxParticles), 0);
+    for (std::uint32_t block = kSortLocal * 2; block <= kMaxParticles; block *= 2) {
+        for (std::uint32_t step = block / 2; step >= kSortLocal; step /= 2) {
+            sort(block, step);
         }
+        sort(block, 0);
     }
     m_current = next;
     return {};

@@ -501,6 +501,9 @@ protected:
                 .has_value());
     }
 
+    // Particles fade in over the first tenth of their life: a step past it shows them whole.
+    static constexpr float kPastFadeIn = 1.5f;
+
     std::optional<renderer::ParticlePass> m_particles;
     rhi::TextureHandle m_white;
 };
@@ -509,16 +512,16 @@ protected:
 
 TEST_F(ParticleTest, SpawnedParticleIsDrawnWhereItAppears) {
     const renderer::ParticleSpawn spawn{.effect = Effect({0.0f, 1.0f, 0.0f}), .count = 1};
-    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), 0.01f);
+    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), kPastFadeIn);
     EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0));
     EXPECT_TRUE(IsBackground(4, 4));
 }
 
 TEST_F(ParticleTest, ParticleDisappearsAtTheEndOfItsLife) {
     const renderer::ParticleSpawn spawn{.effect = Effect({0.0f, 1.0f, 0.0f}), .count = 1};
-    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), 0.01f);
+    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), kPastFadeIn);
     ASSERT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0));
-    RenderWithParticles({TestCamera()}, {}, 11.0f);
+    RenderWithParticles({TestCamera()}, {}, 9.0f);
     EXPECT_TRUE(IsBackground(32, 32));
 }
 
@@ -527,7 +530,18 @@ TEST_F(ParticleTest, NearerParticleIsDrawnOverAFartherOne) {
     const std::array<renderer::ParticleSpawn, 2> spawns{
         renderer::ParticleSpawn{.effect = Effect({1.0f, 0.0f, 0.0f}), .position = {0.0f, 0.0f, 1.0f}, .count = 1},
         renderer::ParticleSpawn{.effect = Effect({0.0f, 0.0f, 1.0f}), .position = {0.0f, 0.0f, -1.0f}, .count = 1}};
-    RenderWithParticles({TestCamera()}, spawns, 0.01f);
+    RenderWithParticles({TestCamera()}, spawns, kPastFadeIn);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(255, 0, 0));
+}
+
+TEST_F(ParticleTest, SortSpansTheWholePool) {
+    // Thousands of far particles before and after a near one, so that it sorts across the groups' runs.
+    const renderer::ParticleEffectHandle far = Effect({0.0f, 0.0f, 1.0f});
+    const std::array<renderer::ParticleSpawn, 3> spawns{
+        renderer::ParticleSpawn{.effect = far, .position = {0.0f, 0.0f, -1.0f}, .count = 5000},
+        renderer::ParticleSpawn{.effect = Effect({1.0f, 0.0f, 0.0f}), .position = {0.0f, 0.0f, 1.0f}, .count = 1},
+        renderer::ParticleSpawn{.effect = far, .position = {0.0f, 0.0f, -1.0f}, .count = 5000}};
+    RenderWithParticles({TestCamera()}, spawns, kPastFadeIn);
     EXPECT_EQ(Pixel(32, 32), glm::ivec3(255, 0, 0));
 }
 
@@ -536,15 +550,15 @@ TEST_F(ParticleTest, ParticleBehindAMeshIsHidden) {
     const renderer::ParticleSpawn spawn{
         .effect = Effect({0.0f, 1.0f, 0.0f}), .position = {0.0f, 0.0f, -1.0f}, .count = 1};
     RenderWithParticles({TestCamera(), {{wall, glm::mat4(1.0f), Material({1.0f, 0.0f, 0.0f})}}}, std::span(&spawn, 1),
-                        0.01f);
+                        kPastFadeIn);
     EXPECT_GT(Pixel(32, 32).r, 200);
     EXPECT_LT(Pixel(32, 32).g, 16);
 }
 
 TEST_F(ParticleTest, FullPoolDropsNewParticles) {
     const renderer::ParticleSpawn spawn{.effect = Effect({0.0f, 1.0f, 0.0f}), .count = renderer::kMaxParticles + 100};
-    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), 0.01f);
-    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), 0.01f);
+    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), kPastFadeIn);
+    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), kPastFadeIn);
     EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0));
 }
 

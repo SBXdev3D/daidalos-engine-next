@@ -30,7 +30,8 @@ struct ParticleEffectDesc {
     rhi::TextureHandle texture;
     std::uint32_t columns = 1;
     std::uint32_t cell = 0;
-    /// Linear color and opacity at birth and at death, blended over the particle's life.
+    /// Linear color and opacity at birth and at death, blended over the particle's life. Particles fade
+    /// in over the first tenth of it.
     glm::vec4 startColor{1.0f};
     glm::vec4 endColor{1.0f, 1.0f, 1.0f, 0.0f};
     /// Adds light instead of covering what is behind: sparks, flashes.
