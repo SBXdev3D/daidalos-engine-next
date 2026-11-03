@@ -25,6 +25,7 @@ Drafts of my Patreon posts about building Daidalos Engine Next. Each post is cop
 | 017 | [The factory finds its voice](posts/017-the-factory-finds-its-voice.md) | Progress, Phase 6.2 | Draft, 1 passage for me to write |
 | 018 | [The zombies wake up](posts/018-the-zombies-wake-up.md) | Progress, Phase 6.3 | Draft, 1 passage for me to write |
 | 019 | [Fighting back](posts/019-fighting-back.md) | Progress, Phase 6.4 | Draft, 1 passage for me to write |
+| 020 | [Spring cleaning](posts/020-spring-cleaning.md) | Progress, audit before Phase 7 | Draft, 1 passage for me to write |
 
 ## Layout
 
