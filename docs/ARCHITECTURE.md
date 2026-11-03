@@ -1,6 +1,6 @@
 # Architecture
 
-How the engine is built today, through Phase 7.3: real lights with shadows, clustered lights, ambient occlusion, PBR materials and normal maps. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
+How the engine is built today, through Phase 7.4: real lights with shadows, clustered lights, ambient occlusion, PBR materials, normal maps and particles on the GPU. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
 
 ## Modules
 
@@ -81,7 +81,7 @@ sequenceDiagram
     end
     A->>G: OnUpdate
     A->>S: Frame systems, then animators
-    A->>S: Extract: transforms, SceneView with joint matrices, sounds and listener
+    A->>S: Extract: transforms, SceneView with joint matrices, particle spawns, sounds and listener
     A->>G: OnRender
     A->>R: Render(SceneView, overlay)
     R->>R: Reload changed shaders
@@ -89,7 +89,9 @@ sequenceDiagram
     R->>D: Shadow maps of the four nearest shadowed spot lights
     R->>D: Pre-pass: depth and normals
     R->>D: Ambient occlusion, at half resolution
+    R->>D: Particles: emit, simulate, sort (compute)
     R->>D: Mesh pass into the HDR target, where depth is equal
+    R->>D: Particles drawn back to front, one indirect draw
     R->>D: Tonemap into the back buffer, then overlay
     R->>D: EndFrame: submit and present
 ```
@@ -184,6 +186,22 @@ A light's color is what a white surface facing it reflects up close, and it fade
 
 `MeshPass` keeps one frame slot per frame in flight, so the CPU never writes data the GPU is still reading. Shaders are HLSL, compiled to SPIR-V by DXC during the build and embedded in the binary. In development builds, the sources are watched and recompiled by the `dxc` executable (ADR-0009).
 
+## Particles
+
+Particles live on the GPU, in one pool of 16,384 (ADR-0025). The CPU only sends the frame's spawn requests: `scene::ParticleEmitter` entities emit at a steady rate, and `Scene::SpawnParticles` adds bursts.
+
+```mermaid
+flowchart LR
+    E["ParticleEmitter entities,<br/>Scene::SpawnParticles"] -->|"Extract"| V["SceneView::particleSpawns"]
+    V --> EM["Emit<br/>slots from the dead list"]
+    EM --> SI["Simulate<br/>gravity, drag, bounces<br/>off the pre-pass"]
+    SI --> FI["Finish<br/>draw arguments"]
+    FI --> SO["Bitonic sort<br/>back to front"]
+    SO --> D["Indirect draw<br/>soft, lit by clusters,<br/>premultiplied"]
+```
+
+Effects are created on the Renderer from a `ParticleEffectDesc`; `AssetLibrary::CreateParticleEffect` owns them with the level's other assets. Particles hide behind meshes and fade into them, lit ones take the light of their cluster, and additive ones glow in the same draw as the smoke.
+
 ## Tests
 
 | Location | What it covers | Needs a GPU |
@@ -196,7 +214,8 @@ CI runs on pull requests and on `main`: Windows MSVC and Linux Clang, in Debug, 
 ## Known gaps
 
 - No tool produces KTX2 files yet, although the loader reads them.
-- Ambient occlusion only sees what is on screen.
+- Ambient occlusion only sees what is on screen, and particles only collide with what is on screen.
+- Particles are lit evenly from every side, and they cast no shadow and receive none.
 - Point lights never cast shadows, and spot lights beyond the four nearest shadowed ones shine through walls.
 - Every draw goes into every shadow map, even outside the light's cone.
 - There are no reflections: metals reflect only an estimate of the ambient light.

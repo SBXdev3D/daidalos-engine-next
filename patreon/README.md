@@ -52,6 +52,7 @@ With my acquired knowledge and with the help of Claude Code, I decided to redo e
 | 021 | [The lights come on](posts/021-the-lights-come-on.md) | Progress, Phase 7.1 | Draft, 1 passage for me to write |
 | 022 | [Light stops at the walls](posts/022-shadows.md) | Progress, Phase 7.2 | Draft, 1 passage for me to write |
 | 023 | [Corners and creases](posts/023-corners-and-creases.md) | Progress, Phase 7.3 | Draft, 1 passage for me to write |
+| 024 | [Smoke and sparks](posts/024-smoke-and-sparks.md) | Progress, Phase 7.4 | Draft, 1 passage for me to write |
 
 ## Layout
 
