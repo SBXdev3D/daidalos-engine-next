@@ -1,5 +1,6 @@
 dai_add_test(NAME daidalos_renderer_tests
     SOURCES
+        LightClustersTests.cpp
         PrimitivesTests.cpp
         ShadowTests.cpp
         ShaderCompilerTests.cpp

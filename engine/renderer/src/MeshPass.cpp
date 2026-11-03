@@ -12,6 +12,7 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <shaders/Mesh.ps.spv.h>
 #include <shaders/Mesh.vs.spv.h>
+#include <shaders/Prepass.ps.spv.h>
 #include <shaders/ShadowMap.ps.spv.h>
 #include <shaders/ShadowMap.vs.spv.h>
 
@@ -40,6 +41,7 @@ struct MeshPushConstants {
 
 struct FrameData {
     glm::mat4 viewProjection;
+    glm::mat4 inverseViewProjection;
     glm::vec3 cameraPosition;
     float fogDensity;
     glm::vec3 fogColor;
@@ -50,7 +52,17 @@ struct FrameData {
     std::uint32_t shadowAtlas;
     float shadowTexel;
     float normalStrength;
+    glm::vec3 ambientBelow;
+    std::uint32_t occlusionTexture;
+    glm::vec2 screenTexel;
+    float nearPlane;
+    std::uint32_t clusterBuffer;
+    glm::vec3 cameraForward;
+    float clusterSliceScale;
+    std::uint32_t clusterLightBuffer;
+    std::array<std::uint32_t, 3> padding;
 };
+static_assert(sizeof(FrameData) == 256);
 
 struct LightData {
     glm::vec3 position;
@@ -155,9 +167,7 @@ MeshPass::MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format dep
 
 MeshPass::MeshPass(MeshPass&& other) noexcept
     : m_device(other.m_device), m_colorFormat(other.m_colorFormat), m_depthFormat(other.m_depthFormat),
-      m_pipeline(std::exchange(other.m_pipeline, {})),
-      m_doubleSidedPipeline(std::exchange(other.m_doubleSidedPipeline, {})),
-      m_shadowPipeline(std::exchange(other.m_shadowPipeline, {})),
+      m_pipelines(std::exchange(other.m_pipelines, {})), m_shadowPipeline(std::exchange(other.m_shadowPipeline, {})),
       m_shadowAtlas(std::exchange(other.m_shadowAtlas, {})), m_meshes(std::exchange(other.m_meshes, {})),
       m_materials(std::exchange(other.m_materials, {})), m_materialTable(std::exchange(other.m_materialTable, {})),
       m_materialCapacity(std::exchange(other.m_materialCapacity, 0)),
@@ -165,8 +175,7 @@ MeshPass::MeshPass(MeshPass&& other) noexcept
       m_frameSlots(std::exchange(other.m_frameSlots, {})), m_nextFrameSlot(other.m_nextFrameSlot) {}
 
 MeshPass::~MeshPass() {
-    m_device->DestroyPipeline(m_pipeline);
-    m_device->DestroyPipeline(m_doubleSidedPipeline);
+    DestroyPipelines(m_pipelines);
     m_meshes.ForEach([this](const Mesh& mesh) {
         m_device->DestroyBuffer(mesh.vertices);
         m_device->DestroyBuffer(mesh.indices);
@@ -179,6 +188,8 @@ MeshPass::~MeshPass() {
         m_device->DestroyBuffer(slot.joints);
         m_device->DestroyBuffer(slot.lights);
         m_device->DestroyBuffer(slot.shadows);
+        m_device->DestroyBuffer(slot.clusters);
+        m_device->DestroyBuffer(slot.clusterLights);
     }
     m_device->DestroyPipeline(m_shadowPipeline);
     m_device->DestroyTexture(m_shadowAtlas);
@@ -217,6 +228,10 @@ core::Result<void> MeshPass::CreateShadowResources() {
                                             .usage = rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled,
                                             .name = "Shadow atlas"}));
     for (FrameSlot& slot : m_frameSlots) {
+        DAI_TRY_ASSIGN(slot.clusters, m_device->CreateBuffer({.size = kClusterCount * sizeof(glm::uvec2),
+                                                              .usage = rhi::BufferUsage::Storage,
+                                                              .memory = rhi::MemoryLocation::CpuToGpu,
+                                                              .name = "Clusters"}));
         DAI_TRY_ASSIGN(slot.shadows, m_device->CreateBuffer({.size = kMaxShadowedLights * sizeof(ShadowData),
                                                              .usage = rhi::BufferUsage::Storage,
                                                              .memory = rhi::MemoryLocation::CpuToGpu,
@@ -227,7 +242,7 @@ core::Result<void> MeshPass::CreateShadowResources() {
 
 core::Result<rhi::PipelineHandle> MeshPass::BuildPipeline(std::span<const std::uint32_t> vertexShader,
                                                           std::span<const std::uint32_t> fragmentShader,
-                                                          rhi::CullMode cull) {
+                                                          rhi::CullMode cull, bool prepass) {
     using resources::Vertex;
     return m_device->CreatePipeline({
         .vertexShader = vertexShader,
@@ -237,25 +252,43 @@ core::Result<rhi::PipelineHandle> MeshPass::BuildPipeline(std::span<const std::u
                              {1, rhi::Format::Rgb32Float, static_cast<std::uint32_t>(offsetof(Vertex, normal))},
                              {2, rhi::Format::Rg32Float, static_cast<std::uint32_t>(offsetof(Vertex, uv))},
                              {3, rhi::Format::Rgba32Float, static_cast<std::uint32_t>(offsetof(Vertex, tangent))}},
-        .colorFormat = m_colorFormat,
+        .colorFormat = prepass ? kNormalFormat : m_colorFormat,
         .depthFormat = m_depthFormat,
+        // The mesh pass keeps the pre-pass's depth: equal depths pass the reverse-Z test.
+        .depthWrite = prepass,
         .cull = cull,
-        .name = "Mesh",
+        .name = prepass ? "Depth and normal pre-pass" : "Mesh",
     });
+}
+
+void MeshPass::DestroyPipelines(Pipelines& pipelines) {
+    m_device->DestroyPipeline(pipelines.prepass);
+    m_device->DestroyPipeline(pipelines.prepassDoubleSided);
+    m_device->DestroyPipeline(pipelines.mesh);
+    m_device->DestroyPipeline(pipelines.meshDoubleSided);
+    pipelines = {};
 }
 
 core::Result<void> MeshPass::ReplaceShaders(std::span<const std::uint32_t> vertexShader,
                                             std::span<const std::uint32_t> fragmentShader) {
-    DAI_TRY_ASSIGN(rhi::PipelineHandle pipeline, BuildPipeline(vertexShader, fragmentShader, rhi::CullMode::Back));
-    core::Result<rhi::PipelineHandle> doubleSided = BuildPipeline(vertexShader, fragmentShader, rhi::CullMode::None);
-    if (!doubleSided) {
-        m_device->DestroyPipeline(pipeline);
-        return tl::unexpected(std::move(doubleSided.error()));
+    const std::vector<std::uint32_t> prepassShader = rhi::ToSpirv(kPrepassPsSpirv);
+    Pipelines built;
+    const auto build = [&](rhi::PipelineHandle& pipeline, std::span<const std::uint32_t> fragment, rhi::CullMode cull,
+                           bool prepass) -> core::Result<void> {
+        DAI_TRY_ASSIGN(pipeline, BuildPipeline(vertexShader, fragment, cull, prepass));
+        return {};
+    };
+    core::Result<void> result =
+        build(built.prepass, prepassShader, rhi::CullMode::Back, true)
+            .and_then([&] { return build(built.prepassDoubleSided, prepassShader, rhi::CullMode::None, true); })
+            .and_then([&] { return build(built.mesh, fragmentShader, rhi::CullMode::Back, false); })
+            .and_then([&] { return build(built.meshDoubleSided, fragmentShader, rhi::CullMode::None, false); });
+    if (!result) {
+        DestroyPipelines(built);
+        return result;
     }
-    m_device->DestroyPipeline(m_pipeline);
-    m_device->DestroyPipeline(m_doubleSidedPipeline);
-    m_pipeline = pipeline;
-    m_doubleSidedPipeline = *doubleSided;
+    DestroyPipelines(m_pipelines);
+    m_pipelines = built;
     return {};
 }
 
@@ -395,6 +428,8 @@ core::Result<void> MeshPass::PrepareFrameSlot(FrameSlot& slot, const SceneView& 
                     sizeof(glm::mat4), "Joints"));
     DAI_TRY(reserve(slot.lights, slot.lightCapacity, view.lights.size(), kInitialLightCapacity, sizeof(LightData),
                     "Lights"));
+    DAI_TRY(reserve(slot.clusterLights, slot.clusterLightCapacity, m_clusters.lightIndices.size(),
+                    kInitialLightCapacity * 16, sizeof(std::uint32_t), "Cluster lights"));
     return {};
 }
 
@@ -412,7 +447,7 @@ std::vector<std::uint32_t> ChooseShadowedLights(std::span<const Light> lights, c
     return chosen;
 }
 
-core::Result<void> MeshPass::Prepare(const SceneView& view, float aspect) {
+core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& targets) {
     DAI_PROFILE_SCOPE("renderer::MeshPass::Prepare");
     m_prepared = nullptr;
     m_shadowCount = 0;
@@ -420,13 +455,20 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, float aspect) {
     if (!view.camera.has_value()) {
         return {};
     }
+    const CameraView& camera = *view.camera;
+    const float aspect =
+        static_cast<float>(targets.extent.width) / static_cast<float>(std::max(targets.extent.height, 1U));
+    AssignLightsToClusters(view.lights, {camera.view, camera.verticalFov, aspect, camera.nearPlane}, m_clusters);
+
     FrameSlot& slot = m_frameSlots[m_nextFrameSlot];
     m_nextFrameSlot = (m_nextFrameSlot + 1) % rhi::kFramesInFlight;
     DAI_TRY(PrepareFrameSlot(slot, view));
 
-    const CameraView& camera = *view.camera;
     const glm::vec3 cameraPosition = glm::inverse(camera.view)[3];
-    const FrameData frame{math::InfinitePerspectiveReverseZ(camera.verticalFov, aspect, camera.nearPlane) * camera.view,
+    const glm::mat4 viewProjection =
+        math::InfinitePerspectiveReverseZ(camera.verticalFov, aspect, camera.nearPlane) * camera.view;
+    const FrameData frame{viewProjection,
+                          glm::inverse(viewProjection),
                           cameraPosition,
                           view.atmosphere.fogDensity,
                           view.atmosphere.fogColor,
@@ -436,7 +478,23 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, float aspect) {
                           m_device->StorageIndex(slot.shadows),
                           m_device->BindlessIndex(m_shadowAtlas),
                           1.0f / static_cast<float>(kShadowAtlasSize),
-                          m_normalStrength};
+                          m_normalStrength,
+                          view.atmosphere.ambientBelow,
+                          targets.occlusion ? m_device->BindlessIndex(targets.occlusion) : kNoTexture,
+                          glm::vec2(1.0f / static_cast<float>(std::max(targets.extent.width, 1U)),
+                                    1.0f / static_cast<float>(std::max(targets.extent.height, 1U))),
+                          camera.nearPlane,
+                          m_device->StorageIndex(slot.clusters),
+                          glm::normalize(-glm::vec3(glm::inverse(camera.view)[2])),
+                          ClusterSliceScale(camera.nearPlane),
+                          m_device->StorageIndex(slot.clusterLights),
+                          {}};
+    std::memcpy(m_device->Mapped(slot.clusters).data(), m_clusters.ranges.data(),
+                m_clusters.ranges.size() * sizeof(glm::uvec2));
+    if (!m_clusters.lightIndices.empty()) {
+        std::memcpy(m_device->Mapped(slot.clusterLights).data(), m_clusters.lightIndices.data(),
+                    m_clusters.lightIndices.size() * sizeof(std::uint32_t));
+    }
     std::memcpy(m_device->Mapped(slot.frame).data(), &frame, sizeof(frame));
 
     auto* lights = reinterpret_cast<LightData*>(m_device->Mapped(slot.lights).data());
@@ -523,8 +581,22 @@ void MeshPass::RecordShadows(rhi::CommandList& commands) {
     commands.Transition(m_shadowAtlas, rhi::TextureState::ShaderRead);
 }
 
+void MeshPass::RecordPrepass(rhi::CommandList& commands) {
+    DAI_PROFILE_SCOPE("renderer::MeshPass::RecordPrepass");
+    RecordDraws(commands, m_pipelines.prepass, m_pipelines.prepassDoubleSided);
+}
+
 void MeshPass::Record(rhi::CommandList& commands) {
     DAI_PROFILE_SCOPE("renderer::MeshPass::Record");
+    RecordDraws(commands, m_pipelines.mesh, m_pipelines.meshDoubleSided);
+}
+
+std::uint32_t MeshPass::FrameDataIndex() const {
+    DAI_ASSERT(m_prepared != nullptr, "No frame is prepared");
+    return m_device->StorageIndex(m_prepared->frame);
+}
+
+void MeshPass::RecordDraws(rhi::CommandList& commands, rhi::PipelineHandle oneSided, rhi::PipelineHandle doubleSided) {
     if (m_prepared == nullptr) {
         return;
     }
@@ -542,8 +614,7 @@ void MeshPass::Record(rhi::CommandList& commands) {
     for (std::uint32_t index = 0; index < m_sorted.size(); ++index) {
         const SortedDraw& draw = m_sorted[index];
         const Mesh& mesh = m_meshes.Get(draw.mesh);
-        const rhi::PipelineHandle pipeline =
-            m_materials.Get(draw.material).doubleSided ? m_doubleSidedPipeline : m_pipeline;
+        const rhi::PipelineHandle pipeline = m_materials.Get(draw.material).doubleSided ? doubleSided : oneSided;
         if (pipeline != boundPipeline) {
             commands.BindPipeline(pipeline);
             boundPipeline = pipeline;

@@ -20,6 +20,7 @@ struct MeshPushConstants {
 
 struct FrameData {
     float4x4 viewProjection;
+    float4x4 inverseViewProjection;
     float3 cameraPosition;
     float fogDensity;
     float3 fogColor;
@@ -30,7 +31,21 @@ struct FrameData {
     uint shadowAtlas;  // Bindless index of the depth texture that holds every shadow map.
     float shadowTexel; // One texel of the atlas, in texture coordinates.
     float normalStrength; // Multiplies every normal map's tilt.
+    float3 ambientBelow;  // Ambient light from below; ambient comes from above.
+    uint occlusionTexture; // Half-resolution ambient occlusion, or kNoTexture.
+    float2 screenTexel;    // One pixel of the frame, in texture coordinates.
+    float nearPlane;       // Of the camera: with reverse-Z at infinity, view depth is nearPlane / depth.
+    uint clusterBuffer;    // For each cluster, the first of its lights in clusterLightBuffer, and their count.
+    float3 cameraForward;
+    float clusterSliceScale; // A depth's slice is log(depth / nearPlane) * clusterSliceScale.
+    uint clusterLightBuffer; // Indices into lightBuffer.
+    uint3 padding;
 };
+
+// Matches renderer/src/LightClusters.hpp.
+static const uint kClusterColumns = 16;
+static const uint kClusterRows = 9;
+static const uint kClusterSlices = 24;
 
 // A point light has a cosOuter of -2, which every direction passes.
 struct LightData {
@@ -98,7 +113,10 @@ struct MaterialData {
     uint emissiveTexture;
 };
 
+// Fullscreen passes declare their own push constants.
+#ifndef DAI_NO_MESH_PUSH_CONSTANTS
 [[vk::push_constant]] MeshPushConstants g_push;
+#endif
 [[vk::binding(0, 0)]] Texture2D g_textures[];
 [[vk::binding(1, 0)]] SamplerState g_samplers[4];
 [[vk::binding(2, 0)]] StructuredBuffer<FrameData> g_frames[];
@@ -108,12 +126,17 @@ struct MaterialData {
 [[vk::binding(2, 0)]] StructuredBuffer<SkinVertex> g_skins[];
 [[vk::binding(2, 0)]] StructuredBuffer<LightData> g_lights[];
 [[vk::binding(2, 0)]] StructuredBuffer<ShadowData> g_shadows[];
+[[vk::binding(2, 0)]] StructuredBuffer<uint2> g_clusters[];
+[[vk::binding(2, 0)]] StructuredBuffer<uint> g_clusterLights[];
 [[vk::binding(1, 0)]] SamplerComparisonState g_compareSamplers[4];
 
 // Matches rhi::SamplerIndex.
+static const uint kSamplerLinearClamp = 0;
 static const uint kSamplerLinearRepeat = 1;
+static const uint kSamplerNearestClamp = 2;
 static const uint kSamplerShadowCompare = 3;
 
+#ifndef DAI_NO_MESH_PUSH_CONSTANTS
 // The joints of a skinned vertex, blended by their weights (ADR-0020).
 float4x4 SkinMatrix(InstanceData instance, uint vertexId) {
     const SkinVertex skin = g_skins[instance.skinBuffer][vertexId];
@@ -134,5 +157,7 @@ float4x4 WorldMatrix(InstanceData instance, uint vertexId) {
     }
     return world;
 }
+
+#endif
 
 #endif

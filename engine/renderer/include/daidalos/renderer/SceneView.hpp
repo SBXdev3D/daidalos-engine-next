@@ -51,9 +51,12 @@ struct Atmosphere {
     glm::vec3 fogColor{0.02f, 0.02f, 0.03f};
     /// Fraction of the light lost per meter; 0 for clear air.
     float fogDensity = 0.0f;
-    /// Linear color. White shows every surface with its own colors, which suits a scene without
-    /// lights; a dark place keeps a little of it so that shadows are not pure black.
+    /// Linear color, of what comes from above. White shows every surface with its own colors, which
+    /// suits a scene without lights; a dark place keeps a little of it so that shadows are not pure black.
     glm::vec3 ambient{1.0f};
+    /// What comes from below. A surface facing sideways gets the average of the two, and its normal map
+    /// shows where it leans up or down. The same color as ambient makes the light even.
+    glm::vec3 ambientBelow{1.0f};
 };
 
 enum class LightType { Point, Spot };

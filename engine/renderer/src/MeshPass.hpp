@@ -17,7 +17,16 @@
 #include <string>
 #include <vector>
 
+#include "LightClusters.hpp"
+
 namespace daidalos::renderer {
+
+/// The targets of a frame that the mesh pass needs to know about.
+struct FrameTargets {
+    rhi::Extent extent;
+    /// The ambient occlusion of the frame, or null to leave ambient light unoccluded.
+    rhi::TextureHandle occlusion;
+};
 
 /// Owns the meshes, the materials and the pipelines that draw them. It works on any target, so that
 /// tests can run it without a window. The Device must outlive it.
@@ -37,19 +46,28 @@ public:
     [[nodiscard]] core::Result<MaterialHandle> CreateMaterial(const MaterialDesc& desc);
     void DestroyMaterial(MaterialHandle material);
 
-    /// Replaces the pipelines. On failure the current ones stay in use.
+    /// Normals of the pre-pass: world normals, times 0.5 plus 0.5.
+    static constexpr rhi::Format kNormalFormat = rhi::Format::Rgba8Unorm;
+
+    /// Replaces the shaders of the mesh pass. The pre-pass uses the same vertex shader, so that both
+    /// compute the same depth. On failure the current pipelines stay in use.
     [[nodiscard]] core::Result<void> ReplaceShaders(std::span<const std::uint32_t> vertexShader,
                                                     std::span<const std::uint32_t> fragmentShader);
 
-    /// A frame takes three steps. Prepare fills the frame's buffers from the view, outside any rendering
-    /// scope; aspect = width / height. Draws whose mesh has been destroyed are skipped, and draws whose
-    /// material has been use the default one. Without a camera, or after a failure to allocate, the
-    /// frame draws nothing.
-    [[nodiscard]] core::Result<void> Prepare(const SceneView& view, float aspect);
+    /// A frame takes four steps (ADR-0024). Prepare fills the frame's buffers from the view, outside any
+    /// rendering scope. Draws whose mesh has been destroyed are skipped, and draws whose material has been
+    /// use the default one. Without a camera, or after a failure to allocate, the frame draws nothing.
+    [[nodiscard]] core::Result<void> Prepare(const SceneView& view, const FrameTargets& targets);
     /// Draws the shadow maps of the prepared frame, outside any rendering scope.
     void RecordShadows(rhi::CommandList& commands);
-    /// Draws the prepared frame inside the current rendering scope.
+    /// Writes depth and normals, inside a rendering scope with a kNormalFormat target and a cleared depth.
+    void RecordPrepass(rhi::CommandList& commands);
+    /// Shades the prepared frame inside a rendering scope whose depth holds the pre-pass's: each pixel is
+    /// shaded once, where its depth equals the pre-pass's.
     void Record(rhi::CommandList& commands);
+
+    /// The storage index of the prepared frame's FrameData, for the passes that read it.
+    [[nodiscard]] std::uint32_t FrameDataIndex() const;
 
     /// Multiplies the tilt of every normal map, from the next Prepare.
     void SetNormalStrength(float strength) { m_normalStrength = strength; }
@@ -76,14 +94,27 @@ private:
         rhi::BufferHandle lights;
         std::uint64_t lightCapacity = 0;
         rhi::BufferHandle shadows;
+        rhi::BufferHandle clusters;
+        rhi::BufferHandle clusterLights;
+        std::uint64_t clusterLightCapacity = 0;
     };
 
     MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
 
     [[nodiscard]] core::Result<void> CreateShadowResources();
+    /// The pipelines of the pre-pass and the mesh pass, one-sided and double-sided.
+    struct Pipelines {
+        rhi::PipelineHandle prepass;
+        rhi::PipelineHandle prepassDoubleSided;
+        rhi::PipelineHandle mesh;
+        rhi::PipelineHandle meshDoubleSided;
+    };
     [[nodiscard]] core::Result<rhi::PipelineHandle> BuildPipeline(std::span<const std::uint32_t> vertexShader,
                                                                   std::span<const std::uint32_t> fragmentShader,
-                                                                  rhi::CullMode cull);
+                                                                  rhi::CullMode cull, bool prepass);
+    void DestroyPipelines(Pipelines& pipelines);
+    /// Draws the sorted draws with these pipelines, one-sided and double-sided.
+    void RecordDraws(rhi::CommandList& commands, rhi::PipelineHandle oneSided, rhi::PipelineHandle doubleSided);
     [[nodiscard]] core::Result<void> PrepareFrameSlot(FrameSlot& slot, const SceneView& view);
     /// Makes room for a material at this index of the table.
     [[nodiscard]] core::Result<void> ReserveMaterialSlot(std::uint32_t index);
@@ -92,8 +123,7 @@ private:
     rhi::Device* m_device;
     rhi::Format m_colorFormat;
     rhi::Format m_depthFormat;
-    rhi::PipelineHandle m_pipeline;
-    rhi::PipelineHandle m_doubleSidedPipeline;
+    Pipelines m_pipelines;
     rhi::PipelineHandle m_shadowPipeline;
     /// Every shadow map of a frame, side by side.
     rhi::TextureHandle m_shadowAtlas;
@@ -119,6 +149,8 @@ private:
     FrameSlot* m_prepared = nullptr;
     std::uint32_t m_shadowCount = 0;
     float m_normalStrength = 1.0f;
+    /// Reused from frame to frame.
+    LightClusters m_clusters;
     /// Reused from frame to frame.
     std::vector<SortedDraw> m_sorted;
 };

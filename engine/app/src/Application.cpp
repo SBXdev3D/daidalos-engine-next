@@ -163,6 +163,8 @@ core::Result<void> Application::LoadConfiguration() {
         m_exposure = m_cvars.Register<double>("renderer.exposure", 1.0, "Multiplies the light before tonemapping");
         m_anisotropy = m_cvars.Register<std::int64_t>(
             "renderer.anisotropy", 16, "Anisotropic filtering of textures, from 1 (off) to 16, read at startup");
+        m_ambientOcclusion = m_cvars.Register<bool>("renderer.ambient_occlusion", true,
+                                                    "Darken the ambient light in creases and corners");
         m_normalStrength = m_cvars.Register<double>(
             "renderer.normal_strength", 1.0, "Multiplies the relief of normal maps: 0 flattens them, 1 as authored");
         m_validation = m_cvars.Register<bool>("renderer.validation", kValidationByDefault,
@@ -223,14 +225,14 @@ core::Result<void> Application::CreateRenderer() {
     if (!m_config.rendering) {
         return {};
     }
-    DAI_TRY_ASSIGN(
-        renderer::Renderer created,
-        renderer::Renderer::Create(
-            *m_window, {.validation = m_validation->Get(),
-                        .vsync = m_vsync->Get(),
-                        .exposure = static_cast<float>(m_exposure->Get()),
-                        .anisotropy = static_cast<float>(std::clamp<std::int64_t>(m_anisotropy->Get(), 1, 16)),
-                        .normalStrength = static_cast<float>(m_normalStrength->Get())}));
+    DAI_TRY_ASSIGN(renderer::Renderer created,
+                   renderer::Renderer::Create(*m_window, {.validation = m_validation->Get(),
+                                                          .vsync = m_vsync->Get(),
+                                                          .exposure = static_cast<float>(m_exposure->Get()),
+                                                          .anisotropy = static_cast<float>(
+                                                              std::clamp<std::int64_t>(m_anisotropy->Get(), 1, 16)),
+                                                          .normalStrength = static_cast<float>(m_normalStrength->Get()),
+                                                          .ambientOcclusion = m_ambientOcclusion->Get()}));
     m_renderer.emplace(std::move(created));
     return {};
 }
@@ -268,6 +270,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_renderer->SetVsync(m_vsync->Get());
     m_renderer->SetExposure(static_cast<float>(m_exposure->Get()));
     m_renderer->SetNormalStrength(static_cast<float>(m_normalStrength->Get()));
+    m_renderer->SetAmbientOcclusion(m_ambientOcclusion->Get());
     core::Result<void> rendered = m_renderer->Render(m_scene, overlay);
     if (rendered && !overlayResult) {
         rendered = std::move(overlayResult);

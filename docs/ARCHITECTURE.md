@@ -1,6 +1,6 @@
 # Architecture
 
-How the engine is built today, through Phase 7.2: real lights with shadows, PBR materials and normal maps. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
+How the engine is built today, through Phase 7.3: real lights with shadows, clustered lights, ambient occlusion, PBR materials and normal maps. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
 
 ## Modules
 
@@ -87,7 +87,9 @@ sequenceDiagram
     R->>R: Reload changed shaders
     R->>D: BeginFrame: send the pending uploads, read last timestamps
     R->>D: Shadow maps of the four nearest shadowed spot lights
-    R->>D: Mesh pass into the HDR target
+    R->>D: Pre-pass: depth and normals
+    R->>D: Ambient occlusion, at half resolution
+    R->>D: Mesh pass into the HDR target, where depth is equal
     R->>D: Tonemap into the back buffer, then overlay
     R->>D: EndFrame: submit and present
 ```
@@ -170,12 +172,15 @@ flowchart LR
     E["scene::Light<br/>on entities"] -->|"ExtractScene"| L["SceneView::lights<br/>position, direction, color, range"]
     L -->|"four nearest<br/>shadowed spots"| SM["Shadow atlas<br/>2048², four tiles"]
     SM --> M
-    L --> M["Mesh pass<br/>GGX, normal maps,<br/>shadows, ambient, fog"]
+    L -->|"CPU clustering<br/>16×9×24"| CL["Cluster light lists"]
+    CL --> M["Mesh pass<br/>GGX, normal maps,<br/>shadows, ambient, fog"]
+    P["Pre-pass<br/>depth, normals"] --> AO["Ambient occlusion<br/>half resolution"]
+    AO --> M
     M --> H["HDR target<br/>Rgba16Float"]
     H -->|"exposure,<br/>PBR Neutral"| S["Swapchain<br/>sRGB"]
 ```
 
-A light's color is what a white surface facing it reflects up close, and it fades linearly to zero at its range, as in the legacy engine. Normal maps follow glTF (green up, bitangent from the tangent's `w`), and meshes that lack tangents get MikkTSpace ones at load. Spot lights can cast shadows: each frame, the four nearest the camera that ask for one get a tile of the shadow atlas (ADR-0023). Draws can opt out, as the sandbox's weapons do. Each pass is timed with GPU timestamps, which `Renderer::GpuTimes` returns and the sandbox's overlay shows.
+A light's color is what a white surface facing it reflects up close, and it fades linearly to zero at its range, as in the legacy engine. Normal maps follow glTF (green up, bitangent from the tangent's `w`), and meshes that lack tangents get MikkTSpace ones at load. Each frame, lights are assigned to 16×9×24 clusters of the view on the CPU, and a pixel shades only the lights of its cluster (ADR-0008). A pre-pass writes depth and normals first, so that the mesh pass shades each pixel once, and ambient occlusion darkens the ambient light in creases (ADR-0024). The ambient light itself comes more from above than from below. Spot lights can cast shadows: each frame, the four nearest the camera that ask for one get a tile of the shadow atlas (ADR-0023). Draws can opt out, as the sandbox's weapons do. Each pass is timed with GPU timestamps, which `Renderer::GpuTimes` returns and the sandbox's overlay shows.
 
 `MeshPass` keeps one frame slot per frame in flight, so the CPU never writes data the GPU is still reading. Shaders are HLSL, compiled to SPIR-V by DXC during the build and embedded in the binary. In development builds, the sources are watched and recompiled by the `dxc` executable (ADR-0009).
 
@@ -191,7 +196,7 @@ CI runs on pull requests and on `main`: Windows MSVC and Linux Clang, in Debug, 
 ## Known gaps
 
 - No tool produces KTX2 files yet, although the loader reads them.
-- Every light is evaluated for every pixel: clustering comes in Phase 7.3, and so does ambient occlusion.
+- Ambient occlusion only sees what is on screen.
 - Point lights never cast shadows, and spot lights beyond the four nearest shadowed ones shine through walls.
 - Every draw goes into every shadow map, even outside the light's cone.
 - There are no reflections: metals reflect only an estimate of the ambient light.

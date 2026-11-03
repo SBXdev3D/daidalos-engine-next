@@ -16,7 +16,7 @@ Until Phase 7, the factory's darkness was fog, with one cone of light cut throug
 - **Normal maps follow glTF**: tangents with their handedness in `w`, the bitangent is `cross(normal, tangent) * w`, and green points up the image. Missing tangents are generated at load with **MikkTSpace**, the standard that glTF and baking tools use, fed with `v` flipped because MikkTSpace expects OpenGL texture coordinates. Only red and green are read, and blue is rebuilt, so two-channel compression (BC5) will work. The legacy maps were measured green-up against their diffuse maps' grooves, so they are used as they are.
 - **Lights are entities.** `scene::Light` (point or spot) is extracted from world transforms into `SceneView::lights`; a spot light shines down its entity's local -Z. The renderer has no light of its own.
 - **Every pass is timed on the GPU** with timestamps, read without waiting when a frame slot comes round, and shown in the overlay.
-- **Every light is evaluated for every pixel** for now. Clustered light assignment comes in Phase 7.3 (ADR-0008).
+- **Every light is evaluated for every pixel** for now. Clustered light assignment comes in Phase 7.3 (ADR-0008, now done).
 
 ## Consequences
 

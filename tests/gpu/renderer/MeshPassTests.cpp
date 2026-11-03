@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "AmbientOcclusionPass.hpp"
 #include "GpuFixture.hpp"
 #include "MeshPass.hpp"
 #include "ShaderCompiler.hpp"
@@ -75,10 +76,20 @@ protected:
                                     .name = "Color"});
         ASSERT_TRUE(color.has_value());
         m_color = *color;
-        const core::Result<rhi::TextureHandle> depth = Device().CreateTexture(
-            {.extent = kExtent, .format = kDepthFormat, .usage = rhi::TextureUsage::DepthTarget, .name = "Depth"});
+        const core::Result<rhi::TextureHandle> depth =
+            Device().CreateTexture({.extent = kExtent,
+                                    .format = kDepthFormat,
+                                    .usage = rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled,
+                                    .name = "Depth"});
         ASSERT_TRUE(depth.has_value());
         m_depth = *depth;
+        const core::Result<rhi::TextureHandle> normals =
+            Device().CreateTexture({.extent = kExtent,
+                                    .format = MeshPass::kNormalFormat,
+                                    .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
+                                    .name = "Normals"});
+        ASSERT_TRUE(normals.has_value());
+        m_normals = *normals;
         const core::Result<rhi::BufferHandle> readback =
             Device().CreateBuffer({.size = std::uint64_t{kExtent.width} * kExtent.height * 4,
                                    .usage = rhi::BufferUsage::TransferDst,
@@ -93,6 +104,7 @@ protected:
             m_pass.reset();
             Device().DestroyTexture(m_color);
             Device().DestroyTexture(m_depth);
+            Device().DestroyTexture(m_normals);
             Device().DestroyBuffer(m_readback);
         }
         GpuTest::TearDown();
@@ -117,14 +129,19 @@ protected:
     void Render(const SceneView& view) {
         ASSERT_TRUE(Device()
                         .Submit([&](rhi::CommandList& commands) {
-                            EXPECT_TRUE(m_pass->Prepare(view, 1.0f).has_value());
+                            EXPECT_TRUE(m_pass->Prepare(view, {.extent = kExtent}).has_value());
                             m_pass->RecordShadows(commands);
-                            commands.Discard(m_color, rhi::TextureState::ColorTarget);
+                            commands.Discard(m_normals, rhi::TextureState::ColorTarget);
                             commands.Discard(m_depth, rhi::TextureState::DepthTarget);
-                            commands.BeginRendering({.colorTarget = m_color,
-                                                     .clearColor = kBackground,
+                            commands.BeginRendering({.colorTarget = m_normals,
+                                                     .clearColor = glm::vec4(0.0f),
                                                      .depthTarget = m_depth,
                                                      .clearDepth = 0.0f});
+                            m_pass->RecordPrepass(commands);
+                            commands.EndRendering();
+                            commands.Discard(m_color, rhi::TextureState::ColorTarget);
+                            commands.BeginRendering(
+                                {.colorTarget = m_color, .clearColor = kBackground, .depthTarget = m_depth});
                             m_pass->Record(commands);
                             commands.EndRendering();
                             commands.Transition(m_color, rhi::TextureState::TransferSrc);
@@ -146,6 +163,7 @@ protected:
     std::optional<MeshPass> m_pass;
     rhi::TextureHandle m_color;
     rhi::TextureHandle m_depth;
+    rhi::TextureHandle m_normals;
     rhi::BufferHandle m_readback;
 };
 
@@ -215,6 +233,7 @@ TEST_F(MeshPassTest, WorldMatrixMovesTheMesh) {
 SceneView LitView(const CameraView& camera, renderer::DrawItem draw, const renderer::Light& light) {
     SceneView view{camera, {draw}};
     view.atmosphere.ambient = glm::vec3(0.0f);
+    view.atmosphere.ambientBelow = glm::vec3(0.0f);
     view.lights.push_back(light);
     return view;
 }
@@ -228,8 +247,28 @@ TEST_F(MeshPassTest, WithoutLightsTheAmbientLightShowsTheBaseColor) {
     EXPECT_NEAR(Pixel(32, 32).g, 64, 6);
 
     view.atmosphere.ambient = glm::vec3(0.0f);
+    view.atmosphere.ambientBelow = glm::vec3(0.0f);
     Render(view);
     EXPECT_EQ(Pixel(32, 32), glm::ivec3(0));
+}
+
+TEST_F(MeshPassTest, AmbientLightFromAboveLightsWhatFacesUp) {
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
+    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
+    const auto shade = [&](float degrees) {
+        SceneView view{
+            TestCamera(),
+            {{mesh, glm::rotate(glm::mat4(1.0f), glm::radians(degrees), glm::vec3(1.0f, 0.0f, 0.0f)), white}}};
+        view.atmosphere.ambient = glm::vec3(1.0f);
+        view.atmosphere.ambientBelow = glm::vec3(0.0f);
+        Render(view);
+        return Pixel(32, 32).r;
+    };
+    const int facingUp = shade(-60.0f);
+    const int facingCamera = shade(0.0f);
+    const int facingDown = shade(60.0f);
+    EXPECT_GT(facingUp, facingCamera + 30);
+    EXPECT_GT(facingCamera, facingDown + 30);
 }
 
 TEST_F(MeshPassTest, NormalsFollowTheWorldRotation) {
@@ -346,6 +385,54 @@ TEST_F(MeshPassTest, SpotLightCastsTheShadowOfWhatStandsInItsWay) {
     EXPECT_GT(Pixel(20, 32).r, 100);
 }
 
+TEST_F(MeshPassTest, AmbientOcclusionDarkensACreaseAndNotAnOpenWall) {
+    // A back wall facing the camera, and a side wall standing out of it at x = -1, from y = 0 to 2. Along
+    // the line where they meet, the hemisphere above the back wall is half closed; far to the right, open.
+    const MeshHandle back = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
+    const MeshHandle side = Mesh(MakeQuad(-4.0f, 4.0f, 0.0f, 2.0f, 0.0f));
+    const glm::mat4 standing = glm::rotate(glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 0.0f, 0.0f)),
+                                           glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
+    const SceneView view{TestCamera(), {{back, glm::mat4(1.0f), white}, {side, standing, white}}};
+    Render(view);
+
+    core::Result<renderer::AmbientOcclusionPass> created = renderer::AmbientOcclusionPass::Create(Device());
+    ASSERT_TRUE(created.has_value()) << core::Format(created.error());
+    renderer::AmbientOcclusionPass& occlusion = *created;
+    ASSERT_TRUE(occlusion.Resize(kExtent).has_value());
+    constexpr std::uint32_t kHalf = kExtent.width / 2;
+    const core::Result<rhi::BufferHandle> readback = Device().CreateBuffer({.size = kHalf * kHalf,
+                                                                            .usage = rhi::BufferUsage::TransferDst,
+                                                                            .memory = rhi::MemoryLocation::GpuToCpu,
+                                                                            .name = "Occlusion readback"});
+    ASSERT_TRUE(readback.has_value());
+    ASSERT_TRUE(Device()
+                    .Submit([&](rhi::CommandList& commands) {
+                        commands.Transition(m_depth, rhi::TextureState::ShaderRead);
+                        commands.Transition(m_normals, rhi::TextureState::ShaderRead);
+                        occlusion.Record(commands, m_pass->FrameDataIndex(), m_depth, m_normals);
+                        commands.Transition(occlusion.Output(), rhi::TextureState::TransferSrc);
+                        commands.CopyTextureToBuffer(occlusion.Output(), *readback);
+                    })
+                    .has_value());
+
+    const auto open = [&](std::uint32_t x, std::uint32_t y) {
+        return static_cast<int>(
+            reinterpret_cast<const std::uint8_t*>(Device().Mapped(*readback).data())[std::size_t{y} * kHalf + x]);
+    };
+    // The crease is a third of the way across, in the upper half; the open wall is at the right.
+    std::string row;
+    for (std::uint32_t x = 0; x < kHalf; ++x) {
+        row += std::to_string(open(x, 10)) + " ";
+    }
+    const int crease = open(12, 10);
+    const int openWall = open(28, 10);
+    SCOPED_TRACE(row);
+    EXPECT_GT(openWall, 240) << "an open wall stays open";
+    EXPECT_LT(crease, openWall - 30) << "the crease is darker";
+    Device().DestroyBuffer(*readback);
+}
+
 TEST_F(MeshPassTest, DestroyedMeshIsSkipped) {
     const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
     m_pass->DestroyMesh(mesh);
@@ -357,17 +444,15 @@ TEST_F(MeshPassTest, ReloadedShadersAreUsedByTheNextFrame) {
     const std::filesystem::path directory = std::filesystem::temp_directory_path() / "daidalos-reload-test";
     std::filesystem::create_directories(directory);
     const std::filesystem::path source = directory / "Green.hlsl";
+    // The vertex shader of the mesh pass, which the pre-pass shares, and a pixel shader of its own.
     std::ofstream(source) << R"(
-#include "MeshTypes.hlsli"
-float4 VSMain(float3 position : POSITION) : SV_Position {
-    const float4x4 viewProjection = g_frames[g_push.frameBuffer][0].viewProjection;
-    const float4x4 world = g_instances[g_push.instanceBuffer][g_push.instanceIndex].world;
-    return mul(viewProjection, mul(world, float4(position, 1.0)));
-}
-float4 PSMain() : SV_Target { return float4(0.0, 1.0, 0.0, 1.0); }
+#include "MeshCommon.hlsli"
+float4 PSMain(VertexOutput input) : SV_Target { return float4(0.0, 1.0, 0.0, 1.0); }
 )";
-    std::filesystem::copy_file(std::filesystem::path(DAI_SHADER_SOURCE_DIR) / "MeshTypes.hlsli",
-                               directory / "MeshTypes.hlsli", std::filesystem::copy_options::overwrite_existing);
+    for (const char* include : {"MeshTypes.hlsli", "MeshCommon.hlsli"}) {
+        std::filesystem::copy_file(std::filesystem::path(DAI_SHADER_SOURCE_DIR) / include, directory / include,
+                                   std::filesystem::copy_options::overwrite_existing);
+    }
 
     const auto vertex = renderer::CompileShader(DAI_DXC_PATH, source, renderer::ShaderStage::Vertex);
     ASSERT_TRUE(vertex.has_value()) << core::Format(vertex.error());

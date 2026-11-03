@@ -3,69 +3,20 @@
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
 // Forward shading of opaque meshes, in linear HDR (ADR-0022): metallic-roughness PBR with normal maps,
-// the frame's lights, ambient light, occlusion, emission and distance fog. Every light is evaluated for
-// every pixel, until the clusters of Phase 7.3. Up to four spot lights have a shadow map (ADR-0023).
+// the frame's lights, ambient light, occlusion, emission and distance fog. A pixel evaluates only the
+// lights of its cluster (ADR-0008). Up to four spot lights have a shadow map (ADR-0023).
+// The ambient light is darkened by the frame's ambient occlusion (ADR-0024).
 
-#include "MeshTypes.hlsli"
+#include "MeshCommon.hlsli"
 
-static const float kPi = 3.14159265;
-
-struct VertexInput {
-    [[vk::location(0)]] float3 position : POSITION;
-    [[vk::location(1)]] float3 normal : NORMAL;
-    [[vk::location(2)]] float2 uv : TEXCOORD;
-    [[vk::location(3)]] float4 tangent : TANGENT;
-};
-
-struct VertexOutput {
-    float4 clipPosition : SV_Position;
-    [[vk::location(0)]] float3 worldNormal : NORMAL;
-    [[vk::location(1)]] float2 uv : TEXCOORD;
-    [[vk::location(2)]] float3 worldPosition : POSITION;
-    [[vk::location(3)]] float4 worldTangent : TANGENT;
-};
-
-// Transforms a normal with the cofactor matrix, which stays correct under non-uniform scale and
-// needs no inverse.
-float3 TransformNormal(float4x4 world, float3 normal) {
-    const float3 x = float3(world[0][0], world[1][0], world[2][0]);
-    const float3 y = float3(world[0][1], world[1][1], world[2][1]);
-    const float3 z = float3(world[0][2], world[1][2], world[2][2]);
-    return cross(y, z) * normal.x + cross(z, x) * normal.y + cross(x, y) * normal.z;
-}
-
-VertexOutput VSMain(VertexInput input, uint vertexId : SV_VertexID) {
-    const float4x4 viewProjection = g_frames[g_push.frameBuffer][0].viewProjection;
-    const InstanceData instance = g_instances[g_push.instanceBuffer][g_push.instanceIndex];
-    const float4x4 world = WorldMatrix(instance, vertexId);
-
-    VertexOutput output;
-    const float4 worldPosition = mul(world, float4(input.position, 1.0));
-    output.clipPosition = mul(viewProjection, worldPosition);
-    output.worldNormal = TransformNormal(world, input.normal);
-    // A tangent lies in the surface, so it follows the matrix itself.
-    output.worldTangent = float4(mul((float3x3)world, input.tangent.xyz), input.tangent.w);
-    output.uv = input.uv;
-    output.worldPosition = worldPosition.xyz;
-    return output;
-}
-
-float4 SampleTexture(uint texture, float2 uv, float4 fallback) {
-    return texture != kNoTexture ? g_textures[texture].Sample(g_samplers[kSamplerLinearRepeat], uv) : fallback;
-}
-
-// The normal map, in the tangent frame of glTF: the bitangent is cross(normal, tangent) * w. Only red and
-// green are read, and blue is rebuilt, so that two-channel compression works too.
-float3 ApplyNormalMap(MaterialData material, float strength, float3 normal, float4 tangent, float2 uv) {
-    if (material.normalTexture == kNoTexture || dot(tangent.xyz, tangent.xyz) == 0.0) {
-        return normal;
-    }
-    const float3 t = normalize(tangent.xyz - normal * dot(normal, tangent.xyz));
-    const float3 b = cross(normal, t) * (tangent.w < 0.0 ? -1.0 : 1.0);
-    float2 xy = SampleTexture(material.normalTexture, uv, float4(0.5, 0.5, 1.0, 1.0)).rg * 2.0 - 1.0;
-    xy *= material.normalScale * strength;
-    const float z = sqrt(saturate(1.0 - dot(xy, xy)));
-    return normalize(t * xy.x + b * xy.y + normal * z);
+// The cluster of a pixel: its tile of the screen, and its slice of depth (ADR-0008).
+uint ClusterOf(FrameData frame, float2 pixel, float3 worldPosition) {
+    const float2 tile = pixel * frame.screenTexel * float2(kClusterColumns, kClusterRows);
+    const uint column = min(uint(tile.x), kClusterColumns - 1);
+    const uint row = min(uint(tile.y), kClusterRows - 1);
+    const float depth = max(dot(worldPosition - frame.cameraPosition, frame.cameraForward), frame.nearPlane);
+    const uint slice = min(uint(max(log(depth / frame.nearPlane) * frame.clusterSliceScale, 0.0)), kClusterSlices - 1);
+    return column + row * kClusterColumns + slice * kClusterColumns * kClusterRows;
 }
 
 // How much of a light reaches a point: full up to fullRange, then fading linearly to zero at the range,
@@ -149,11 +100,7 @@ float4 PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target
     const FrameData frame = g_frames[g_push.frameBuffer][0];
     const MaterialData material = g_materials[g_push.materialBuffer][g_push.materialIndex];
 
-    const float4 baseColor =
-        material.baseColorFactor * SampleTexture(material.baseColorTexture, input.uv, float4(1.0, 1.0, 1.0, 1.0));
-    if (baseColor.a < material.alphaCutoff) {
-        discard;
-    }
+    const float4 baseColor = BaseColor(material, input.uv);
     // glTF: roughness in green, metalness in blue.
     const float4 metallicRoughness = SampleTexture(material.metallicRoughnessTexture, input.uv, float4(1.0, 1.0, 1.0, 1.0));
     const float metallic = saturate(material.metallicFactor * metallicRoughness.b);
@@ -163,13 +110,7 @@ float4 PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target
     const float3 emission =
         material.emissiveFactor * SampleTexture(material.emissiveTexture, input.uv, float4(1.0, 1.0, 1.0, 1.0)).rgb;
 
-    float3 normal = normalize(input.worldNormal);
-    float4 tangent = input.worldTangent;
-    if (!isFrontFace) {
-        normal = -normal; // The back of a double-sided material.
-        tangent.w = -tangent.w;
-    }
-    normal = ApplyNormalMap(material, frame.normalStrength, normal, tangent, input.uv);
+    const float3 normal = SurfaceNormal(input, isFrontFace, material, frame.normalStrength);
 
     const float3 diffuseColor = baseColor.rgb * (1.0 - metallic);
     const float3 f0 = lerp(float3(0.04, 0.04, 0.04), baseColor.rgb, metallic);
@@ -178,9 +119,19 @@ float4 PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target
     const float3 view = toCamera / max(cameraDistance, 0.0001);
 
     const float3 ambientSpecular = AmbientSpecular(f0, roughness, max(dot(normal, view), 0.0));
-    float3 color = frame.ambient * (diffuseColor + ambientSpecular) * occlusion + emission;
-    for (uint index = 0; index < frame.lightCount; ++index) {
-        const LightData light = g_lights[frame.lightBuffer][index];
+    // Light from everywhere, brighter from above than from below: what leans up catches more of it. Only
+    // this light is occluded: direct light has its shadows.
+    float ambientOcclusion = occlusion;
+    if (frame.occlusionTexture != kNoTexture) {
+        ambientOcclusion *= g_textures[frame.occlusionTexture]
+                                .SampleLevel(g_samplers[kSamplerLinearClamp], input.clipPosition.xy * frame.screenTexel, 0.0)
+                                .r;
+    }
+    const float3 ambient = lerp(frame.ambientBelow, frame.ambient, normal.y * 0.5 + 0.5);
+    float3 color = ambient * (diffuseColor + ambientSpecular) * ambientOcclusion + emission;
+    const uint2 cluster = g_clusters[frame.clusterBuffer][ClusterOf(frame, input.clipPosition.xy, input.worldPosition)];
+    for (uint entry = 0; entry < cluster.y; ++entry) {
+        const LightData light = g_lights[frame.lightBuffer][g_clusterLights[frame.clusterLightBuffer][cluster.x + entry]];
         const float3 offset = light.position - input.worldPosition;
         const float distanceToLight = length(offset);
         if (distanceToLight >= light.range) {
