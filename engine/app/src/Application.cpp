@@ -172,18 +172,26 @@ core::Result<void> Application::LoadConfiguration() {
         m_volume = m_cvars.Register<double>("audio.volume", 1.0, "Overall volume, from 0 to 1, read at startup");
         m_effectsVolume = m_cvars.Register<double>("audio.effects", 1.0, "Volume of sound effects, read at startup");
         m_musicVolume = m_cvars.Register<double>("audio.music", 1.0, "Volume of music, read at startup");
+        m_mouseSensitivity =
+            m_cvars.Register<double>("input.mouse_sensitivity", 0.0025, "Radians of turn per mouse unit");
     }
 
-    if (!m_config.configFile.empty()) {
-        if (core::Result<void> loaded = m_cvars.LoadConfigFile(m_config.configFile); loaded) {
-            DAI_LOG_INFO(kModule, "Configuration loaded from '{}'", m_config.configFile.generic_string());
+    for (const std::filesystem::path& configFile : m_config.configFiles) {
+        const std::filesystem::path path =
+            configFile.is_relative() ? platform::ExecutableDirectory() / configFile : configFile;
+        if (core::Result<void> loaded = m_cvars.LoadConfigFile(path); loaded) {
+            DAI_LOG_INFO(kModule, "Configuration loaded from '{}'", path.generic_string());
         } else if (loaded.error().code == core::ErrorCode::NotFound) {
-            DAI_LOG_INFO(kModule, "No configuration file '{}', using defaults", m_config.configFile.generic_string());
+            DAI_LOG_INFO(kModule, "No configuration file '{}', using defaults", path.generic_string());
         } else {
             return loaded;
         }
     }
     return m_cvars.ApplyCommandLine(m_config.arguments);
+}
+
+float Application::MouseSensitivity() const {
+    return m_mouseSensitivity ? static_cast<float>(m_mouseSensitivity->Get()) : 0.0025f;
 }
 
 core::Result<void> Application::CreateMainWindow() {

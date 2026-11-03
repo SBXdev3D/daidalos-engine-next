@@ -41,14 +41,25 @@ function(dai_add_module)
 endfunction()
 
 # Executable in apps/.
+#
+# The engine's settings file, config/daidalos.cfg, goes next to the executable, and so do the CONFIG
+# files of the game. Each is copied once and left alone after that: it is the player's.
 function(dai_add_app)
-    cmake_parse_arguments(PARSE_ARGV 0 ARG "" "NAME" "SOURCES;DEPS")
+    cmake_parse_arguments(PARSE_ARGV 0 ARG "" "NAME" "SOURCES;DEPS;CONFIG")
 
     add_executable(${ARG_NAME} ${ARG_SOURCES})
     target_link_libraries(${ARG_NAME} PRIVATE ${ARG_DEPS})
     target_compile_definitions(${ARG_NAME} PRIVATE DAI_VERSION="${PROJECT_VERSION}")
     set_target_properties(${ARG_NAME} PROPERTIES FOLDER "apps")
     dai_configure_target(${ARG_NAME})
+    foreach(config IN ITEMS "${PROJECT_SOURCE_DIR}/config/daidalos.cfg" ${ARG_CONFIG})
+        cmake_path(ABSOLUTE_PATH config BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+        cmake_path(GET config FILENAME config_name)
+        add_custom_command(TARGET ${ARG_NAME} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -DSOURCE=${config} -DDESTINATION=$<TARGET_FILE_DIR:${ARG_NAME}>/${config_name}
+                -P "${PROJECT_SOURCE_DIR}/cmake/CopyIfMissing.cmake"
+            VERBATIM)
+    endforeach()
 endfunction()
 
 # GoogleTest executable registered with CTest. Tests are discovered when CTest runs,

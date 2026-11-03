@@ -61,8 +61,10 @@ struct ApplicationConfig {
     logging::LogConfig log;
     /// Directory for crash dumps. Empty disables the crash handler.
     std::filesystem::path crashDumpDirectory;
-    /// Config file with "name value" lines. Empty or missing means defaults are used.
-    std::filesystem::path configFile;
+    /// Config files with "name value" lines, read in order, so that a later one wins. A relative path is
+    /// next to the executable, where the build copies the engine's daidalos.cfg; a game adds its own
+    /// file after it. Missing files are skipped.
+    std::vector<std::filesystem::path> configFiles{"daidalos.cfg"};
     /// Command-line arguments; "+name value" pairs override cvars.
     std::vector<std::string> arguments;
     platform::PlatformConfig platform;
@@ -121,6 +123,8 @@ public:
     /// Null when silent, which a scene accepts. Scenes must be created with this engine to be heard.
     [[nodiscard]] audio::AudioEngine* Audio() noexcept { return m_audio.has_value() ? &*m_audio : nullptr; }
     [[nodiscard]] core::CVarRegistry& CVars() noexcept { return m_cvars; }
+    /// Radians of turn per unit of mouse movement, from input.mouse_sensitivity.
+    [[nodiscard]] float MouseSensitivity() const;
     [[nodiscard]] const ApplicationConfig& Config() const noexcept { return m_config; }
 
 private:
@@ -152,6 +156,7 @@ private:
     std::optional<core::CVar<double>> m_volume;
     std::optional<core::CVar<double>> m_effectsVolume;
     std::optional<core::CVar<double>> m_musicVolume;
+    std::optional<core::CVar<double>> m_mouseSensitivity;
     std::optional<platform::Platform> m_platform;
     std::optional<platform::Window> m_window;
     std::optional<core::WorkerPool> m_workers;
