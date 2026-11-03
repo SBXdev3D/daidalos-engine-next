@@ -329,6 +329,14 @@ core::Result<void> Device::Impl::CreateLogicalDevice(const DeviceConfig& config)
     vkGetPhysicalDeviceProperties(physicalDevice, &properties);
     const bool anisotropic = config.anisotropy > 1.0f && supported.samplerAnisotropy == VK_TRUE;
     info.anisotropy = anisotropic ? std::min(config.anisotropy, properties.limits.maxSamplerAnisotropy) : 1.0f;
+    const VkSampleCountFlags sampleCounts =
+        properties.limits.framebufferColorSampleCounts & properties.limits.framebufferDepthSampleCounts;
+    for (const std::uint32_t samples : {8U, 4U, 2U}) {
+        if ((sampleCounts & samples) != 0) {
+            info.maxSamples = samples;
+            break;
+        }
+    }
 
     const VkPhysicalDeviceFeatures2 features{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,

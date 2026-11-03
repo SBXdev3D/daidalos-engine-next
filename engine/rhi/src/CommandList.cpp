@@ -118,6 +118,15 @@ void CommandList::BeginRendering(const RenderingDesc& desc) {
             const glm::vec4& clear = *desc.clearColor;
             colorAttachment.clearValue.color = {{clear.r, clear.g, clear.b, clear.a}};
         }
+        if (desc.colorResolve) {
+            const TextureData& resolve = device.textures.Get(desc.colorResolve);
+            DAI_ASSERT(resolve.state == TextureState::ColorTarget && resolve.samples == 1 && color.samples > 1 &&
+                           resolve.extent == color.extent && resolve.format == color.format,
+                       "A color resolve is a single-sample ColorTarget like the multisampled target");
+            colorAttachment.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+            colorAttachment.resolveImageView = resolve.view;
+            colorAttachment.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        }
     }
 
     VkRenderingAttachmentInfo depthAttachment{.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
@@ -131,6 +140,16 @@ void CommandList::BeginRendering(const RenderingDesc& desc) {
         depthAttachment.loadOp = desc.clearDepth.has_value() ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
         depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         depthAttachment.clearValue.depthStencil = {desc.clearDepth.value_or(0.0f), 0};
+        if (desc.depthResolve) {
+            const TextureData& resolve = device.textures.Get(desc.depthResolve);
+            DAI_ASSERT(resolve.state == TextureState::DepthTarget && resolve.samples == 1 && depth.samples > 1 &&
+                           resolve.extent == depth.extent && resolve.format == depth.format,
+                       "A depth resolve is a single-sample DepthTarget like the multisampled target");
+            // The first sample's depth: the one every device supports, and a real surface's depth.
+            depthAttachment.resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
+            depthAttachment.resolveImageView = resolve.view;
+            depthAttachment.resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        }
     }
 
     const VkRenderingInfo renderingInfo{

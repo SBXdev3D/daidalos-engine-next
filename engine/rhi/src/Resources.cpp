@@ -6,6 +6,7 @@
 #include <daidalos/rhi/Device.hpp>
 
 #include <algorithm>
+#include <bit>
 #include <cstring>
 #include <format>
 #include <utility>
@@ -236,6 +237,9 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
             std::format("Texture '{}': all {} bindless slots are in use", desc.name, kMaxBindlessTextures));
     }
 
+    DAI_ASSERT(desc.samples == 1 || (std::has_single_bit(desc.samples) && desc.samples <= Info().maxSamples &&
+                                     !sampled && desc.mipLevels == 1),
+               "A multisampled texture has a supported sample count, one mip level, and is not sampled");
     const VkImageCreateInfo imageInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
@@ -243,7 +247,7 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
         .extent = {desc.extent.width, desc.extent.height, 1},
         .mipLevels = desc.mipLevels,
         .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .samples = static_cast<VkSampleCountFlagBits>(desc.samples),
         .tiling = VK_IMAGE_TILING_OPTIMAL,
         .usage = ToVulkanUsage(desc.usage),
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
@@ -256,6 +260,7 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
     data.mipLevels = desc.mipLevels;
     data.format = desc.format;
     data.usage = desc.usage;
+    data.samples = desc.samples;
     if (const VkResult result =
             vmaCreateImage(m_impl->allocator, &imageInfo, &allocationInfo, &data.image, &data.allocation, nullptr);
         result != VK_SUCCESS) {
@@ -428,7 +433,7 @@ core::Result<PipelineHandle> Device::CreatePipeline(const GraphicsPipelineDesc& 
     };
     const VkPipelineMultisampleStateCreateInfo multisample{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+        .rasterizationSamples = static_cast<VkSampleCountFlagBits>(std::max(desc.samples, 1U)),
     };
     const bool hasDepth = desc.depthFormat != Format::Undefined;
     const VkPipelineDepthStencilStateCreateInfo depthStencil{

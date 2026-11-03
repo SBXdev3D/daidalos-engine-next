@@ -5,9 +5,12 @@
 #include <daidalos/rhi/Spirv.hpp>
 
 #include <shaders/ComputeTest.cs.spv.h>
+#include <shaders/HalfTriangleTest.ps.spv.h>
+#include <shaders/HalfTriangleTest.vs.spv.h>
 #include <shaders/TriangleTest.ps.spv.h>
 #include <shaders/TriangleTest.vs.spv.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <cstring>
@@ -419,4 +422,81 @@ TEST_F(GpuTest, IndirectDrawUsesTheArgumentsTheGpuWrote) {
     for (const rhi::BufferHandle buffer : {*values, *arguments, *readback}) {
         Device().DestroyBuffer(buffer);
     }
+}
+
+TEST_F(GpuTest, MultisampledTargetsResolveToTheAverageColorAndTheFirstSamplesDepth) {
+    constexpr rhi::Extent kExtent{8, 8};
+    const std::uint32_t samples = std::min(4U, Device().Info().maxSamples);
+    if (samples < 2) {
+        GTEST_SKIP() << "The device has no multisampling";
+    }
+    const auto texture = [&](rhi::Format format, rhi::TextureUsage usage, std::uint32_t count, const char* name) {
+        return Device()
+            .CreateTexture({.extent = kExtent, .format = format, .usage = usage, .samples = count, .name = name})
+            .value_or(rhi::TextureHandle{});
+    };
+    const rhi::TextureHandle color = texture(rhi::Format::Rgba8Unorm, rhi::TextureUsage::ColorTarget, samples, "Color");
+    const rhi::TextureHandle depth = texture(rhi::Format::D32Float, rhi::TextureUsage::DepthTarget, samples, "Depth");
+    const rhi::TextureHandle resolved = texture(
+        rhi::Format::Rgba8Unorm, rhi::TextureUsage::ColorTarget | rhi::TextureUsage::TransferSrc, 1, "Resolved");
+    const rhi::TextureHandle resolvedDepth = texture(
+        rhi::Format::D32Float, rhi::TextureUsage::DepthTarget | rhi::TextureUsage::TransferSrc, 1, "Resolved depth");
+    const core::Result<rhi::BufferHandle> readback = Device().CreateBuffer(
+        {.size = 8 * 8 * 4, .usage = rhi::BufferUsage::TransferDst, .memory = rhi::MemoryLocation::GpuToCpu});
+    const core::Result<rhi::BufferHandle> depthReadback = Device().CreateBuffer(
+        {.size = 8 * 8 * 4, .usage = rhi::BufferUsage::TransferDst, .memory = rhi::MemoryLocation::GpuToCpu});
+    const core::Result<rhi::PipelineHandle> triangle =
+        Device().CreatePipeline({.vertexShader = rhi::ToSpirv(kHalfTriangleTestVsSpirv),
+                                 .fragmentShader = rhi::ToSpirv(kHalfTriangleTestPsSpirv),
+                                 .colorFormat = rhi::Format::Rgba8Unorm,
+                                 .depthFormat = rhi::Format::D32Float,
+                                 .cull = rhi::CullMode::None,
+                                 .samples = samples,
+                                 .name = "Half triangle"});
+    ASSERT_TRUE(color && depth && resolved && resolvedDepth && readback && depthReadback && triangle);
+
+    ASSERT_TRUE(Device()
+                    .Submit([&](rhi::CommandList& commands) {
+                        for (const rhi::TextureHandle target : {color, resolved}) {
+                            commands.Discard(target, rhi::TextureState::ColorTarget);
+                        }
+                        for (const rhi::TextureHandle target : {depth, resolvedDepth}) {
+                            commands.Discard(target, rhi::TextureState::DepthTarget);
+                        }
+                        commands.BeginRendering({.colorTarget = color,
+                                                 .clearColor = glm::vec4(0.0f),
+                                                 .depthTarget = depth,
+                                                 .clearDepth = 0.0f,
+                                                 .colorResolve = resolved,
+                                                 .depthResolve = resolvedDepth});
+                        commands.BindPipeline(*triangle);
+                        commands.Draw(3);
+                        commands.EndRendering();
+                        commands.Transition(resolved, rhi::TextureState::TransferSrc);
+                        commands.CopyTextureToBuffer(resolved, *readback);
+                        commands.Transition(resolvedDepth, rhi::TextureState::TransferSrc);
+                        commands.CopyTextureToBuffer(resolvedDepth, *depthReadback);
+                    })
+                    .has_value());
+
+    // Rows go down: below the diagonal, white; above, black; on it, half the samples of each.
+    const auto* pixels = reinterpret_cast<const std::uint8_t*>(Device().Mapped(*readback).data());
+    const auto red = [&](int x, int y) { return pixels[(y * 8 + x) * 4]; };
+    EXPECT_EQ(red(6, 1), 0);
+    EXPECT_EQ(red(1, 6), 255);
+    int between = 0;
+    for (int i = 0; i < 8; ++i) {
+        between += (red(i, i) > 0 && red(i, i) < 255) ? 1 : 0;
+    }
+    EXPECT_GT(between, 0) << "pixels on the edge average their samples";
+    float depthInside = 0.0f;
+    std::memcpy(&depthInside, Device().Mapped(*depthReadback).data() + (6 * 8 + 1) * 4, sizeof(float));
+    EXPECT_EQ(depthInside, 1.0f);
+
+    Device().DestroyPipeline(*triangle);
+    for (const rhi::TextureHandle target : {color, depth, resolved, resolvedDepth}) {
+        Device().DestroyTexture(target);
+    }
+    Device().DestroyBuffer(*readback);
+    Device().DestroyBuffer(*depthReadback);
 }

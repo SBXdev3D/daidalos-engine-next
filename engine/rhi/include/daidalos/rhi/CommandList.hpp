@@ -29,6 +29,11 @@ struct RenderingDesc {
     TextureHandle depthTarget;
     /// Clears the depth target. Reverse-Z clears to 0, the far plane.
     std::optional<float> clearDepth;
+    /// With multisampled targets: single-sample textures of the same size and format, in the ColorTarget
+    /// and DepthTarget states, that receive the average color and the first sample's depth when the
+    /// rendering ends. Null to keep the samples only.
+    TextureHandle colorResolve;
+    TextureHandle depthResolve;
 };
 
 /// Records GPU commands. It is a small value that is valid only during the Device::Submit callback
