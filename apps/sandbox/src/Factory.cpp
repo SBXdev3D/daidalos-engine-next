@@ -70,9 +70,9 @@ constexpr float kMaxPitch = glm::radians(89.0f);
 constexpr float kStickLookSpeed = 2.5f; // Radians per second.
 constexpr float kMessageTime = 3.0f;    // Seconds.
 
-// The factory is dark: a little light everywhere, so that what no lamp reaches is not pure black, and a
-// thin fog that swallows what is far away.
-constexpr glm::vec3 kAmbient{0.015f, 0.016f, 0.02f};
+// The factory is dark, but never black: enough light everywhere to make out the walls and the way ahead
+// far from any lamp (Settings::ambient), slightly cold, and a thin fog that swallows what is far away.
+constexpr glm::vec3 kAmbientTint{0.9f, 0.95f, 1.1f};
 constexpr glm::vec3 kFogColor{0.005f, 0.006f, 0.008f};
 constexpr float kFogDensity = 0.03f;
 constexpr glm::vec3 kFlashlightColor{2.4f, 2.25f, 1.95f};
@@ -857,7 +857,7 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
         const float darkness = std::clamp(settings.darkness, 0.0f, 1.0f);
         scene.SetAtmosphere({.fogColor = kFogColor,
                              .fogDensity = kFogDensity * darkness,
-                             .ambient = glm::mix(glm::vec3(1.0f), kAmbient, darkness)});
+                             .ambient = glm::mix(glm::vec3(1.0f), kAmbientTint * settings.ambient, darkness)});
         world.Each<Alarm, ecs::LocalTransform>([seconds](ecs::Entity, const Alarm& alarm, ecs::LocalTransform& turned) {
             const float angle = glm::radians(alarm.degreesPerSecond) * seconds;
             turned.rotation = glm::normalize(glm::angleAxis(angle, math::kUp) * turned.rotation);

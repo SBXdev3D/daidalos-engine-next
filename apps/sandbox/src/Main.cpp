@@ -70,6 +70,11 @@ public:
             static_cast<float>(app.CVars().Register<double>("sandbox.mouse", 0.0025, "Radians per mouse unit").Get());
         m_settings.darkness = static_cast<float>(
             app.CVars().Register<double>("sandbox.darkness", 1.0, "Multiplies the darkness; 0 shows the level").Get());
+        m_settings.ambient =
+            static_cast<float>(app.CVars()
+                                   .Register<double>("sandbox.ambient", 0.1,
+                                                     "Light everywhere in the dark, far from lamps; 0 is pitch black")
+                                   .Get());
         m_start =
             app.CVars()
                 .Register<std::string>("sandbox.start", "", "Where to start: 'x y z yaw pitch', in meters and degrees")

@@ -102,6 +102,8 @@ struct Settings {
     float mouseSensitivity = 0.0025f;
     /// 1 is the factory's darkness, and 0 lights the whole level evenly, with no fog.
     float darkness = 1.0f;
+    /// Light that reaches everywhere in the dark, far from any lamp. 0 is pitch black.
+    float ambient = 0.1f;
 };
 
 /// A sound that does not stop the game when it is missing, because the game can be played without it.
