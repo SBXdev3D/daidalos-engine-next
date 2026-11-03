@@ -29,6 +29,7 @@
       ]
     },
     "miniaudio",
+    "mikktspace",
     "spdlog",
     "stb",
     "tl-expected",

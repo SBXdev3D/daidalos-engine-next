@@ -163,3 +163,61 @@ TEST(LoadModelFile, CubicSplineKeepsOnlyTheValues) {
     EXPECT_EQ(spline.values[0], glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
     EXPECT_EQ(spline.values[1], glm::vec4(2.0f, 0.0f, 0.0f, 0.0f));
 }
+
+namespace {
+
+// A square facing +Z, with u along +X and v along -Y, as in an image: its texture is upright.
+resources::MeshData UprightSquare() {
+    resources::MeshData mesh;
+    const glm::vec3 normal(0.0f, 0.0f, 1.0f);
+    mesh.vertices = {{{-1.0f, -1.0f, 0.0f}, normal, {}, {0.0f, 1.0f}},
+                     {{1.0f, -1.0f, 0.0f}, normal, {}, {1.0f, 1.0f}},
+                     {{1.0f, 1.0f, 0.0f}, normal, {}, {1.0f, 0.0f}},
+                     {{-1.0f, 1.0f, 0.0f}, normal, {}, {0.0f, 0.0f}}};
+    mesh.indices = {0, 1, 2, 0, 2, 3};
+    return mesh;
+}
+
+} // namespace
+
+TEST(GenerateTangents, FollowTheGltfConvention) {
+    resources::MeshData mesh = UprightSquare();
+    resources::GenerateTangents(mesh);
+    ASSERT_EQ(mesh.vertices.size(), 4U);
+    for (const resources::Vertex& vertex : mesh.vertices) {
+        // The tangent follows u. The bitangent, cross(normal, tangent) * w, points up the image: +Y.
+        EXPECT_NEAR(vertex.tangent.x, 1.0f, 1e-5f);
+        EXPECT_NEAR(vertex.tangent.y, 0.0f, 1e-5f);
+        EXPECT_NEAR(vertex.tangent.z, 0.0f, 1e-5f);
+        EXPECT_EQ(vertex.tangent.w, 1.0f);
+    }
+}
+
+TEST(GenerateTangents, MirroredTextureFlipsTheHandedness) {
+    resources::MeshData mesh = UprightSquare();
+    for (resources::Vertex& vertex : mesh.vertices) {
+        vertex.uv.y = 1.0f - vertex.uv.y;
+    }
+    resources::GenerateTangents(mesh);
+    for (const resources::Vertex& vertex : mesh.vertices) {
+        EXPECT_NEAR(vertex.tangent.x, 1.0f, 1e-5f);
+        EXPECT_EQ(vertex.tangent.w, -1.0f);
+    }
+}
+
+TEST(GenerateTangents, SplitsVerticesThatDisagree) {
+    // Two squares sharing an edge, the second with its texture mirrored: the shared vertices need two
+    // tangents each, so they are split.
+    resources::MeshData mesh = UprightSquare();
+    const glm::vec3 normal(0.0f, 0.0f, 1.0f);
+    mesh.vertices.push_back({{3.0f, -1.0f, 0.0f}, normal, {}, {0.0f, 1.0f}});
+    mesh.vertices.push_back({{3.0f, 1.0f, 0.0f}, normal, {}, {0.0f, 0.0f}});
+    mesh.indices.insert(mesh.indices.end(), {1, 4, 5, 1, 5, 2});
+    resources::GenerateTangents(mesh);
+
+    EXPECT_EQ(mesh.vertices.size(), 8U);
+    for (std::size_t corner = 0; corner < mesh.indices.size(); ++corner) {
+        const glm::vec4& tangent = mesh.vertices[mesh.indices[corner]].tangent;
+        EXPECT_NEAR(tangent.x, corner < 6 ? 1.0f : -1.0f, 1e-5f) << "corner " << corner;
+    }
+}

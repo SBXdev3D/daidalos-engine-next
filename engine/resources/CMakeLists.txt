@@ -8,10 +8,12 @@ dai_add_module(NAME resources
         src/ImageData.cpp
         src/ModelData.cpp
         src/StbImage.cpp
+        src/Tangents.cpp
     PUBLIC_DEPS
         daidalos::core
     PRIVATE_DEPS
         fastgltf::fastgltf
-        KTX::ktx)
+        KTX::ktx
+        mikktspace::mikktspace)
 
 target_include_directories(daidalos_resources SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
