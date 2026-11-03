@@ -95,6 +95,13 @@ struct Device::Impl {
     /// Runs destroy once the GPU can no longer use what was recorded so far.
     void Defer(std::function<void()> destroy);
     void CollectGarbage(std::uint64_t completed);
+    /// Submits recorded commands, which signal the next timeline value, and returns that value.
+    [[nodiscard]] core::Result<std::uint64_t> SubmitCommands(VkCommandBuffer commands);
+    /// The command list that collects the copies of UploadBuffer and UploadTexture.
+    [[nodiscard]] core::Result<CommandList> UploadCommands();
+    /// Submits the collected copies, if any, before anything else reaches the queue. Everything
+    /// submitted later sees their results, without waiting for them.
+    [[nodiscard]] core::Result<void> FlushUploads();
 
     struct Deferred {
         std::uint64_t retireValue = 0;
@@ -128,6 +135,8 @@ struct Device::Impl {
     bool frameOpen = false;
     std::uint64_t presentedFrames = 0;
     VkCommandPool immediatePool = VK_NULL_HANDLE;
+    /// Copies waiting for FlushUploads, recorded in a buffer of the immediate pool.
+    detail::CommandRecording uploads;
 
     VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;

@@ -59,6 +59,58 @@ TEST_F(GpuTest, BufferDataSurvivesARoundTripThroughGpuMemory) {
     Device().DestroyBuffer(*readback);
 }
 
+TEST_F(GpuTest, UploadsReachTheGpuInOrderBeforeTheNextFrame) {
+    const std::array<std::uint32_t, 2> first{1, 2};
+    const std::array<std::uint32_t, 2> second{3, 4};
+    const std::array<std::uint32_t, 2> other{5, 6};
+    const auto size = std::as_bytes(std::span(first)).size();
+    const auto create = [&](rhi::BufferUsage usage, rhi::MemoryLocation memory) {
+        core::Result<rhi::BufferHandle> buffer =
+            Device().CreateBuffer({.size = size, .usage = usage, .memory = memory});
+        EXPECT_TRUE(buffer.has_value());
+        return buffer.value_or(rhi::BufferHandle{});
+    };
+    const rhi::BufferHandle a =
+        create(rhi::BufferUsage::TransferSrc | rhi::BufferUsage::TransferDst, rhi::MemoryLocation::GpuOnly);
+    const rhi::BufferHandle b =
+        create(rhi::BufferUsage::TransferSrc | rhi::BufferUsage::TransferDst, rhi::MemoryLocation::GpuOnly);
+    const rhi::BufferHandle readback = create(rhi::BufferUsage::TransferDst, rhi::MemoryLocation::GpuToCpu);
+    const rhi::BufferHandle readbackOther = create(rhi::BufferUsage::TransferDst, rhi::MemoryLocation::GpuToCpu);
+
+    // Three uploads with no submission in between: the second one to buffer a overwrites the first.
+    ASSERT_TRUE(Device().UploadBuffer(a, std::as_bytes(std::span(first))).has_value());
+    ASSERT_TRUE(Device().UploadBuffer(b, std::as_bytes(std::span(other))).has_value());
+    ASSERT_TRUE(Device().UploadBuffer(a, std::as_bytes(std::span(second))).has_value());
+
+    core::Result<std::optional<rhi::Frame>> frame = Device().BeginFrame();
+    ASSERT_TRUE(frame.has_value() && frame->has_value());
+    (*frame)->commands.CopyBuffer(a, readback, size);
+    (*frame)->commands.CopyBuffer(b, readbackOther, size);
+    ASSERT_TRUE(Device().EndFrame().has_value());
+    ASSERT_TRUE(Device().WaitIdle().has_value());
+
+    EXPECT_EQ(std::memcmp(Device().Mapped(readback).data(), second.data(), size), 0);
+    EXPECT_EQ(std::memcmp(Device().Mapped(readbackOther).data(), other.data(), size), 0);
+    for (const rhi::BufferHandle buffer : {a, b, readback, readbackOther}) {
+        Device().DestroyBuffer(buffer);
+    }
+}
+
+TEST_F(GpuTest, BufferDestroyedBeforeItsUploadIsSentIsReleasedSafely) {
+    const std::array<std::uint32_t, 4> data{1, 2, 3, 4};
+    const auto bytes = std::as_bytes(std::span(data));
+    const core::Result<rhi::BufferHandle> buffer =
+        Device().CreateBuffer({.size = bytes.size(), .usage = rhi::BufferUsage::TransferDst});
+    ASSERT_TRUE(buffer.has_value());
+
+    ASSERT_TRUE(Device().UploadBuffer(*buffer, bytes).has_value());
+    Device().DestroyBuffer(*buffer);
+    EXPECT_GT(Device().PendingDestructionCount(), 0U);
+
+    ASSERT_TRUE(Device().WaitIdle().has_value());
+    EXPECT_EQ(Device().PendingDestructionCount(), 0U);
+}
+
 TEST_F(GpuTest, TextureDataSurvivesARoundTripThroughGpuMemory) {
     const std::array<std::uint32_t, 4> pixels{0xFF0000FF, 0xFF00FF00, 0xFFFF0000, 0x80808080};
     const auto bytes = std::as_bytes(std::span(pixels));

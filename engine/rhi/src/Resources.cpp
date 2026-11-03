@@ -208,10 +208,12 @@ core::Result<void> Device::UploadBuffer(BufferHandle buffer, std::span<const std
                                                        .memory = MemoryLocation::CpuToGpu,
                                                        .name = "Staging"}));
     std::memcpy(Mapped(staging).data(), data.data(), data.size());
-    core::Result<void> submitted =
-        Submit([&](CommandList& commands) { commands.CopyBuffer(staging, buffer, data.size()); });
-    DestroyBuffer(staging);
-    return submitted;
+    core::Result<CommandList> commands = m_impl->UploadCommands();
+    if (commands) {
+        commands->CopyBuffer(staging, buffer, data.size());
+    }
+    DestroyBuffer(staging); // Released once the copy is done.
+    return commands ? core::Result<void>{} : tl::unexpected(std::move(commands.error()));
 }
 
 core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
@@ -320,13 +322,14 @@ core::Result<void> Device::UploadTexture(TextureHandle texture, std::span<const 
                                                        .memory = MemoryLocation::CpuToGpu,
                                                        .name = "Staging"}));
     std::memcpy(Mapped(staging).data(), pixels.data(), pixels.size());
-    core::Result<void> submitted = Submit([&](CommandList& commands) {
-        commands.Transition(texture, TextureState::TransferDst);
-        commands.CopyBufferToTexture(staging, texture);
-        commands.Transition(texture, TextureState::ShaderRead);
-    });
-    DestroyBuffer(staging);
-    return submitted;
+    core::Result<CommandList> commands = m_impl->UploadCommands();
+    if (commands) {
+        commands->Transition(texture, TextureState::TransferDst);
+        commands->CopyBufferToTexture(staging, texture);
+        commands->Transition(texture, TextureState::ShaderRead);
+    }
+    DestroyBuffer(staging); // Released once the copy is done.
+    return commands ? core::Result<void>{} : tl::unexpected(std::move(commands.error()));
 }
 
 std::uint32_t Device::StorageIndex(BufferHandle buffer) const {

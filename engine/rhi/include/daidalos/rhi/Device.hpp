@@ -80,8 +80,10 @@ public:
     void DestroyBuffer(BufferHandle buffer);
     /// CPU view of a CpuToGpu or GpuToCpu buffer. Coherent: no flush is needed.
     [[nodiscard]] std::span<std::byte> Mapped(BufferHandle buffer);
-    /// Copies data into a buffer through a staging buffer and waits for the copy. Not allowed
-    /// between BeginFrame and EndFrame. The buffer needs BufferUsage::TransferDst.
+    /// Copies data into a buffer through a staging buffer. The copy is only recorded: all the
+    /// uploads since the last submission go to the GPU together, ahead of the next BeginFrame,
+    /// Submit or WaitIdle, which see their results. Nothing waits for them. Not allowed between
+    /// BeginFrame and EndFrame. The buffer needs BufferUsage::TransferDst.
     [[nodiscard]] core::Result<void> UploadBuffer(BufferHandle buffer, std::span<const std::byte> data);
 
     [[nodiscard]] core::Result<TextureHandle> CreateTexture(const TextureDesc& desc);
