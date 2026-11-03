@@ -34,6 +34,8 @@ struct MeshPassSettings {
     std::uint32_t shadowLights = 4;
     /// Texels across each shadow map.
     std::uint32_t shadowResolution = 1024;
+    /// Samples per pixel of the targets of the pre-pass and the mesh pass.
+    std::uint32_t samples = 1;
 };
 
 /// Owns the meshes, the materials and the pipelines that draw them. It works on any target, so that
@@ -57,6 +59,10 @@ public:
 
     /// Normals of the pre-pass: world normals, times 0.5 plus 0.5.
     static constexpr rhi::Format kNormalFormat = rhi::Format::Rgba8Unorm;
+
+    /// Rebuilds the pipelines of the pre-pass and the mesh pass for targets with this many samples per
+    /// pixel. On failure the current pipelines stay in use.
+    [[nodiscard]] core::Result<void> SetSamples(std::uint32_t samples);
 
     /// Replaces the shaders of the mesh pass. The pre-pass uses the same vertex shader, so that both
     /// compute the same depth. On failure the current pipelines stay in use.
@@ -146,6 +152,10 @@ private:
     std::uint32_t m_shadowTileSize;
     /// Tiles across the atlas, which is square.
     std::uint32_t m_shadowGrid;
+    std::uint32_t m_samples;
+    /// The shaders of the mesh pass, to rebuild its pipelines.
+    std::vector<std::uint32_t> m_vertexShader;
+    std::vector<std::uint32_t> m_fragmentShader;
     float m_fieldOfView = glm::radians(90.0f);
     float m_viewDistance = 150.0f;
     core::SlotPool<Mesh, MeshTag> m_meshes;

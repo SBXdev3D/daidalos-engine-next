@@ -168,14 +168,15 @@ MeshPass::MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format dep
       m_shadowLights(std::min<std::uint32_t>(settings.shadowLights, kMaxShadowedLights)),
       m_shadowTileSize(std::max(settings.shadowResolution, 1U)),
       // The smallest square grid with a tile per light, and one tile when there are none.
-      m_shadowGrid(static_cast<std::uint32_t>(std::ceil(std::sqrt(static_cast<float>(std::max(m_shadowLights, 1U)))))) {
-}
+      m_shadowGrid(static_cast<std::uint32_t>(std::ceil(std::sqrt(static_cast<float>(std::max(m_shadowLights, 1U)))))),
+      m_samples(std::max(settings.samples, 1U)) {}
 
 MeshPass::MeshPass(MeshPass&& other) noexcept
     : m_device(other.m_device), m_colorFormat(other.m_colorFormat), m_depthFormat(other.m_depthFormat),
       m_pipelines(std::exchange(other.m_pipelines, {})), m_shadowPipeline(std::exchange(other.m_shadowPipeline, {})),
       m_shadowAtlas(std::exchange(other.m_shadowAtlas, {})), m_shadowLights(other.m_shadowLights),
-      m_shadowTileSize(other.m_shadowTileSize), m_shadowGrid(other.m_shadowGrid),
+      m_shadowTileSize(other.m_shadowTileSize), m_shadowGrid(other.m_shadowGrid), m_samples(other.m_samples),
+      m_vertexShader(std::move(other.m_vertexShader)), m_fragmentShader(std::move(other.m_fragmentShader)),
       m_meshes(std::exchange(other.m_meshes, {})), m_materials(std::exchange(other.m_materials, {})),
       m_materialTable(std::exchange(other.m_materialTable, {})),
       m_materialCapacity(std::exchange(other.m_materialCapacity, 0)),
@@ -268,6 +269,7 @@ core::Result<rhi::PipelineHandle> MeshPass::BuildPipeline(std::span<const std::u
         // The mesh pass keeps the pre-pass's depth: equal depths pass the reverse-Z test.
         .depthWrite = prepass,
         .cull = cull,
+        .samples = m_samples,
         .name = prepass ? "Depth and normal pre-pass" : "Mesh",
     });
 }
@@ -300,7 +302,24 @@ core::Result<void> MeshPass::ReplaceShaders(std::span<const std::uint32_t> verte
     }
     DestroyPipelines(m_pipelines);
     m_pipelines = built;
+    m_vertexShader.assign(vertexShader.begin(), vertexShader.end());
+    m_fragmentShader.assign(fragmentShader.begin(), fragmentShader.end());
     return {};
+}
+
+core::Result<void> MeshPass::SetSamples(std::uint32_t samples) {
+    if (samples == m_samples) {
+        return {};
+    }
+    const std::uint32_t previous = std::exchange(m_samples, samples);
+    // Copies: ReplaceShaders keeps what it is given.
+    const std::vector<std::uint32_t> vertexShader = m_vertexShader;
+    const std::vector<std::uint32_t> fragmentShader = m_fragmentShader;
+    core::Result<void> rebuilt = ReplaceShaders(vertexShader, fragmentShader);
+    if (!rebuilt) {
+        m_samples = previous;
+    }
+    return rebuilt;
 }
 
 core::Result<MeshHandle> MeshPass::CreateMesh(const resources::MeshData& data, const std::string& name) {

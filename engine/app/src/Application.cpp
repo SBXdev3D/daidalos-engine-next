@@ -10,6 +10,7 @@
 #include <glm/trigonometric.hpp>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <format>
 #include <thread>
@@ -43,15 +44,22 @@ float ViewDistanceMeters(const core::CVar<double>& meters) {
 /// The mode named by renderer.antialiasing; an unknown name keeps the default, with a warning once.
 renderer::Antialiasing AntialiasingMode(const core::CVar<std::string>& cvar) {
     const std::string& name = cvar.Get();
-    if (name == "off") {
-        return renderer::Antialiasing::Off;
-    }
-    if (name != "fxaa") {
-        static std::string reported;
-        if (reported != name) {
-            reported = name;
-            DAI_LOG_WARNING(kModule, "Unknown antialiasing '{}': use off or fxaa", name);
+    constexpr std::array<std::pair<std::string_view, renderer::Antialiasing>, 5> kModes{{
+        {"off", renderer::Antialiasing::Off},
+        {"fxaa", renderer::Antialiasing::Fxaa},
+        {"msaa2", renderer::Antialiasing::Msaa2},
+        {"msaa4", renderer::Antialiasing::Msaa4},
+        {"msaa8", renderer::Antialiasing::Msaa8},
+    }};
+    for (const auto& [modeName, mode] : kModes) {
+        if (name == modeName) {
+            return mode;
         }
+    }
+    static std::string reported;
+    if (reported != name) {
+        reported = name;
+        DAI_LOG_WARNING(kModule, "Unknown antialiasing '{}': use off, fxaa, msaa2, msaa4 or msaa8", name);
     }
     return renderer::Antialiasing::Fxaa;
 }
@@ -201,8 +209,8 @@ core::Result<void> Application::LoadConfiguration() {
             "view.fov", 90.0, "Degrees across the view, from 30 to 150, for cameras without their own");
         m_viewDistance =
             m_cvars.Register<double>("view.distance", 150.0, "Meters to the far plane: farther, nothing is drawn");
-        m_antialiasing =
-            m_cvars.Register<std::string>("renderer.antialiasing", "fxaa", "Smoothing of edges: off or fxaa");
+        m_antialiasing = m_cvars.Register<std::string>("renderer.antialiasing", "fxaa",
+                                                       "Smoothing of edges: off, fxaa, msaa2, msaa4 or msaa8");
         m_validation = m_cvars.Register<bool>("renderer.validation", kValidationByDefault,
                                               "Enable the Vulkan validation layers, read at startup");
         m_volume = m_cvars.Register<double>("audio.volume", 1.0, "Overall volume, from 0 to 1, read at startup");

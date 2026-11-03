@@ -24,6 +24,11 @@ enum class Antialiasing {
     Off,
     /// Fast approximate antialiasing, a pass over the final image.
     Fxaa,
+    /// Multisampling, with 2, 4 or 8 samples per pixel: geometry edges only, at a higher cost. Devices
+    /// that support fewer samples use their most.
+    Msaa2,
+    Msaa4,
+    Msaa8,
 };
 
 struct RendererConfig {

@@ -68,7 +68,28 @@ struct Renderer::Impl {
         device.DestroyTexture(depth);
         device.DestroyTexture(normals);
         device.DestroyTexture(hdr);
+        DestroyMultisampledTargets();
     }
+
+    void DestroyMultisampledTargets() {
+        device.DestroyTexture(multisampledDepth);
+        device.DestroyTexture(multisampledNormals);
+        device.DestroyTexture(multisampledHdr);
+        multisampledDepth = {};
+        multisampledNormals = {};
+        multisampledHdr = {};
+    }
+
+    /// Samples per pixel of the antialiasing mode, as many as the device supports.
+    [[nodiscard]] std::uint32_t SamplesOf(Antialiasing mode) const {
+        const std::uint32_t wanted = mode == Antialiasing::Msaa2   ? 2
+                                     : mode == Antialiasing::Msaa4 ? 4
+                                     : mode == Antialiasing::Msaa8 ? 8
+                                                                   : 1;
+        return std::min(wanted, device.Info().maxSamples);
+    }
+    /// Follows a change of antialiasing to or from multisampling, between two frames.
+    core::Result<void> ApplySamples();
 
     /// The targets follow the size of the back buffer.
     core::Result<void> ResizeTargets(rhi::Extent extent);
@@ -85,6 +106,12 @@ struct Renderer::Impl {
     std::optional<FxaaPass> fxaaPass;
     bool ambientOcclusion = true;
     Antialiasing antialiasing = Antialiasing::Fxaa;
+    /// Samples per pixel of the pre-pass and the mesh pass. With more than one, they draw into the
+    /// multisampled targets, which resolve into depth, normals and hdr.
+    std::uint32_t samples = 1;
+    rhi::TextureHandle multisampledDepth;
+    rhi::TextureHandle multisampledNormals;
+    rhi::TextureHandle multisampledHdr;
     rhi::PipelineHandle tonemap;
     /// Tonemaps for FXAA, into tonemapped.
     rhi::PipelineHandle tonemapEncoded;
@@ -105,9 +132,37 @@ struct Renderer::Impl {
 #endif
 };
 
+core::Result<void> Renderer::Impl::ApplySamples() {
+    const std::uint32_t wanted = SamplesOf(antialiasing);
+    if (wanted == samples) {
+        return {};
+    }
+    // Between two frames: those in flight still use the old pipelines and targets.
+    DAI_TRY(device.WaitIdle());
+    DAI_TRY(meshPass->SetSamples(wanted));
+    samples = wanted;
+    targetExtent = {};
+    DAI_LOG_INFO(kModule, "Multisampling with {} samples per pixel", samples);
+    return {};
+}
+
 core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
     if (depth && hdr && targetExtent == extent) {
         return {};
+    }
+    DestroyMultisampledTargets();
+    if (samples > 1) {
+        const auto multisampled = [&](rhi::Format format, rhi::TextureUsage usage, const char* name,
+                                      rhi::TextureHandle& texture) -> core::Result<void> {
+            DAI_TRY_ASSIGN(texture,
+                           device.CreateTexture(
+                               {.extent = extent, .format = format, .usage = usage, .samples = samples, .name = name}));
+            return {};
+        };
+        DAI_TRY(multisampled(kDepthFormat, rhi::TextureUsage::DepthTarget, "Multisampled depth", multisampledDepth));
+        DAI_TRY(multisampled(MeshPass::kNormalFormat, rhi::TextureUsage::ColorTarget, "Multisampled normals",
+                             multisampledNormals));
+        DAI_TRY(multisampled(kHdrFormat, rhi::TextureUsage::ColorTarget, "Multisampled HDR color", multisampledHdr));
     }
     device.DestroyTexture(depth);
     device.DestroyTexture(normals);
@@ -216,9 +271,11 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     DAI_TRY_ASSIGN(FxaaPass fxaaPass, FxaaPass::Create(impl->device, impl->swapchain.ColorFormat()));
     impl->fxaaPass.emplace(std::move(fxaaPass));
     impl->antialiasing = config.antialiasing;
+    impl->samples = impl->SamplesOf(config.antialiasing);
     DAI_TRY_ASSIGN(MeshPass meshPass, MeshPass::Create(impl->device, kHdrFormat, kDepthFormat,
                                                        {.shadowLights = config.shadowLights,
-                                                        .shadowResolution = config.shadowResolution}));
+                                                        .shadowResolution = config.shadowResolution,
+                                                        .samples = impl->samples}));
     impl->meshPass.emplace(std::move(meshPass));
     DAI_TRY_ASSIGN(AmbientOcclusionPass ambientOcclusionPass, AmbientOcclusionPass::Create(impl->device));
     impl->ambientOcclusionPass.emplace(std::move(ambientOcclusionPass));
@@ -305,6 +362,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder
     Impl& impl = *m_impl;
 
     impl.ReloadShaders();
+    DAI_TRY(impl.ApplySamples());
 
     const platform::Extent size = impl.window->PixelSize();
     impl.swapchain.Configure({{size.width, size.height}, impl.vsync});
@@ -318,6 +376,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder
 
     // A failure from here on still ends the frame: the acquired image must be presented.
     core::Result<void> status = impl.ResizeTargets(frame.extent);
+    const bool multisampled = impl.samples > 1;
     rhi::CommandList& commands = frame.commands;
     commands.WriteTimestamp();
     if (status) {
@@ -330,12 +389,19 @@ core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder
     }
     commands.WriteTimestamp();
     if (status) {
+        // With multisampling, the samples resolve into the targets that later passes read.
         commands.Discard(impl.normals, rhi::TextureState::ColorTarget);
         commands.Discard(impl.depth, rhi::TextureState::DepthTarget);
-        commands.BeginRendering({.colorTarget = impl.normals,
+        if (multisampled) {
+            commands.Discard(impl.multisampledNormals, rhi::TextureState::ColorTarget);
+            commands.Discard(impl.multisampledDepth, rhi::TextureState::DepthTarget);
+        }
+        commands.BeginRendering({.colorTarget = multisampled ? impl.multisampledNormals : impl.normals,
                                  .clearColor = glm::vec4(0.5f, 1.0f, 0.5f, 1.0f),
-                                 .depthTarget = impl.depth,
-                                 .clearDepth = 0.0f});
+                                 .depthTarget = multisampled ? impl.multisampledDepth : impl.depth,
+                                 .clearDepth = 0.0f,
+                                 .colorResolve = multisampled ? impl.normals : rhi::TextureHandle{},
+                                 .depthResolve = multisampled ? impl.depth : rhi::TextureHandle{}});
         impl.meshPass->RecordPrepass(commands);
         commands.EndRendering();
     }
@@ -353,14 +419,22 @@ core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder
         // Particles bounce off the pre-pass's surfaces.
         status = impl.particlePass->Simulate(commands, view.particleSpawns, view.timeStep,
                                              impl.meshPass->FrameDataIndex(), impl.depth, impl.normals);
-        commands.Transition(impl.depth, rhi::TextureState::DepthTarget);
+        if (!multisampled) {
+            commands.Transition(impl.depth, rhi::TextureState::DepthTarget);
+        }
     }
     commands.WriteTimestamp();
     if (status) {
         commands.Discard(impl.hdr, rhi::TextureState::ColorTarget);
-        commands.BeginRendering({.colorTarget = impl.hdr,
+        if (multisampled) {
+            commands.Discard(impl.multisampledHdr, rhi::TextureState::ColorTarget);
+        } else {
+            commands.Transition(impl.depth, rhi::TextureState::DepthTarget);
+        }
+        commands.BeginRendering({.colorTarget = multisampled ? impl.multisampledHdr : impl.hdr,
                                  .clearColor = glm::vec4(view.atmosphere.fogColor, 1.0f),
-                                 .depthTarget = impl.depth});
+                                 .depthTarget = multisampled ? impl.multisampledDepth : impl.depth,
+                                 .colorResolve = multisampled ? impl.hdr : rhi::TextureHandle{}});
         impl.meshPass->Record(commands);
         commands.EndRendering();
     }
