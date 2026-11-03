@@ -65,6 +65,8 @@ private:
         std::uint64_t instanceCapacity = 0;
         rhi::BufferHandle joints;
         std::uint64_t jointCapacity = 0;
+        rhi::BufferHandle lights;
+        std::uint64_t lightCapacity = 0;
     };
 
     MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
@@ -72,8 +74,7 @@ private:
     [[nodiscard]] core::Result<rhi::PipelineHandle> BuildPipeline(std::span<const std::uint32_t> vertexShader,
                                                                   std::span<const std::uint32_t> fragmentShader,
                                                                   rhi::CullMode cull);
-    [[nodiscard]] core::Result<void> PrepareFrameSlot(FrameSlot& slot, std::uint64_t instanceCount,
-                                                      std::uint64_t jointCount);
+    [[nodiscard]] core::Result<void> PrepareFrameSlot(FrameSlot& slot, const SceneView& view);
     /// Makes room for a material at this index of the table.
     [[nodiscard]] core::Result<void> ReserveMaterialSlot(std::uint32_t index);
     [[nodiscard]] std::uint32_t TextureIndex(rhi::TextureHandle texture) const;

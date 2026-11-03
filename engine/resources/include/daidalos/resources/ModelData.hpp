@@ -27,8 +27,8 @@ namespace daidalos::resources {
 struct Vertex {
     glm::vec3 position{0.0f};
     glm::vec3 normal{0.0f, 1.0f, 0.0f};
-    /// Direction of increasing u, with the handedness of the bitangent in w. All zeros if the asset has
-    /// no tangents: they are generated with normal mapping in Phase 7.
+    /// Direction of increasing u, with the handedness of the bitangent in w, as in glTF: the bitangent
+    /// is cross(normal, tangent) * w. All zeros when the mesh has no normal map and no tangents.
     glm::vec4 tangent{0.0f};
     glm::vec2 uv{0.0f};
 };
@@ -143,5 +143,10 @@ struct ModelData {
 /// animations come too: cubic spline keys are read as linear ones with a warning, and morph targets
 /// are ignored.
 [[nodiscard]] core::Result<ModelData> LoadModelFile(const std::filesystem::path& path);
+
+/// Fills the tangents of a mesh with MikkTSpace, the standard of glTF and of the tools that bake normal
+/// maps. Vertices whose triangles disagree, along UV seams, are split, so the mesh can gain vertices.
+/// LoadModelFile does it for normal-mapped primitives that come without tangents.
+void GenerateTangents(MeshData& mesh);
 
 } // namespace daidalos::resources

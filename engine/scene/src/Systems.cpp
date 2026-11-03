@@ -14,11 +14,33 @@
 
 namespace daidalos::scene {
 
+namespace {
+
+void ExtractLights(ecs::World& world, renderer::SceneView& view) {
+    world.Each<ecs::WorldTransform, Light>(
+        [&](ecs::Entity /*entity*/, const ecs::WorldTransform& transform, const Light& light) {
+            if (!light.enabled || light.intensity <= 0.0f || light.range <= 0.0f) {
+                return;
+            }
+            view.lights.push_back({.type = light.type,
+                                   .position = glm::vec3(transform.matrix[3]),
+                                   .direction = glm::normalize(-glm::vec3(transform.matrix[2])),
+                                   .color = light.color * light.intensity,
+                                   .range = light.range,
+                                   .falloff = light.falloff,
+                                   .innerAngle = light.innerAngle,
+                                   .outerAngle = light.outerAngle});
+        });
+}
+
+} // namespace
+
 void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity activeCamera) {
     DAI_PROFILE_SCOPE("scene::ExtractScene");
     view.camera.reset();
     view.draws.clear();
     view.jointMatrices.clear();
+    view.lights.clear();
 
     bool chosen = false;
     std::uint32_t cameraIndex = std::numeric_limits<std::uint32_t>::max();
@@ -50,6 +72,7 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
             view.draws.push_back({component.mesh, transform.matrix, component.material,
                                   component.joints.empty() ? renderer::kNoJoints : firstJoint});
         });
+    ExtractLights(world, view);
 }
 
 void SyncKinematicBodies(ecs::World& world, physics::PhysicsWorld& physics, float step) {

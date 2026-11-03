@@ -36,7 +36,6 @@ void Scene::Extract(renderer::SceneView& view) {
     ecs::PropagateTransforms(m_world);
     ExtractScene(m_world, view, m_activeCamera);
     view.atmosphere = m_atmosphere;
-    view.spotLight = m_spotLight;
 
     SyncSoundEmitters(m_world, m_sounds);
     if (view.camera.has_value()) {

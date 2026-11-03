@@ -144,6 +144,7 @@ private:
     std::optional<core::CVar<std::int64_t>> m_windowWidth;
     std::optional<core::CVar<std::int64_t>> m_windowHeight;
     std::optional<core::CVar<bool>> m_vsync;
+    std::optional<core::CVar<double>> m_exposure;
     std::optional<core::CVar<bool>> m_validation;
     std::optional<core::CVar<double>> m_volume;
     std::optional<core::CVar<double>> m_effectsVolume;

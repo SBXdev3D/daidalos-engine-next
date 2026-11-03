@@ -60,7 +60,15 @@ ENTITY_ATTRIBUTES = {
     "lightColor": "light_color",
     "lightRange": "light_range",
     "lightEnabled": "light_enabled",
+    "lightRadius": "light_angle",
+    "lightFalloff": "light_falloff",
+    "lightTightness": "light_tightness",
+    "lightDecalY": "light_offset",
+    "lightShadow_caster": "light_shadows",
+    "rotation_speed": "rotation_speed",
 }
+# Attributes in legacy units, written in meters.
+LENGTH_ATTRIBUTES = {"light_range", "light_offset"}
 # Kinds that are drawn as a model in place of their legacy animated mesh.
 BOX_MESHES = {"door": "door_bbox.obj"}
 # Animated models, each baked to a glTF file of its own with its texture. Their level nodes keep their
@@ -74,6 +82,15 @@ ANIMATED_MODELS = {
     # Not in the level: the player holds it.
     "handgun.ms3d": {"texture": "handgun_d.png", "scale": 3.0, "clips": {"fire": (1, 3, 5.0), "reload": (4, 6, 1.0)}},
 }
+
+# Normal maps by diffuse texture. The level's are read from its <normal_texture> elements; the
+# handgun's was set by the legacy game code (CHandgun.cpp), because the player holds it.
+NORMAL_MAPS = {"handgun_d.png": "handgun_n.png"}
+# What the legacy level wrote where a brush had no normal map.
+NO_NORMAL_MAP = {"black.png", "white.png", "default.png"}
+# Every legacy brush used the "default" material of Materials/default.mtl, with a Blinn-Phong shininess
+# Ns of 100. Its GGX equivalent: alpha = sqrt(2 / (Ns + 2)), and the glTF roughness is sqrt(alpha).
+LEGACY_ROUGHNESS = round(math.sqrt(math.sqrt(2.0 / (100.0 + 2.0))), 3)
 
 # Entities the legacy level lacks, in the engine's meters. The legacy game had a shotgun in its code and
 # shotgun shells in this level, but nothing to pick the shotgun up from: it lies next to the shells.
@@ -578,9 +595,8 @@ class GltfWriter:
         self.gltf["accessors"].append(accessor)
         return len(self.gltf["accessors"]) - 1
 
-    def material(self, texture):
-        if texture in self.materials:
-            return self.materials[texture]
+    def texture(self, texture):
+        """Copies a legacy texture next to the glTF file, as PNG, and returns its glTF texture index."""
         source = self.source / "Textures" / texture
         if not source.is_file():
             sys.exit(f"Missing texture: {source}")
@@ -592,9 +608,16 @@ class GltfWriter:
             shutil.copyfile(source, self.output / image)
         self.gltf["images"].append({"uri": image})
         self.gltf["textures"].append({"source": len(self.gltf["images"]) - 1, "sampler": 0})
+        return len(self.gltf["textures"]) - 1
+
+    def material(self, texture):
+        if texture in self.materials:
+            return self.materials[texture]
         material = {"name": texture, "pbrMetallicRoughness": {
-            "baseColorTexture": {"index": len(self.gltf["textures"]) - 1},
-            "metallicFactor": 0.0, "roughnessFactor": 0.9}}
+            "baseColorTexture": {"index": self.texture(texture)},
+            "metallicFactor": 0.0, "roughnessFactor": LEGACY_ROUGHNESS}}
+        if texture in NORMAL_MAPS:
+            material["normalTexture"] = {"index": self.texture(NORMAL_MAPS[texture])}
         if texture in ALPHA_TESTED_TEXTURES:
             material["alphaMode"] = "MASK"
             material["doubleSided"] = True
@@ -671,13 +694,22 @@ def entity_name(kind, node):
     if attributes is not None:
         for element in attributes:
             if element.tag in ENTITY_ATTRIBUTES and element.text:
-                fields.append(f"{ENTITY_ATTRIBUTES[element.tag]}={element.text.strip()}")
+                key, value = ENTITY_ATTRIBUTES[element.tag], element.text.strip().rstrip("f")
+                if key in LENGTH_ATTRIBUTES:
+                    value = f"{float(value) * METERS_PER_UNIT:g}"
+                fields.append(f"{key}={value}")
     return ";".join(fields)
 
 
 def convert(source, scene, output):
     models = source / "Models"
     root = ET.fromstring((source / "Scenes" / f"{scene}.des").read_text(encoding="latin-1"))
+    for element in root.iter():
+        diffuse, normal = element.find("diffuse_texture"), element.find("normal_texture")
+        if diffuse is not None and normal is not None and diffuse.text and normal.text:
+            diffuse_name, normal_name = diffuse.text.strip(), normal.text.strip()
+            if normal_name != diffuse_name and normal_name not in NO_NORMAL_MAP:
+                NORMAL_MAPS[diffuse_name] = normal_name
     writer = GltfWriter(source, output)
     level = {}
     cache = {}

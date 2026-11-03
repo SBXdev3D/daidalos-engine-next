@@ -284,6 +284,13 @@ core::Result<void> ModelBuilder::AddMeshes() {
             if (primitive.materialIndex.has_value()) {
                 added.material = static_cast<std::uint32_t>(*primitive.materialIndex);
             }
+            // glTF asks for MikkTSpace tangents when a normal-mapped primitive comes without them.
+            const bool normalMapped = added.material.has_value() && *added.material < m_model.materials.size() &&
+                                      m_model.materials[*added.material].normalImage.has_value();
+            const bool hasTangents = primitive.findAttribute("TANGENT") != primitive.attributes.end();
+            if (normalMapped && !hasTangents) {
+                GenerateTangents(added.mesh);
+            }
             m_meshPrimitives[meshIndex].push_back(static_cast<std::uint32_t>(m_model.primitives.size()));
             m_model.primitives.push_back(std::move(added));
         }

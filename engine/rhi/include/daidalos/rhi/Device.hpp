@@ -73,6 +73,10 @@ public:
     [[nodiscard]] std::uint64_t ValidationErrorCount() const;
     /// Swapchain images presented since the device was created.
     [[nodiscard]] std::uint64_t PresentedFrameCount() const;
+    /// The timestamps of the last frame the GPU finished, from BeginFrame, in milliseconds after the
+    /// first one, in the order they were written. Empty without timestamp support. Frames finish
+    /// kFramesInFlight frames after they were recorded.
+    [[nodiscard]] std::span<const double> CompletedTimestamps() const;
     /// Objects waiting for the GPU to finish with them.
     [[nodiscard]] std::size_t PendingDestructionCount() const;
 

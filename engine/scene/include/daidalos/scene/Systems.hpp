@@ -14,8 +14,8 @@ namespace daidalos::scene {
 // What ties the entities to the renderer, the physics and the sounds. Scene runs them at the right
 // moments; they are public for tests and for code that runs a world without a Scene.
 
-/// Fills the view from the entities with a WorldTransform and a Camera, MeshRenderer or
-/// SkinnedMeshRenderer. A joint that is gone counts as the skinned entity itself. Run it after
+/// Fills the view from the entities with a WorldTransform and a Camera, MeshRenderer,
+/// SkinnedMeshRenderer or enabled Light. A joint that is gone counts as the skinned entity itself. Run it after
 /// ecs::PropagateTransforms. The view goes through the given camera entity if it is alive and has a
 /// Camera. Otherwise, the camera with the lowest entity index is used.
 /// The vectors of the view are reused, so that a view kept between frames does not reallocate.

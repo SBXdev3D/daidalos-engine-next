@@ -7,6 +7,8 @@
 #include <daidalos/scene/Systems.hpp>
 
 #include <glm/ext/matrix_transform.hpp>
+#include <glm/geometric.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 #include <gtest/gtest.h>
@@ -208,4 +210,26 @@ TEST(SyncKinematicBodies, MovesBodiesToTheirEntities) {
     EXPECT_NEAR(position.x, 1.0f, 0.001f);
     EXPECT_NEAR(position.y, 2.0f, 0.001f);
     EXPECT_NEAR(position.z, 3.0f, 0.001f);
+}
+
+TEST(ExtractScene, LightsTakeTheirPlaceAndDirectionFromTheirEntity) {
+    ecs::World world;
+    const ecs::Entity lamp = AddAt(world, {1.0f, 3.0f, 2.0f});
+    // Turned to look down: a spot light shines down its entity's local -Z.
+    world.Get<ecs::LocalTransform>(lamp).rotation = glm::angleAxis(glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    world.Add<scene::Light>(
+        lamp, scene::Light{
+                  .type = renderer::LightType::Spot, .color = {0.5f, 0.25f, 1.0f}, .intensity = 2.0f, .range = 7.0f});
+    world.Add<scene::Light>(AddAt(world, {}), scene::Light{.enabled = false});
+    ecs::PropagateTransforms(world);
+
+    SceneView view;
+    scene::ExtractScene(world, view);
+    ASSERT_EQ(view.lights.size(), 1U);
+    const renderer::Light& light = view.lights[0];
+    EXPECT_EQ(light.type, renderer::LightType::Spot);
+    EXPECT_NEAR(glm::distance(light.position, glm::vec3(1.0f, 3.0f, 2.0f)), 0.0f, 1e-5f);
+    EXPECT_NEAR(glm::distance(light.direction, glm::vec3(0.0f, -1.0f, 0.0f)), 0.0f, 1e-5f);
+    EXPECT_EQ(light.color, glm::vec3(1.0f, 0.5f, 2.0f));
+    EXPECT_EQ(light.range, 7.0f);
 }

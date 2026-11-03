@@ -70,14 +70,29 @@ constexpr float kMaxPitch = glm::radians(89.0f);
 constexpr float kStickLookSpeed = 2.5f; // Radians per second.
 constexpr float kMessageTime = 3.0f;    // Seconds.
 
-// Darkness, until the lights of Phase 7: what is far away fades to black, and the flashlight cuts a
-// cone through it.
-constexpr glm::vec3 kDarkness{0.005f, 0.006f, 0.008f};
-constexpr float kDarkDensity = 0.32f;
+// The factory is dark, but never black: enough light everywhere to make out the walls and the way ahead
+// far from any lamp (Settings::ambient), slightly cold, and a thin fog that swallows what is far away.
+constexpr glm::vec3 kAmbientTint{0.9f, 0.95f, 1.1f};
+constexpr glm::vec3 kFogColor{0.005f, 0.006f, 0.008f};
+constexpr float kFogDensity = 0.03f;
 constexpr glm::vec3 kFlashlightColor{2.4f, 2.25f, 1.95f};
 constexpr float kFlashlightRange = 32.0f;                    // Meters.
+constexpr float kFlashlightFalloff = 0.15f;                  // Fraction of the range at full light.
 constexpr float kFlashlightInnerAngle = glm::radians(13.0f); // From the axis.
 constexpr float kFlashlightOuterAngle = glm::radians(22.0f);
+// The light of a shot, after the legacy handgun's: 0.7 grey, 45 degrees, 0.7 m in front of the eye.
+constexpr glm::vec3 kMuzzleFlashColor{1.4f, 1.25f, 0.9f};
+constexpr float kMuzzleFlashRange = 7.0f;
+// Each alarm turns two red spots, back to back, 0.7 m under it and 25 degrees below the horizon, as the
+// legacy CAlarmEntity did.
+constexpr glm::vec3 kAlarmColor{0.5f, 0.0f, 0.0f};
+constexpr float kAlarmRange = 28.0f;
+constexpr float kAlarmAngle = glm::radians(20.0f);
+constexpr float kAlarmTightness = 0.8f; // Fraction of the angle at full light.
+constexpr float kAlarmFalloff = 0.7f;
+constexpr float kAlarmTilt = glm::radians(25.0f);
+constexpr float kAlarmOffset = 0.7f; // Meters below the alarm.
+constexpr float kAlarmSpeed = 70.0f; // Degrees per second, when the level does not say.
 
 // Sounds. Distances are the steps of the original, and a fall is heard from about 0.7 m high.
 constexpr float kStepDistance = 2.45f;   // Meters walked between two footsteps.
@@ -125,6 +140,11 @@ struct Ladder {
     glm::vec3 max{0.0f};
 };
 
+/// A light fixture that turns around the vertical axis.
+struct Alarm {
+    float degreesPerSecond = kAlarmSpeed;
+};
+
 struct Door {
     int id = 0;
     glm::vec3 closedPosition{0.0f};
@@ -170,6 +190,63 @@ T Number(const NodeDescription& description, std::string_view key, T fallback) {
     const std::string_view text = found->second;
     std::from_chars(text.data(), text.data() + text.size(), value);
     return value;
+}
+
+/// A color "r:g:b:a", as the legacy level writes it. Alpha is ignored.
+glm::vec3 Color(const NodeDescription& description, std::string_view key, const glm::vec3& fallback) {
+    const auto found = description.attributes.find(key);
+    if (found == description.attributes.end()) {
+        return fallback;
+    }
+    glm::vec3 color = fallback;
+    std::string_view text = found->second;
+    for (glm::length_t channel = 0; channel < 3 && !text.empty(); ++channel) {
+        const std::size_t end = text.find(':');
+        std::from_chars(text.data(), text.data() + text.substr(0, end).size(), color[channel]);
+        text = (end == std::string_view::npos) ? std::string_view{} : text.substr(end + 1);
+    }
+    return color;
+}
+
+/// A child entity that holds a light, placed and turned relative to its parent.
+ecs::Entity AddLight(ecs::World& world, ecs::Entity parent, const glm::vec3& offset, const glm::quat& rotation,
+                     const scene::Light& light) {
+    const ecs::Entity entity = world.Create();
+    ecs::LocalTransform transform;
+    transform.translation = offset;
+    transform.rotation = rotation;
+    world.Add<ecs::LocalTransform>(entity, transform);
+    world.Add<scene::Light>(entity, light);
+    [[maybe_unused]] const core::Result<void> attached = world.SetParent(entity, parent);
+    return entity;
+}
+
+/// A ceiling lamp of the level, which shines straight down.
+void AddSpotLight(ecs::World& world, ecs::Entity lamp, const NodeDescription& node) {
+    const float angle = glm::radians(Number(node, "light_angle", 20.0f));
+    const scene::Light light{.type = renderer::LightType::Spot,
+                             .color = Color(node, "light_color", glm::vec3(1.0f)),
+                             .range = Number(node, "light_range", 7.0f),
+                             .falloff = Number(node, "light_falloff", 0.5f),
+                             .innerAngle = angle * Number(node, "light_tightness", 0.5f),
+                             .outerAngle = angle,
+                             .enabled = node.attributes.find("light_enabled") == node.attributes.end() ||
+                                        node.attributes.at("light_enabled") != "false"};
+    const glm::quat down = glm::angleAxis(glm::radians(-90.0f), math::kRight);
+    AddLight(world, lamp, math::kUp * Number(node, "light_offset", 0.0f), down, light);
+}
+
+void AddAlarmLights(ecs::World& world, ecs::Entity alarm, const NodeDescription& node) {
+    world.Add<Alarm>(alarm, Number(node, "rotation_speed", kAlarmSpeed));
+    const scene::Light light{.type = renderer::LightType::Spot,
+                             .color = kAlarmColor,
+                             .range = kAlarmRange,
+                             .falloff = kAlarmFalloff,
+                             .innerAngle = kAlarmAngle * kAlarmTightness,
+                             .outerAngle = kAlarmAngle};
+    for (const float yaw : {0.0f, glm::pi<float>()}) {
+        AddLight(world, alarm, -math::kUp * kAlarmOffset, math::FromYawPitchRoll(yaw, -kAlarmTilt, 0.0f), light);
+    }
 }
 
 /// A value "x,y,z".
@@ -620,8 +697,24 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
 
     ecs::Entity playerEntity = world.Create();
     glm::vec3 eye{0.0f, kEyeHeight, 3.0f};
-    world.Add<Player>(playerEntity);
+    Player& newPlayer = world.Add<Player>(playerEntity);
     world.Add<scene::Camera>(playerEntity);
+    // The lights that the player carries follow the camera.
+    newPlayer.flashlight = AddLight(world, playerEntity, glm::vec3(0.0f), glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
+                                    {.type = renderer::LightType::Spot,
+                                     .color = kFlashlightColor,
+                                     .range = kFlashlightRange,
+                                     .falloff = kFlashlightFalloff,
+                                     .innerAngle = kFlashlightInnerAngle,
+                                     .outerAngle = kFlashlightOuterAngle,
+                                     .enabled = false});
+    world.Get<Player>(playerEntity).muzzleFlash =
+        AddLight(world, playerEntity, math::kForward * 0.7f, glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
+                 {.type = renderer::LightType::Point,
+                  .color = kMuzzleFlashColor,
+                  .range = kMuzzleFlashRange,
+                  .falloff = 0.3f,
+                  .enabled = false});
     physics::CharacterConfig body;
     body.height = kStandHeight;
     world.Get<Player>(playerEntity).character = physics.AddCharacter(body, eye - math::kUp * kEyeHeight);
@@ -665,6 +758,9 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
             }
         } else if (node.kind == "alarm") {
             world.Add<LoopedSound>(entity, bank.alarm, 0.5f, 1.4f, 35.0f);
+            AddAlarmLights(world, entity, node);
+        } else if (node.kind == "spot") {
+            AddSpotLight(world, entity, node);
         } else if (node.kind == "fan") {
             world.Add<LoopedSound>(entity, bank.fan, 0.7f, 1.0f, 20.0f);
         } else if (node.kind == "ladder") {
@@ -756,20 +852,24 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
             StartLoopedSounds(scene, player());
         }
     });
-    systems.Add("Darkness", [&, player](ecs::World& world, core::Seconds /*delta*/) {
-        if (const Player* state = world.TryGet<Player>(player())) {
-            scene.SetAtmosphere({kDarkness, kDarkDensity * settings.darkness});
-            std::optional<renderer::SpotLight> flashlight;
-            if (state->flashlightOn) {
-                const ecs::LocalTransform& eye = world.Get<ecs::LocalTransform>(player());
-                flashlight = renderer::SpotLight{.position = eye.translation,
-                                                 .direction = eye.rotation * math::kForward,
-                                                 .color = kFlashlightColor,
-                                                 .range = kFlashlightRange,
-                                                 .innerAngle = kFlashlightInnerAngle,
-                                                 .outerAngle = kFlashlightOuterAngle};
+    systems.Add("Lights", [&, player](ecs::World& world, core::Seconds delta) {
+        const float seconds = static_cast<float>(delta.count());
+        const float darkness = std::clamp(settings.darkness, 0.0f, 1.0f);
+        scene.SetAtmosphere({.fogColor = kFogColor,
+                             .fogDensity = kFogDensity * darkness,
+                             .ambient = glm::mix(glm::vec3(1.0f), kAmbientTint * settings.ambient, darkness)});
+        world.Each<Alarm, ecs::LocalTransform>([seconds](ecs::Entity, const Alarm& alarm, ecs::LocalTransform& turned) {
+            const float angle = glm::radians(alarm.degreesPerSecond) * seconds;
+            turned.rotation = glm::normalize(glm::angleAxis(angle, math::kUp) * turned.rotation);
+        });
+        if (Player* state = world.TryGet<Player>(player())) {
+            state->muzzleFlashTime = std::max(state->muzzleFlashTime - seconds, 0.0f);
+            if (scene::Light* flashlight = world.TryGet<scene::Light>(state->flashlight)) {
+                flashlight->enabled = state->flashlightOn;
             }
-            scene.SetSpotLight(flashlight);
+            if (scene::Light* flash = world.TryGet<scene::Light>(state->muzzleFlash)) {
+                flash->enabled = state->muzzleFlashTime > 0.0f;
+            }
         }
     });
 }

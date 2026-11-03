@@ -49,6 +49,23 @@ struct NodeName {
     std::string value;
 };
 
+/// ECS component: a light at the entity's WorldTransform. A spot light shines down the entity's local -Z,
+/// like a camera. See renderer::Light for what the values mean (ADR-0022).
+struct Light {
+    renderer::LightType type = renderer::LightType::Point;
+    /// Linear color.
+    glm::vec3 color{1.0f};
+    float intensity = 1.0f;
+    /// Meters.
+    float range = 10.0f;
+    /// Fraction of the range lit at full strength.
+    float falloff = 0.5f;
+    /// Spot lights: radians from the axis.
+    float innerAngle = glm::radians(20.0f);
+    float outerAngle = glm::radians(30.0f);
+    bool enabled = true;
+};
+
 /// ECS component: the entity's LocalTransform moves a kinematic body of the scene's physics. The entity
 /// must be at the root of the hierarchy, or under parents that do not move.
 struct KinematicBody {

@@ -1,6 +1,6 @@
 # Architecture
 
-How the engine is built today, through Phase 6: physics, audio and animation, and the sandbox's fighting. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
+How the engine is built today, through Phase 7.1: real lights, PBR materials and normal maps. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
 
 ## Modules
 
@@ -85,8 +85,9 @@ sequenceDiagram
     A->>G: OnRender
     A->>R: Render(SceneView, overlay)
     R->>R: Reload changed shaders
-    R->>D: BeginFrame
-    R->>D: Mesh pass, then overlay
+    R->>D: BeginFrame: send the pending uploads, read last timestamps
+    R->>D: Mesh pass into the HDR target
+    R->>D: Tonemap into the back buffer, then overlay
     R->>D: EndFrame: submit and present
 ```
 
@@ -150,13 +151,28 @@ The renderer uses bindless access: one descriptor set holds every texture and st
 
 ```mermaid
 flowchart LR
-    P["Push constants<br/>buffer and element indices"] --> FB["FrameData<br/>view-projection"]
+    P["Push constants<br/>buffer and element indices"] --> FB["FrameData<br/>view-projection, fog, ambient"]
+    FB --> LB["LightData<br/>every light of the frame"]
     P --> IB["InstanceData<br/>world matrix, skin, first joint"]
     IB --> SB["Skin of the mesh<br/>joints and weights per vertex"]
     IB --> JB["Joint matrices<br/>of the frame"]
     P --> MB["MaterialData<br/>factors and texture indices"]
     MB --> T["Bindless texture array"]
 ```
+
+## Lighting
+
+Meshes are shaded in linear HDR with metallic-roughness PBR and the frame's lights, then tonemapped (ADR-0022). Lights are `scene::Light` entities: a spot light shines down its entity's local -Z, so a lamp is placed and turned like anything else, and a light parented to the camera follows it.
+
+```mermaid
+flowchart LR
+    E["scene::Light<br/>on entities"] -->|"ExtractScene"| L["SceneView::lights<br/>position, direction, color, range"]
+    L --> M["Mesh pass<br/>GGX, normal maps,<br/>ambient, fog"]
+    M --> H["HDR target<br/>Rgba16Float"]
+    H -->|"exposure,<br/>PBR Neutral"| S["Swapchain<br/>sRGB"]
+```
+
+A light's color is what a white surface facing it reflects up close, and it fades linearly to zero at its range, as in the legacy engine. Normal maps follow glTF (green up, bitangent from the tangent's `w`), and meshes that lack tangents get MikkTSpace ones at load. Each pass is timed with GPU timestamps, which `Renderer::GpuTimes` returns and the sandbox's overlay shows.
 
 `MeshPass` keeps one frame slot per frame in flight, so the CPU never writes data the GPU is still reading. Shaders are HLSL, compiled to SPIR-V by DXC during the build and embedded in the binary. In development builds, the sources are watched and recompiled by the `dxc` executable (ADR-0009).
 
@@ -172,7 +188,9 @@ CI runs on pull requests and on `main`: Windows MSVC and Linux Clang, in Debug, 
 ## Known gaps
 
 - No tool produces KTX2 files yet, although the loader reads them.
-- Lighting, clustering and ambient occlusion do not exist yet (Phase 7). Materials carry all the PBR data already, and the sandbox simulates darkness with fog, with one spot light without shadows for its flashlight.
+- Every light is evaluated for every pixel: clustering comes in Phase 7.3, and so does ambient occlusion.
+- Lights cast no shadows, so they shine through walls (Phase 7.2).
+- There are no reflections: metals reflect only an estimate of the ambient light.
 - Sound passes through walls and doors: there is no occlusion.
 - Volumes are read at startup and cannot change during play.
 - Joint matrices are computed and uploaded for every skinned mesh, even out of view, and collisions use the bind pose of skinned meshes.

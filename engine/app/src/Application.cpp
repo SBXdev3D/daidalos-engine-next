@@ -160,6 +160,7 @@ core::Result<void> Application::LoadConfiguration() {
         m_windowHeight = m_cvars.Register<std::int64_t>("window.height", m_config.window.height,
                                                         "Main window height, in screen coordinates");
         m_vsync = m_cvars.Register<bool>("renderer.vsync", true, "Synchronize presentation with the display");
+        m_exposure = m_cvars.Register<double>("renderer.exposure", 1.0, "Multiplies the light before tonemapping");
         m_validation = m_cvars.Register<bool>("renderer.validation", kValidationByDefault,
                                               "Enable the Vulkan validation layers, read at startup");
         m_volume = m_cvars.Register<double>("audio.volume", 1.0, "Overall volume, from 0 to 1, read at startup");
@@ -239,7 +240,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_scene.camera.reset();
     m_scene.draws.clear();
     m_scene.atmosphere = {};
-    m_scene.spotLight.reset();
+    m_scene.lights.clear();
     if (m_currentScene) {
         m_currentScene->Extract(m_scene);
     }
@@ -255,6 +256,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
 #endif
 
     m_renderer->SetVsync(m_vsync->Get());
+    m_renderer->SetExposure(static_cast<float>(m_exposure->Get()));
     core::Result<void> rendered = m_renderer->Render(m_scene, overlay);
     if (rendered && !overlayResult) {
         rendered = std::move(overlayResult);

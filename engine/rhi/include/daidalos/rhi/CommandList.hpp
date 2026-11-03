@@ -62,6 +62,11 @@ public:
         PushConstants(std::as_bytes(std::span(&data, 1)));
     }
 
+    /// Records the GPU clock once every earlier command of the frame has finished. Returns false, and
+    /// records nothing, outside a frame, past kMaxTimestamps, or on a device without timestamps.
+    /// Device::CompletedTimestamps reads them once the frame is done.
+    bool WriteTimestamp();
+
     void Draw(std::uint32_t vertexCount, std::uint32_t firstVertex = 0);
     void DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex = 0, std::int32_t vertexOffset = 0);
 

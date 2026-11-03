@@ -7,7 +7,7 @@
 
 // Each structure matches its C++ twin in engine/renderer/src/MeshPass.cpp.
 
-// Indices only: everything else is in storage buffers, which the lighting data of Phase 7 will join.
+// Indices only: everything else is in storage buffers.
 struct MeshPushConstants {
     uint frameBuffer;
     uint instanceBuffer;
@@ -22,13 +22,21 @@ struct FrameData {
     float3 cameraPosition;
     float fogDensity;
     float3 fogColor;
-    float padding;
-    float3 spotPosition;
-    float spotRange; // 0 without a light.
-    float3 spotDirection;
-    float spotCosInner;
-    float3 spotColor;
-    float spotCosOuter;
+    uint lightCount;
+    float3 ambient;
+    uint lightBuffer;
+};
+
+// A point light has a cosOuter of -2, which every direction passes.
+struct LightData {
+    float3 position;
+    float range;
+    float3 direction;
+    float fullRange; // Meters lit at full strength.
+    float3 color;
+    float cosOuter;
+    float cosInner;
+    uint3 padding;
 };
 
 static const uint kNoJoints = 0xFFFFFFFF;
@@ -81,6 +89,7 @@ struct MaterialData {
 [[vk::binding(2, 0)]] StructuredBuffer<MaterialData> g_materials[];
 [[vk::binding(2, 0)]] StructuredBuffer<JointData> g_joints[];
 [[vk::binding(2, 0)]] StructuredBuffer<SkinVertex> g_skins[];
+[[vk::binding(2, 0)]] StructuredBuffer<LightData> g_lights[];
 
 // Matches rhi::SamplerIndex.
 static const uint kSamplerLinearRepeat = 1;

@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -109,6 +110,38 @@ TEST_F(GpuTest, BufferDestroyedBeforeItsUploadIsSentIsReleasedSafely) {
 
     ASSERT_TRUE(Device().WaitIdle().has_value());
     EXPECT_EQ(Device().PendingDestructionCount(), 0U);
+}
+
+TEST_F(GpuTest, TimestampsOfAFrameComeBackInOrder) {
+    const auto frame = [this](int timestamps) {
+        core::Result<std::optional<rhi::Frame>> begun = Device().BeginFrame();
+        ASSERT_TRUE(begun.has_value() && begun->has_value());
+        for (int index = 0; index < timestamps; ++index) {
+            (*begun)->commands.WriteTimestamp();
+        }
+        ASSERT_TRUE(Device().EndFrame().has_value());
+    };
+    frame(3);
+    for (std::uint32_t index = 1; index < rhi::kFramesInFlight; ++index) {
+        frame(0);
+    }
+    // The next BeginFrame reuses the first frame's slot, and reads its timestamps.
+    frame(0);
+
+    const std::span<const double> timestamps = Device().CompletedTimestamps();
+    if (timestamps.empty()) {
+        GTEST_SKIP() << "This device has no timestamps";
+    }
+    ASSERT_EQ(timestamps.size(), 3U);
+    EXPECT_EQ(timestamps[0], 0.0);
+    EXPECT_GE(timestamps[1], timestamps[0]);
+    EXPECT_GE(timestamps[2], timestamps[1]);
+}
+
+TEST_F(GpuTest, TimestampsAreRefusedOutsideAFrame) {
+    bool written = true;
+    ASSERT_TRUE(Device().Submit([&](rhi::CommandList& commands) { written = commands.WriteTimestamp(); }).has_value());
+    EXPECT_FALSE(written);
 }
 
 TEST_F(GpuTest, TextureDataSurvivesARoundTripThroughGpuMemory) {
