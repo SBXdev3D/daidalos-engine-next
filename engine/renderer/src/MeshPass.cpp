@@ -39,14 +39,37 @@ struct FrameData {
     glm::vec3 cameraPosition;
     float fogDensity;
     glm::vec3 fogColor;
-    float padding;
-    glm::vec3 spotPosition;
-    float spotRange; // 0 without a light.
-    glm::vec3 spotDirection;
-    float spotCosInner;
-    glm::vec3 spotColor;
-    float spotCosOuter;
+    std::uint32_t lightCount;
+    glm::vec3 ambient;
+    std::uint32_t lightBuffer;
 };
+
+struct LightData {
+    glm::vec3 position;
+    float range;
+    glm::vec3 direction;
+    float fullRange;
+    glm::vec3 color;
+    float cosOuter; // kPointLight for a point light.
+    float cosInner;
+    std::array<std::uint32_t, 3> padding;
+};
+static_assert(sizeof(LightData) == 64);
+
+/// The cosine of the outer angle of a point light: every direction is inside.
+constexpr float kPointLight = -2.0f;
+
+LightData ToGpu(const Light& light) {
+    const bool spot = light.type == LightType::Spot;
+    return {light.position,
+            light.range,
+            spot ? glm::normalize(light.direction) : glm::vec3(0.0f, 0.0f, -1.0f),
+            light.range * std::clamp(light.falloff, 0.0f, 1.0f),
+            light.color,
+            spot ? std::cos(light.outerAngle) : kPointLight,
+            spot ? std::cos(light.innerAngle) : kPointLight + 1.0f,
+            {}};
+}
 
 struct InstanceData {
     glm::mat4 world;
@@ -78,6 +101,7 @@ constexpr std::uint32_t kNoTexture = 0xFFFFFFFF;
 constexpr std::uint32_t kInitialMaterialCapacity = 64;
 constexpr std::uint64_t kInitialInstanceCapacity = 256;
 constexpr std::uint64_t kInitialJointCapacity = 256;
+constexpr std::uint64_t kInitialLightCapacity = 64;
 
 } // namespace
 
@@ -107,13 +131,15 @@ MeshPass::~MeshPass() {
         m_device->DestroyBuffer(slot.frame);
         m_device->DestroyBuffer(slot.instances);
         m_device->DestroyBuffer(slot.joints);
+        m_device->DestroyBuffer(slot.lights);
     }
 }
 
 core::Result<MeshPass> MeshPass::Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat) {
     MeshPass pass(device, colorFormat, depthFormat);
     DAI_TRY(pass.ReplaceShaders(rhi::ToSpirv(kMeshVsSpirv), rhi::ToSpirv(kMeshPsSpirv)));
-    DAI_TRY_ASSIGN(MaterialHandle defaultMaterial, pass.CreateMaterial({}));
+    // Plain white plastic. glTF's default material is a metal, which looks black without reflections.
+    DAI_TRY_ASSIGN(MaterialHandle defaultMaterial, pass.CreateMaterial({.metallicFactor = 0.0f}));
     pass.m_defaultMaterial = defaultMaterial;
     return pass;
 }
@@ -128,7 +154,8 @@ core::Result<rhi::PipelineHandle> MeshPass::BuildPipeline(std::span<const std::u
         .vertexStride = sizeof(Vertex),
         .vertexAttributes = {{0, rhi::Format::Rgb32Float, static_cast<std::uint32_t>(offsetof(Vertex, position))},
                              {1, rhi::Format::Rgb32Float, static_cast<std::uint32_t>(offsetof(Vertex, normal))},
-                             {2, rhi::Format::Rg32Float, static_cast<std::uint32_t>(offsetof(Vertex, uv))}},
+                             {2, rhi::Format::Rg32Float, static_cast<std::uint32_t>(offsetof(Vertex, uv))},
+                             {3, rhi::Format::Rgba32Float, static_cast<std::uint32_t>(offsetof(Vertex, tangent))}},
         .colorFormat = m_colorFormat,
         .depthFormat = m_depthFormat,
         .cull = cull,
@@ -261,34 +288,32 @@ void MeshPass::DestroyMaterial(MaterialHandle material) {
     m_materials.Remove(material);
 }
 
-core::Result<void> MeshPass::PrepareFrameSlot(FrameSlot& slot, std::uint64_t instanceCount, std::uint64_t jointCount) {
-    if (!slot.frame) {
-        DAI_TRY_ASSIGN(rhi::BufferHandle frame, m_device->CreateBuffer({.size = sizeof(FrameData),
-                                                                        .usage = rhi::BufferUsage::Storage,
-                                                                        .memory = rhi::MemoryLocation::CpuToGpu,
-                                                                        .name = "Frame data"}));
-        slot.frame = frame;
-    }
-    if (slot.instanceCapacity < instanceCount) {
-        const std::uint64_t capacity = std::max({kInitialInstanceCapacity, instanceCount, slot.instanceCapacity * 2});
-        DAI_TRY_ASSIGN(rhi::BufferHandle instances, m_device->CreateBuffer({.size = capacity * sizeof(InstanceData),
-                                                                            .usage = rhi::BufferUsage::Storage,
-                                                                            .memory = rhi::MemoryLocation::CpuToGpu,
-                                                                            .name = "Instances"}));
-        m_device->DestroyBuffer(slot.instances);
-        slot.instances = instances;
-        slot.instanceCapacity = capacity;
-    }
-    if (slot.jointCapacity < jointCount) {
-        const std::uint64_t capacity = std::max({kInitialJointCapacity, jointCount, slot.jointCapacity * 2});
-        DAI_TRY_ASSIGN(rhi::BufferHandle joints, m_device->CreateBuffer({.size = capacity * sizeof(glm::mat4),
-                                                                         .usage = rhi::BufferUsage::Storage,
-                                                                         .memory = rhi::MemoryLocation::CpuToGpu,
-                                                                         .name = "Joints"}));
-        m_device->DestroyBuffer(slot.joints);
-        slot.joints = joints;
-        slot.jointCapacity = capacity;
-    }
+core::Result<void> MeshPass::PrepareFrameSlot(FrameSlot& slot, const SceneView& view) {
+    // Grows an array of the frame slot to hold count elements, doubling, and never to zero.
+    const auto reserve = [this](rhi::BufferHandle& buffer, std::uint64_t& capacity, std::uint64_t count,
+                                std::uint64_t initial, std::uint64_t elementSize,
+                                const char* name) -> core::Result<void> {
+        if (buffer && capacity >= count) {
+            return {};
+        }
+        const std::uint64_t grown = std::max({initial, count, capacity * 2});
+        DAI_TRY_ASSIGN(rhi::BufferHandle created, m_device->CreateBuffer({.size = grown * elementSize,
+                                                                          .usage = rhi::BufferUsage::Storage,
+                                                                          .memory = rhi::MemoryLocation::CpuToGpu,
+                                                                          .name = name}));
+        m_device->DestroyBuffer(buffer);
+        buffer = created;
+        capacity = grown;
+        return {};
+    };
+    std::uint64_t frameCapacity = slot.frame ? 1 : 0;
+    DAI_TRY(reserve(slot.frame, frameCapacity, 1, 1, sizeof(FrameData), "Frame data"));
+    DAI_TRY(reserve(slot.instances, slot.instanceCapacity, view.draws.size(), kInitialInstanceCapacity,
+                    sizeof(InstanceData), "Instances"));
+    DAI_TRY(reserve(slot.joints, slot.jointCapacity, view.jointMatrices.size(), kInitialJointCapacity,
+                    sizeof(glm::mat4), "Joints"));
+    DAI_TRY(reserve(slot.lights, slot.lightCapacity, view.lights.size(), kInitialLightCapacity, sizeof(LightData),
+                    "Lights"));
     return {};
 }
 
@@ -299,26 +324,21 @@ core::Result<void> MeshPass::Record(rhi::CommandList& commands, const SceneView&
     }
     FrameSlot& slot = m_frameSlots[m_nextFrameSlot];
     m_nextFrameSlot = (m_nextFrameSlot + 1) % rhi::kFramesInFlight;
-    if (core::Result<void> prepared = PrepareFrameSlot(slot, std::max<std::uint64_t>(view.draws.size(), 1),
-                                                       std::max<std::uint64_t>(view.jointMatrices.size(), 1));
-        !prepared) {
-        return prepared;
-    }
+    DAI_TRY(PrepareFrameSlot(slot, view));
 
     const CameraView& camera = *view.camera;
-    const SpotLight spot = view.spotLight.value_or(SpotLight{.range = 0.0f});
     const FrameData frame{math::InfinitePerspectiveReverseZ(camera.verticalFov, aspect, camera.nearPlane) * camera.view,
                           glm::vec3(glm::inverse(camera.view)[3]),
                           view.atmosphere.fogDensity,
                           view.atmosphere.fogColor,
-                          0.0f,
-                          spot.position,
-                          spot.range,
-                          spot.direction,
-                          std::cos(spot.innerAngle),
-                          spot.color,
-                          std::cos(spot.outerAngle)};
+                          static_cast<std::uint32_t>(view.lights.size()),
+                          view.atmosphere.ambient,
+                          m_device->StorageIndex(slot.lights)};
     std::memcpy(m_device->Mapped(slot.frame).data(), &frame, sizeof(frame));
+    auto* lights = reinterpret_cast<LightData*>(m_device->Mapped(slot.lights).data());
+    for (std::size_t index = 0; index < view.lights.size(); ++index) {
+        lights[index] = ToGpu(view.lights[index]);
+    }
     auto* instances = reinterpret_cast<InstanceData*>(m_device->Mapped(slot.instances).data());
     if (!view.jointMatrices.empty()) {
         std::memcpy(m_device->Mapped(slot.joints).data(), view.jointMatrices.data(),

@@ -47,11 +47,8 @@ public:
     void SetActiveCamera(ecs::Entity camera) { m_activeCamera = camera; }
     [[nodiscard]] ecs::Entity ActiveCamera() const { return m_activeCamera; }
 
-    /// Fog of the scene, in the view handed to the renderer.
+    /// Ambient light and fog of the scene, in the view handed to the renderer. Lights are entities.
     void SetAtmosphere(const renderer::Atmosphere& atmosphere) { m_atmosphere = atmosphere; }
-
-    /// The cone of light of the scene, if any, in the view handed to the renderer.
-    void SetSpotLight(const std::optional<renderer::SpotLight>& light) { m_spotLight = light; }
 
     /// Runs the fixed systems, then moves the physics to where they left the entities.
     void RunFixedStep(core::Seconds step);
@@ -74,7 +71,6 @@ private:
     ecs::Schedule m_frameSystems;
     ecs::Entity m_activeCamera;
     renderer::Atmosphere m_atmosphere;
-    std::optional<renderer::SpotLight> m_spotLight;
     float m_fixedAlpha = 0.0f;
 };
 

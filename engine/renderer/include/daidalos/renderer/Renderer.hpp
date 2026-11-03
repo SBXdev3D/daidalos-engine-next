@@ -13,7 +13,9 @@
 
 #include <functional>
 #include <memory>
+#include <span>
 #include <string>
+#include <string_view>
 
 namespace daidalos::renderer {
 
@@ -21,6 +23,14 @@ struct RendererConfig {
     /// Enables the Vulkan validation layers if they are installed.
     bool validation = false;
     bool vsync = true;
+    /// Multiplies the light before tonemapping.
+    float exposure = 1.0f;
+};
+
+/// How long a pass took on the GPU.
+struct PassTime {
+    std::string_view name;
+    double milliseconds = 0.0;
 };
 
 /// Records into the back buffer after the scene, inside a rendering scope without depth.
@@ -48,6 +58,11 @@ public:
     void DestroyMaterial(MaterialHandle material);
 
     void SetVsync(bool vsync);
+    void SetExposure(float exposure);
+
+    /// GPU time of each pass of a recent frame, which the GPU finished a frame or two ago. Empty on a
+    /// device without timestamps, and for the first frames.
+    [[nodiscard]] std::span<const PassTime> GpuTimes() const;
 
     /// Draws one frame, following the window's size. A minimized window draws nothing. An error means
     /// that the device is unusable and the application should stop.

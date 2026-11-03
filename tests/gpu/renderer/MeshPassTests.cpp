@@ -104,9 +104,11 @@ protected:
         return mesh.value_or(MeshHandle{});
     }
 
+    // A plain dielectric: glTF's default is a metal, which reflects no diffuse light.
     MaterialHandle Material(const glm::vec3& color) {
         MaterialDesc desc;
         desc.baseColorFactor = glm::vec4(color, 1.0f);
+        desc.metallicFactor = 0.0f;
         const core::Result<MaterialHandle> material = m_pass->CreateMaterial(desc);
         EXPECT_TRUE(material.has_value());
         return material.value_or(MaterialHandle{});
@@ -153,8 +155,8 @@ TEST_F(MeshPassTest, DrawsAMeshInFrontOfTheCamera) {
 
     const glm::ivec3 center = Pixel(32, 32);
     EXPECT_GT(center.r, 0);
-    EXPECT_EQ(center.g, 0);
-    EXPECT_EQ(center.b, 0);
+    EXPECT_LT(center.g, 16); // Only the white reflection of a dielectric.
+    EXPECT_LT(center.b, 16); // Only the white reflection of a dielectric.
     EXPECT_TRUE(IsBackground(0, 0));
 }
 
@@ -193,11 +195,11 @@ TEST_F(MeshPassTest, NearerSurfaceWinsWhicheverIsDrawnFirst) {
 
     Render({TestCamera(), {{nearQuad, glm::mat4(1.0f), red}, {farQuad, glm::mat4(1.0f), green}}});
     EXPECT_GT(Pixel(32, 32).r, 0);
-    EXPECT_EQ(Pixel(32, 32).g, 0);
+    EXPECT_LT(Pixel(32, 32).g, 16); // Only the white reflection of a dielectric.
 
     Render({TestCamera(), {{farQuad, glm::mat4(1.0f), green}, {nearQuad, glm::mat4(1.0f), red}}});
     EXPECT_GT(Pixel(32, 32).r, 0);
-    EXPECT_EQ(Pixel(32, 32).g, 0);
+    EXPECT_LT(Pixel(32, 32).g, 16); // Only the white reflection of a dielectric.
 }
 
 TEST_F(MeshPassTest, WorldMatrixMovesTheMesh) {
@@ -207,35 +209,104 @@ TEST_F(MeshPassTest, WorldMatrixMovesTheMesh) {
     EXPECT_FALSE(IsBackground(44, 32));
 }
 
+// In the dark, with one light.
+SceneView LitView(const CameraView& camera, renderer::DrawItem draw, const renderer::Light& light) {
+    SceneView view{camera, {draw}};
+    view.atmosphere.ambient = glm::vec3(0.0f);
+    view.lights.push_back(light);
+    return view;
+}
+
+TEST_F(MeshPassTest, WithoutLightsTheAmbientLightShowsTheBaseColor) {
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
+    SceneView view{TestCamera(), {{mesh, glm::mat4(1.0f), Material({0.5f, 0.25f, 0.0f})}}};
+    Render(view);
+    // The base color, plus the faint white reflection of a dielectric.
+    EXPECT_NEAR(Pixel(32, 32).r, 128, 6);
+    EXPECT_NEAR(Pixel(32, 32).g, 64, 6);
+
+    view.atmosphere.ambient = glm::vec3(0.0f);
+    Render(view);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(0));
+}
+
 TEST_F(MeshPassTest, NormalsFollowTheWorldRotation) {
     // Lit from above: the same quad turned to face up receives more light.
     const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
-    Render({TestCamera(), {{mesh, glm::mat4(1.0f)}}});
+    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
+    const renderer::Light above{.position = {0.0f, 5.0f, 2.0f}, .range = 50.0f, .falloff = 1.0f};
+    Render(LitView(TestCamera(), {mesh, glm::mat4(1.0f), white}, above));
     const int facingCamera = Pixel(32, 32).r;
 
     const glm::mat4 tilted = glm::rotate(glm::mat4(1.0f), glm::radians(-60.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    Render({TestCamera(), {{mesh, tilted}}});
+    Render(LitView(TestCamera(), {mesh, tilted, white}, above));
     EXPECT_GT(Pixel(32, 32).r, facingCamera);
 }
 
 TEST_F(MeshPassTest, SpotLightOnlyLightsItsCone) {
     const MeshHandle mesh = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
     const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
-    SceneView view{TestCamera(), {{mesh, glm::mat4(1.0f), white}}};
-    view.atmosphere = {glm::vec3(0.0f), 10.0f}; // Fog hides everything.
-    Render(view);
-    EXPECT_EQ(Pixel(32, 32), glm::ivec3(0));
-
-    view.spotLight = renderer::SpotLight{.position = {0.0f, 0.0f, 5.0f},
-                                         .direction = {0.0f, 0.0f, -1.0f},
-                                         .color = glm::vec3(1.0f),
-                                         .range = 20.0f,
-                                         .innerAngle = glm::radians(5.0f),
-                                         .outerAngle = glm::radians(10.0f)};
-    Render(view);
-    EXPECT_GT(Pixel(32, 32).r, 200);
+    // A light of color 1 makes a white surface facing it white.
+    Render(LitView(TestCamera(), {mesh, glm::mat4(1.0f), white},
+                   {.type = renderer::LightType::Spot,
+                    .position = {0.0f, 0.0f, 5.0f},
+                    .direction = {0.0f, 0.0f, -1.0f},
+                    .color = glm::vec3(1.0f),
+                    .range = 20.0f,
+                    .falloff = 1.0f,
+                    .innerAngle = glm::radians(5.0f),
+                    .outerAngle = glm::radians(10.0f)}));
+    EXPECT_GT(Pixel(32, 32).r, 230);
     EXPECT_EQ(Pixel(4, 32), glm::ivec3(0));
     EXPECT_EQ(Pixel(32, 4), glm::ivec3(0));
+}
+
+TEST_F(MeshPassTest, PointLightReachesZeroAtItsRange) {
+    const MeshHandle mesh = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
+    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
+    // 1 m in front of the quad: full light to 1.25 m, nothing beyond 2.5 m.
+    Render(LitView(TestCamera(), {mesh, glm::mat4(1.0f), white},
+                   {.position = {0.0f, 0.0f, 1.0f}, .range = 2.5f, .falloff = 0.5f}));
+    EXPECT_GT(Pixel(32, 32).r, 200);
+    EXPECT_EQ(Pixel(1, 32), glm::ivec3(0)); // About 3 m from the light.
+}
+
+TEST_F(MeshPassTest, NormalMapTiltsTheSurface) {
+    // A flat quad, lit from its right side at a grazing angle. Its normal map leans every normal to the
+    // right, along the tangent, so more light is caught; leaning left catches less.
+    const auto normalMapped = [this](std::uint8_t red) {
+        const std::array<std::uint8_t, 4> pixel{red, 128, 255, 255};
+        resources::ImageData image;
+        image.width = 1;
+        image.height = 1;
+        image.format = resources::PixelFormat::Rgba8Unorm;
+        image.pixels.resize(pixel.size());
+        std::memcpy(image.pixels.data(), pixel.data(), pixel.size());
+        const core::Result<rhi::TextureHandle> texture = renderer::CreateTexture(Device(), image, "Normal");
+        EXPECT_TRUE(texture.has_value());
+        MaterialDesc desc;
+        desc.metallicFactor = 0.0f;
+        desc.normalTexture = texture.value_or(rhi::TextureHandle{});
+        const core::Result<MaterialHandle> material = m_pass->CreateMaterial(desc);
+        EXPECT_TRUE(material.has_value());
+        return std::pair{texture.value_or(rhi::TextureHandle{}), material.value_or(MaterialHandle{})};
+    };
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
+    const renderer::Light right{.position = {6.0f, 0.0f, 1.0f}, .range = 50.0f, .falloff = 1.0f};
+
+    Render(LitView(TestCamera(), {mesh, glm::mat4(1.0f), Material({1.0f, 1.0f, 1.0f})}, right));
+    const int flat = Pixel(32, 32).r;
+    const auto [rightTexture, rightMaterial] = normalMapped(218); // x = 0.7
+    Render(LitView(TestCamera(), {mesh, glm::mat4(1.0f), rightMaterial}, right));
+    const int leaningRight = Pixel(32, 32).r;
+    const auto [leftTexture, leftMaterial] = normalMapped(38); // x = -0.7
+    Render(LitView(TestCamera(), {mesh, glm::mat4(1.0f), leftMaterial}, right));
+    const int leaningLeft = Pixel(32, 32).r;
+
+    EXPECT_GT(leaningRight, flat + 50);
+    EXPECT_LT(leaningLeft, flat);
+    Device().DestroyTexture(rightTexture);
+    Device().DestroyTexture(leftTexture);
 }
 
 TEST_F(MeshPassTest, DestroyedMeshIsSkipped) {
@@ -287,15 +358,16 @@ TEST_F(MeshPassTest, BaseColorTextureIsSampledWithTheMeshUvs) {
 
     MaterialDesc desc;
     desc.baseColorTexture = *texture;
+    desc.metallicFactor = 0.0f;
     const core::Result<MaterialHandle> material = m_pass->CreateMaterial(desc);
     ASSERT_TRUE(material.has_value());
     const MeshHandle mesh = Mesh(MakeQuad(-2.0f, 2.0f, -2.0f, 2.0f, 0.0f));
 
     Render({TestCamera(), {{mesh, glm::mat4(1.0f), *material}}});
     EXPECT_GT(Pixel(21, 32).g, 0);
-    EXPECT_EQ(Pixel(21, 32).b, 0);
+    EXPECT_LT(Pixel(21, 32).b, 16); // Only the white reflection of a dielectric.
     EXPECT_GT(Pixel(43, 32).b, 0);
-    EXPECT_EQ(Pixel(43, 32).g, 0);
+    EXPECT_LT(Pixel(43, 32).g, 16); // Only the white reflection of a dielectric.
     Device().DestroyTexture(*texture);
 }
 
@@ -336,7 +408,7 @@ TEST_F(MeshPassTest, MaterialTableGrowsAndKeepsItsContent) {
     const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
     Render({TestCamera(), {{mesh, glm::mat4(1.0f), first}}});
     EXPECT_GT(Pixel(32, 32).r, 0);
-    EXPECT_EQ(Pixel(32, 32).g, 0);
+    EXPECT_LT(Pixel(32, 32).g, 16); // Only the white reflection of a dielectric.
 }
 
 TEST_F(MeshPassTest, InstanceBufferGrowsWithTheNumberOfDraws) {

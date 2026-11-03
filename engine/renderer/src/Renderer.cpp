@@ -6,10 +6,14 @@
 #include <daidalos/core/Profile.hpp>
 #include <daidalos/logging/Log.hpp>
 #include <daidalos/renderer/Renderer.hpp>
+#include <daidalos/rhi/Spirv.hpp>
 #include <daidalos/rhi/Swapchain.hpp>
 
 #include <glm/vec4.hpp>
+#include <shaders/Tonemap.ps.spv.h>
+#include <shaders/Tonemap.vs.spv.h>
 
+#include <array>
 #include <chrono>
 #include <optional>
 #include <utility>
@@ -23,6 +27,16 @@ namespace {
 
 constexpr std::string_view kModule = "renderer";
 constexpr rhi::Format kDepthFormat = rhi::Format::D32Float;
+/// Lighting is computed in HDR, then tonemapped into the swapchain (ADR-0022).
+constexpr rhi::Format kHdrFormat = rhi::Format::Rgba16Float;
+/// The passes timed on the GPU, in order: each ends at a timestamp, after the one at the start.
+constexpr std::array<std::string_view, 3> kTimedPasses{"Meshes", "Tonemap", "Overlay"};
+
+// Matches TonemapPushConstants in shaders/Tonemap.hlsl.
+struct TonemapPushConstants {
+    std::uint32_t hdrTexture;
+    float exposure;
+};
 
 } // namespace
 
@@ -39,19 +53,29 @@ struct Renderer::Impl {
             DAI_LOG_ERROR(kModule, "Shutting down with a failed device: {}", core::Format(idle.error()));
         }
         meshPass.reset();
+        device.DestroyPipeline(tonemap);
         device.DestroyTexture(depth);
+        device.DestroyTexture(hdr);
     }
 
-    core::Result<void> ResizeDepth(rhi::Extent extent);
+    /// The HDR and depth targets follow the size of the back buffer.
+    core::Result<void> ResizeTargets(rhi::Extent extent);
+    /// Reads the timestamps of the last finished frame into gpuTimes.
+    void ReadGpuTimes();
     void ReloadShaders();
 
     platform::Window* window;
     rhi::Device device;
     rhi::Swapchain swapchain;
     std::optional<MeshPass> meshPass;
+    rhi::PipelineHandle tonemap;
+    rhi::TextureHandle hdr;
     rhi::TextureHandle depth;
-    rhi::Extent depthExtent;
+    rhi::Extent targetExtent;
     bool vsync;
+    float exposure = 1.0f;
+    std::array<PassTime, kTimedPasses.size()> gpuTimes{};
+    bool gpuTimesValid = false;
     std::string shaderError;
 #if DAI_DEV_TOOLS
     std::optional<ShaderWatcher> shaderWatcher;
@@ -59,19 +83,35 @@ struct Renderer::Impl {
 #endif
 };
 
-core::Result<void> Renderer::Impl::ResizeDepth(rhi::Extent extent) {
-    if (depth && depthExtent == extent) {
+core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
+    if (depth && hdr && targetExtent == extent) {
         return {};
     }
     device.DestroyTexture(depth);
+    device.DestroyTexture(hdr);
     depth = {};
+    hdr = {};
     DAI_TRY_ASSIGN(
-        rhi::TextureHandle created,
+        depth,
         device.CreateTexture(
             {.extent = extent, .format = kDepthFormat, .usage = rhi::TextureUsage::DepthTarget, .name = "Depth"}));
-    depth = created;
-    depthExtent = extent;
+    DAI_TRY_ASSIGN(hdr, device.CreateTexture({.extent = extent,
+                                              .format = kHdrFormat,
+                                              .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
+                                              .name = "HDR color"}));
+    targetExtent = extent;
     return {};
+}
+
+void Renderer::Impl::ReadGpuTimes() {
+    const std::span<const double> timestamps = device.CompletedTimestamps();
+    gpuTimesValid = timestamps.size() == kTimedPasses.size() + 1;
+    if (!gpuTimesValid) {
+        return;
+    }
+    for (std::size_t pass = 0; pass < kTimedPasses.size(); ++pass) {
+        gpuTimes[pass] = {kTimedPasses[pass], timestamps[pass + 1] - timestamps[pass]};
+    }
 }
 
 void Renderer::Impl::ReloadShaders() {
@@ -121,7 +161,15 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
                        {{size.width, size.height}, config.vsync}));
 
     auto impl = std::make_unique<Impl>(window, std::move(device), std::move(swapchain), config.vsync);
-    DAI_TRY_ASSIGN(MeshPass meshPass, MeshPass::Create(impl->device, impl->swapchain.ColorFormat(), kDepthFormat));
+    impl->exposure = config.exposure;
+    DAI_TRY_ASSIGN(impl->tonemap, impl->device.CreatePipeline({
+                                      .vertexShader = rhi::ToSpirv(kTonemapVsSpirv),
+                                      .fragmentShader = rhi::ToSpirv(kTonemapPsSpirv),
+                                      .colorFormat = impl->swapchain.ColorFormat(),
+                                      .cull = rhi::CullMode::None,
+                                      .name = "Tonemap",
+                                  }));
+    DAI_TRY_ASSIGN(MeshPass meshPass, MeshPass::Create(impl->device, kHdrFormat, kDepthFormat));
     impl->meshPass.emplace(std::move(meshPass));
 
 #if DAI_DEV_TOOLS
@@ -159,6 +207,14 @@ void Renderer::SetVsync(bool vsync) {
     m_impl->vsync = vsync;
 }
 
+void Renderer::SetExposure(float exposure) {
+    m_impl->exposure = exposure;
+}
+
+std::span<const PassTime> Renderer::GpuTimes() const {
+    return m_impl->gpuTimesValid ? std::span<const PassTime>(m_impl->gpuTimes) : std::span<const PassTime>();
+}
+
 core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder& overlay) {
     DAI_PROFILE_SCOPE("renderer::Render");
     Impl& impl = *m_impl;
@@ -173,27 +229,42 @@ core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder
         return {}; // Nothing can be drawn this frame.
     }
     rhi::Frame& frame = *begun;
+    impl.ReadGpuTimes();
 
     // A failure from here on still ends the frame: the acquired image must be presented.
-    core::Result<void> status = impl.ResizeDepth(frame.extent);
+    core::Result<void> status = impl.ResizeTargets(frame.extent);
     rhi::CommandList& commands = frame.commands;
-    commands.Transition(frame.backBuffer, rhi::TextureState::ColorTarget);
+    commands.WriteTimestamp();
     if (status) {
+        commands.Discard(impl.hdr, rhi::TextureState::ColorTarget);
         commands.Discard(impl.depth, rhi::TextureState::DepthTarget);
-        commands.BeginRendering({.colorTarget = frame.backBuffer,
+        commands.BeginRendering({.colorTarget = impl.hdr,
                                  .clearColor = glm::vec4(view.atmosphere.fogColor, 1.0f),
                                  .depthTarget = impl.depth,
                                  .clearDepth = 0.0f});
         const float aspect = static_cast<float>(frame.extent.width) / static_cast<float>(frame.extent.height);
         status = impl.meshPass->Record(commands, view, aspect);
         commands.EndRendering();
-
-        if (overlay) {
-            commands.BeginRendering({.colorTarget = frame.backBuffer});
-            overlay(commands, frame.extent);
-            commands.EndRendering();
-        }
     }
+    commands.WriteTimestamp();
+
+    commands.Transition(frame.backBuffer, rhi::TextureState::ColorTarget);
+    if (status) {
+        commands.Transition(impl.hdr, rhi::TextureState::ShaderRead);
+        commands.BeginRendering({.colorTarget = frame.backBuffer});
+        commands.BindPipeline(impl.tonemap);
+        commands.Push(TonemapPushConstants{impl.device.BindlessIndex(impl.hdr), impl.exposure});
+        commands.Draw(3);
+        commands.EndRendering();
+    }
+    commands.WriteTimestamp();
+
+    if (status && overlay) {
+        commands.BeginRendering({.colorTarget = frame.backBuffer});
+        overlay(commands, frame.extent);
+        commands.EndRendering();
+    }
+    commands.WriteTimestamp();
 
     core::Result<void> ended = impl.device.EndFrame(&impl.swapchain);
     return status ? ended : status;
