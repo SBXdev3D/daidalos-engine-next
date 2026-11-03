@@ -58,7 +58,7 @@ float4 PSMain(VertexOutput input) : SV_Target {
     // Hidden behind what the meshes drew, and fading as it gets close to it.
     const float depth = dot(input.worldPosition - frame.cameraPosition, frame.cameraForward);
     const float sceneDepth =
-        frame.nearPlane / max(g_textures[g_particles.depthTexture].Load(int3(input.clipPosition.xy, 0)).r, 1.0e-7);
+        LinearDepth(frame, g_textures[g_particles.depthTexture].Load(int3(input.clipPosition.xy, 0)).r);
     alpha *= saturate((sceneDepth - depth) / max(effect.softness, 0.001));
     if (alpha <= 0.001) {
         discard;

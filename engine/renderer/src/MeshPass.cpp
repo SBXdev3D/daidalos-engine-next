@@ -60,7 +60,8 @@ struct FrameData {
     glm::vec3 cameraForward;
     float clusterSliceScale;
     std::uint32_t clusterLightBuffer;
-    std::array<std::uint32_t, 3> padding;
+    float farPlane;
+    std::array<std::uint32_t, 2> padding;
 };
 static_assert(sizeof(FrameData) == 256);
 
@@ -343,7 +344,20 @@ core::Result<MeshHandle> MeshPass::CreateMesh(const resources::MeshData& data, c
         m_device->DestroyBuffer(skin);
         return tl::unexpected(std::move(uploaded.error()));
     }
-    return m_meshes.Insert({vertices, *indices, skin, static_cast<std::uint32_t>(data.indices.size())});
+    // The box's center, and the farthest vertex from it: not the smallest sphere, but a tight one.
+    glm::vec3 low(std::numeric_limits<float>::max());
+    glm::vec3 high(std::numeric_limits<float>::lowest());
+    for (const resources::Vertex& vertex : data.vertices) {
+        low = glm::min(low, vertex.position);
+        high = glm::max(high, vertex.position);
+    }
+    const glm::vec3 center = (low + high) * 0.5f;
+    float radius = 0.0f;
+    for (const resources::Vertex& vertex : data.vertices) {
+        radius = std::max(radius, glm::distance(center, vertex.position));
+    }
+    return m_meshes.Insert(
+        {vertices, *indices, skin, static_cast<std::uint32_t>(data.indices.size()), glm::vec4(center, radius)});
 }
 
 void MeshPass::DestroyMesh(MeshHandle mesh) {
@@ -443,11 +457,13 @@ core::Result<void> MeshPass::PrepareFrameSlot(FrameSlot& slot, const SceneView& 
     return {};
 }
 
-std::vector<std::uint32_t> ChooseShadowedLights(std::span<const Light> lights, const glm::vec3& camera,
-                                                std::size_t max) {
+std::vector<std::uint32_t> ChooseShadowedLights(std::span<const Light> lights, const glm::vec3& camera, std::size_t max,
+                                                float maxDistance) {
     std::vector<std::uint32_t> chosen;
     for (std::uint32_t index = 0; index < lights.size(); ++index) {
-        if (lights[index].castsShadows && lights[index].type == LightType::Spot) {
+        const Light& light = lights[index];
+        if (light.castsShadows && light.type == LightType::Spot &&
+            glm::distance(light.position, camera) - light.range <= maxDistance) {
             chosen.push_back(index);
         }
     }
@@ -468,7 +484,11 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     const CameraView& camera = *view.camera;
     const float aspect =
         static_cast<float>(targets.extent.width) / static_cast<float>(std::max(targets.extent.height, 1U));
-    AssignLightsToClusters(view.lights, {camera.view, camera.verticalFov, aspect, camera.nearPlane}, m_clusters);
+    // The renderer's field of view is across the view, so that wider windows see more to the sides.
+    const float verticalFov =
+        camera.verticalFov.value_or(2.0f * std::atan(std::tan(m_fieldOfView * 0.5f) / std::max(aspect, 0.01f)));
+    const float farPlane = std::max(m_viewDistance, camera.nearPlane * 2.0f);
+    AssignLightsToClusters(view.lights, {camera.view, verticalFov, aspect, camera.nearPlane, farPlane}, m_clusters);
 
     FrameSlot& slot = m_frameSlots[m_nextFrameSlot];
     m_nextFrameSlot = (m_nextFrameSlot + 1) % rhi::kFramesInFlight;
@@ -476,7 +496,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
 
     const glm::vec3 cameraPosition = glm::inverse(camera.view)[3];
     const glm::mat4 viewProjection =
-        math::InfinitePerspectiveReverseZ(camera.verticalFov, aspect, camera.nearPlane) * camera.view;
+        math::PerspectiveReverseZ(verticalFov, aspect, camera.nearPlane, farPlane) * camera.view;
     const FrameData frame{viewProjection,
                           glm::inverse(viewProjection),
                           cameraPosition,
@@ -496,8 +516,9 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                           camera.nearPlane,
                           m_device->StorageIndex(slot.clusters),
                           glm::normalize(-glm::vec3(glm::inverse(camera.view)[2])),
-                          ClusterSliceScale(camera.nearPlane),
+                          ClusterSliceScale(camera.nearPlane, farPlane),
                           m_device->StorageIndex(slot.clusterLights),
+                          farPlane,
                           {}};
     std::memcpy(m_device->Mapped(slot.clusters).data(), m_clusters.ranges.data(),
                 m_clusters.ranges.size() * sizeof(glm::uvec2));
@@ -512,7 +533,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         lights[index] = ToGpu(view.lights[index]);
     }
     auto* shadows = reinterpret_cast<ShadowData*>(m_device->Mapped(slot.shadows).data());
-    for (const std::uint32_t light : ChooseShadowedLights(view.lights, cameraPosition, m_shadowLights)) {
+    for (const std::uint32_t light : ChooseShadowedLights(view.lights, cameraPosition, m_shadowLights, farPlane)) {
         lights[light].shadow = m_shadowCount;
         shadows[m_shadowCount] = ShadowFor(view.lights[light], m_shadowCount, m_shadowGrid, m_shadowTileSize);
         ++m_shadowCount;
@@ -531,7 +552,16 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         }
         const MaterialHandle material = m_materials.TryGet(draw.material) ? draw.material : m_defaultMaterial;
         const std::uint64_t doubleSided = m_materials.Get(material).doubleSided ? 1 : 0;
-        m_sorted.push_back({(doubleSided << 32U) | draw.mesh.Index(), draw.mesh, material, index, draw.castsShadows});
+        // Beyond the far plane, a rigid draw is not drawn, but may still cast a shadow into the view. Skinned
+        // draws move away from their bounds, and are always drawn.
+        const glm::vec4& bounds = m_meshes.Get(draw.mesh).bounds;
+        const float scale = std::max({glm::length(glm::vec3(draw.world[0])), glm::length(glm::vec3(draw.world[1])),
+                                      glm::length(glm::vec3(draw.world[2]))});
+        const glm::vec3 center(draw.world * glm::vec4(glm::vec3(bounds), 1.0f));
+        const bool visible =
+            draw.firstJoint != kNoJoints || glm::distance(center, cameraPosition) - bounds.w * scale <= farPlane;
+        m_sorted.push_back(
+            {(doubleSided << 32U) | draw.mesh.Index(), draw.mesh, material, index, draw.castsShadows, visible});
     }
     std::ranges::sort(m_sorted, {}, &SortedDraw::key);
     auto* instances = reinterpret_cast<InstanceData*>(m_device->Mapped(slot.instances).data());
@@ -623,6 +653,9 @@ void MeshPass::RecordDraws(rhi::CommandList& commands, rhi::PipelineHandle oneSi
     MeshHandle boundMesh;
     for (std::uint32_t index = 0; index < m_sorted.size(); ++index) {
         const SortedDraw& draw = m_sorted[index];
+        if (!draw.visible) {
+            continue;
+        }
         const Mesh& mesh = m_meshes.Get(draw.mesh);
         const rhi::PipelineHandle pipeline = m_materials.Get(draw.material).doubleSided ? doubleSided : oneSided;
         if (pipeline != boundPipeline) {

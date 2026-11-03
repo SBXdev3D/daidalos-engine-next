@@ -28,7 +28,9 @@ using MaterialHandle = core::Handle<MaterialTag>;
 struct CameraView {
     /// World space to camera space.
     glm::mat4 view{1.0f};
-    float verticalFov = 0.0f;
+    /// Radians from the bottom of the view to the top. Without one, the renderer's field of view applies
+    /// (RendererConfig::fieldOfView), across the view.
+    std::optional<float> verticalFov;
     float nearPlane = 0.0f;
 };
 

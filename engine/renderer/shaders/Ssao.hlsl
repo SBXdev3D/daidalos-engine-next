@@ -34,7 +34,7 @@ float4 PSMain(float4 position : SV_Position) : SV_Target {
         return float4(1.0, 1.0, 1.0, 1.0); // Nothing drawn there.
     }
     const float3 center = WorldPosition(frame, uv, depth);
-    const float centerDepth = frame.nearPlane / depth;
+    const float centerDepth = LinearDepth(frame, depth);
     const float3 normal = normalize(
         g_textures[g_ao.normalTexture].SampleLevel(g_samplers[kSamplerNearestClamp], uv, 0.0).xyz * 2.0 - 1.0);
 
@@ -64,7 +64,7 @@ float4 PSMain(float4 position : SV_Position) : SV_Target {
             continue;
         }
         // In front of the sample point, but not so far in front that it is another object.
-        const float sceneViewDepth = frame.nearPlane / sceneDepth;
+        const float sceneViewDepth = LinearDepth(frame, sceneDepth);
         const float closeEnough = saturate(g_ao.radius / max(abs(centerDepth - sceneViewDepth), 0.0001));
         occlusion += (sceneViewDepth < clip.w - 0.02) ? closeEnough : 0.0;
     }

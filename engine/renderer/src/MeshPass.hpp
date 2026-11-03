@@ -80,6 +80,10 @@ public:
 
     /// Multiplies the tilt of every normal map, from the next Prepare.
     void SetNormalStrength(float strength) { m_normalStrength = strength; }
+    /// Radians across the view, for cameras without a field of view, from the next Prepare.
+    void SetFieldOfView(float radians) { m_fieldOfView = radians; }
+    /// Meters to the far plane, from the next Prepare: farther meshes and lights are skipped.
+    void SetViewDistance(float meters) { m_viewDistance = meters; }
 
 private:
     struct Mesh {
@@ -88,6 +92,8 @@ private:
         /// Joints and weights of each vertex, read by the vertex shader. Null for a rigid mesh.
         rhi::BufferHandle skin;
         std::uint32_t indexCount = 0;
+        /// A sphere around the vertices, in the mesh's space: center and radius.
+        glm::vec4 bounds{0.0f};
     };
     struct Material {
         bool doubleSided = false;
@@ -140,6 +146,8 @@ private:
     std::uint32_t m_shadowTileSize;
     /// Tiles across the atlas, which is square.
     std::uint32_t m_shadowGrid;
+    float m_fieldOfView = glm::radians(90.0f);
+    float m_viewDistance = 150.0f;
     core::SlotPool<Mesh, MeshTag> m_meshes;
     /// The index of a handle is also its index in the material table of the GPU.
     core::SlotPool<Material, MaterialTag> m_materials;
@@ -157,6 +165,8 @@ private:
         /// Index in the view.
         std::uint32_t draw;
         bool castsShadows;
+        /// Within the view distance; otherwise the draw only casts shadows.
+        bool visible;
     };
     /// The frame that Prepare filled, if any. Its instances follow m_sorted.
     FrameSlot* m_prepared = nullptr;
@@ -169,8 +179,10 @@ private:
 };
 
 /// The lights that get a shadow map: spot lights that ask for one, nearest to the camera first, at most
-/// max of them. Returns their indices in the view.
-[[nodiscard]] std::vector<std::uint32_t> ChooseShadowedLights(std::span<const Light> lights, const glm::vec3& camera,
-                                                              std::size_t max);
+/// max of them, and none whose light stops short of maxDistance from the camera. Returns their indices in
+/// the view.
+[[nodiscard]] std::vector<std::uint32_t>
+ChooseShadowedLights(std::span<const Light> lights, const glm::vec3& camera, std::size_t max,
+                     float maxDistance = std::numeric_limits<float>::infinity());
 
 } // namespace daidalos::renderer

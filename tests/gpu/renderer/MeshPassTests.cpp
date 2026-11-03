@@ -443,6 +443,35 @@ TEST_F(MeshPassTest, NoShadowedLightsLetsEveryLightThrough) {
     EXPECT_GT(Pixel(20, 32).r, 100);
 }
 
+TEST_F(MeshPassTest, NothingIsDrawnBeyondTheViewDistance) {
+    // A quad 5 m in front of the camera: drawn within 6 m, not within 4 m.
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
+    const SceneView view{TestCamera(), {{mesh, glm::mat4(1.0f), Material({1.0f, 0.0f, 0.0f})}}};
+    m_pass->SetViewDistance(6.0f);
+    Render(view);
+    EXPECT_FALSE(IsBackground(32, 32));
+    m_pass->SetViewDistance(4.0f);
+    Render(view);
+    EXPECT_TRUE(IsBackground(32, 32));
+}
+
+TEST_F(MeshPassTest, CameraWithoutAFieldOfViewUsesTheRenderersAcrossTheView) {
+    // A quad 2 m wide at 5 m: 90 degrees across a square view show 10 m, so it fills a fifth of the width;
+    // 30 degrees show 2.68 m, so its edges are near the sides.
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
+    CameraView camera = TestCamera();
+    camera.verticalFov.reset();
+    const SceneView view{camera, {{mesh, glm::mat4(1.0f), Material({1.0f, 0.0f, 0.0f})}}};
+    m_pass->SetFieldOfView(glm::radians(90.0f));
+    Render(view);
+    EXPECT_FALSE(IsBackground(32, 32));
+    EXPECT_TRUE(IsBackground(16, 32));
+    m_pass->SetFieldOfView(glm::radians(30.0f));
+    Render(view);
+    EXPECT_FALSE(IsBackground(16, 32));
+    EXPECT_TRUE(IsBackground(2, 32));
+}
+
 TEST_F(MeshPassTest, AmbientOcclusionDarkensACreaseAndNotAnOpenWall) {
     // A back wall facing the camera, and a side wall standing out of it at x = -1, from y = 0 to 2. Along
     // the line where they meet, the hemisphere above the back wall is half closed; far to the right, open.

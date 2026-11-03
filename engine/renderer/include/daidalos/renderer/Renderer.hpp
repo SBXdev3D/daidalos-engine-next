@@ -35,6 +35,10 @@ struct RendererConfig {
     std::uint32_t shadowLights = 4;
     /// Texels across each light's shadow map, from 256 to 4096.
     std::uint32_t shadowResolution = 1024;
+    /// Radians across the view, for cameras that set no field of view of their own.
+    float fieldOfView = glm::radians(90.0f);
+    /// Meters: farther, nothing is drawn or lit.
+    float viewDistance = 150.0f;
 };
 
 /// How long a pass took on the GPU.
@@ -75,6 +79,9 @@ public:
     void SetExposure(float exposure);
     void SetNormalStrength(float strength);
     void SetAmbientOcclusion(bool enabled);
+    /// From the next frame; see RendererConfig.
+    void SetFieldOfView(float radians);
+    void SetViewDistance(float meters);
 
     /// GPU time of each pass of a recent frame, which the GPU finished a frame or two ago. Empty on a
     /// device without timestamps, and for the first frames.

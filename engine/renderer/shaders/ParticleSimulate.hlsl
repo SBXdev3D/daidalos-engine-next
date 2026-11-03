@@ -11,10 +11,6 @@
 // Meters behind a surface where a particle still counts as touching it: farther, it is behind something.
 static const float kCollisionThickness = 0.5;
 
-float ViewDepth(FrameData frame, float depth) {
-    return frame.nearPlane / max(depth, 1.0e-7);
-}
-
 [numthreads(64, 1, 1)]
 void CSMain(uint3 id : SV_DispatchThreadID) {
     if (id.x >= g_particleLists[g_particles.counters][kAliveCounter]) {
@@ -44,7 +40,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         const float4 clip = mul(frame.viewProjection, float4(particle.position, 1.0));
         const float2 uv = clip.xy / clip.w * float2(0.5, -0.5) + 0.5;
         if (all(uv >= 0.0) && all(uv <= 1.0)) {
-            const float sceneDepth = ViewDepth(
+            const float sceneDepth = LinearDepth(
                 frame, g_textures[g_particles.depthTexture].SampleLevel(g_samplers[kSamplerNearestClamp], uv, 0.0).r);
             if (depth > sceneDepth && depth < sceneDepth + kCollisionThickness) {
                 const float3 normal = normalize(

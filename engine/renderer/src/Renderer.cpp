@@ -199,6 +199,8 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     DAI_TRY_ASSIGN(ParticlePass particlePass, ParticlePass::Create(impl->device, kHdrFormat));
     impl->particlePass.emplace(std::move(particlePass));
     impl->meshPass->SetNormalStrength(config.normalStrength);
+    impl->meshPass->SetFieldOfView(config.fieldOfView);
+    impl->meshPass->SetViewDistance(config.viewDistance);
 
 #if DAI_DEV_TOOLS
     // Installed builds have no sources to watch: they keep the embedded shaders.
@@ -249,6 +251,14 @@ void Renderer::SetExposure(float exposure) {
 
 void Renderer::SetAmbientOcclusion(bool enabled) {
     m_impl->ambientOcclusion = enabled;
+}
+
+void Renderer::SetFieldOfView(float radians) {
+    m_impl->meshPass->SetFieldOfView(radians);
+}
+
+void Renderer::SetViewDistance(float meters) {
+    m_impl->meshPass->SetViewDistance(meters);
 }
 
 void Renderer::SetNormalStrength(float strength) {
