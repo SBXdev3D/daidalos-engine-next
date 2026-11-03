@@ -438,8 +438,9 @@ core::Result<PipelineHandle> Device::CreatePipeline(const GraphicsPipelineDesc& 
         .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
     };
     const VkPipelineColorBlendAttachmentState blendAttachment{
-        .blendEnable = (desc.blend == BlendMode::Alpha) ? VK_TRUE : VK_FALSE,
-        .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+        .blendEnable = (desc.blend != BlendMode::Opaque) ? VK_TRUE : VK_FALSE,
+        .srcColorBlendFactor =
+            (desc.blend == BlendMode::Premultiplied) ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_SRC_ALPHA,
         .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
         .colorBlendOp = VK_BLEND_OP_ADD,
         .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,

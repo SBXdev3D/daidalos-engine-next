@@ -136,6 +136,24 @@ static const uint kSamplerLinearRepeat = 1;
 static const uint kSamplerNearestClamp = 2;
 static const uint kSamplerShadowCompare = 3;
 
+// The cluster of a pixel: its tile of the screen, and its slice of depth (ADR-0008).
+uint ClusterOf(FrameData frame, float2 pixel, float3 worldPosition) {
+    const float2 tile = pixel * frame.screenTexel * float2(kClusterColumns, kClusterRows);
+    const uint column = min(uint(tile.x), kClusterColumns - 1);
+    const uint row = min(uint(tile.y), kClusterRows - 1);
+    const float depth = max(dot(worldPosition - frame.cameraPosition, frame.cameraForward), frame.nearPlane);
+    const uint slice = min(uint(max(log(depth / frame.nearPlane) * frame.clusterSliceScale, 0.0)), kClusterSlices - 1);
+    return column + row * kClusterColumns + slice * kClusterColumns * kClusterRows;
+}
+
+// How much of a light reaches a point: full up to fullRange, then fading linearly to zero at the range,
+// and inside the cone of a spot light.
+float Attenuation(LightData light, float distanceToLight, float3 toLight) {
+    const float distance = saturate((light.range - distanceToLight) / max(light.range - light.fullRange, 0.0001));
+    const float cone = smoothstep(light.cosOuter, light.cosInner, dot(-toLight, light.direction));
+    return distance * cone;
+}
+
 #ifndef DAI_NO_MESH_PUSH_CONSTANTS
 // The joints of a skinned vertex, blended by their weights (ADR-0020).
 float4x4 SkinMatrix(InstanceData instance, uint vertexId) {

@@ -9,6 +9,7 @@
 #include <daidalos/rhi/Spirv.hpp>
 #include <daidalos/rhi/Swapchain.hpp>
 
+#include <glm/matrix.hpp>
 #include <glm/vec4.hpp>
 #include <shaders/Tonemap.ps.spv.h>
 #include <shaders/Tonemap.vs.spv.h>
@@ -20,6 +21,7 @@
 
 #include "AmbientOcclusionPass.hpp"
 #include "MeshPass.hpp"
+#include "ParticlePass.hpp"
 #include "ShaderCompiler.hpp"
 
 namespace daidalos::renderer {
@@ -31,8 +33,8 @@ constexpr rhi::Format kDepthFormat = rhi::Format::D32Float;
 /// Lighting is computed in HDR, then tonemapped into the swapchain (ADR-0022).
 constexpr rhi::Format kHdrFormat = rhi::Format::Rgba16Float;
 /// The passes timed on the GPU, in order: each ends at a timestamp, after the one at the start.
-constexpr std::array<std::string_view, 6> kTimedPasses{"Shadows", "Prepass", "Occlusion",
-                                                       "Meshes",  "Tonemap", "Overlay"};
+constexpr std::array<std::string_view, 8> kTimedPasses{"Shadows", "Prepass",   "Occlusion", "Simulation",
+                                                       "Meshes",  "Particles", "Tonemap",   "Overlay"};
 
 // Matches TonemapPushConstants in shaders/Tonemap.hlsl.
 struct TonemapPushConstants {
@@ -56,6 +58,7 @@ struct Renderer::Impl {
         }
         meshPass.reset();
         ambientOcclusionPass.reset();
+        particlePass.reset();
         device.DestroyPipeline(tonemap);
         device.DestroyTexture(depth);
         device.DestroyTexture(normals);
@@ -73,6 +76,7 @@ struct Renderer::Impl {
     rhi::Swapchain swapchain;
     std::optional<MeshPass> meshPass;
     std::optional<AmbientOcclusionPass> ambientOcclusionPass;
+    std::optional<ParticlePass> particlePass;
     bool ambientOcclusion = true;
     rhi::PipelineHandle tonemap;
     rhi::TextureHandle hdr;
@@ -190,6 +194,8 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     DAI_TRY_ASSIGN(AmbientOcclusionPass ambientOcclusionPass, AmbientOcclusionPass::Create(impl->device));
     impl->ambientOcclusionPass.emplace(std::move(ambientOcclusionPass));
     impl->ambientOcclusion = config.ambientOcclusion;
+    DAI_TRY_ASSIGN(ParticlePass particlePass, ParticlePass::Create(impl->device, kHdrFormat));
+    impl->particlePass.emplace(std::move(particlePass));
     impl->meshPass->SetNormalStrength(config.normalStrength);
 
 #if DAI_DEV_TOOLS
@@ -221,6 +227,14 @@ core::Result<MaterialHandle> Renderer::CreateMaterial(const MaterialDesc& desc) 
 
 void Renderer::DestroyMaterial(MaterialHandle material) {
     m_impl->meshPass->DestroyMaterial(material);
+}
+
+core::Result<ParticleEffectHandle> Renderer::CreateParticleEffect(const ParticleEffectDesc& desc) {
+    return m_impl->particlePass->CreateEffect(desc);
+}
+
+void Renderer::DestroyParticleEffect(ParticleEffectHandle effect) {
+    m_impl->particlePass->DestroyEffect(effect);
 }
 
 void Renderer::SetVsync(bool vsync) {
@@ -284,10 +298,18 @@ core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder
     }
     commands.WriteTimestamp();
     const bool hasFrame = status && view.camera.has_value();
-    if (hasFrame && impl.ambientOcclusion) {
+    if (hasFrame) {
         commands.Transition(impl.depth, rhi::TextureState::ShaderRead);
         commands.Transition(impl.normals, rhi::TextureState::ShaderRead);
+    }
+    if (hasFrame && impl.ambientOcclusion) {
         impl.ambientOcclusionPass->Record(commands, impl.meshPass->FrameDataIndex(), impl.depth, impl.normals);
+    }
+    commands.WriteTimestamp();
+    if (hasFrame) {
+        // Particles bounce off the pre-pass's surfaces.
+        status = impl.particlePass->Simulate(commands, view.particleSpawns, view.timeStep,
+                                             impl.meshPass->FrameDataIndex(), impl.depth, impl.normals);
         commands.Transition(impl.depth, rhi::TextureState::DepthTarget);
     }
     commands.WriteTimestamp();
@@ -297,6 +319,16 @@ core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder
                                  .clearColor = glm::vec4(view.atmosphere.fogColor, 1.0f),
                                  .depthTarget = impl.depth});
         impl.meshPass->Record(commands);
+        commands.EndRendering();
+    }
+    commands.WriteTimestamp();
+    if (status && hasFrame) {
+        // Over the meshes, back to front; they read the depth to fade into surfaces.
+        const glm::mat4 cameraWorld = glm::inverse(view.camera->view);
+        commands.Transition(impl.depth, rhi::TextureState::ShaderRead);
+        commands.BeginRendering({.colorTarget = impl.hdr});
+        impl.particlePass->Draw(commands, impl.meshPass->FrameDataIndex(), impl.depth, glm::vec3(cameraWorld[0]),
+                                glm::vec3(cameraWorld[1]));
         commands.EndRendering();
     }
     commands.WriteTimestamp();

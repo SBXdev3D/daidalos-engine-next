@@ -1,6 +1,7 @@
 dai_add_module(NAME renderer
     SOURCES
         include/daidalos/renderer/Material.hpp
+        include/daidalos/renderer/Particles.hpp
         include/daidalos/renderer/Primitives.hpp
         include/daidalos/renderer/Renderer.hpp
         include/daidalos/renderer/SceneView.hpp
@@ -11,6 +12,8 @@ dai_add_module(NAME renderer
         src/Material.cpp
         src/MeshPass.cpp
         src/MeshPass.hpp
+        src/ParticlePass.cpp
+        src/ParticlePass.hpp
         src/Primitives.cpp
         src/Renderer.cpp
         src/ShaderCompiler.cpp
@@ -23,8 +26,9 @@ dai_add_module(NAME renderer
 
 dai_add_shaders(TARGET daidalos_renderer
     SOURCES shaders/Mesh.hlsl shaders/Prepass.hlsl shaders/ShadowMap.hlsl shaders/Ssao.hlsl shaders/SsaoBlur.hlsl
-        shaders/Tonemap.hlsl
-    INCLUDES shaders/AmbientOcclusion.hlsli shaders/MeshCommon.hlsli shaders/MeshTypes.hlsli)
+        shaders/Tonemap.hlsl shaders/ParticleDraw.hlsl
+    COMPUTE shaders/ParticleEmit.hlsl shaders/ParticleSimulate.hlsl shaders/ParticleFinish.hlsl shaders/ParticleSort.hlsl
+    INCLUDES shaders/AmbientOcclusion.hlsli shaders/MeshCommon.hlsli shaders/MeshTypes.hlsli shaders/Particles.hlsli)
 
 target_compile_definitions(daidalos_renderer
     PUBLIC DAI_DEV_TOOLS=$<BOOL:${DAI_ENABLE_DEV_TOOLS}>

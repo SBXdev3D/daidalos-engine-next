@@ -138,7 +138,9 @@ enum class TextureState {
 
 enum class IndexType { Uint16, Uint32 };
 enum class CullMode { None, Front, Back };
-enum class BlendMode { Opaque, Alpha };
+/// Alpha blends color times alpha over the target. Premultiplied adds the color as given and keeps
+/// (1 - alpha) of the target: an alpha of 0 adds light, as sparks do.
+enum class BlendMode { Opaque, Alpha, Premultiplied };
 
 /// Indices into the sampler array of the global descriptor set, declared as
 /// [[vk::binding(1, 0)]] SamplerState g_samplers[4] in shaders. ShadowCompare is a comparison sampler,

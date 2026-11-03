@@ -15,6 +15,7 @@
 #include "AmbientOcclusionPass.hpp"
 #include "GpuFixture.hpp"
 #include "MeshPass.hpp"
+#include "ParticlePass.hpp"
 #include "ShaderCompiler.hpp"
 
 using namespace daidalos;
@@ -431,6 +432,120 @@ TEST_F(MeshPassTest, AmbientOcclusionDarkensACreaseAndNotAnOpenWall) {
     EXPECT_GT(openWall, 240) << "an open wall stays open";
     EXPECT_LT(crease, openWall - 30) << "the crease is darker";
     Device().DestroyBuffer(*readback);
+}
+
+namespace {
+
+// A particle pass drawing over the mesh pass's frame, with a plain white texture.
+class ParticleTest : public MeshPassTest {
+protected:
+    void SetUp() override {
+        MeshPassTest::SetUp();
+        if (IsSkipped() || HasFatalFailure()) {
+            return;
+        }
+        core::Result<renderer::ParticlePass> particles = renderer::ParticlePass::Create(Device(), kColorFormat);
+        ASSERT_TRUE(particles.has_value()) << core::Format(particles.error());
+        m_particles.emplace(std::move(*particles));
+        resources::ImageData image;
+        image.width = 1;
+        image.height = 1;
+        image.format = resources::PixelFormat::Rgba8Unorm;
+        image.pixels.assign(4, std::byte{255});
+        core::Result<rhi::TextureHandle> texture = renderer::CreateTexture(Device(), image, "White");
+        ASSERT_TRUE(texture.has_value());
+        m_white = *texture;
+    }
+
+    void TearDown() override {
+        if (m_particles.has_value()) {
+            m_particles.reset();
+            Device().DestroyTexture(m_white);
+        }
+        MeshPassTest::TearDown();
+    }
+
+    // An opaque square of one meter, unlit, that stays where it appears for ten seconds.
+    renderer::ParticleEffectHandle Effect(const glm::vec3& color) {
+        core::Result<renderer::ParticleEffectHandle> effect =
+            m_particles->CreateEffect({.texture = m_white,
+                                       .startColor = glm::vec4(color, 1.0f),
+                                       .endColor = glm::vec4(color, 1.0f),
+                                       .lit = false,
+                                       .lifetime = {10.0f, 10.0f},
+                                       .size = {1.0f, 1.0f},
+                                       .softness = 0.001f});
+        EXPECT_TRUE(effect.has_value());
+        return effect.value_or(renderer::ParticleEffectHandle{});
+    }
+
+    // Renders the meshes of the view, then simulates and draws the particles over them.
+    void RenderWithParticles(const SceneView& view, std::span<const renderer::ParticleSpawn> spawns, float step) {
+        Render(view);
+        ASSERT_TRUE(
+            Device()
+                .Submit([&](rhi::CommandList& commands) {
+                    commands.Transition(m_depth, rhi::TextureState::ShaderRead);
+                    commands.Transition(m_normals, rhi::TextureState::ShaderRead);
+                    EXPECT_TRUE(
+                        m_particles->Simulate(commands, spawns, step, m_pass->FrameDataIndex(), m_depth, m_normals)
+                            .has_value());
+                    commands.Transition(m_color, rhi::TextureState::ColorTarget);
+                    commands.BeginRendering({.colorTarget = m_color});
+                    m_particles->Draw(commands, m_pass->FrameDataIndex(), m_depth, glm::vec3(1, 0, 0),
+                                      glm::vec3(0, 1, 0));
+                    commands.EndRendering();
+                    commands.Transition(m_color, rhi::TextureState::TransferSrc);
+                    commands.CopyTextureToBuffer(m_color, m_readback);
+                })
+                .has_value());
+    }
+
+    std::optional<renderer::ParticlePass> m_particles;
+    rhi::TextureHandle m_white;
+};
+
+} // namespace
+
+TEST_F(ParticleTest, SpawnedParticleIsDrawnWhereItAppears) {
+    const renderer::ParticleSpawn spawn{.effect = Effect({0.0f, 1.0f, 0.0f}), .count = 1};
+    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), 0.01f);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0));
+    EXPECT_TRUE(IsBackground(4, 4));
+}
+
+TEST_F(ParticleTest, ParticleDisappearsAtTheEndOfItsLife) {
+    const renderer::ParticleSpawn spawn{.effect = Effect({0.0f, 1.0f, 0.0f}), .count = 1};
+    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), 0.01f);
+    ASSERT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0));
+    RenderWithParticles({TestCamera()}, {}, 11.0f);
+    EXPECT_TRUE(IsBackground(32, 32));
+}
+
+TEST_F(ParticleTest, NearerParticleIsDrawnOverAFartherOne) {
+    // Spawned near first, so that only the sort can put the far one behind.
+    const std::array<renderer::ParticleSpawn, 2> spawns{
+        renderer::ParticleSpawn{.effect = Effect({1.0f, 0.0f, 0.0f}), .position = {0.0f, 0.0f, 1.0f}, .count = 1},
+        renderer::ParticleSpawn{.effect = Effect({0.0f, 0.0f, 1.0f}), .position = {0.0f, 0.0f, -1.0f}, .count = 1}};
+    RenderWithParticles({TestCamera()}, spawns, 0.01f);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(255, 0, 0));
+}
+
+TEST_F(ParticleTest, ParticleBehindAMeshIsHidden) {
+    const MeshHandle wall = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
+    const renderer::ParticleSpawn spawn{
+        .effect = Effect({0.0f, 1.0f, 0.0f}), .position = {0.0f, 0.0f, -1.0f}, .count = 1};
+    RenderWithParticles({TestCamera(), {{wall, glm::mat4(1.0f), Material({1.0f, 0.0f, 0.0f})}}}, std::span(&spawn, 1),
+                        0.01f);
+    EXPECT_GT(Pixel(32, 32).r, 200);
+    EXPECT_LT(Pixel(32, 32).g, 16);
+}
+
+TEST_F(ParticleTest, FullPoolDropsNewParticles) {
+    const renderer::ParticleSpawn spawn{.effect = Effect({0.0f, 1.0f, 0.0f}), .count = renderer::kMaxParticles + 100};
+    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), 0.01f);
+    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), 0.01f);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0));
 }
 
 TEST_F(MeshPassTest, DestroyedMeshIsSkipped) {

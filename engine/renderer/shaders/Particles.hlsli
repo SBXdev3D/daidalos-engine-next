@@ -1,0 +1,126 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+
+#ifndef DAIDALOS_PARTICLES_HLSLI
+#define DAIDALOS_PARTICLES_HLSLI
+
+// What the particle passes share (ADR-0025). Each structure matches its C++ twin in
+// engine/renderer/src/ParticlePass.cpp.
+
+#define DAI_NO_MESH_PUSH_CONSTANTS
+#include "MeshTypes.hlsli"
+
+struct Particle {
+    float3 position;
+    float age;
+    float3 velocity;
+    float lifetime;
+    float size;
+    float rotation;
+    float rotationSpeed;
+    uint effect;
+};
+
+static const uint kEffectLit = 1;
+static const uint kEffectCollides = 2;
+static const uint kEffectAdditive = 4;
+
+struct ParticleEffectData {
+    float4 startColor;
+    float4 endColor;
+    float3 spawnBox;     // Half extents, in the emitter's frame.
+    float spawnRadius;   // Added: a random point in a sphere.
+    float3 direction;    // In the emitter's frame.
+    float spread;        // Radians around the direction.
+    float speedMin;
+    float speedMax;
+    float lifeMin;
+    float lifeMax;
+    float sizeMin;
+    float sizeMax;
+    float growth;        // Size at the end of its life, relative to the start.
+    float gravity;       // Multiplies the Earth's.
+    float drag;          // Fraction of the speed lost per second.
+    float rotationSpeed; // Radians per second, either way.
+    float softness;      // Meters over which it fades into what it touches.
+    float bounce;        // Speed kept when it bounces off a surface.
+    uint texture;
+    uint cell;
+    uint columns;
+    uint flags;
+};
+
+struct ParticleSpawn {
+    float3 position;
+    uint effect;
+    float4 rotation; // Quaternion (x, y, z, w) of the emitter.
+    uint first;      // Particles spawned by the requests before this one.
+    uint count;
+    uint2 padding;
+};
+
+// Every particle pass uses these push constants, each the fields it needs.
+struct ParticlePushConstants {
+    uint particles;
+    uint dead;
+    uint aliveIn;
+    uint aliveOut;
+    uint keys;
+    uint counters; // Dead, alive, alive after the simulation.
+    uint arguments;
+    uint effects;
+    uint spawns;
+    uint spawnCount;
+    uint emitCount;
+    uint frameBuffer;
+    float timeStep;
+    uint seed;
+    uint depthTexture;
+    uint normalTexture;
+    uint sortBlock;
+    uint sortStep;
+    uint capacity;
+    uint padding;
+    float3 cameraRight;
+    float padding2;
+    float3 cameraUp;
+    float padding3;
+};
+
+[[vk::push_constant]] ParticlePushConstants g_particles;
+// Compute passes write the particles; the draw only reads them, which needs no device feature.
+#ifdef DAI_PARTICLES_READ_ONLY
+[[vk::binding(2, 0)]] StructuredBuffer<Particle> g_particleData[];
+[[vk::binding(2, 0)]] StructuredBuffer<uint2> g_particleKeys[];
+#else
+[[vk::binding(2, 0)]] RWStructuredBuffer<Particle> g_particleData[];
+[[vk::binding(2, 0)]] RWStructuredBuffer<uint> g_particleLists[];
+[[vk::binding(2, 0)]] RWStructuredBuffer<uint2> g_particleKeys[];
+#endif
+[[vk::binding(2, 0)]] StructuredBuffer<ParticleEffectData> g_particleEffects[];
+[[vk::binding(2, 0)]] StructuredBuffer<ParticleSpawn> g_particleSpawns[];
+
+static const uint kDeadCounter = 0;
+static const uint kAliveCounter = 1;
+static const uint kNextAliveCounter = 2;
+
+// A small, good hash (PCG), for random numbers on the GPU.
+uint Hash(uint value) {
+    const uint state = value * 747796405u + 2891336453u;
+    const uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+// Random numbers from 0 to 1, each call moving the seed on.
+float Random(inout uint seed) {
+    seed = Hash(seed);
+    return float(seed) / 4294967295.0;
+}
+
+float3 Rotate(float4 q, float3 v) {
+    const float3 t = 2.0 * cross(q.xyz, v);
+    return v + q.w * t + cross(q.xyz, t);
+}
+
+#endif
