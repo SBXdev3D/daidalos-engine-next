@@ -60,7 +60,15 @@ ENTITY_ATTRIBUTES = {
     "lightColor": "light_color",
     "lightRange": "light_range",
     "lightEnabled": "light_enabled",
+    "lightRadius": "light_angle",
+    "lightFalloff": "light_falloff",
+    "lightTightness": "light_tightness",
+    "lightDecalY": "light_offset",
+    "lightShadow_caster": "light_shadows",
+    "rotation_speed": "rotation_speed",
 }
+# Attributes in legacy units, written in meters.
+LENGTH_ATTRIBUTES = {"light_range", "light_offset"}
 # Kinds that are drawn as a model in place of their legacy animated mesh.
 BOX_MESHES = {"door": "door_bbox.obj"}
 # Animated models, each baked to a glTF file of its own with its texture. Their level nodes keep their
@@ -686,7 +694,10 @@ def entity_name(kind, node):
     if attributes is not None:
         for element in attributes:
             if element.tag in ENTITY_ATTRIBUTES and element.text:
-                fields.append(f"{ENTITY_ATTRIBUTES[element.tag]}={element.text.strip()}")
+                key, value = ENTITY_ATTRIBUTES[element.tag], element.text.strip().rstrip("f")
+                if key in LENGTH_ATTRIBUTES:
+                    value = f"{float(value) * METERS_PER_UNIT:g}"
+                fields.append(f"{key}={value}")
     return ";".join(fields)
 
 

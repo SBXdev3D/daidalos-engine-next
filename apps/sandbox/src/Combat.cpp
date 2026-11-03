@@ -238,6 +238,9 @@ void Kill(scene::Scene& scene, Zombie& zombie, Arsenal* arsenal) {
     }
 }
 
+// How long a shot lights the room, in seconds.
+constexpr float kMuzzleFlashTime = 0.06f;
+
 void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsenal* arsenal) {
     ecs::World& world = scene.World();
     physics::PhysicsWorld& physics = scene.Physics();
@@ -245,6 +248,7 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
     WeaponState& weapon = player.weapons[static_cast<std::size_t>(player.weapon)];
     --weapon.magazine;
     player.weaponBusy = spec.fireDelay;
+    player.muzzleFlashTime = kMuzzleFlashTime;
 
     std::minstd_rand fallback;
     std::minstd_rand& random = arsenal != nullptr ? arsenal->random : fallback;

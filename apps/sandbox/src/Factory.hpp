@@ -86,6 +86,11 @@ struct Player {
     int zombieCount = 0;
     bool hasFlashlight = false;
     bool flashlightOn = false;
+    /// Lights that follow the camera, as its children.
+    daidalos::ecs::Entity flashlight;
+    daidalos::ecs::Entity muzzleFlash;
+    /// Seconds left of the light of the last shot.
+    float muzzleFlashTime = 0.0f;
     bool hasRedCard = false;
     /// Last thing that happened, and how long it stays on screen, in seconds.
     std::string message;
@@ -95,7 +100,7 @@ struct Player {
 /// Settings of the game, which must outlive the scene.
 struct Settings {
     float mouseSensitivity = 0.0025f;
-    /// Multiplies the darkness; 0 shows the whole level.
+    /// 1 is the factory's darkness, and 0 lights the whole level evenly, with no fog.
     float darkness = 1.0f;
 };
 

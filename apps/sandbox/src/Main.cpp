@@ -22,6 +22,7 @@
 #include <format>
 #include <memory>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -235,6 +236,13 @@ private:
         ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_FirstUseEver);
         ImGui::Begin("Daidalos", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
         ImGui::Text("%.0f FPS", m_fps);
+        if (const std::span<const renderer::PassTime> times = app.Renderer().GpuTimes(); !times.empty()) {
+            std::string line = "GPU";
+            for (const renderer::PassTime& pass : times) {
+                line += std::format("   {} {:.2f} ms", pass.name, pass.milliseconds);
+            }
+            ImGui::TextUnformatted(line.c_str());
+        }
         if (m_loading) {
             ImGui::TextUnformatted("Loading...");
         }
