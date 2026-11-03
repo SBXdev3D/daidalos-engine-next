@@ -152,6 +152,7 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     deviceConfig.validation = config.validation;
     deviceConfig.instanceExtensions = std::move(extensions);
     deviceConfig.presentation = true;
+    deviceConfig.anisotropy = config.anisotropy;
     DAI_TRY_ASSIGN(rhi::Device device, rhi::Device::Create(deviceConfig));
 
     const platform::Extent size = window.PixelSize();
@@ -171,6 +172,7 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
                                   }));
     DAI_TRY_ASSIGN(MeshPass meshPass, MeshPass::Create(impl->device, kHdrFormat, kDepthFormat));
     impl->meshPass.emplace(std::move(meshPass));
+    impl->meshPass->SetNormalStrength(config.normalStrength);
 
 #if DAI_DEV_TOOLS
     // Installed builds have no sources to watch: they keep the embedded shaders.
@@ -209,6 +211,10 @@ void Renderer::SetVsync(bool vsync) {
 
 void Renderer::SetExposure(float exposure) {
     m_impl->exposure = exposure;
+}
+
+void Renderer::SetNormalStrength(float strength) {
+    m_impl->meshPass->SetNormalStrength(strength);
 }
 
 std::span<const PassTime> Renderer::GpuTimes() const {

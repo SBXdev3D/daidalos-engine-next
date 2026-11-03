@@ -161,6 +161,10 @@ core::Result<void> Application::LoadConfiguration() {
                                                         "Main window height, in screen coordinates");
         m_vsync = m_cvars.Register<bool>("renderer.vsync", true, "Synchronize presentation with the display");
         m_exposure = m_cvars.Register<double>("renderer.exposure", 1.0, "Multiplies the light before tonemapping");
+        m_anisotropy = m_cvars.Register<std::int64_t>(
+            "renderer.anisotropy", 16, "Anisotropic filtering of textures, from 1 (off) to 16, read at startup");
+        m_normalStrength = m_cvars.Register<double>(
+            "renderer.normal_strength", 1.0, "Multiplies the relief of normal maps: 0 flattens them, 1 as authored");
         m_validation = m_cvars.Register<bool>("renderer.validation", kValidationByDefault,
                                               "Enable the Vulkan validation layers, read at startup");
         m_volume = m_cvars.Register<double>("audio.volume", 1.0, "Overall volume, from 0 to 1, read at startup");
@@ -219,8 +223,14 @@ core::Result<void> Application::CreateRenderer() {
     if (!m_config.rendering) {
         return {};
     }
-    DAI_TRY_ASSIGN(renderer::Renderer created,
-                   renderer::Renderer::Create(*m_window, {.validation = m_validation->Get(), .vsync = m_vsync->Get()}));
+    DAI_TRY_ASSIGN(
+        renderer::Renderer created,
+        renderer::Renderer::Create(
+            *m_window, {.validation = m_validation->Get(),
+                        .vsync = m_vsync->Get(),
+                        .exposure = static_cast<float>(m_exposure->Get()),
+                        .anisotropy = static_cast<float>(std::clamp<std::int64_t>(m_anisotropy->Get(), 1, 16)),
+                        .normalStrength = static_cast<float>(m_normalStrength->Get())}));
     m_renderer.emplace(std::move(created));
     return {};
 }
@@ -257,6 +267,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
 
     m_renderer->SetVsync(m_vsync->Get());
     m_renderer->SetExposure(static_cast<float>(m_exposure->Get()));
+    m_renderer->SetNormalStrength(static_cast<float>(m_normalStrength->Get()));
     core::Result<void> rendered = m_renderer->Render(m_scene, overlay);
     if (rendered && !overlayResult) {
         rendered = std::move(overlayResult);

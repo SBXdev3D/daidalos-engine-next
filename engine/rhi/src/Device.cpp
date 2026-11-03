@@ -323,10 +323,18 @@ core::Result<void> Device::Impl::CreateLogicalDevice(const DeviceConfig& config)
         .runtimeDescriptorArray = VK_TRUE,
         .timelineSemaphore = VK_TRUE,
     };
+    VkPhysicalDeviceFeatures supported{};
+    vkGetPhysicalDeviceFeatures(physicalDevice, &supported);
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+    const bool anisotropic = config.anisotropy > 1.0f && supported.samplerAnisotropy == VK_TRUE;
+    info.anisotropy = anisotropic ? std::min(config.anisotropy, properties.limits.maxSamplerAnisotropy) : 1.0f;
+
     const VkPhysicalDeviceFeatures2 features{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
         .pNext = &features12,
-        .features = {.textureCompressionBC = VK_TRUE,
+        .features = {.samplerAnisotropy = anisotropic ? VK_TRUE : VK_FALSE,
+                     .textureCompressionBC = VK_TRUE,
                      .shaderSampledImageArrayDynamicIndexing = VK_TRUE,
                      .shaderStorageBufferArrayDynamicIndexing = VK_TRUE},
     };
@@ -437,6 +445,9 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
             .addressModeU = address,
             .addressModeV = address,
             .addressModeW = address,
+            // Sharp textures on surfaces seen at a grazing angle, such as floors.
+            .anisotropyEnable = (filter == VK_FILTER_LINEAR && info.anisotropy > 1.0f) ? VK_TRUE : VK_FALSE,
+            .maxAnisotropy = info.anisotropy,
             .maxLod = VK_LOD_CLAMP_NONE,
         };
         return vkCreateSampler(device, &createInfo, nullptr, &sampler);
@@ -726,8 +737,8 @@ core::Result<Device> Device::Create(const DeviceConfig& config) {
     DAI_TRY(impl->CreateAllocator());
     DAI_TRY(impl->CreateFrameResources());
     DAI_TRY(impl->CreateGlobalDescriptors());
-    DAI_LOG_INFO(kModule, "Vulkan device '{}', validation {}", impl->info.name,
-                 impl->info.validationEnabled ? "on" : "off");
+    DAI_LOG_INFO(kModule, "Vulkan device '{}', validation {}, anisotropy {}x", impl->info.name,
+                 impl->info.validationEnabled ? "on" : "off", impl->info.anisotropy);
     return Device(std::move(impl));
 }
 

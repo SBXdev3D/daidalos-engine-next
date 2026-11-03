@@ -49,7 +49,7 @@ struct FrameData {
     std::uint32_t shadowBuffer;
     std::uint32_t shadowAtlas;
     float shadowTexel;
-    std::uint32_t padding;
+    float normalStrength;
 };
 
 struct LightData {
@@ -436,7 +436,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, float aspect) {
                           m_device->StorageIndex(slot.shadows),
                           m_device->BindlessIndex(m_shadowAtlas),
                           1.0f / static_cast<float>(kShadowAtlasSize),
-                          0};
+                          m_normalStrength};
     std::memcpy(m_device->Mapped(slot.frame).data(), &frame, sizeof(frame));
 
     auto* lights = reinterpret_cast<LightData*>(m_device->Mapped(slot.lights).data());

@@ -25,5 +25,5 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0019](0019-audio.md) | miniaudio, an engine per application and a sound world per scene | Accepted |
 | [0020](0020-animation.md) | Own skeletal animation, joints as entities, skinning in the vertex shader | Accepted, amended |
 | [0021](0021-module-consolidation.md) | Nine modules, each a layer or a wall around a library | Accepted |
-| [0022](0022-lighting-and-materials.md) | HDR, PBR, legacy light units, glTF normal maps with MikkTSpace | Accepted |
+| [0022](0022-lighting-and-materials.md) | HDR, PBR, legacy light units, glTF normal maps with MikkTSpace | Accepted, amended |
 | [0023](0023-shadows.md) | Spot-light shadows: four per frame in one atlas, nearest first | Accepted |

@@ -51,6 +51,9 @@ public:
     /// Draws the prepared frame inside the current rendering scope.
     void Record(rhi::CommandList& commands);
 
+    /// Multiplies the tilt of every normal map, from the next Prepare.
+    void SetNormalStrength(float strength) { m_normalStrength = strength; }
+
 private:
     struct Mesh {
         rhi::BufferHandle vertices;
@@ -115,6 +118,7 @@ private:
     /// The frame that Prepare filled, if any. Its instances follow m_sorted.
     FrameSlot* m_prepared = nullptr;
     std::uint32_t m_shadowCount = 0;
+    float m_normalStrength = 1.0f;
     /// Reused from frame to frame.
     std::vector<SortedDraw> m_sorted;
 };

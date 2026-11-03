@@ -56,14 +56,14 @@ float4 SampleTexture(uint texture, float2 uv, float4 fallback) {
 
 // The normal map, in the tangent frame of glTF: the bitangent is cross(normal, tangent) * w. Only red and
 // green are read, and blue is rebuilt, so that two-channel compression works too.
-float3 ApplyNormalMap(MaterialData material, float3 normal, float4 tangent, float2 uv) {
+float3 ApplyNormalMap(MaterialData material, float strength, float3 normal, float4 tangent, float2 uv) {
     if (material.normalTexture == kNoTexture || dot(tangent.xyz, tangent.xyz) == 0.0) {
         return normal;
     }
     const float3 t = normalize(tangent.xyz - normal * dot(normal, tangent.xyz));
     const float3 b = cross(normal, t) * (tangent.w < 0.0 ? -1.0 : 1.0);
     float2 xy = SampleTexture(material.normalTexture, uv, float4(0.5, 0.5, 1.0, 1.0)).rg * 2.0 - 1.0;
-    xy *= material.normalScale;
+    xy *= material.normalScale * strength;
     const float z = sqrt(saturate(1.0 - dot(xy, xy)));
     return normalize(t * xy.x + b * xy.y + normal * z);
 }
@@ -169,7 +169,7 @@ float4 PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target
         normal = -normal; // The back of a double-sided material.
         tangent.w = -tangent.w;
     }
-    normal = ApplyNormalMap(material, normal, tangent, input.uv);
+    normal = ApplyNormalMap(material, frame.normalStrength, normal, tangent, input.uv);
 
     const float3 diffuseColor = baseColor.rgb * (1.0 - metallic);
     const float3 f0 = lerp(float3(0.04, 0.04, 0.04), baseColor.rgb, metallic);

@@ -29,7 +29,7 @@ struct FrameData {
     uint shadowBuffer;
     uint shadowAtlas;  // Bindless index of the depth texture that holds every shadow map.
     float shadowTexel; // One texel of the atlas, in texture coordinates.
-    uint padding;
+    float normalStrength; // Multiplies every normal map's tilt.
 };
 
 // A point light has a cosOuter of -2, which every direction passes.

@@ -7,7 +7,7 @@ CMakeUserPresets.json
 
 # Files written by the applications when run from the source tree
 sandbox.log
-sandbox.cfg
+/sandbox.cfg
 /crashdumps/
 
 # Assets downloaded by scripts/fetch_sample_assets.py

@@ -32,3 +32,7 @@ Until Phase 7, the factory's darkness was fog, with one cone of light cut throug
 - ACES filmic tonemapping: popular, but it shifts hues and darkens mid-tones, which changes the look of textures made for an LDR engine.
 - Tangents computed per triangle, as the legacy engine did: simpler, but they disagree with the tools that bake normal maps and show seams.
 - Flipping green for Direct3D-style maps: not needed once the legacy maps were measured.
+
+## Amendment (2026-11-03): filtering and normal strength
+
+Linear samplers use anisotropic filtering, 16x by default (`renderer.anisotropy`, clamped to the device), so floors and walls seen at a grazing angle stay sharp. `renderer.normal_strength` multiplies the tilt of every normal map. It is 1 by default, as authored; the legacy maps are subtle (half the pixels of the brick wall lean less than 1 degree), and the sandbox's settings file sets 2. A normal map only shows under direct light: the ambient light comes from everywhere, so normals do not change it.

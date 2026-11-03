@@ -303,7 +303,8 @@ int main(int argc, char** argv) {
     config.log.minimumLevel = logging::Level::Debug;
     config.log.filePath = "sandbox.log";
     config.crashDumpDirectory = "crashdumps";
-    config.configFile = "sandbox.cfg";
+    // Next to the executable, where the build leaves a commented copy of apps/sandbox/sandbox.cfg.
+    config.configFile = platform::ExecutableDirectory() / "sandbox.cfg";
     config.arguments.assign(argv + 1, argv + argc);
     config.window.title = "Daidalos Sandbox";
     config.rendering = true;
