@@ -47,10 +47,13 @@ struct Model {
         std::string name;
         std::optional<std::uint32_t> parent;
         math::Transform local;
-        std::vector<Part> parts;
+        /// Indices into parts. Several nodes can draw the same part.
+        std::vector<std::uint32_t> parts;
         /// Index into skins, if the parts follow joints.
         std::optional<std::uint32_t> skin;
     };
+    /// One per glTF primitive, each stored once.
+    std::vector<Part> parts;
     /// Parents come before their children.
     std::vector<Node> nodes;
     std::vector<Skin> skins;

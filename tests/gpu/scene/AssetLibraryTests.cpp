@@ -122,13 +122,14 @@ TEST_F(AssetLibraryTest, ReleasedAssetsAreSkippedByLaterFrames) {
 
 TEST(Instantiate, BuildsTheHierarchyWithOneEntityPerExtraPart) {
     Model model;
+    model.parts = {{renderer::MeshHandle(1, 1), renderer::MaterialHandle(1, 1)},
+                   {renderer::MeshHandle(2, 1), renderer::MaterialHandle(2, 1)}};
     Model::Node& parent = model.nodes.emplace_back();
     parent.local.translation = {1.0f, 0.0f, 0.0f};
     Model::Node& child = model.nodes.emplace_back();
     child.parent = 0;
     child.local.translation = {0.0f, 2.0f, 0.0f};
-    child.parts = {{renderer::MeshHandle(1, 1), renderer::MaterialHandle(1, 1)},
-                   {renderer::MeshHandle(2, 1), renderer::MaterialHandle(2, 1)}};
+    child.parts = {0, 1};
 
     ecs::World world;
     const core::Result<ecs::Entity> root = scene::Instantiate(world, model);

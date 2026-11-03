@@ -612,7 +612,8 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
         if (node.name != "level") {
             continue;
         }
-        for (const scene::Model::Part& part : node.parts) {
+        for (const std::uint32_t index : node.parts) {
+            const scene::Model::Part& part = model.parts[index];
             DAI_TRY(physics.AddStaticMesh(part.positions, part.indices, node.local));
         }
     }
@@ -683,8 +684,8 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
             if (const auto found = modelNodes.find(name); found != modelNodes.end()) {
                 glm::vec3 low(std::numeric_limits<float>::max());
                 glm::vec3 high(std::numeric_limits<float>::lowest());
-                for (const scene::Model::Part& part : found->second->parts) {
-                    for (const glm::vec3& vertex : part.positions) {
+                for (const std::uint32_t index : found->second->parts) {
+                    for (const glm::vec3& vertex : model.parts[index].positions) {
                         low = glm::min(low, vertex);
                         high = glm::max(high, vertex);
                     }

@@ -130,7 +130,8 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
         materials.push_back(created);
     }
 
-    std::vector<Model::Part> parts;
+    Model model;
+    std::vector<Model::Part>& parts = model.parts;
     parts.reserve(data.primitives.size());
     for (std::size_t index = 0; index < data.primitives.size(); ++index) {
         const resources::ModelPrimitive& primitive = data.primitives[index];
@@ -147,7 +148,6 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
         part.indices = primitive.mesh.indices;
     }
 
-    Model model;
     model.nodes.reserve(data.nodes.size());
     std::vector<math::Transform> restPose;
     restPose.reserve(data.nodes.size());
@@ -157,10 +157,7 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
         added.parent = node.parent;
         added.local = node.local;
         added.skin = node.skin;
-        added.parts.reserve(node.primitives.size());
-        for (const std::uint32_t primitive : node.primitives) {
-            added.parts.push_back(parts[primitive]);
-        }
+        added.parts = node.primitives;
         restPose.push_back(node.local);
     }
     model.skins.reserve(data.skins.size());
@@ -246,7 +243,7 @@ core::Result<ecs::Entity> Instantiate(ecs::World& world, const Model& model) {
         }
 
         for (std::size_t index = 0; index < node.parts.size(); ++index) {
-            const Model::Part& part = node.parts[index];
+            const Model::Part& part = model.parts[node.parts[index]];
             ecs::Entity holder = entity;
             if (index > 0) {
                 holder = world.Create();
