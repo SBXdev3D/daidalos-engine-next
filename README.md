@@ -6,20 +6,15 @@ The project is at an early stage. Phases 0 to 5 of the roadmap in [OVERVIEW.md](
 
 | Module | Contents |
 |---|---|
-| `core` | `Result` and `Error`, `DAI_ASSERT`, generational handles, frame timer, worker pool, configuration variables (cvars), profiling macros |
-| `logging` | Logging facade over spdlog |
-| `math` | GLM with the engine's conventions: axes, TRS transforms, reverse-Z projections, bounding boxes |
-| `platform` | SDL3 window, window and input events, Vulkan surfaces, process execution, crash dumps (Windows) |
-| `input` | Keyboard, mouse and gamepad state (held, pressed and released this frame), actions |
-| `ecs` | Entities with generational handles, sparse-set components, system schedule, hierarchy, transform propagation |
+| `core` | `Result` and `Error`, `DAI_ASSERT`, `DAI_TRY`, generational handles, frame timer, worker pool, configuration variables (cvars), profiling macros, logging over spdlog, and GLM with the engine's conventions: axes, TRS transforms, reverse-Z projections, bounding boxes |
+| `platform` | SDL3 window, window and input events, Vulkan surfaces, process execution, crash dumps (Windows), and keyboard, mouse and gamepad state with actions |
 | `resources` | Asset paths and caching, glTF models, PNG, JPEG and KTX2 images, as plain CPU data |
-| `rhi` | Vulkan 1.3 device, swapchain, buffers, textures with mip levels and BC compression, pipelines, command lists, deferred destruction |
-| `renderer` | Mesh rendering with depth, materials, asset library, cameras, scene extraction from the ECS, shader hot reload |
+| `rhi` | Vulkan 1.3 device, swapchain, buffers, textures with mip levels and BC compression, pipelines, command lists, batched uploads, deferred destruction |
+| `renderer` | Mesh rendering with depth, skinning and materials, shader hot reload, and the Dear ImGui overlay in development builds |
 | `physics` | Jolt behind a small API: static meshes, kinematic boxes, raycasts, character movement |
 | `audio` | miniaudio behind a small API: clips, voices, 3D sounds, buses, silent without an output |
-| `scene` | A world with its assets, physics, sounds, systems and camera |
-| `debugui` | Dear ImGui overlay drawn through the RHI (development builds) |
-| `app` | Ordered startup with rollback, main loop, current scene |
+| `scene` | Entities with sparse-set components and a hierarchy, skeletal animation, the asset library, and the scene that ties them to the renderer, physics and sounds |
+| `app` | Startup and shutdown in order, main loop, current scene |
 
 The sandbox is a first-person demo in a dark factory, the remake of the legacy engine's demo: see [docs/DEMO.md](docs/DEMO.md).
 

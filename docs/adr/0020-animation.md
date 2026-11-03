@@ -31,3 +31,7 @@ Phase 6 needs zombies that wait, walk, strike and die, fans that turn, and a han
 - Skinning on the CPU, as the legacy engine did: simple, but it rewrites vertex buffers every frame.
 - A compute pass that skins into a buffer once per frame: worth it when the same skinned mesh is drawn several times, by shadow passes for example. It can replace the vertex shader path in Phase 7 without changing the data.
 - Poses in one component, with no joint entities: faster for crowds, but attaching anything to a joint would need its own code.
+
+## Amendment (2026-11-03): part of the scene module
+
+The `animation` module is now part of `scene` (ADR-0021), with the same namespace and headers.

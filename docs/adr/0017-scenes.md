@@ -14,7 +14,7 @@ The sandbox also showed that lifetimes were wrong. It owned its `AssetLibrary` d
 - `scene::Scene` owns a `World`, an `AssetLibrary`, two `Schedule`s (fixed steps and frames), the active camera and the atmosphere. The assets of a scene die with its entities.
 - `Application` holds the current scene. `SetScene` takes effect between two frames. The application's startup sequence has a step that releases the scene, so it always goes before the renderer, whichever way the application ends.
 - The application runs the scene's systems, computes its transforms and extracts it for rendering, so a game no longer does that itself.
-- A level is a glTF file plus code. Model nodes reach the ECS through `renderer::NodeName`, and the game finds what it needs by name. glaze is not adopted, and there is no scene file format.
+- A level is a glTF file plus code. Model nodes reach the ECS through `renderer::NodeName` (now `scene::NodeName`, ADR-0021), and the game finds what it needs by name. glaze is not adopted, and there is no scene file format.
 - `core::WorkerPool` is the pool of ADR-0011. `AssetLibrary::LoadModelAsync` reads and decodes on a worker, and creates GPU objects on the main thread. A library that dies cancels its loads.
 - To replace a level, the next scene loads in the background and takes over once it is ready, so a level is never shown half-built.
 

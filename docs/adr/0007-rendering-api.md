@@ -48,3 +48,7 @@ the swapchain requires them.
 **Push constants hold indices, data lives in storage buffers.** Two matrices filled the 128 bytes that Vulkan guarantees, with no room for a material. The global descriptor set gains a bindless array of storage buffers, next to the array of textures. Shaders declare it at `[[vk::binding(2, 0)]]`, once per element type. Per-frame data, per-instance data and the material table all live there, and the push constants carry indices into them. The lighting data of Phase 6 will do the same.
 
 **Required device features** now include BC texture compression and storage buffer descriptor indexing. Shader demotion, which `discard` compiles to, is part of Vulkan 1.3.
+
+## Amendment (2026-11-03): uploads are recorded, not waited for
+
+`Device::UploadBuffer` and `UploadTexture` used to submit one copy and wait for the GPU each time, which made a level take tens of milliseconds to reach the GPU. They now record their copies into one pending command buffer. It goes to the queue, with a barrier, ahead of the next `BeginFrame`, `Submit` or `WaitIdle`, so everything submitted later sees the data, and its staging buffers are released by the timeline semaphore like any destroyed resource. Uploads remain forbidden between `BeginFrame` and `EndFrame`.
