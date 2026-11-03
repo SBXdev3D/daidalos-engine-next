@@ -2,7 +2,7 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
-#include <daidalos/ecs/Transform.hpp>
+#include <daidalos/math/Transform.hpp>
 #include <daidalos/physics/PhysicsWorld.hpp>
 
 #include <gtest/gtest.h>
@@ -137,26 +137,6 @@ TEST(PhysicsWorld, KinematicBoxBlocksTheCharacterUntilItMoves) {
     EXPECT_NEAR(physics.BodyPosition(*box).y, door.translation.y, 0.001f);
     Walk(physics, character, {3.0f, 0.0f, 0.0f}, 120);
     EXPECT_GT(physics.CharacterPosition(character).x, 3.0f);
-}
-
-TEST(PhysicsWorld, SyncMovesBodiesToTheirEntities) {
-    PhysicsWorld physics;
-    core::Result<BodyId> box = physics.AddKinematicBox({1.0f, 1.0f, 1.0f});
-    ASSERT_TRUE(box.has_value());
-    ecs::World world;
-    const ecs::Entity entity = world.Create();
-    ecs::LocalTransform transform;
-    transform.translation = {1.0f, 2.0f, 3.0f};
-    world.Add<ecs::LocalTransform>(entity, transform);
-    world.Add<KinematicBody>(entity, *box);
-
-    SyncKinematicBodies(world, physics, kStep);
-    physics.Step(kStep);
-
-    const glm::vec3 position = physics.BodyPosition(*box);
-    EXPECT_NEAR(position.x, 1.0f, 0.001f);
-    EXPECT_NEAR(position.y, 2.0f, 0.001f);
-    EXPECT_NEAR(position.z, 3.0f, 0.001f);
 }
 
 TEST(PhysicsWorld, CharacterCannotStandUpUnderACeiling) {

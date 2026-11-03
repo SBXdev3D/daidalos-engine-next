@@ -5,7 +5,7 @@
 #pragma once
 
 #include <daidalos/core/Result.hpp>
-#include <daidalos/renderer/Components.hpp>
+#include <daidalos/renderer/SceneView.hpp>
 #include <daidalos/resources/ImageData.hpp>
 #include <daidalos/rhi/Device.hpp>
 

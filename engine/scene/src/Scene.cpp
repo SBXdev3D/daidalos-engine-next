@@ -6,6 +6,7 @@
 #include <daidalos/core/Profile.hpp>
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/scene/Scene.hpp>
+#include <daidalos/scene/Systems.hpp>
 
 #include <glm/geometric.hpp>
 #include <glm/matrix.hpp>
@@ -20,7 +21,7 @@ Scene::Scene(renderer::Renderer& renderer, std::filesystem::path assetRoot, audi
 void Scene::RunFixedStep(core::Seconds step) {
     m_fixedSystems.Run(m_world, step);
     const auto seconds = static_cast<float>(step.count());
-    physics::SyncKinematicBodies(m_world, m_physics, seconds);
+    SyncKinematicBodies(m_world, m_physics, seconds);
     m_physics.Step(seconds);
 }
 
@@ -33,11 +34,11 @@ void Scene::RunFrame(core::Seconds delta, float fixedAlpha) {
 void Scene::Extract(renderer::SceneView& view) {
     DAI_PROFILE_SCOPE("scene::Extract");
     ecs::PropagateTransforms(m_world);
-    renderer::ExtractScene(m_world, view, m_activeCamera);
+    ExtractScene(m_world, view, m_activeCamera);
     view.atmosphere = m_atmosphere;
     view.spotLight = m_spotLight;
 
-    audio::SyncSoundEmitters(m_world, m_sounds);
+    SyncSoundEmitters(m_world, m_sounds);
     if (view.camera.has_value()) {
         const glm::mat4 camera = glm::inverse(view.camera->view);
         m_sounds.SetListener(glm::vec3(camera[3]), glm::normalize(-glm::vec3(camera[2])),

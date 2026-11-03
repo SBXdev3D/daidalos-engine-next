@@ -6,7 +6,5 @@ dai_add_app(NAME sandbox
         src/Factory.hpp
         src/Main.cpp
     DEPS
-        daidalos::animation
         daidalos::app
-        daidalos::ecs
         daidalos::scene)

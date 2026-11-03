@@ -10,9 +10,7 @@ dai_add_module(NAME resources
         src/StbImage.cpp
     PUBLIC_DEPS
         daidalos::core
-        daidalos::math
     PRIVATE_DEPS
-        daidalos::logging
         fastgltf::fastgltf
         KTX::ktx)
 

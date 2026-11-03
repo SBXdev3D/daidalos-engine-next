@@ -5,19 +5,19 @@
 #include <daidalos/core/Profile.hpp>
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/logging/Log.hpp>
-#include <daidalos/renderer/AssetLibrary.hpp>
 #include <daidalos/resources/AssetPath.hpp>
+#include <daidalos/scene/AssetLibrary.hpp>
 
 #include <chrono>
 #include <format>
 #include <memory>
 #include <utility>
 
-namespace daidalos::renderer {
+namespace daidalos::scene {
 
 namespace {
 
-constexpr std::string_view kModule = "renderer";
+constexpr std::string_view kModule = "scene";
 
 std::string_view ToString(resources::TextureUse use) {
     switch (use) {
@@ -33,7 +33,7 @@ std::string_view ToString(resources::TextureUse use) {
 
 } // namespace
 
-AssetLibrary::AssetLibrary(Renderer& renderer, std::filesystem::path root)
+AssetLibrary::AssetLibrary(renderer::Renderer& renderer, std::filesystem::path root)
     : m_renderer(&renderer), m_root(std::move(root)) {}
 
 AssetLibrary::~AssetLibrary() {
@@ -41,10 +41,10 @@ AssetLibrary::~AssetLibrary() {
         load.workers->Cancel(load.job);
     }
     // Materials first: they refer to the textures.
-    for (const MaterialHandle material : m_materials) {
+    for (const renderer::MaterialHandle material : m_materials) {
         m_renderer->DestroyMaterial(material);
     }
-    for (const MeshHandle mesh : m_meshes) {
+    for (const renderer::MeshHandle mesh : m_meshes) {
         m_renderer->DestroyMesh(mesh);
     }
     m_textures.ForEach([this](rhi::TextureHandle texture) { m_renderer->Device().DestroyTexture(texture); });
@@ -52,7 +52,7 @@ AssetLibrary::~AssetLibrary() {
 
 core::Result<AssetLibrary::DecodedModel> AssetLibrary::Decode(const std::filesystem::path& root,
                                                               const std::string& key) {
-    DAI_PROFILE_SCOPE("renderer::DecodeModel");
+    DAI_PROFILE_SCOPE("scene::DecodeModel");
     core::Result<std::filesystem::path> file = resources::ResolveAssetPath(root, key);
     if (!file) {
         return tl::unexpected(std::move(file.error()));
@@ -98,7 +98,8 @@ core::Result<rhi::TextureHandle> AssetLibrary::FindOrCreateTexture(DecodedImage&
     if (!image.image) {
         return tl::unexpected(std::move(image.image.error()));
     }
-    core::Result<rhi::TextureHandle> texture = CreateTexture(m_renderer->Device(), *image.image, image.identity);
+    core::Result<rhi::TextureHandle> texture =
+        renderer::CreateTexture(m_renderer->Device(), *image.image, image.identity);
     if (!texture) {
         return texture;
     }
@@ -122,10 +123,10 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
     };
 
     // What is created on the way stays in the library, also if a later step fails.
-    std::vector<MaterialHandle> materials;
+    std::vector<renderer::MaterialHandle> materials;
     materials.reserve(data.materials.size());
     for (const resources::MaterialData& material : data.materials) {
-        MaterialDesc desc;
+        renderer::MaterialDesc desc;
         desc.baseColorFactor = material.baseColorFactor;
         desc.emissiveFactor = material.emissiveFactor;
         desc.metallicFactor = material.metallicFactor;
@@ -139,7 +140,7 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
         desc.normalTexture = textureOf(material.normalImage);
         desc.occlusionTexture = textureOf(material.occlusionImage);
         desc.emissiveTexture = textureOf(material.emissiveImage);
-        core::Result<MaterialHandle> created = m_renderer->CreateMaterial(desc);
+        core::Result<renderer::MaterialHandle> created = m_renderer->CreateMaterial(desc);
         if (!created) {
             return tl::unexpected(std::move(created.error()));
         }
@@ -151,14 +152,15 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
     parts.reserve(data.primitives.size());
     for (std::size_t index = 0; index < data.primitives.size(); ++index) {
         const resources::ModelPrimitive& primitive = data.primitives[index];
-        core::Result<MeshHandle> mesh = m_renderer->CreateMesh(primitive.mesh, std::format("{} #{}", key, index));
+        core::Result<renderer::MeshHandle> mesh =
+            m_renderer->CreateMesh(primitive.mesh, std::format("{} #{}", key, index));
         if (!mesh) {
             return tl::unexpected(std::move(mesh.error()));
         }
         m_meshes.push_back(*mesh);
         Model::Part& part = parts.emplace_back();
         part.mesh = *mesh;
-        part.material = primitive.material.has_value() ? materials[*primitive.material] : MaterialHandle{};
+        part.material = primitive.material.has_value() ? materials[*primitive.material] : renderer::MaterialHandle{};
         part.positions.reserve(primitive.mesh.vertices.size());
         for (const resources::Vertex& vertex : primitive.mesh.vertices) {
             part.positions.push_back(vertex.position);
@@ -215,7 +217,7 @@ core::Result<const Model*> AssetLibrary::Build(std::string key, core::Result<Dec
 }
 
 core::Result<const Model*> AssetLibrary::LoadModel(std::string_view path) {
-    DAI_PROFILE_SCOPE("renderer::LoadModel");
+    DAI_PROFILE_SCOPE("scene::LoadModel");
     core::Result<std::string> key = resources::NormalizeAssetPath(path);
     if (!key) {
         return tl::unexpected(std::move(key.error()));
@@ -304,4 +306,4 @@ core::Result<ecs::Entity> Instantiate(ecs::World& world, const Model& model) {
     return root;
 }
 
-} // namespace daidalos::renderer
+} // namespace daidalos::scene

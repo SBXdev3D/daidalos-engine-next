@@ -5,7 +5,6 @@
 #pragma once
 
 #include <daidalos/core/Result.hpp>
-#include <daidalos/ecs/World.hpp>
 #include <daidalos/math/Transform.hpp>
 
 #include <glm/gtc/quaternion.hpp>
@@ -34,11 +33,6 @@ struct CharacterId {
 
     [[nodiscard]] bool IsValid() const { return value != kInvalid; }
     bool operator==(const CharacterId&) const = default;
-};
-
-/// Component of an entity whose LocalTransform moves a kinematic body. See SyncKinematicBodies.
-struct KinematicBody {
-    BodyId id;
 };
 
 struct RayHit {
@@ -124,9 +118,5 @@ private:
     struct State;
     std::unique_ptr<State> m_state;
 };
-
-/// Moves the body of each entity with a KinematicBody to its LocalTransform. Those entities must be
-/// at the root of the hierarchy, or under parents that do not move.
-void SyncKinematicBodies(ecs::World& world, PhysicsWorld& physics, float step);
 
 } // namespace daidalos::physics

@@ -131,7 +131,7 @@ private:
     void LoadLevel(app::Application& app, scene::Scene& target) {
         m_loading = true;
         target.Assets().LoadModelAsync(m_levelPath, app.Workers(),
-                                       [this, &app, &target](core::Result<const renderer::Model*> model) {
+                                       [this, &app, &target](core::Result<const scene::Model*> model) {
                                            m_loading = false;
                                            if (core::Result<void> built = Build(app, target, model); !built) {
                                                DAI_LOG_ERROR("sandbox", "{}", core::Format(built.error()));
@@ -146,7 +146,7 @@ private:
     }
 
     core::Result<void> Build(app::Application& app, scene::Scene& target,
-                             const core::Result<const renderer::Model*>& model) {
+                             const core::Result<const scene::Model*>& model) {
         if (model) {
             core::Result<ecs::Entity> player = sandbox::BuildLevel(target, **model, m_levelPath);
             if (!player) {
@@ -197,14 +197,14 @@ private:
         transform.translation = {0.0f, -0.05f, 0.0f};
         transform.scale = {12.0f, 0.1f, 12.0f};
         world.Add<ecs::LocalTransform>(floor, transform);
-        world.Add<renderer::MeshRenderer>(floor, *cube);
+        world.Add<scene::MeshRenderer>(floor, *cube);
         const std::array<glm::vec3, 4> corners{glm::vec3(-6.0f, 0.0f, -6.0f), glm::vec3(-6.0f, 0.0f, 6.0f),
                                                glm::vec3(6.0f, 0.0f, 6.0f), glm::vec3(6.0f, 0.0f, -6.0f)};
         const std::array<std::uint32_t, 6> triangles{0, 1, 2, 0, 2, 3};
         if (core::Result<physics::BodyId> body = target.Physics().AddStaticMesh(corners, triangles); !body) {
             return tl::unexpected(std::move(body.error()));
         }
-        core::Result<ecs::Entity> player = sandbox::BuildLevel(target, renderer::Model{}, "");
+        core::Result<ecs::Entity> player = sandbox::BuildLevel(target, scene::Model{}, "");
         if (!player) {
             return tl::unexpected(std::move(player.error()));
         }

@@ -14,7 +14,7 @@
 #include <daidalos/platform/Platform.hpp>
 #include <daidalos/platform/Window.hpp>
 #include <daidalos/renderer/Renderer.hpp>
-#include <daidalos/renderer/Scene.hpp>
+#include <daidalos/renderer/SceneView.hpp>
 #include <daidalos/scene/Scene.hpp>
 #if DAI_DEV_TOOLS
 #include <daidalos/debugui/DebugUi.hpp>

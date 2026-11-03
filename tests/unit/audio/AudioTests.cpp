@@ -5,6 +5,8 @@
 #include <daidalos/audio/Audio.hpp>
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/math/Axes.hpp>
+#include <daidalos/scene/Components.hpp>
+#include <daidalos/scene/Systems.hpp>
 
 #include <gtest/gtest.h>
 
@@ -233,10 +235,10 @@ TEST_F(AudioTest, EmitterMovesItsVoiceToItsEntity) {
     const ecs::Entity entity = world.Create();
     world.Add<ecs::LocalTransform>(entity).translation = glm::vec3(5.0f, 0.0f, 0.0f);
     ecs::PropagateTransforms(world);
-    world.Add<audio::SoundEmitter>(entity,
+    world.Add<scene::SoundEmitter>(entity,
                                    m_sounds->Play(Clip("long.wav"), {.position = glm::vec3(-5.0f, 0.0f, 0.0f)}));
 
-    audio::SyncSoundEmitters(world, *m_sounds);
+    scene::SyncSoundEmitters(world, *m_sounds);
     Mix(); // Panning is smoothed.
     const Levels levels = Mix();
     EXPECT_GT(levels.right, levels.left * 2.0f);

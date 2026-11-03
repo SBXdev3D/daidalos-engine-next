@@ -13,9 +13,7 @@ dai_add_module(NAME rhi
         src/Vma.cpp
     PUBLIC_DEPS
         daidalos::core
-        daidalos::math
     PRIVATE_DEPS
-        daidalos::logging
         GPUOpen::VulkanMemoryAllocator
         Vulkan::Headers
         volk::volk)

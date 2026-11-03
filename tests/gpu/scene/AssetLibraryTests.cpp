@@ -5,7 +5,8 @@
 #include <daidalos/animation/Animation.hpp>
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/platform/Platform.hpp>
-#include <daidalos/renderer/AssetLibrary.hpp>
+#include <daidalos/scene/AssetLibrary.hpp>
+#include <daidalos/scene/Systems.hpp>
 
 #include <gtest/gtest.h>
 
@@ -13,8 +14,8 @@
 #include <string>
 
 using namespace daidalos;
-using renderer::AssetLibrary;
-using renderer::Model;
+using scene::AssetLibrary;
+using scene::Model;
 
 namespace {
 
@@ -98,12 +99,12 @@ TEST_F(AssetLibraryTest, ReleasedAssetsAreSkippedByLaterFrames) {
     ecs::LocalTransform transform;
     transform.translation = {0.0f, 0.0f, 5.0f};
     world.Add<ecs::LocalTransform>(camera, transform);
-    world.Add<renderer::Camera>(camera);
+    world.Add<scene::Camera>(camera);
 
     renderer::SceneView view;
     const auto renderFrames = [&] {
         ecs::PropagateTransforms(world);
-        renderer::ExtractScene(world, view);
+        scene::ExtractScene(world, view);
         for (int frame = 0; frame < 3; ++frame) {
             ASSERT_TRUE(m_renderer->Render(view).has_value());
         }
@@ -112,7 +113,7 @@ TEST_F(AssetLibraryTest, ReleasedAssetsAreSkippedByLaterFrames) {
         AssetLibrary library(*m_renderer, kAssets);
         const core::Result<const Model*> model = library.LoadModel("quad.gltf");
         ASSERT_TRUE(model.has_value());
-        ASSERT_TRUE(renderer::Instantiate(world, **model).has_value());
+        ASSERT_TRUE(scene::Instantiate(world, **model).has_value());
         renderFrames();
         EXPECT_EQ(view.draws.size(), 1U);
     }
@@ -130,19 +131,19 @@ TEST(Instantiate, BuildsTheHierarchyWithOneEntityPerExtraPart) {
                    {renderer::MeshHandle(2, 1), renderer::MaterialHandle(2, 1)}};
 
     ecs::World world;
-    const core::Result<ecs::Entity> root = renderer::Instantiate(world, model);
+    const core::Result<ecs::Entity> root = scene::Instantiate(world, model);
     ASSERT_TRUE(root.has_value());
     ecs::PropagateTransforms(world);
 
     renderer::SceneView view;
-    renderer::ExtractScene(world, view);
+    scene::ExtractScene(world, view);
     ASSERT_EQ(view.draws.size(), 2U);
     for (const renderer::DrawItem& draw : view.draws) {
         EXPECT_EQ(glm::vec3(draw.world[3]), glm::vec3(1.0f, 2.0f, 0.0f));
     }
 
     EXPECT_TRUE(world.Destroy(*root));
-    EXPECT_EQ(world.Count<renderer::MeshRenderer>(), 0U);
+    EXPECT_EQ(world.Count<scene::MeshRenderer>(), 0U);
 }
 
 TEST_F(AssetLibraryTest, SkinnedModelIsAnimatedAndDrawn) {
@@ -154,21 +155,21 @@ TEST_F(AssetLibraryTest, SkinnedModelIsAnimatedAndDrawn) {
     EXPECT_EQ((*model)->clips->clips.size(), 3U);
 
     ecs::World world;
-    const core::Result<ecs::Entity> root = renderer::Instantiate(world, **model);
+    const core::Result<ecs::Entity> root = scene::Instantiate(world, **model);
     ASSERT_TRUE(root.has_value());
     auto* animator = world.TryGet<animation::Animator>(*root);
     ASSERT_NE(animator, nullptr);
     ecs::Entity body;
     ecs::Entity hand;
-    world.Each<renderer::NodeName>([&](ecs::Entity entity, const renderer::NodeName& name) {
+    world.Each<scene::NodeName>([&](ecs::Entity entity, const scene::NodeName& name) {
         body = name.value == "Body" ? entity : body;
         hand = name.value == "Hand" ? entity : hand;
     });
-    const auto* skinned = world.TryGet<renderer::SkinnedMeshRenderer>(body);
+    const auto* skinned = world.TryGet<scene::SkinnedMeshRenderer>(body);
     ASSERT_NE(skinned, nullptr);
     ASSERT_EQ(skinned->joints.size(), 2U);
     EXPECT_EQ(skinned->joints[1], hand);
-    EXPECT_FALSE(world.Has<renderer::MeshRenderer>(body));
+    EXPECT_FALSE(world.Has<scene::MeshRenderer>(body));
 
     ASSERT_TRUE(animator->Play("lift"));
     animation::UpdateAnimators(world, 1.0f);
@@ -178,10 +179,10 @@ TEST_F(AssetLibraryTest, SkinnedModelIsAnimatedAndDrawn) {
     ecs::LocalTransform transform;
     transform.translation = {0.0f, 0.0f, 5.0f};
     world.Add<ecs::LocalTransform>(camera, transform);
-    world.Add<renderer::Camera>(camera);
+    world.Add<scene::Camera>(camera);
     ecs::PropagateTransforms(world);
     renderer::SceneView view;
-    renderer::ExtractScene(world, view);
+    scene::ExtractScene(world, view);
     EXPECT_EQ(view.jointMatrices.size(), 2U);
     for (int frame = 0; frame < 3; ++frame) {
         ASSERT_TRUE(m_renderer->Render(view).has_value());

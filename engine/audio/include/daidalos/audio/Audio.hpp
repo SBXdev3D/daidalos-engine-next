@@ -6,7 +6,6 @@
 
 #include <daidalos/core/Handle.hpp>
 #include <daidalos/core/Result.hpp>
-#include <daidalos/ecs/World.hpp>
 
 #include <glm/vec3.hpp>
 
@@ -112,13 +111,5 @@ private:
     struct State;
     std::unique_ptr<State> m_state;
 };
-
-/// A voice that follows its entity.
-struct SoundEmitter {
-    VoiceHandle voice;
-};
-
-/// Moves the voices of SoundEmitters to their entities, from their world transforms.
-void SyncSoundEmitters(ecs::World& world, SoundWorld& sounds);
 
 } // namespace daidalos::audio

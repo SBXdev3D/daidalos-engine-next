@@ -4,7 +4,6 @@
 
 #include <daidalos/core/Assert.hpp>
 #include <daidalos/core/Profile.hpp>
-#include <daidalos/ecs/Transform.hpp>
 #include <daidalos/logging/Log.hpp>
 #include <daidalos/physics/PhysicsWorld.hpp>
 
@@ -378,13 +377,6 @@ bool PhysicsWorld::SetCharacterHeight(CharacterId id, float height) {
     }
     character.controller->SetInnerBodyShape(shape);
     return true;
-}
-
-void SyncKinematicBodies(ecs::World& world, PhysicsWorld& physics, float step) {
-    world.Each<KinematicBody, ecs::LocalTransform>(
-        [&](ecs::Entity /*entity*/, const KinematicBody& body, const ecs::LocalTransform& transform) {
-            physics.MoveKinematic(body.id, transform.translation, transform.rotation, step);
-        });
 }
 
 } // namespace daidalos::physics

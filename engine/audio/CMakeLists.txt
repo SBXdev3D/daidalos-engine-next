@@ -5,8 +5,6 @@ dai_add_module(NAME audio
         src/Miniaudio.cpp
     PUBLIC_DEPS
         daidalos::core
-        daidalos::ecs
-        daidalos::math
     PRIVATE_DEPS
         Threads::Threads
         ${CMAKE_DL_LIBS})

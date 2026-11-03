@@ -4,8 +4,10 @@
 
 #pragma once
 
-#include <daidalos/core/Handle.hpp>
+#include <daidalos/audio/Audio.hpp>
 #include <daidalos/ecs/Entity.hpp>
+#include <daidalos/physics/PhysicsWorld.hpp>
+#include <daidalos/renderer/SceneView.hpp>
 
 #include <glm/mat4x4.hpp>
 #include <glm/trigonometric.hpp>
@@ -14,15 +16,8 @@
 #include <string>
 #include <vector>
 
-namespace daidalos::renderer {
-
-struct MeshTag;
-/// A mesh owned by the Renderer.
-using MeshHandle = core::Handle<MeshTag>;
-
-struct MaterialTag;
-/// A material owned by the Renderer.
-using MaterialHandle = core::Handle<MaterialTag>;
+// The components that the engine itself reads. Game components live in the game.
+namespace daidalos::scene {
 
 /// ECS component: the entity's WorldTransform places the camera, which looks down its local -Z.
 struct Camera {
@@ -32,16 +27,16 @@ struct Camera {
 
 /// ECS component: draws a mesh at the entity's WorldTransform.
 struct MeshRenderer {
-    MeshHandle mesh;
+    renderer::MeshHandle mesh;
     /// Null for the default material: plain white.
-    MaterialHandle material;
+    renderer::MaterialHandle material;
 };
 
 /// ECS component: draws a mesh that follows joints, which are other entities (ADR-0020). The entity's
 /// own transform does not move it. A mesh without skin data is drawn rigid, at the entity.
 struct SkinnedMeshRenderer {
-    MeshHandle mesh;
-    MaterialHandle material;
+    renderer::MeshHandle mesh;
+    renderer::MaterialHandle material;
     /// The entities of the skin's joints, in the order of the skin.
     std::vector<ecs::Entity> joints;
     /// For each joint, from the space of the mesh to the space of the joint in the bind pose. Shared by
@@ -54,4 +49,15 @@ struct NodeName {
     std::string value;
 };
 
-} // namespace daidalos::renderer
+/// ECS component: the entity's LocalTransform moves a kinematic body of the scene's physics. The entity
+/// must be at the root of the hierarchy, or under parents that do not move.
+struct KinematicBody {
+    physics::BodyId id;
+};
+
+/// ECS component: a voice of the scene's sounds that follows the entity.
+struct SoundEmitter {
+    audio::VoiceHandle voice;
+};
+
+} // namespace daidalos::scene

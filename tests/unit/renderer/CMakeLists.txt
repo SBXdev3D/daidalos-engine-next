@@ -1,7 +1,6 @@
 dai_add_test(NAME daidalos_renderer_tests
     SOURCES
         PrimitivesTests.cpp
-        SceneTests.cpp
         ShaderCompilerTests.cpp
     DEPS
         daidalos::renderer)

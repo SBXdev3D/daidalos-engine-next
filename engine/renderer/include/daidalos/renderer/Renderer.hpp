@@ -8,7 +8,7 @@
 #include <daidalos/platform/Window.hpp>
 #include <daidalos/renderer/Material.hpp>
 #include <daidalos/renderer/Primitives.hpp>
-#include <daidalos/renderer/Scene.hpp>
+#include <daidalos/renderer/SceneView.hpp>
 #include <daidalos/rhi/Device.hpp>
 
 #include <functional>

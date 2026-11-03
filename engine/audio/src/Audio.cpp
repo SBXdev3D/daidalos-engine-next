@@ -6,7 +6,6 @@
 #include <daidalos/core/Assert.hpp>
 #include <daidalos/core/Profile.hpp>
 #include <daidalos/core/SlotPool.hpp>
-#include <daidalos/ecs/Transform.hpp>
 
 #include <miniaudio.h>
 
@@ -287,13 +286,6 @@ void SoundWorld::Update() {
         state.voices.Remove(handle);
         return true;
     });
-}
-
-void SyncSoundEmitters(ecs::World& world, SoundWorld& sounds) {
-    world.Each<SoundEmitter, ecs::WorldTransform>(
-        [&sounds](ecs::Entity /*entity*/, const SoundEmitter& emitter, const ecs::WorldTransform& transform) {
-            sounds.SetPosition(emitter.voice, glm::vec3(transform.matrix[3]));
-        });
 }
 
 } // namespace daidalos::audio

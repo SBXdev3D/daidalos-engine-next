@@ -4,7 +4,7 @@
 
 #include <daidalos/app/Application.hpp>
 #include <daidalos/ecs/Transform.hpp>
-#include <daidalos/renderer/Components.hpp>
+#include <daidalos/scene/Components.hpp>
 
 #include <gtest/gtest.h>
 
@@ -70,7 +70,7 @@ TEST_F(ApplicationScene, FailedStartReleasesTheSceneBeforeTheRenderer) {
     FunctionHandler handler;
     handler.start = [](app::Application& app) -> core::Result<void> {
         auto scene = std::make_unique<scene::Scene>(app.Renderer(), DAI_TEST_ASSET_DIR);
-        core::Result<const renderer::Model*> model = scene->Assets().LoadModel(kModel);
+        core::Result<const scene::Model*> model = scene->Assets().LoadModel(kModel);
         EXPECT_TRUE(model.has_value());
         app.SetScene(std::move(scene));
         return core::MakeError(core::ErrorCode::InvalidArgument, "test", "The start fails");
@@ -115,7 +115,7 @@ TEST_F(ApplicationScene, SystemsRunAndTheCurrentSceneIsDrawn) {
                                   [&frameRuns](ecs::World& /*world*/, core::Seconds /*delta*/) { ++frameRuns; });
         const ecs::Entity camera = scene->World().Create();
         scene->World().Add<ecs::LocalTransform>(camera);
-        scene->World().Add<renderer::Camera>(camera);
+        scene->World().Add<scene::Camera>(camera);
         scene->SetActiveCamera(camera);
         scene->SetAtmosphere({{0.1f, 0.2f, 0.3f}, 0.1f});
         app.SetScene(std::move(scene));
@@ -137,7 +137,7 @@ TEST_F(ApplicationScene, ModelLoadsOnAWorkerDuringTheLoop) {
     handler.start = [&loaded](app::Application& app) -> core::Result<void> {
         app.SetScene(std::make_unique<scene::Scene>(app.Renderer(), DAI_TEST_ASSET_DIR));
         app.CurrentScene()->Assets().LoadModelAsync(kModel, app.Workers(),
-                                                    [&loaded](core::Result<const renderer::Model*> model) {
+                                                    [&loaded](core::Result<const scene::Model*> model) {
                                                         EXPECT_TRUE(model.has_value());
                                                         loaded = true;
                                                     });
@@ -160,7 +160,7 @@ TEST_F(ApplicationScene, MissingModelReportsNotFoundThroughTheCallback) {
     handler.start = [&](app::Application& app) -> core::Result<void> {
         app.SetScene(std::make_unique<scene::Scene>(app.Renderer(), DAI_TEST_ASSET_DIR));
         app.CurrentScene()->Assets().LoadModelAsync("missing.gltf", app.Workers(),
-                                                    [&](core::Result<const renderer::Model*> model) {
+                                                    [&](core::Result<const scene::Model*> model) {
                                                         ASSERT_FALSE(model.has_value());
                                                         code = model.error().code;
                                                         called = true;
@@ -183,7 +183,7 @@ TEST_F(ApplicationScene, SceneDestroyedWhileLoadingNeverCallsBack) {
     handler.start = [&called](app::Application& app) -> core::Result<void> {
         app.SetScene(std::make_unique<scene::Scene>(app.Renderer(), DAI_TEST_ASSET_DIR));
         app.CurrentScene()->Assets().LoadModelAsync(
-            kModel, app.Workers(), [&called](core::Result<const renderer::Model*> /*model*/) { called = true; });
+            kModel, app.Workers(), [&called](core::Result<const scene::Model*> /*model*/) { called = true; });
         app.SetScene(nullptr);
         return {};
     };

@@ -7,7 +7,7 @@
 #include <daidalos/core/Result.hpp>
 #include <daidalos/core/SlotPool.hpp>
 #include <daidalos/renderer/Material.hpp>
-#include <daidalos/renderer/Scene.hpp>
+#include <daidalos/renderer/SceneView.hpp>
 #include <daidalos/resources/ModelData.hpp>
 #include <daidalos/rhi/Device.hpp>
 
