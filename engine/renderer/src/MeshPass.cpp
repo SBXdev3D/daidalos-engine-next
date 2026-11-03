@@ -333,28 +333,42 @@ core::Result<void> MeshPass::Record(rhi::CommandList& commands, const SceneView&
         .materialIndex = 0,
         .jointBuffer = m_device->StorageIndex(slot.joints),
     };
-    rhi::PipelineHandle bound;
-    for (const DrawItem& draw : view.draws) {
-        const Mesh* mesh = m_meshes.TryGet(draw.mesh);
-        if (mesh == nullptr) {
+    // Sorted, so that the pipeline and the buffers change as rarely as possible.
+    m_sorted.clear();
+    for (std::uint32_t index = 0; index < view.draws.size(); ++index) {
+        const DrawItem& draw = view.draws[index];
+        if (m_meshes.TryGet(draw.mesh) == nullptr) {
             continue;
         }
         const MaterialHandle material = m_materials.TryGet(draw.material) ? draw.material : m_defaultMaterial;
+        const std::uint64_t doubleSided = m_materials.Get(material).doubleSided ? 1 : 0;
+        m_sorted.push_back({(doubleSided << 32U) | draw.mesh.Index(), index, material});
+    }
+    std::ranges::sort(m_sorted, {}, &SortedDraw::key);
+
+    rhi::PipelineHandle boundPipeline;
+    MeshHandle boundMesh;
+    for (const SortedDraw& sorted : m_sorted) {
+        const DrawItem& draw = view.draws[sorted.draw];
+        const Mesh& mesh = m_meshes.Get(draw.mesh);
         const rhi::PipelineHandle pipeline =
-            m_materials.TryGet(material)->doubleSided ? m_doubleSidedPipeline : m_pipeline;
-        if (pipeline != bound) {
+            m_materials.Get(sorted.material).doubleSided ? m_doubleSidedPipeline : m_pipeline;
+        if (pipeline != boundPipeline) {
             commands.BindPipeline(pipeline);
-            bound = pipeline;
+            boundPipeline = pipeline;
+        }
+        if (draw.mesh != boundMesh) {
+            commands.BindVertexBuffer(mesh.vertices);
+            commands.BindIndexBuffer(mesh.indices, rhi::IndexType::Uint32);
+            boundMesh = draw.mesh;
         }
         // A skinned draw needs the skin of its mesh, and joints that the view holds. Otherwise it is rigid.
-        const bool skinned = mesh->skin && draw.firstJoint != kNoJoints && draw.firstJoint < view.jointMatrices.size();
+        const bool skinned = mesh.skin && draw.firstJoint != kNoJoints && draw.firstJoint < view.jointMatrices.size();
         instances[push.instanceIndex] = {
-            draw.world, skinned ? m_device->StorageIndex(mesh->skin) : 0, skinned ? draw.firstJoint : kNoJoints, {}};
-        push.materialIndex = material.Index();
-        commands.BindVertexBuffer(mesh->vertices);
-        commands.BindIndexBuffer(mesh->indices, rhi::IndexType::Uint32);
+            draw.world, skinned ? m_device->StorageIndex(mesh.skin) : 0, skinned ? draw.firstJoint : kNoJoints, {}};
+        push.materialIndex = sorted.material.Index();
         commands.Push(push);
-        commands.DrawIndexed(mesh->indexCount);
+        commands.DrawIndexed(mesh.indexCount);
         ++push.instanceIndex;
     }
     return {};
