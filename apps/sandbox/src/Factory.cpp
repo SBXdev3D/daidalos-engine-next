@@ -31,6 +31,8 @@
 #include <utility>
 #include <vector>
 
+#include "Combat.hpp"
+
 using namespace daidalos;
 
 namespace sandbox {
@@ -63,13 +65,7 @@ constexpr int kHealthBonus = 25;
 constexpr int kArmorBonus = 50;
 constexpr int kHandgunAmmoBonus = 12;
 constexpr int kShotgunAmmoBonus = 7;
-// Zombies, until they hunt in Phase 6.4: they turn to the player they see, and strike when close.
-constexpr float kZombieSight = 12.0f;                   // Meters.
-constexpr float kZombieReach = 2.0f;                    // Meters.
-constexpr float kZombieTurnSpeed = glm::radians(90.0f); // Radians per second.
-constexpr float kZombieFade = 0.3f;                     // Seconds between two clips.
-constexpr float kZombieFloorSearch = 0.5f;              // Meters above a zombie where its floor is looked for.
-constexpr float kZombieFloorDrop = 20.0f;               // Meters below it.
+constexpr float kDeadEyeHeight = 0.3f; // Above the floor, once the player is down.
 constexpr float kMaxPitch = glm::radians(89.0f);
 constexpr float kStickLookSpeed = 2.5f; // Radians per second.
 constexpr float kMessageTime = 3.0f;    // Seconds.
@@ -89,8 +85,8 @@ constexpr float kLadderDistance = 1.05f; // Meters climbed between two sounds.
 constexpr float kLandingSpeed = 4.0f;    // Meters per second.
 constexpr float kMusicVolume = 0.35f;
 
-enum class PickupKind { Health, Armor, HandgunAmmo, ShotgunAmmo, Flashlight, RedCard };
-constexpr std::size_t kPickupKinds = 6;
+enum class PickupKind { Health, Armor, HandgunAmmo, ShotgunAmmo, Flashlight, RedCard, Shotgun };
+constexpr std::size_t kPickupKinds = 7;
 
 struct Pickup {
     PickupKind kind;
@@ -121,11 +117,6 @@ struct SoundBank {
     float ladderDistance = 0.0f;
     std::size_t lastStep = 0;
     std::minstd_rand random{std::random_device{}()};
-};
-
-/// The level node of a zombie. Its model, a child entity, has the animator.
-struct Zombie {
-    ecs::Entity model;
 };
 
 /// The box around a ladder, in which the player climbs.
@@ -215,23 +206,15 @@ std::optional<PickupKind> PickupOf(std::string_view kind) {
     if (kind == "card") {
         return PickupKind::RedCard;
     }
+    if (kind == "shotgun") {
+        return PickupKind::Shotgun;
+    }
     return std::nullopt;
 }
 
 void Say(Player& player, std::string message) {
     player.message = std::move(message);
     player.messageTime = kMessageTime;
-}
-
-/// A sound that does not stop the game when it is missing, because the game can be played without it.
-audio::ClipHandle LoadSound(scene::Scene& scene, std::string_view name, const audio::ClipOptions& options = {}) {
-    core::Result<audio::ClipHandle> clip =
-        scene.Sounds().Load(std::string("Factory/Sounds/") + std::string(name), options);
-    if (!clip) {
-        DAI_LOG_WARNING("sandbox", "{}", core::Format(clip.error()));
-        return {};
-    }
-    return *clip;
 }
 
 SoundBank LoadSounds(scene::Scene& scene) {
@@ -245,6 +228,7 @@ SoundBank LoadSounds(scene::Scene& scene) {
     bank.pickups[static_cast<std::size_t>(PickupKind::ShotgunAmmo)] = LoadSound(scene, "shotgun_ammo.wav");
     bank.pickups[static_cast<std::size_t>(PickupKind::Flashlight)] = LoadSound(scene, "flashlight_bonus.wav");
     bank.pickups[static_cast<std::size_t>(PickupKind::RedCard)] = LoadSound(scene, "misc_bonus.wav");
+    bank.pickups[static_cast<std::size_t>(PickupKind::Shotgun)] = LoadSound(scene, "weapon_bonus.wav");
     bank.jump = LoadSound(scene, "jump.wav");
     bank.land = LoadSound(scene, "footstep_fall.wav");
     bank.ladder = LoadSound(scene, "ladder.wav");
@@ -292,12 +276,16 @@ void Collect(Player& player, PickupKind kind) {
         Say(player, "Armor");
         break;
     case PickupKind::HandgunAmmo:
-        player.handgunAmmo += kHandgunAmmoBonus;
+        AddAmmo(player, WeaponKind::Handgun, kHandgunAmmoBonus);
         Say(player, "Handgun ammo");
         break;
     case PickupKind::ShotgunAmmo:
-        player.shotgunAmmo += kShotgunAmmoBonus;
-        Say(player, "Shotgun ammo");
+        AddAmmo(player, WeaponKind::Shotgun, kShotgunAmmoBonus);
+        Say(player, "Shotgun shells");
+        break;
+    case PickupKind::Shotgun:
+        GiveShotgun(player);
+        Say(player, "Shotgun: press 2");
         break;
     case PickupKind::Flashlight:
         player.hasFlashlight = true;
@@ -332,7 +320,7 @@ void LookAround(ecs::Entity entity, scene::Scene& scene, const input::InputState
     player.pitch = std::clamp(player.pitch, -kMaxPitch, kMaxPitch);
     transform.rotation = math::FromYawPitchRoll(player.yaw, player.pitch, 0.0f);
 
-    const float targetEye = player.crouching ? kCrouchEyeHeight : kEyeHeight;
+    const float targetEye = player.dead ? kDeadEyeHeight : (player.crouching ? kCrouchEyeHeight : kEyeHeight);
     const float eyeStep = kEyeSpeed * delta;
     player.eyeHeight = std::clamp(targetEye, player.eyeHeight - eyeStep, player.eyeHeight + eyeStep);
     transform.translation =
@@ -398,7 +386,7 @@ void MovePlayer(ecs::Entity entity, scene::Scene& scene, const input::InputState
     physics::PhysicsWorld& physics = scene.Physics();
     Player& player = world.Get<Player>(entity);
 
-    const bool wantsCrouch = actions.IsDown(input, Crouch);
+    const bool wantsCrouch = actions.IsDown(input, Crouch) && !player.dead;
     if (wantsCrouch != player.crouching &&
         physics.SetCharacterHeight(player.character, wantsCrouch ? kCrouchHeight : kStandHeight)) {
         player.crouching = wantsCrouch;
@@ -408,6 +396,10 @@ void MovePlayer(ecs::Entity entity, scene::Scene& scene, const input::InputState
     const glm::quat heading = math::FromYawPitchRoll(player.yaw, 0.0f, 0.0f);
     const float forward = actions.Value(input, MoveForward);
     glm::vec3 wish = heading * glm::vec3(actions.Value(input, MoveRight), 0.0f, -forward);
+    if (player.dead) {
+        wish = glm::vec3(0.0f);
+        player.jumpPressed = false;
+    }
     if (const float length = glm::length(wish); length > 1.0f) {
         wish /= length;
     }
@@ -549,13 +541,31 @@ input::ActionMap MakeActions() {
     actions.Bind(ToggleMouse, Key::Tab);
     actions.Bind(Quit, Key::Escape);
     actions.Bind(Quit, GamepadButton::Back);
+    actions.Bind(Fire, platform::MouseButton::Left);
+    actions.BindAxis(FireTrigger, GamepadAxis::RightTrigger);
+    actions.Bind(Reload, Key::R);
+    actions.Bind(Reload, GamepadButton::RightShoulder);
+    actions.Bind(NextWeapon, Key::Q);
+    actions.Bind(NextWeapon, GamepadButton::DpadUp);
+    actions.Bind(SelectHandgun, Key::Digit1);
+    actions.Bind(SelectShotgun, Key::Digit2);
     return actions;
 }
 
-/// Puts a model at a level node, as its child, and starts its first clip so that no instance moves
-/// in step with another.
-core::Result<ecs::Entity> PlaceModel(scene::Scene& scene, ecs::Entity node, const std::string& path,
-                                     std::minstd_rand& random) {
+audio::ClipHandle LoadSound(scene::Scene& scene, std::string_view name, const audio::ClipOptions& options) {
+    core::Result<audio::ClipHandle> clip =
+        scene.Sounds().Load(std::string("Factory/Sounds/") + std::string(name), options);
+    if (!clip) {
+        DAI_LOG_WARNING("sandbox", "{}", core::Format(clip.error()));
+        return {};
+    }
+    return *clip;
+}
+
+namespace {
+
+/// Puts a model at a level node, as its child.
+core::Result<ecs::Entity> PlaceModel(scene::Scene& scene, ecs::Entity node, const std::string& path) {
     core::Result<const renderer::Model*> model = scene.Assets().LoadModel(path);
     if (!model) {
         return tl::unexpected(std::move(model.error()));
@@ -568,43 +578,21 @@ core::Result<ecs::Entity> PlaceModel(scene::Scene& scene, ecs::Entity node, cons
     if (core::Result<void> attached = world.SetParent(*instance, node); !attached) {
         return tl::unexpected(std::move(attached.error()));
     }
-    if (animation::Animator* animator = world.TryGet<animation::Animator>(*instance)) {
+    return instance;
+}
+
+/// Plays the first clip of a model forever, from a random time, so that no two turn in step.
+void PlayForever(ecs::World& world, ecs::Entity model, std::minstd_rand& random) {
+    if (animation::Animator* animator = world.TryGet<animation::Animator>(model)) {
         const animation::ClipSet& clips = animator->Clips();
         if (!clips.clips.empty()) {
             std::uniform_real_distribution<float> start(0.0f, clips.clips.front().duration);
             animator->Play(clips.clips.front().name, {.fade = 0.0f, .startTime = start(random)});
         }
     }
-    return instance;
 }
 
-/// Zombies face the player they see, wait, and strike when the player comes close.
-void UpdateZombies(scene::Scene& scene, ecs::Entity playerEntity, float delta) {
-    ecs::World& world = scene.World();
-    const glm::vec3 eye = world.Get<ecs::LocalTransform>(playerEntity).translation;
-    world.Each<Zombie, ecs::LocalTransform>(
-        [&](ecs::Entity /*entity*/, const Zombie& zombie, ecs::LocalTransform& transform) {
-            animation::Animator* animator = world.TryGet<animation::Animator>(zombie.model);
-            if (animator == nullptr) {
-                return;
-            }
-            glm::vec3 toPlayer = eye - transform.translation;
-            toPlayer.y = 0.0f;
-            const float distance = glm::length(toPlayer);
-            if (distance > kZombieSight || distance < 0.01f) {
-                animator->Play("wait", {.fade = kZombieFade});
-                return;
-            }
-            // The model looks down -Z, like the camera.
-            const glm::vec3 forward = transform.rotation * math::kForward;
-            const float wanted = std::atan2(-toPlayer.x, -toPlayer.z);
-            const float current = std::atan2(-forward.x, -forward.z);
-            const float turn = std::remainder(wanted - current, glm::two_pi<float>());
-            const float step = std::clamp(turn, -kZombieTurnSpeed * delta, kZombieTurnSpeed * delta);
-            transform.rotation = glm::angleAxis(current + step, math::kUp);
-            animator->Play(distance < kZombieReach ? "attack" : "wait", {.fade = kZombieFade});
-        });
-}
+} // namespace
 
 void Teleport(scene::Scene& scene, ecs::Entity entity, const glm::vec3& eye) {
     Player& player = scene.World().Get<Player>(entity);
@@ -645,6 +633,9 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const renderer::Model&
     body.height = kStandHeight;
     world.Get<Player>(playerEntity).character = physics.AddCharacter(body, eye - math::kUp * kEyeHeight);
     const SoundBank& bank = world.Add<SoundBank>(playerEntity, LoadSounds(scene));
+    // Models that the level places, such as zombies, are found next to it, and so are the weapons.
+    const std::string directory = std::filesystem::path(levelPath).parent_path().generic_string();
+    const physics::BodyId playerBody = physics.CharacterBody(world.Get<Player>(playerEntity).character);
 
     std::vector<int> lockedDoors;
     std::vector<std::pair<ecs::Entity, std::string>> nodes;
@@ -656,8 +647,8 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const renderer::Model&
             lockedDoors.push_back(Number(node, "id", 0));
         }
     }
-    // Models that the level places, such as zombies, are found next to it.
-    const std::string directory = std::filesystem::path(levelPath).parent_path().generic_string();
+    // After the level's nodes are listed: the weapons have named nodes too, which are not the level's.
+    SetUpCombat(scene, playerEntity, directory);
     std::minstd_rand random{std::random_device{}()};
     for (const auto& [entity, name] : nodes) {
         const NodeDescription node = Parse(name);
@@ -665,24 +656,21 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const renderer::Model&
         if (const auto file = node.attributes.find("model"); file != node.attributes.end()) {
             const std::string path =
                 directory.empty() ? std::string(file->second) : directory + "/" + std::string(file->second);
-            core::Result<ecs::Entity> instance = PlaceModel(scene, entity, path, random);
+            core::Result<ecs::Entity> instance = PlaceModel(scene, entity, path);
             if (!instance) {
                 return tl::unexpected(std::move(instance.error()));
             }
             if (node.kind == "zombie") {
-                world.Add<Zombie>(entity, *instance);
-                // The legacy editor left zombies above the floor, and gravity brought them down. They
-                // do not move until Phase 6.4 makes them characters, so they are put on the floor once.
-                const glm::vec3 above = position + math::kUp * kZombieFloorSearch;
-                if (const std::optional<physics::RayHit> floor =
-                        physics.CastRay(above, -math::kUp, kZombieFloorSearch + kZombieFloorDrop)) {
-                    world.Get<ecs::LocalTransform>(entity).translation = floor->position;
-                }
+                const auto patrol = node.attributes.find("patrol");
+                AddZombie(scene, entity, *instance, patrol == node.attributes.end() ? "" : patrol->second);
+                ++world.Get<Player>(playerEntity).zombieCount;
+            } else if (node.kind == "fan") {
+                PlayForever(world, *instance, random);
             }
         }
         if (node.kind == "player") {
             eye = position;
-            if (const std::optional<physics::RayHit> floor = physics.CastRay(position, -math::kUp, 20.0f)) {
+            if (const std::optional<physics::RayHit> floor = physics.CastRay(position, -math::kUp, 20.0f, playerBody)) {
                 eye = floor->position + math::kUp * kEyeHeight;
             }
         } else if (node.kind == "alarm") {
@@ -759,11 +747,17 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
             LookAround(entity, scene, input, actions, settings.mouseSensitivity, static_cast<float>(delta.count()));
         }
     });
-    systems.Add("Zombies", [&scene, player](ecs::World& world, core::Seconds delta) {
+    fixed.Add("Zombies", [&scene, player](ecs::World& world, core::Seconds step) {
         if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
-            UpdateZombies(scene, entity, static_cast<float>(delta.count()));
+            UpdateZombies(scene, entity, static_cast<float>(step.count()));
         }
     });
+    systems.Add("Weapons", [&, player](ecs::World& world, core::Seconds delta) {
+        if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
+            UpdateWeapons(scene, entity, input, actions, static_cast<float>(delta.count()));
+        }
+    });
+    systems.Add("Zombie positions", [&scene](ecs::World& /*world*/, core::Seconds /*delta*/) { PlaceZombies(scene); });
     systems.Add("Pickups", [&scene, player](ecs::World& world, core::Seconds delta) {
         if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
             UpdatePickups(scene, entity, static_cast<float>(delta.count()));

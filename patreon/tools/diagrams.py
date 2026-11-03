@@ -573,6 +573,40 @@ def skinning():
     svg.write("skinning")
 
 
+def zombie_states():
+    svg = Svg(1400, 600)
+    svg.text(50, 58, "What a zombie does, 60 times per second", 32, TEXT, 700)
+    svg.text(50, 90, "Five states, and a straight line to the player: no path finding yet.", 18, MUTED)
+
+    boxes = {
+        "Waiting": (60, 160, "stands still,", "then patrols if it has points", PLANNED),
+        "Patrolling": (60, 380, "walks from point to point,", "6 s at each", PLANNED),
+        "Chasing": (560, 270, "walks to where it last saw you,", "gives up after 9 s", NEXT),
+        "Attacking": (1040, 160, "a strike every 1.5 s,", "12 damage within 1.4 m", ALERT),
+        "Dying": (1040, 380, "falls where it stands,", "no longer blocks the way", MUTED),
+    }
+    width, height = 300, 120
+    for name, (x, y, line1, line2, color) in boxes.items():
+        svg.box(x, y, width, height, stroke=color, stroke_width=2)
+        svg.text(x + width / 2, y + 42, name, 21, TEXT, 700, "middle")
+        svg.text(x + width / 2, y + 74, line1, 15.5, MUTED, 400, "middle")
+        svg.text(x + width / 2, y + 98, line2, 15.5, MUTED, 400, "middle")
+
+    svg.line(210, 282, 210, 378)
+    svg.line(362, 220, 558, 300)
+    svg.line(362, 440, 558, 360)
+    svg.text(400, 236, "sees you or hears a shot", 15, TEXT, 600)
+    svg.line(862, 300, 1038, 220)
+    svg.text(870, 236, "close enough", 15, TEXT, 600)
+    svg.line(1038, 250, 862, 320, dashed=True)
+    svg.line(862, 360, 1038, 440, dashed=True)
+    svg.text(700, 470, "health at 0, from any state", 15, TEXT, 600)
+
+    svg.box(50, 530, 1300, 50, stroke=PANEL_EDGE)
+    svg.text(80, 562, "Seeing is a ray from its eyes to yours: 12 m ahead, within 60° of where it faces, and nothing in between.", 16.5, MUTED)
+    svg.write("zombie-states")
+
+
 def fixed_step():
     svg = Svg(1400, 640)
     svg.text(50, 58, "Two clocks: the world's and the screen's", 32, TEXT, 700)
@@ -890,6 +924,7 @@ def main():
     bindless()
     character_move()
     skinning()
+    zombie_states()
     fixed_step()
     compare_objects()
     compare_collision()

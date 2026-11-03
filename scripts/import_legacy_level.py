@@ -75,6 +75,11 @@ ANIMATED_MODELS = {
     "handgun.ms3d": {"texture": "handgun_d.png", "scale": 3.0, "clips": {"fire": (1, 3, 5.0), "reload": (4, 6, 1.0)}},
 }
 
+# Entities the legacy level lacks, in the engine's meters. The legacy game had a shotgun in its code and
+# shotgun shells in this level, but nothing to pick the shotgun up from: it lies next to the shells.
+# Its model comes from scripts/make_shotgun.py.
+EXTRA_ENTITIES = [("shotgun;model=shotgun.gltf", (-15.75, 0.0, -21.0))]
+
 # Two leftover tests, and the 31 MB ambient track, which waits for a compressed format in Phase 6.
 # enter_the_maze.wav is 31 MB: it was converted once, and only enter_the_maze.ogg is committed.
 SKIPPED_SOUNDS = {"test.wav", "test2.wav", "enter_the_maze.wav"}
@@ -739,6 +744,10 @@ def convert(source, scene, output):
                 walk(node, absolute)
 
     walk(root, [0.0, 0.0, 0.0])
+    for name, position in EXTRA_ENTITIES:
+        writer.node(name, position)
+        kind = name.split(";")[0]
+        counts[kind] = counts.get(kind, 0) + 1
     writer.node("level", mesh=writer.mesh(level))
     writer.write(scene.capitalize())
     triangles = sum(len(geometry.positions) // 3 for geometry in level.values())

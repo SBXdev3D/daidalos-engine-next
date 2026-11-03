@@ -12,6 +12,9 @@
 
 #include <glm/vec3.hpp>
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -31,6 +34,23 @@ enum Action : daidalos::input::Action {
     Restart,
     ToggleMouse,
     Quit,
+    Fire,
+    /// The gamepad's trigger, which fires past half of its travel.
+    FireTrigger,
+    Reload,
+    NextWeapon,
+    SelectHandgun,
+    SelectShotgun,
+};
+
+enum class WeaponKind : std::uint8_t { Handgun, Shotgun };
+inline constexpr std::size_t kWeaponKinds = 2;
+
+/// Rounds in the weapon, and the ones the player carries for it.
+struct WeaponState {
+    bool owned = false;
+    int magazine = 0;
+    int reserve = 0;
 };
 
 [[nodiscard]] daidalos::input::ActionMap MakeActions();
@@ -51,8 +71,19 @@ struct Player {
     float pitch = 0.0f;
     int health = 80;
     int armor = 0;
-    int handgunAmmo = 12;
-    int shotgunAmmo = 0;
+    /// The handgun comes loaded, with nothing to reload it.
+    std::array<WeaponState, kWeaponKinds> weapons{{{true, 12, 0}, {}}};
+    WeaponKind weapon = WeaponKind::Handgun;
+    /// Seconds before the weapon can fire again, or finishes its reload or its switch.
+    float weaponBusy = 0.0f;
+    bool reloading = false;
+    /// Seconds into the switch to the current weapon: the old one goes down, the new one comes up.
+    float switching = 0.0f;
+    bool dead = false;
+    /// Seconds left of the red flash of a wound.
+    float hurtTime = 0.0f;
+    int kills = 0;
+    int zombieCount = 0;
     bool hasFlashlight = false;
     bool flashlightOn = false;
     bool hasRedCard = false;
@@ -67,6 +98,11 @@ struct Settings {
     /// Multiplies the darkness; 0 shows the whole level.
     float darkness = 1.0f;
 };
+
+/// A sound that does not stop the game when it is missing, because the game can be played without it.
+/// The name is a file of Factory/Sounds.
+[[nodiscard]] daidalos::audio::ClipHandle LoadSound(daidalos::scene::Scene& scene, std::string_view name,
+                                                    const daidalos::audio::ClipOptions& options = {});
 
 /// Places the player's eyes, for example from sandbox.start.
 void Teleport(daidalos::scene::Scene& scene, daidalos::ecs::Entity entity, const glm::vec3& eye);

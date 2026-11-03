@@ -15,6 +15,7 @@
 #include <Jolt/Core/JobSystemSingleThreaded.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
@@ -48,9 +49,11 @@ constexpr std::uint32_t kMaxBodyPairs = 4096;
 constexpr std::uint32_t kMaxContacts = 2048;
 constexpr std::size_t kTempMemory = 16 * 1024 * 1024;
 
-// Two layers are enough: what never moves does not collide with itself.
+// What never moves does not collide with itself. The bodies inside characters collide with nothing:
+// characters push each other through their own test, and the bodies are only there for rays.
 constexpr JPH::ObjectLayer kStaticLayer = 0;
 constexpr JPH::ObjectLayer kMovingLayer = 1;
+constexpr JPH::ObjectLayer kCharacterLayer = 2;
 constexpr JPH::BroadPhaseLayer kStaticBroadPhase{0};
 constexpr JPH::BroadPhaseLayer kMovingBroadPhase{1};
 
@@ -77,6 +80,9 @@ public:
 class ObjectPairs final : public JPH::ObjectLayerPairFilter {
 public:
     [[nodiscard]] bool ShouldCollide(JPH::ObjectLayer first, JPH::ObjectLayer second) const override {
+        if (first == kCharacterLayer || second == kCharacterLayer) {
+            return false;
+        }
         return first == kMovingLayer || second == kMovingLayer;
     }
 };
@@ -252,7 +258,8 @@ void PhysicsWorld::RemoveBody(BodyId body) {
 }
 
 std::size_t PhysicsWorld::BodyCount() const {
-    return m_state->system.GetNumBodies();
+    // The bodies inside characters are not counted: they come and go with their characters.
+    return m_state->system.GetNumBodies() - m_state->characters.size();
 }
 
 void PhysicsWorld::MoveKinematic(BodyId body, const glm::vec3& position, const glm::quat& rotation, float step) {
@@ -269,12 +276,14 @@ void PhysicsWorld::Step(float step) {
     m_state->system.Update(step, 1, &m_state->temp, &m_state->jobs);
 }
 
-std::optional<RayHit> PhysicsWorld::CastRay(const glm::vec3& origin, const glm::vec3& direction,
-                                            float maxDistance) const {
+std::optional<RayHit> PhysicsWorld::CastRay(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
+                                            BodyId ignore) const {
     const JPH::RRayCast ray(JPH::RVec3(ToJolt(origin)), ToJolt(direction * maxDistance));
     JPH::RayCastResult result;
     const JPH::NarrowPhaseQuery& query = m_state->system.GetNarrowPhaseQuery();
-    if (!query.CastRay(ray, result)) {
+    const JPH::IgnoreSingleBodyFilter skip(JPH::BodyID(ignore.value));
+    const JPH::BodyFilter all;
+    if (!query.CastRay(ray, result, {}, {}, ignore.IsValid() ? static_cast<const JPH::BodyFilter&>(skip) : all)) {
         return std::nullopt;
     }
     RayHit hit;
@@ -298,6 +307,9 @@ CharacterId PhysicsWorld::AddCharacter(const CharacterConfig& config, const glm:
     settings->mShape = State::MakeCharacterShape(config, config.height);
     settings->mMaxSlopeAngle = glm::radians(config.maxSlopeDegrees);
     settings->mSupportingVolume = JPH::Plane(JPH::Vec3::sAxisY(), -config.radius); // Only the lower sphere stands.
+    // A body that follows the character, so that rays hit it.
+    settings->mInnerBodyShape = settings->mShape;
+    settings->mInnerBodyLayer = kCharacterLayer;
 
     State::Character character;
     character.config = config;
@@ -339,6 +351,10 @@ void PhysicsWorld::SetCharacterPosition(CharacterId character, const glm::vec3& 
     found.velocity = glm::vec3(0.0f);
 }
 
+BodyId PhysicsWorld::CharacterBody(CharacterId character) const {
+    return BodyId{m_state->Find(character).controller->GetInnerBodyID().GetIndexAndSequenceNumber()};
+}
+
 glm::vec3 PhysicsWorld::CharacterPosition(CharacterId character) const {
     return ToGlm(JPH::Vec3(m_state->Find(character).controller->GetPosition()));
 }
@@ -355,9 +371,13 @@ bool PhysicsWorld::SetCharacterHeight(CharacterId id, float height) {
     State::Character& character = m_state->Find(id);
     JPH::PhysicsSystem& system = m_state->system;
     const JPH::Ref<JPH::Shape> shape = State::MakeCharacterShape(character.config, height);
-    return character.controller->SetShape(shape, 1.5f * system.GetPhysicsSettings().mPenetrationSlop,
-                                          system.GetDefaultBroadPhaseLayerFilter(kMovingLayer),
-                                          system.GetDefaultLayerFilter(kMovingLayer), {}, {}, m_state->temp);
+    if (!character.controller->SetShape(shape, 1.5f * system.GetPhysicsSettings().mPenetrationSlop,
+                                        system.GetDefaultBroadPhaseLayerFilter(kMovingLayer),
+                                        system.GetDefaultLayerFilter(kMovingLayer), {}, {}, m_state->temp)) {
+        return false;
+    }
+    character.controller->SetInnerBodyShape(shape);
+    return true;
 }
 
 void SyncKinematicBodies(ecs::World& world, PhysicsWorld& physics, float step) {
