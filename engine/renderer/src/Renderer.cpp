@@ -189,7 +189,9 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
                                       .cull = rhi::CullMode::None,
                                       .name = "Tonemap",
                                   }));
-    DAI_TRY_ASSIGN(MeshPass meshPass, MeshPass::Create(impl->device, kHdrFormat, kDepthFormat));
+    DAI_TRY_ASSIGN(MeshPass meshPass, MeshPass::Create(impl->device, kHdrFormat, kDepthFormat,
+                                                       {.shadowLights = config.shadowLights,
+                                                        .shadowResolution = config.shadowResolution}));
     impl->meshPass.emplace(std::move(meshPass));
     DAI_TRY_ASSIGN(AmbientOcclusionPass ambientOcclusionPass, AmbientOcclusionPass::Create(impl->device));
     impl->ambientOcclusionPass.emplace(std::move(ambientOcclusionPass));

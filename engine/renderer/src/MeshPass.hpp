@@ -28,11 +28,20 @@ struct FrameTargets {
     rhi::TextureHandle occlusion;
 };
 
+/// What the mesh pass is created with.
+struct MeshPassSettings {
+    /// Spot lights with a shadow map, up to kMaxShadowedLights, in an atlas with as many tiles.
+    std::uint32_t shadowLights = 4;
+    /// Texels across each shadow map.
+    std::uint32_t shadowResolution = 1024;
+};
+
 /// Owns the meshes, the materials and the pipelines that draw them. It works on any target, so that
 /// tests can run it without a window. The Device must outlive it.
 class MeshPass {
 public:
-    static core::Result<MeshPass> Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
+    static core::Result<MeshPass> Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat,
+                                         const MeshPassSettings& settings = {});
 
     MeshPass(MeshPass&& other) noexcept;
     MeshPass& operator=(MeshPass&& other) = delete;
@@ -99,7 +108,7 @@ private:
         std::uint64_t clusterLightCapacity = 0;
     };
 
-    MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
+    MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat, const MeshPassSettings& settings);
 
     [[nodiscard]] core::Result<void> CreateShadowResources();
     /// The pipelines of the pre-pass and the mesh pass, one-sided and double-sided.
@@ -127,6 +136,10 @@ private:
     rhi::PipelineHandle m_shadowPipeline;
     /// Every shadow map of a frame, side by side.
     rhi::TextureHandle m_shadowAtlas;
+    std::uint32_t m_shadowLights;
+    std::uint32_t m_shadowTileSize;
+    /// Tiles across the atlas, which is square.
+    std::uint32_t m_shadowGrid;
     core::SlotPool<Mesh, MeshTag> m_meshes;
     /// The index of a handle is also its index in the material table of the GPU.
     core::SlotPool<Material, MaterialTag> m_materials;

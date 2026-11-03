@@ -86,9 +86,6 @@ struct ShadowData {
 static_assert(sizeof(ShadowData) == 80);
 
 constexpr std::uint32_t kNoShadow = 0xFFFFFFFF;
-/// The atlas holds kMaxShadowedLights tiles, two by two.
-constexpr std::uint32_t kShadowAtlasSize = 2048;
-constexpr std::uint32_t kShadowTileSize = kShadowAtlasSize / 2;
 // Against shadow acne: depth bias in the shadow map (reverse-Z, so negative), and receivers pushed along
 // their normal by this many texels.
 constexpr float kShadowDepthBias = -2.0f;
@@ -98,7 +95,8 @@ constexpr float kShadowNormalOffsetTexels = 1.5f;
 constexpr float kMaxShadowHalfAngle = glm::radians(80.0f);
 constexpr float kShadowNearPlane = 0.1f; // Meters.
 
-ShadowData ShadowFor(const Light& light, std::uint32_t tile) {
+/// The shadow map of a light, in the tile of a square atlas of grid by grid tiles of tileSize texels.
+ShadowData ShadowFor(const Light& light, std::uint32_t tile, std::uint32_t grid, std::uint32_t tileSize) {
     const glm::vec3 direction = glm::normalize(light.direction);
     const glm::vec3 up = std::abs(direction.y) > 0.99f ? glm::vec3(1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
     const glm::mat4 view = glm::lookAtRH(light.position, light.position + direction, up);
@@ -107,9 +105,10 @@ ShadowData ShadowFor(const Light& light, std::uint32_t tile) {
     const float nearPlane = std::min(kShadowNearPlane, light.range * 0.5f);
     const glm::mat4 projection = math::PerspectiveReverseZ(halfAngle * 2.0f, 1.0f, nearPlane, light.range);
     // One texel of the map covers this much, per meter from the light.
-    const float texelAngle = 2.0f * std::tan(halfAngle) / static_cast<float>(kShadowTileSize);
-    return {projection * view, glm::vec2(static_cast<float>(tile % 2), static_cast<float>(tile / 2)) * 0.5f, 0.5f,
-            kShadowNormalOffsetTexels * texelAngle};
+    const float texelAngle = 2.0f * std::tan(halfAngle) / static_cast<float>(tileSize);
+    const float scale = 1.0f / static_cast<float>(grid);
+    return {projection * view, glm::vec2(static_cast<float>(tile % grid), static_cast<float>(tile / grid)) * scale,
+            scale, kShadowNormalOffsetTexels * texelAngle};
 }
 
 /// The cosine of the outer angle of a point light: every direction is inside.
@@ -162,14 +161,22 @@ constexpr std::uint64_t kInitialLightCapacity = 64;
 
 } // namespace
 
-MeshPass::MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat)
-    : m_device(&device), m_colorFormat(colorFormat), m_depthFormat(depthFormat) {}
+MeshPass::MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat,
+                   const MeshPassSettings& settings)
+    : m_device(&device), m_colorFormat(colorFormat), m_depthFormat(depthFormat),
+      m_shadowLights(std::min<std::uint32_t>(settings.shadowLights, kMaxShadowedLights)),
+      m_shadowTileSize(std::max(settings.shadowResolution, 1U)),
+      // The smallest square grid with a tile per light, and one tile when there are none.
+      m_shadowGrid(static_cast<std::uint32_t>(std::ceil(std::sqrt(static_cast<float>(std::max(m_shadowLights, 1U)))))) {
+}
 
 MeshPass::MeshPass(MeshPass&& other) noexcept
     : m_device(other.m_device), m_colorFormat(other.m_colorFormat), m_depthFormat(other.m_depthFormat),
       m_pipelines(std::exchange(other.m_pipelines, {})), m_shadowPipeline(std::exchange(other.m_shadowPipeline, {})),
-      m_shadowAtlas(std::exchange(other.m_shadowAtlas, {})), m_meshes(std::exchange(other.m_meshes, {})),
-      m_materials(std::exchange(other.m_materials, {})), m_materialTable(std::exchange(other.m_materialTable, {})),
+      m_shadowAtlas(std::exchange(other.m_shadowAtlas, {})), m_shadowLights(other.m_shadowLights),
+      m_shadowTileSize(other.m_shadowTileSize), m_shadowGrid(other.m_shadowGrid),
+      m_meshes(std::exchange(other.m_meshes, {})), m_materials(std::exchange(other.m_materials, {})),
+      m_materialTable(std::exchange(other.m_materialTable, {})),
       m_materialCapacity(std::exchange(other.m_materialCapacity, 0)),
       m_defaultMaterial(std::exchange(other.m_defaultMaterial, {})),
       m_frameSlots(std::exchange(other.m_frameSlots, {})), m_nextFrameSlot(other.m_nextFrameSlot) {}
@@ -195,8 +202,9 @@ MeshPass::~MeshPass() {
     m_device->DestroyTexture(m_shadowAtlas);
 }
 
-core::Result<MeshPass> MeshPass::Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat) {
-    MeshPass pass(device, colorFormat, depthFormat);
+core::Result<MeshPass> MeshPass::Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat,
+                                        const MeshPassSettings& settings) {
+    MeshPass pass(device, colorFormat, depthFormat, settings);
     DAI_TRY(pass.ReplaceShaders(rhi::ToSpirv(kMeshVsSpirv), rhi::ToSpirv(kMeshPsSpirv)));
     DAI_TRY(pass.CreateShadowResources());
     // Plain white plastic. glTF's default material is a metal, which looks black without reflections.
@@ -222,8 +230,10 @@ core::Result<void> MeshPass::CreateShadowResources() {
             .cull = rhi::CullMode::None,
             .name = "Shadow map",
         }));
+    // Without shadows, a texel stands in for the atlas, which shaders still bind.
+    const std::uint32_t atlasSize = m_shadowLights == 0 ? 1 : m_shadowGrid * m_shadowTileSize;
     DAI_TRY_ASSIGN(m_shadowAtlas,
-                   m_device->CreateTexture({.extent = {kShadowAtlasSize, kShadowAtlasSize},
+                   m_device->CreateTexture({.extent = {atlasSize, atlasSize},
                                             .format = rhi::Format::D32Float,
                                             .usage = rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled,
                                             .name = "Shadow atlas"}));
@@ -232,7 +242,7 @@ core::Result<void> MeshPass::CreateShadowResources() {
                                                               .usage = rhi::BufferUsage::Storage,
                                                               .memory = rhi::MemoryLocation::CpuToGpu,
                                                               .name = "Clusters"}));
-        DAI_TRY_ASSIGN(slot.shadows, m_device->CreateBuffer({.size = kMaxShadowedLights * sizeof(ShadowData),
+        DAI_TRY_ASSIGN(slot.shadows, m_device->CreateBuffer({.size = std::max(m_shadowLights, 1U) * sizeof(ShadowData),
                                                              .usage = rhi::BufferUsage::Storage,
                                                              .memory = rhi::MemoryLocation::CpuToGpu,
                                                              .name = "Shadows"}));
@@ -477,7 +487,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                           m_device->StorageIndex(slot.lights),
                           m_device->StorageIndex(slot.shadows),
                           m_device->BindlessIndex(m_shadowAtlas),
-                          1.0f / static_cast<float>(kShadowAtlasSize),
+                          1.0f / static_cast<float>(m_shadowGrid * m_shadowTileSize),
                           m_normalStrength,
                           view.atmosphere.ambientBelow,
                           targets.occlusion ? m_device->BindlessIndex(targets.occlusion) : kNoTexture,
@@ -502,9 +512,9 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         lights[index] = ToGpu(view.lights[index]);
     }
     auto* shadows = reinterpret_cast<ShadowData*>(m_device->Mapped(slot.shadows).data());
-    for (const std::uint32_t light : ChooseShadowedLights(view.lights, cameraPosition, kMaxShadowedLights)) {
+    for (const std::uint32_t light : ChooseShadowedLights(view.lights, cameraPosition, m_shadowLights)) {
         lights[light].shadow = m_shadowCount;
-        shadows[m_shadowCount] = ShadowFor(view.lights[light], m_shadowCount);
+        shadows[m_shadowCount] = ShadowFor(view.lights[light], m_shadowCount, m_shadowGrid, m_shadowTileSize);
         ++m_shadowCount;
     }
     if (!view.jointMatrices.empty()) {
@@ -555,9 +565,9 @@ void MeshPass::RecordShadows(rhi::CommandList& commands) {
         .shadowIndex = 0,
     };
     for (std::uint32_t shadow = 0; shadow < m_shadowCount; ++shadow) {
-        commands.SetViewport(static_cast<std::int32_t>((shadow % 2) * kShadowTileSize),
-                             static_cast<std::int32_t>((shadow / 2) * kShadowTileSize), kShadowTileSize,
-                             kShadowTileSize);
+        commands.SetViewport(static_cast<std::int32_t>((shadow % m_shadowGrid) * m_shadowTileSize),
+                             static_cast<std::int32_t>((shadow / m_shadowGrid) * m_shadowTileSize), m_shadowTileSize,
+                             m_shadowTileSize);
         push.shadowIndex = shadow;
         MeshHandle boundMesh;
         for (std::uint32_t index = 0; index < m_sorted.size(); ++index) {

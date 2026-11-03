@@ -31,6 +31,10 @@ struct RendererConfig {
     float normalStrength = 1.0f;
     /// Darkens the ambient light in creases and corners (ADR-0024).
     bool ambientOcclusion = true;
+    /// Spot lights with a shadow map, from 0 to kMaxShadowedLights: the nearest that ask for one.
+    std::uint32_t shadowLights = 4;
+    /// Texels across each light's shadow map, from 256 to 4096.
+    std::uint32_t shadowResolution = 1024;
 };
 
 /// How long a pass took on the GPU.

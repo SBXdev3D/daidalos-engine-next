@@ -4,7 +4,7 @@
 
 // Forward shading of opaque meshes, in linear HDR (ADR-0022): metallic-roughness PBR with normal maps,
 // the frame's lights, ambient light, occlusion, emission and distance fog. A pixel evaluates only the
-// lights of its cluster (ADR-0008). Up to four spot lights have a shadow map (ADR-0023).
+// lights of its cluster (ADR-0008). The nearest spot lights have a shadow map (ADR-0023).
 // The ambient light is darkened by the frame's ambient occlusion (ADR-0024).
 
 #include "MeshCommon.hlsli"
