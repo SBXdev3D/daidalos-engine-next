@@ -30,7 +30,7 @@ constexpr rhi::Format kDepthFormat = rhi::Format::D32Float;
 /// Lighting is computed in HDR, then tonemapped into the swapchain (ADR-0022).
 constexpr rhi::Format kHdrFormat = rhi::Format::Rgba16Float;
 /// The passes timed on the GPU, in order: each ends at a timestamp, after the one at the start.
-constexpr std::array<std::string_view, 3> kTimedPasses{"Meshes", "Tonemap", "Overlay"};
+constexpr std::array<std::string_view, 4> kTimedPasses{"Shadows", "Meshes", "Tonemap", "Overlay"};
 
 // Matches TonemapPushConstants in shaders/Tonemap.hlsl.
 struct TonemapPushConstants {
@@ -236,14 +236,21 @@ core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder
     rhi::CommandList& commands = frame.commands;
     commands.WriteTimestamp();
     if (status) {
+        const float aspect = static_cast<float>(frame.extent.width) / static_cast<float>(frame.extent.height);
+        status = impl.meshPass->Prepare(view, aspect);
+    }
+    if (status) {
+        impl.meshPass->RecordShadows(commands);
+    }
+    commands.WriteTimestamp();
+    if (status) {
         commands.Discard(impl.hdr, rhi::TextureState::ColorTarget);
         commands.Discard(impl.depth, rhi::TextureState::DepthTarget);
         commands.BeginRendering({.colorTarget = impl.hdr,
                                  .clearColor = glm::vec4(view.atmosphere.fogColor, 1.0f),
                                  .depthTarget = impl.depth,
                                  .clearDepth = 0.0f});
-        const float aspect = static_cast<float>(frame.extent.width) / static_cast<float>(frame.extent.height);
-        status = impl.meshPass->Record(commands, view, aspect);
+        impl.meshPass->Record(commands);
         commands.EndRendering();
     }
     commands.WriteTimestamp();

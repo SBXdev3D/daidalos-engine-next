@@ -12,7 +12,7 @@ struct PushConstants {
 
 [[vk::push_constant]] PushConstants g_push;
 [[vk::binding(0, 0)]] Texture2D g_textures[];
-[[vk::binding(1, 0)]] SamplerState g_samplers[3];
+[[vk::binding(1, 0)]] SamplerState g_samplers[4];
 
 struct VertexInput {
     [[vk::location(0)]] float2 position : POSITION;

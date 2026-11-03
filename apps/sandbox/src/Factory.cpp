@@ -231,7 +231,9 @@ void AddSpotLight(ecs::World& world, ecs::Entity lamp, const NodeDescription& no
                              .innerAngle = angle * Number(node, "light_tightness", 0.5f),
                              .outerAngle = angle,
                              .enabled = node.attributes.find("light_enabled") == node.attributes.end() ||
-                                        node.attributes.at("light_enabled") != "false"};
+                                        node.attributes.at("light_enabled") != "false",
+                             .castsShadows = node.attributes.find("light_shadows") != node.attributes.end() &&
+                                             node.attributes.at("light_shadows") == "true"};
     const glm::quat down = glm::angleAxis(glm::radians(-90.0f), math::kRight);
     AddLight(world, lamp, math::kUp * Number(node, "light_offset", 0.0f), down, light);
 }
@@ -243,7 +245,8 @@ void AddAlarmLights(ecs::World& world, ecs::Entity alarm, const NodeDescription&
                              .range = kAlarmRange,
                              .falloff = kAlarmFalloff,
                              .innerAngle = kAlarmAngle * kAlarmTightness,
-                             .outerAngle = kAlarmAngle};
+                             .outerAngle = kAlarmAngle,
+                             .castsShadows = true};
     for (const float yaw : {0.0f, glm::pi<float>()}) {
         AddLight(world, alarm, -math::kUp * kAlarmOffset, math::FromYawPitchRoll(yaw, -kAlarmTilt, 0.0f), light);
     }
@@ -707,7 +710,8 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
                                      .falloff = kFlashlightFalloff,
                                      .innerAngle = kFlashlightInnerAngle,
                                      .outerAngle = kFlashlightOuterAngle,
-                                     .enabled = false});
+                                     .enabled = false,
+                                     .castsShadows = true});
     world.Get<Player>(playerEntity).muzzleFlash =
         AddLight(world, playerEntity, math::kForward * 0.7f, glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
                  {.type = renderer::LightType::Point,

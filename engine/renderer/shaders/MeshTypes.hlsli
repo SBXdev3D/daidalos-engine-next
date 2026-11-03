@@ -15,6 +15,7 @@ struct MeshPushConstants {
     uint instanceIndex;
     uint materialIndex;
     uint jointBuffer;
+    uint shadowIndex; // The shadow map being drawn, in the shadow pass.
 };
 
 struct FrameData {
@@ -25,6 +26,10 @@ struct FrameData {
     uint lightCount;
     float3 ambient;
     uint lightBuffer;
+    uint shadowBuffer;
+    uint shadowAtlas;  // Bindless index of the depth texture that holds every shadow map.
+    float shadowTexel; // One texel of the atlas, in texture coordinates.
+    uint padding;
 };
 
 // A point light has a cosOuter of -2, which every direction passes.
@@ -36,7 +41,19 @@ struct LightData {
     float3 color;
     float cosOuter;
     float cosInner;
-    uint3 padding;
+    uint shadow; // Index into the shadow buffer, or kNoShadow.
+    uint2 padding;
+};
+
+static const uint kNoShadow = 0xFFFFFFFF;
+
+// A shadow map: the light's view and projection, its tile in the atlas, and how far a receiver is pushed
+// along its normal per meter from the light, against shadow acne.
+struct ShadowData {
+    float4x4 viewProjection;
+    float2 atlasOffset;
+    float atlasScale;
+    float normalOffset;
 };
 
 static const uint kNoJoints = 0xFFFFFFFF;
@@ -83,15 +100,39 @@ struct MaterialData {
 
 [[vk::push_constant]] MeshPushConstants g_push;
 [[vk::binding(0, 0)]] Texture2D g_textures[];
-[[vk::binding(1, 0)]] SamplerState g_samplers[3];
+[[vk::binding(1, 0)]] SamplerState g_samplers[4];
 [[vk::binding(2, 0)]] StructuredBuffer<FrameData> g_frames[];
 [[vk::binding(2, 0)]] StructuredBuffer<InstanceData> g_instances[];
 [[vk::binding(2, 0)]] StructuredBuffer<MaterialData> g_materials[];
 [[vk::binding(2, 0)]] StructuredBuffer<JointData> g_joints[];
 [[vk::binding(2, 0)]] StructuredBuffer<SkinVertex> g_skins[];
 [[vk::binding(2, 0)]] StructuredBuffer<LightData> g_lights[];
+[[vk::binding(2, 0)]] StructuredBuffer<ShadowData> g_shadows[];
+[[vk::binding(1, 0)]] SamplerComparisonState g_compareSamplers[4];
 
 // Matches rhi::SamplerIndex.
 static const uint kSamplerLinearRepeat = 1;
+static const uint kSamplerShadowCompare = 3;
+
+// The joints of a skinned vertex, blended by their weights (ADR-0020).
+float4x4 SkinMatrix(InstanceData instance, uint vertexId) {
+    const SkinVertex skin = g_skins[instance.skinBuffer][vertexId];
+    const uint first = instance.firstJoint;
+    const uint joints = g_push.jointBuffer;
+    return g_joints[joints][first + (skin.joints01 & 0xFFFF)].matrix * skin.weight0 +
+           g_joints[joints][first + (skin.joints01 >> 16)].matrix * skin.weight1 +
+           g_joints[joints][first + (skin.joints23 & 0xFFFF)].matrix * skin.weight2 +
+           g_joints[joints][first + (skin.joints23 >> 16)].matrix * skin.weight3;
+}
+
+// Where a draw places its vertex: the instance's world matrix, or its joints for a skinned draw.
+float4x4 WorldMatrix(InstanceData instance, uint vertexId) {
+    // Not a ternary operator: HLSL would evaluate both sides, and read a skin that rigid draws lack.
+    float4x4 world = instance.world;
+    if (instance.firstJoint != kNoJoints) {
+        world = SkinMatrix(instance, vertexId);
+    }
+    return world;
+}
 
 #endif

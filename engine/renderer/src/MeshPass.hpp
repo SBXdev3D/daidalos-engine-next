@@ -41,10 +41,15 @@ public:
     [[nodiscard]] core::Result<void> ReplaceShaders(std::span<const std::uint32_t> vertexShader,
                                                     std::span<const std::uint32_t> fragmentShader);
 
-    /// Draws the view inside the current rendering scope. aspect = width / height. Draws whose mesh
-    /// has been destroyed are skipped, and draws whose material has been use the default one. An
-    /// allocation failure skips the frame's draws and reports the error.
-    [[nodiscard]] core::Result<void> Record(rhi::CommandList& commands, const SceneView& view, float aspect);
+    /// A frame takes three steps. Prepare fills the frame's buffers from the view, outside any rendering
+    /// scope; aspect = width / height. Draws whose mesh has been destroyed are skipped, and draws whose
+    /// material has been use the default one. Without a camera, or after a failure to allocate, the
+    /// frame draws nothing.
+    [[nodiscard]] core::Result<void> Prepare(const SceneView& view, float aspect);
+    /// Draws the shadow maps of the prepared frame, outside any rendering scope.
+    void RecordShadows(rhi::CommandList& commands);
+    /// Draws the prepared frame inside the current rendering scope.
+    void Record(rhi::CommandList& commands);
 
 private:
     struct Mesh {
@@ -67,10 +72,12 @@ private:
         std::uint64_t jointCapacity = 0;
         rhi::BufferHandle lights;
         std::uint64_t lightCapacity = 0;
+        rhi::BufferHandle shadows;
     };
 
     MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
 
+    [[nodiscard]] core::Result<void> CreateShadowResources();
     [[nodiscard]] core::Result<rhi::PipelineHandle> BuildPipeline(std::span<const std::uint32_t> vertexShader,
                                                                   std::span<const std::uint32_t> fragmentShader,
                                                                   rhi::CullMode cull);
@@ -84,6 +91,9 @@ private:
     rhi::Format m_depthFormat;
     rhi::PipelineHandle m_pipeline;
     rhi::PipelineHandle m_doubleSidedPipeline;
+    rhi::PipelineHandle m_shadowPipeline;
+    /// Every shadow map of a frame, side by side.
+    rhi::TextureHandle m_shadowAtlas;
     core::SlotPool<Mesh, MeshTag> m_meshes;
     /// The index of a handle is also its index in the material table of the GPU.
     core::SlotPool<Material, MaterialTag> m_materials;
@@ -96,11 +106,22 @@ private:
     struct SortedDraw {
         /// The pipeline, then the mesh: what changes least often comes first.
         std::uint64_t key;
-        std::uint32_t draw;
+        MeshHandle mesh;
         MaterialHandle material;
+        /// Index in the view.
+        std::uint32_t draw;
+        bool castsShadows;
     };
+    /// The frame that Prepare filled, if any. Its instances follow m_sorted.
+    FrameSlot* m_prepared = nullptr;
+    std::uint32_t m_shadowCount = 0;
     /// Reused from frame to frame.
     std::vector<SortedDraw> m_sorted;
 };
+
+/// The lights that get a shadow map: spot lights that ask for one, nearest to the camera first, at most
+/// max of them. Returns their indices in the view.
+[[nodiscard]] std::vector<std::uint32_t> ChooseShadowedLights(std::span<const Light> lights, const glm::vec3& camera,
+                                                              std::size_t max);
 
 } // namespace daidalos::renderer

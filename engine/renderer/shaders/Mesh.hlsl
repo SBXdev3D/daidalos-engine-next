@@ -4,7 +4,7 @@
 
 // Forward shading of opaque meshes, in linear HDR (ADR-0022): metallic-roughness PBR with normal maps,
 // the frame's lights, ambient light, occlusion, emission and distance fog. Every light is evaluated for
-// every pixel, until the clusters of Phase 7.3.
+// every pixel, until the clusters of Phase 7.3. Up to four spot lights have a shadow map (ADR-0023).
 
 #include "MeshTypes.hlsli"
 
@@ -34,25 +34,10 @@ float3 TransformNormal(float4x4 world, float3 normal) {
     return cross(y, z) * normal.x + cross(z, x) * normal.y + cross(x, y) * normal.z;
 }
 
-// The joints of a skinned vertex, blended by their weights (ADR-0020).
-float4x4 SkinMatrix(InstanceData instance, uint vertexId) {
-    const SkinVertex skin = g_skins[instance.skinBuffer][vertexId];
-    const uint first = instance.firstJoint;
-    const uint joints = g_push.jointBuffer;
-    return g_joints[joints][first + (skin.joints01 & 0xFFFF)].matrix * skin.weight0 +
-           g_joints[joints][first + (skin.joints01 >> 16)].matrix * skin.weight1 +
-           g_joints[joints][first + (skin.joints23 & 0xFFFF)].matrix * skin.weight2 +
-           g_joints[joints][first + (skin.joints23 >> 16)].matrix * skin.weight3;
-}
-
 VertexOutput VSMain(VertexInput input, uint vertexId : SV_VertexID) {
     const float4x4 viewProjection = g_frames[g_push.frameBuffer][0].viewProjection;
     const InstanceData instance = g_instances[g_push.instanceBuffer][g_push.instanceIndex];
-    // Not a ternary operator: HLSL would evaluate both sides, and read a skin that rigid draws lack.
-    float4x4 world = instance.world;
-    if (instance.firstJoint != kNoJoints) {
-        world = SkinMatrix(instance, vertexId);
-    }
+    const float4x4 world = WorldMatrix(instance, vertexId);
 
     VertexOutput output;
     const float4 worldPosition = mul(world, float4(input.position, 1.0));
@@ -89,6 +74,37 @@ float Attenuation(LightData light, float distanceToLight, float3 toLight) {
     const float distance = saturate((light.range - distanceToLight) / max(light.range - light.fullRange, 0.0001));
     const float cone = smoothstep(light.cosOuter, light.cosInner, dot(-toLight, light.direction));
     return distance * cone;
+}
+
+// How much of a light's shadow map sees a point: 1 in full light, 0 in shadow. The point is pushed along
+// its normal, more so far from the light, where a texel covers more surface. Nine filtered comparisons
+// soften the edge over about three texels.
+float ShadowFactor(FrameData frame, LightData light, float3 position, float3 normal, float distanceToLight) {
+    const ShadowData shadow = g_shadows[frame.shadowBuffer][light.shadow];
+    const float3 receiver = position + normal * (shadow.normalOffset * distanceToLight);
+    const float4 clip = mul(shadow.viewProjection, float4(receiver, 1.0));
+    if (clip.w <= 0.0) {
+        return 1.0;
+    }
+    const float3 ndc = clip.xyz / clip.w;
+    // Clip-space Y points up, and texture rows go down.
+    const float2 uv = ndc.xy * float2(0.5, -0.5) + 0.5;
+    if (any(uv < 0.0) || any(uv > 1.0)) {
+        return 1.0;
+    }
+    // The taps stay inside the light's tile of the atlas.
+    const float texel = frame.shadowTexel;
+    const float2 tileMin = shadow.atlasOffset + 1.5 * texel;
+    const float2 tileMax = shadow.atlasOffset + shadow.atlasScale - 1.5 * texel;
+    const float2 center = clamp(shadow.atlasOffset + uv * shadow.atlasScale, tileMin, tileMax);
+    float lit = 0.0;
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            lit += g_textures[frame.shadowAtlas].SampleCmpLevelZero(g_compareSamplers[kSamplerShadowCompare],
+                                                                    center + float2(x, y) * texel, ndc.z);
+        }
+    }
+    return lit / 9.0;
 }
 
 // Cook-Torrance with the GGX distribution, height-correlated Smith visibility and Schlick's Fresnel,
@@ -171,7 +187,10 @@ float4 PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target
             continue;
         }
         const float3 toLight = offset / max(distanceToLight, 0.0001);
-        const float attenuation = Attenuation(light, distanceToLight, toLight);
+        float attenuation = Attenuation(light, distanceToLight, toLight);
+        if (attenuation > 0.0 && light.shadow != kNoShadow) {
+            attenuation *= ShadowFactor(frame, light, input.worldPosition, normal, distanceToLight);
+        }
         if (attenuation > 0.0) {
             color += light.color * attenuation * Shade(normal, view, toLight, diffuseColor, f0, roughness);
         }

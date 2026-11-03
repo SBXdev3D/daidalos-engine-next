@@ -18,7 +18,7 @@ dai_add_module(NAME renderer
         daidalos::rhi)
 
 dai_add_shaders(TARGET daidalos_renderer
-    SOURCES shaders/Mesh.hlsl shaders/Tonemap.hlsl
+    SOURCES shaders/Mesh.hlsl shaders/ShadowMap.hlsl shaders/Tonemap.hlsl
     INCLUDES shaders/MeshTypes.hlsli)
 
 target_compile_definitions(daidalos_renderer

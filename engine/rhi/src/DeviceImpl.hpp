@@ -152,7 +152,7 @@ struct Device::Impl {
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     VkDescriptorSet globalSet = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-    std::array<VkSampler, 3> samplers{};
+    std::array<VkSampler, kSamplerCount> samplers{};
     std::vector<std::uint32_t> freeBindlessIndices;
     std::vector<std::uint32_t> freeStorageIndices;
 

@@ -457,6 +457,23 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
         return tl::unexpected(VulkanError("vkCreateSampler", result));
     }
 
+    const VkSamplerCreateInfo shadowInfo{
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .compareEnable = VK_TRUE,
+        .compareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
+    };
+    if (const VkResult result = vkCreateSampler(device, &shadowInfo, nullptr,
+                                                &samplers[static_cast<std::size_t>(SamplerIndex::ShadowCompare)]);
+        result != VK_SUCCESS) {
+        return tl::unexpected(VulkanError("vkCreateSampler", result));
+    }
+
     const std::array<VkDescriptorSetLayoutBinding, 3> bindings{{
         {.binding = 0,
          .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
