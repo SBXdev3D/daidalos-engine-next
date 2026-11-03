@@ -17,6 +17,8 @@
 #include <string>
 #include <vector>
 
+#include "LightClusters.hpp"
+
 namespace daidalos::renderer {
 
 /// The targets of a frame that the mesh pass needs to know about.
@@ -92,6 +94,9 @@ private:
         rhi::BufferHandle lights;
         std::uint64_t lightCapacity = 0;
         rhi::BufferHandle shadows;
+        rhi::BufferHandle clusters;
+        rhi::BufferHandle clusterLights;
+        std::uint64_t clusterLightCapacity = 0;
     };
 
     MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
@@ -144,6 +149,8 @@ private:
     FrameSlot* m_prepared = nullptr;
     std::uint32_t m_shadowCount = 0;
     float m_normalStrength = 1.0f;
+    /// Reused from frame to frame.
+    LightClusters m_clusters;
     /// Reused from frame to frame.
     std::vector<SortedDraw> m_sorted;
 };

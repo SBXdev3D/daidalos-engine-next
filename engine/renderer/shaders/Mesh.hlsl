@@ -3,11 +3,21 @@
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
 // Forward shading of opaque meshes, in linear HDR (ADR-0022): metallic-roughness PBR with normal maps,
-// the frame's lights, ambient light, occlusion, emission and distance fog. Every light is evaluated for
-// every pixel, until the clusters of Phase 7.3. Up to four spot lights have a shadow map (ADR-0023).
+// the frame's lights, ambient light, occlusion, emission and distance fog. A pixel evaluates only the
+// lights of its cluster (ADR-0008). Up to four spot lights have a shadow map (ADR-0023).
 // The ambient light is darkened by the frame's ambient occlusion (ADR-0024).
 
 #include "MeshCommon.hlsli"
+
+// The cluster of a pixel: its tile of the screen, and its slice of depth (ADR-0008).
+uint ClusterOf(FrameData frame, float2 pixel, float3 worldPosition) {
+    const float2 tile = pixel * frame.screenTexel * float2(kClusterColumns, kClusterRows);
+    const uint column = min(uint(tile.x), kClusterColumns - 1);
+    const uint row = min(uint(tile.y), kClusterRows - 1);
+    const float depth = max(dot(worldPosition - frame.cameraPosition, frame.cameraForward), frame.nearPlane);
+    const uint slice = min(uint(max(log(depth / frame.nearPlane) * frame.clusterSliceScale, 0.0)), kClusterSlices - 1);
+    return column + row * kClusterColumns + slice * kClusterColumns * kClusterRows;
+}
 
 // How much of a light reaches a point: full up to fullRange, then fading linearly to zero at the range,
 // and inside the cone of a spot light.
@@ -119,8 +129,9 @@ float4 PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target
     }
     const float3 ambient = lerp(frame.ambientBelow, frame.ambient, normal.y * 0.5 + 0.5);
     float3 color = ambient * (diffuseColor + ambientSpecular) * ambientOcclusion + emission;
-    for (uint index = 0; index < frame.lightCount; ++index) {
-        const LightData light = g_lights[frame.lightBuffer][index];
+    const uint2 cluster = g_clusters[frame.clusterBuffer][ClusterOf(frame, input.clipPosition.xy, input.worldPosition)];
+    for (uint entry = 0; entry < cluster.y; ++entry) {
+        const LightData light = g_lights[frame.lightBuffer][g_clusterLights[frame.clusterLightBuffer][cluster.x + entry]];
         const float3 offset = light.position - input.worldPosition;
         const float distanceToLight = length(offset);
         if (distanceToLight >= light.range) {

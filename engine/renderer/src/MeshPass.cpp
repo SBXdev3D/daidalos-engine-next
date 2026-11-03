@@ -56,9 +56,13 @@ struct FrameData {
     std::uint32_t occlusionTexture;
     glm::vec2 screenTexel;
     float nearPlane;
-    std::uint32_t padding;
+    std::uint32_t clusterBuffer;
+    glm::vec3 cameraForward;
+    float clusterSliceScale;
+    std::uint32_t clusterLightBuffer;
+    std::array<std::uint32_t, 3> padding;
 };
-static_assert(sizeof(FrameData) == 224);
+static_assert(sizeof(FrameData) == 256);
 
 struct LightData {
     glm::vec3 position;
@@ -184,6 +188,8 @@ MeshPass::~MeshPass() {
         m_device->DestroyBuffer(slot.joints);
         m_device->DestroyBuffer(slot.lights);
         m_device->DestroyBuffer(slot.shadows);
+        m_device->DestroyBuffer(slot.clusters);
+        m_device->DestroyBuffer(slot.clusterLights);
     }
     m_device->DestroyPipeline(m_shadowPipeline);
     m_device->DestroyTexture(m_shadowAtlas);
@@ -222,6 +228,10 @@ core::Result<void> MeshPass::CreateShadowResources() {
                                             .usage = rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled,
                                             .name = "Shadow atlas"}));
     for (FrameSlot& slot : m_frameSlots) {
+        DAI_TRY_ASSIGN(slot.clusters, m_device->CreateBuffer({.size = kClusterCount * sizeof(glm::uvec2),
+                                                              .usage = rhi::BufferUsage::Storage,
+                                                              .memory = rhi::MemoryLocation::CpuToGpu,
+                                                              .name = "Clusters"}));
         DAI_TRY_ASSIGN(slot.shadows, m_device->CreateBuffer({.size = kMaxShadowedLights * sizeof(ShadowData),
                                                              .usage = rhi::BufferUsage::Storage,
                                                              .memory = rhi::MemoryLocation::CpuToGpu,
@@ -418,6 +428,8 @@ core::Result<void> MeshPass::PrepareFrameSlot(FrameSlot& slot, const SceneView& 
                     sizeof(glm::mat4), "Joints"));
     DAI_TRY(reserve(slot.lights, slot.lightCapacity, view.lights.size(), kInitialLightCapacity, sizeof(LightData),
                     "Lights"));
+    DAI_TRY(reserve(slot.clusterLights, slot.clusterLightCapacity, m_clusters.lightIndices.size(),
+                    kInitialLightCapacity * 16, sizeof(std::uint32_t), "Cluster lights"));
     return {};
 }
 
@@ -443,14 +455,16 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     if (!view.camera.has_value()) {
         return {};
     }
+    const CameraView& camera = *view.camera;
+    const float aspect =
+        static_cast<float>(targets.extent.width) / static_cast<float>(std::max(targets.extent.height, 1U));
+    AssignLightsToClusters(view.lights, {camera.view, camera.verticalFov, aspect, camera.nearPlane}, m_clusters);
+
     FrameSlot& slot = m_frameSlots[m_nextFrameSlot];
     m_nextFrameSlot = (m_nextFrameSlot + 1) % rhi::kFramesInFlight;
     DAI_TRY(PrepareFrameSlot(slot, view));
 
-    const CameraView& camera = *view.camera;
     const glm::vec3 cameraPosition = glm::inverse(camera.view)[3];
-    const float aspect =
-        static_cast<float>(targets.extent.width) / static_cast<float>(std::max(targets.extent.height, 1U));
     const glm::mat4 viewProjection =
         math::InfinitePerspectiveReverseZ(camera.verticalFov, aspect, camera.nearPlane) * camera.view;
     const FrameData frame{viewProjection,
@@ -470,7 +484,17 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                           glm::vec2(1.0f / static_cast<float>(std::max(targets.extent.width, 1U)),
                                     1.0f / static_cast<float>(std::max(targets.extent.height, 1U))),
                           camera.nearPlane,
-                          0};
+                          m_device->StorageIndex(slot.clusters),
+                          glm::normalize(-glm::vec3(glm::inverse(camera.view)[2])),
+                          ClusterSliceScale(camera.nearPlane),
+                          m_device->StorageIndex(slot.clusterLights),
+                          {}};
+    std::memcpy(m_device->Mapped(slot.clusters).data(), m_clusters.ranges.data(),
+                m_clusters.ranges.size() * sizeof(glm::uvec2));
+    if (!m_clusters.lightIndices.empty()) {
+        std::memcpy(m_device->Mapped(slot.clusterLights).data(), m_clusters.lightIndices.data(),
+                    m_clusters.lightIndices.size() * sizeof(std::uint32_t));
+    }
     std::memcpy(m_device->Mapped(slot.frame).data(), &frame, sizeof(frame));
 
     auto* lights = reinterpret_cast<LightData*>(m_device->Mapped(slot.lights).data());

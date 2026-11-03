@@ -6,6 +6,8 @@ dai_add_module(NAME renderer
         include/daidalos/renderer/SceneView.hpp
         src/AmbientOcclusionPass.cpp
         src/AmbientOcclusionPass.hpp
+        src/LightClusters.cpp
+        src/LightClusters.hpp
         src/Material.cpp
         src/MeshPass.cpp
         src/MeshPass.hpp

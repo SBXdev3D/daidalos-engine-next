@@ -35,8 +35,17 @@ struct FrameData {
     uint occlusionTexture; // Half-resolution ambient occlusion, or kNoTexture.
     float2 screenTexel;    // One pixel of the frame, in texture coordinates.
     float nearPlane;       // Of the camera: with reverse-Z at infinity, view depth is nearPlane / depth.
-    uint padding;
+    uint clusterBuffer;    // For each cluster, the first of its lights in clusterLightBuffer, and their count.
+    float3 cameraForward;
+    float clusterSliceScale; // A depth's slice is log(depth / nearPlane) * clusterSliceScale.
+    uint clusterLightBuffer; // Indices into lightBuffer.
+    uint3 padding;
 };
+
+// Matches renderer/src/LightClusters.hpp.
+static const uint kClusterColumns = 16;
+static const uint kClusterRows = 9;
+static const uint kClusterSlices = 24;
 
 // A point light has a cosOuter of -2, which every direction passes.
 struct LightData {
@@ -117,6 +126,8 @@ struct MaterialData {
 [[vk::binding(2, 0)]] StructuredBuffer<SkinVertex> g_skins[];
 [[vk::binding(2, 0)]] StructuredBuffer<LightData> g_lights[];
 [[vk::binding(2, 0)]] StructuredBuffer<ShadowData> g_shadows[];
+[[vk::binding(2, 0)]] StructuredBuffer<uint2> g_clusters[];
+[[vk::binding(2, 0)]] StructuredBuffer<uint> g_clusterLights[];
 [[vk::binding(1, 0)]] SamplerComparisonState g_compareSamplers[4];
 
 // Matches rhi::SamplerIndex.
