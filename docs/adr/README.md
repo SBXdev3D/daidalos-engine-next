@@ -28,3 +28,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0022](0022-lighting-and-materials.md) | HDR, PBR, legacy light units, glTF normal maps with MikkTSpace | Accepted, amended |
 | [0023](0023-shadows.md) | Spot-light shadows: four per frame in one atlas, nearest first | Accepted |
 | [0024](0024-prepass-and-ambient-occlusion.md) | Depth pre-pass, half-resolution SSAO, ambient light from above and below | Accepted |
+| [0025](0025-gpu-particles.md) | Particles emitted, simulated, sorted and drawn on the GPU | Accepted |

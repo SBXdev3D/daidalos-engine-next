@@ -9,11 +9,29 @@
 #include <daidalos/scene/Systems.hpp>
 
 #include <glm/geometric.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <glm/matrix.hpp>
 
+#include <cmath>
 #include <utility>
 
 namespace daidalos::scene {
+
+namespace {
+
+/// The shortest rotation that turns one unit vector into another.
+glm::quat RotationBetween(const glm::vec3& from, const glm::vec3& to) {
+    const float cosine = glm::dot(from, to);
+    if (cosine < -0.9999f) {
+        // Opposite: half a turn around any axis across from.
+        const glm::vec3 axis = std::abs(from.x) < 0.9f ? glm::vec3(1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 0.0f, 1.0f);
+        return glm::angleAxis(glm::pi<float>(), glm::normalize(glm::cross(from, axis)));
+    }
+    const glm::vec3 axis = glm::cross(from, to);
+    return glm::normalize(glm::quat(1.0f + cosine, axis.x, axis.y, axis.z));
+}
+
+} // namespace
 
 Scene::Scene(renderer::Renderer& renderer, std::filesystem::path assetRoot, audio::AudioEngine* audio)
     : m_assets(renderer, assetRoot), m_sounds(audio, std::move(assetRoot)) {}
@@ -25,8 +43,17 @@ void Scene::RunFixedStep(core::Seconds step) {
     m_physics.Step(seconds);
 }
 
+void Scene::SpawnParticles(renderer::ParticleEffectHandle effect, const glm::vec3& position, const glm::vec3& direction,
+                           std::uint32_t count) {
+    const float length = glm::length(direction);
+    const glm::quat rotation = length > 0.0f ? RotationBetween(glm::vec3(0.0f, 1.0f, 0.0f), direction / length)
+                                             : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    m_bursts.push_back({.effect = effect, .position = position, .rotation = rotation, .count = count});
+}
+
 void Scene::RunFrame(core::Seconds delta, float fixedAlpha) {
     m_fixedAlpha = fixedAlpha;
+    m_frameDelta = static_cast<float>(delta.count());
     m_frameSystems.Run(m_world, delta);
     animation::UpdateAnimators(m_world, static_cast<float>(delta.count()));
 }
@@ -36,6 +63,10 @@ void Scene::Extract(renderer::SceneView& view) {
     ecs::PropagateTransforms(m_world);
     ExtractScene(m_world, view, m_activeCamera);
     view.atmosphere = m_atmosphere;
+    view.timeStep = m_frameDelta;
+    view.particleSpawns = std::move(m_bursts);
+    m_bursts.clear();
+    EmitParticles(m_world, m_frameDelta, view.particleSpawns);
 
     SyncSoundEmitters(m_world, m_sounds);
     if (view.camera.has_value()) {

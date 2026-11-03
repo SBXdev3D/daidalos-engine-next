@@ -233,3 +233,47 @@ TEST(ExtractScene, LightsTakeTheirPlaceAndDirectionFromTheirEntity) {
     EXPECT_EQ(light.color, glm::vec3(1.0f, 0.5f, 2.0f));
     EXPECT_EQ(light.range, 7.0f);
 }
+
+TEST(EmitParticles, RateAccumulatesAcrossFrames) {
+    ecs::World world;
+    const ecs::Entity emitter = AddAt(world, {1.0f, 2.0f, 3.0f});
+    world.Add<scene::ParticleEmitter>(emitter, renderer::ParticleEffectHandle(1, 1), 30.0f);
+    ecs::PropagateTransforms(world);
+
+    std::vector<renderer::ParticleSpawn> spawns;
+    std::uint32_t total = 0;
+    for (int frame = 0; frame < 60; ++frame) {
+        spawns.clear();
+        scene::EmitParticles(world, 1.0f / 60.0f, spawns);
+        for (const renderer::ParticleSpawn& spawn : spawns) {
+            total += spawn.count;
+            EXPECT_EQ(spawn.position, glm::vec3(1.0f, 2.0f, 3.0f));
+        }
+    }
+    // 30 per second for one second, give or take the fraction still pending.
+    EXPECT_GE(total, 29U);
+    EXPECT_LE(total, 30U);
+}
+
+TEST(EmitParticles, DisabledEmitterEmitsNothing) {
+    ecs::World world;
+    world.Add<scene::ParticleEmitter>(AddAt(world, {}), renderer::ParticleEffectHandle(1, 1), 1000.0f, false);
+    ecs::PropagateTransforms(world);
+    std::vector<renderer::ParticleSpawn> spawns;
+    scene::EmitParticles(world, 1.0f, spawns);
+    EXPECT_TRUE(spawns.empty());
+}
+
+TEST(EmitParticles, SpawnsTurnWithTheirEntity) {
+    ecs::World world;
+    const ecs::Entity emitter = AddAt(world, {});
+    world.Get<ecs::LocalTransform>(emitter).rotation = glm::angleAxis(glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    world.Add<scene::ParticleEmitter>(emitter, renderer::ParticleEffectHandle(1, 1), 100.0f);
+    ecs::PropagateTransforms(world);
+    std::vector<renderer::ParticleSpawn> spawns;
+    scene::EmitParticles(world, 0.1f, spawns);
+    ASSERT_EQ(spawns.size(), 1U);
+    // The effect's +Y, turned a quarter around X, points along +Z.
+    EXPECT_NEAR(glm::distance(spawns[0].rotation * glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)), 0.0f,
+                1e-5f);
+}

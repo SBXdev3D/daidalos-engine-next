@@ -60,7 +60,8 @@ VkBufferImageCopy WholeLevel(const TextureData& texture, std::uint32_t level, st
 }
 
 // Waits for the use described by the texture's current state, then moves it to the new state.
-void Barrier(detail::CommandRecording& recording, TextureData& data, VkImageLayout oldLayout, TextureState state) {
+void TextureBarrier(detail::CommandRecording& recording, TextureData& data, VkImageLayout oldLayout,
+                    TextureState state) {
     const StateAccess source = Describe(data.state);
     const StateAccess destination = Describe(state);
     const VkImageMemoryBarrier2 barrier{
@@ -92,12 +93,12 @@ void CommandList::Transition(TextureHandle texture, TextureState state) {
     if (data.state == state) {
         return;
     }
-    Barrier(*m_recording, data, Describe(data.state).layout, state);
+    TextureBarrier(*m_recording, data, Describe(data.state).layout, state);
 }
 
 void CommandList::Discard(TextureHandle texture, TextureState state) {
     TextureData& data = m_recording->device->textures.Get(texture);
-    Barrier(*m_recording, data, VK_IMAGE_LAYOUT_UNDEFINED, state);
+    TextureBarrier(*m_recording, data, VK_IMAGE_LAYOUT_UNDEFINED, state);
 }
 
 void CommandList::BeginRendering(const RenderingDesc& desc) {
@@ -162,9 +163,10 @@ void CommandList::EndRendering() {
 
 void CommandList::BindPipeline(PipelineHandle pipeline) {
     Device::Impl& device = *m_recording->device;
-    vkCmdBindPipeline(m_recording->commands, VK_PIPELINE_BIND_POINT_GRAPHICS, device.pipelines.Get(pipeline).pipeline);
-    vkCmdBindDescriptorSets(m_recording->commands, VK_PIPELINE_BIND_POINT_GRAPHICS, device.pipelineLayout, 0, 1,
-                            &device.globalSet, 0, nullptr);
+    const PipelineData& data = device.pipelines.Get(pipeline);
+    vkCmdBindPipeline(m_recording->commands, data.bindPoint, data.pipeline);
+    vkCmdBindDescriptorSets(m_recording->commands, data.bindPoint, device.pipelineLayout, 0, 1, &device.globalSet, 0,
+                            nullptr);
 }
 
 void CommandList::BindVertexBuffer(BufferHandle buffer, std::uint64_t offset) {
@@ -184,7 +186,7 @@ void CommandList::SetScissor(std::int32_t x, std::int32_t y, std::uint32_t width
 
 void CommandList::PushConstants(std::span<const std::byte> data) {
     DAI_ASSERT(data.size() <= kMaxPushConstantSize, "Push constants are limited to kMaxPushConstantSize bytes");
-    vkCmdPushConstants(m_recording->commands, m_recording->device->pipelineLayout, VK_SHADER_STAGE_ALL_GRAPHICS, 0,
+    vkCmdPushConstants(m_recording->commands, m_recording->device->pipelineLayout, VK_SHADER_STAGE_ALL, 0,
                        static_cast<std::uint32_t>(data.size()), data.data());
 }
 
@@ -201,6 +203,31 @@ bool CommandList::WriteTimestamp() {
 
 void CommandList::Draw(std::uint32_t vertexCount, std::uint32_t firstVertex) {
     vkCmdDraw(m_recording->commands, vertexCount, 1, firstVertex, 0);
+}
+
+void CommandList::DrawIndirect(BufferHandle arguments, std::uint64_t offset) {
+    vkCmdDrawIndirect(m_recording->commands, m_recording->device->buffers.Get(arguments).buffer, offset, 1,
+                      sizeof(VkDrawIndirectCommand));
+}
+
+void CommandList::Dispatch(std::uint32_t groupsX, std::uint32_t groupsY, std::uint32_t groupsZ) {
+    vkCmdDispatch(m_recording->commands, groupsX, groupsY, groupsZ);
+}
+
+void CommandList::Barrier() {
+    const VkMemoryBarrier2 barrier{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+        .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        .dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
+    };
+    const VkDependencyInfo dependency{
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &barrier,
+    };
+    vkCmdPipelineBarrier2(m_recording->commands, &dependency);
 }
 
 void CommandList::DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex, std::int32_t vertexOffset) {

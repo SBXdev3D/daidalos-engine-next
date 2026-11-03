@@ -7,8 +7,10 @@
 #include <daidalos/scene/Components.hpp>
 #include <daidalos/scene/Systems.hpp>
 
+#include <glm/gtc/quaternion.hpp>
 #include <glm/matrix.hpp>
 
+#include <cmath>
 #include <cstdint>
 #include <limits>
 
@@ -80,6 +82,29 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
                                   .castsShadows = component.castsShadows});
         });
     ExtractLights(world, view);
+}
+
+void EmitParticles(ecs::World& world, float delta, std::vector<renderer::ParticleSpawn>& spawns) {
+    world.Each<ecs::WorldTransform, ParticleEmitter>(
+        [&](ecs::Entity /*entity*/, const ecs::WorldTransform& transform, ParticleEmitter& emitter) {
+            if (!emitter.enabled || emitter.rate <= 0.0f) {
+                emitter.pending = 0.0f;
+                return;
+            }
+            emitter.pending += emitter.rate * delta;
+            const float whole = std::floor(emitter.pending);
+            emitter.pending -= whole;
+            if (whole < 1.0f) {
+                return;
+            }
+            const glm::mat3 axes(glm::normalize(glm::vec3(transform.matrix[0])),
+                                 glm::normalize(glm::vec3(transform.matrix[1])),
+                                 glm::normalize(glm::vec3(transform.matrix[2])));
+            spawns.push_back({.effect = emitter.effect,
+                              .position = glm::vec3(transform.matrix[3]),
+                              .rotation = glm::quat_cast(axes),
+                              .count = static_cast<std::uint32_t>(whole)});
+        });
 }
 
 void SyncKinematicBodies(ecs::World& world, physics::PhysicsWorld& physics, float step) {

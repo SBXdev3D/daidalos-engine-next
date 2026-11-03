@@ -15,6 +15,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <vector>
 
 namespace daidalos::scene {
 
@@ -50,6 +51,11 @@ public:
     /// Ambient light and fog of the scene, in the view handed to the renderer. Lights are entities.
     void SetAtmosphere(const renderer::Atmosphere& atmosphere) { m_atmosphere = atmosphere; }
 
+    /// Emits particles once, in this frame's view: count of them, leaving along direction, which stands for
+    /// the effect's own direction (+Y unless it says otherwise). For impacts, flashes and the like.
+    void SpawnParticles(renderer::ParticleEffectHandle effect, const glm::vec3& position, const glm::vec3& direction,
+                        std::uint32_t count);
+
     /// Runs the fixed systems, then moves the physics to where they left the entities.
     void RunFixedStep(core::Seconds step);
     /// Runs the frame systems, then plays the animations. fixedAlpha is how far this frame is into the
@@ -72,6 +78,9 @@ private:
     ecs::Entity m_activeCamera;
     renderer::Atmosphere m_atmosphere;
     float m_fixedAlpha = 0.0f;
+    /// Seconds of the last frame, for the particles of the next view.
+    float m_frameDelta = 0.0f;
+    std::vector<renderer::ParticleSpawn> m_bursts;
 };
 
 } // namespace daidalos::scene

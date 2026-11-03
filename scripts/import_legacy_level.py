@@ -771,11 +771,19 @@ def convert(source, scene, output):
                     pass
                 elif kind is not None:
                     add_entity(kind, node, absolute, rotation, scale)
+                elif node.get("type") == "9" and node.get("emitterName"):
+                    # A particle emitter: the game knows its effects by their legacy names.
+                    writer.node(f"particles;effect={node.get('emitterName')}", to_engine(absolute))
+                    counts["particles"] = counts.get("particles", 0) + 1
                 elif node.get("type") == "5" and node.get("file"):
                     add_static(node.get("file"), texture_of(node), absolute, rotation, scale)
                 walk(node, absolute)
 
     walk(root, [0.0, 0.0, 0.0])
+    # The image of every particle effect: a grid of 4 by 4 cells, made by the project's author.
+    atlas = root.find("particleSystem/atlasTextureFile")
+    if atlas is not None and atlas.text:
+        tga_to_png(source / "Textures" / atlas.text.strip(), output / "particles.png")
     for name, position in EXTRA_ENTITIES:
         writer.node(name, position)
         kind = name.split(";")[0]

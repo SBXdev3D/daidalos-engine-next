@@ -63,6 +63,10 @@ public:
     /// Draws using the material fall back to the default one.
     void DestroyMaterial(MaterialHandle material);
 
+    /// The texture must outlive the effect.
+    [[nodiscard]] core::Result<ParticleEffectHandle> CreateParticleEffect(const ParticleEffectDesc& desc);
+    void DestroyParticleEffect(ParticleEffectHandle effect);
+
     void SetVsync(bool vsync);
     void SetExposure(float exposure);
     void SetNormalStrength(float strength);

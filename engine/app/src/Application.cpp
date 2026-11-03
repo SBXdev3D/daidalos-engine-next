@@ -253,6 +253,8 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_scene.draws.clear();
     m_scene.atmosphere = {};
     m_scene.lights.clear();
+    m_scene.particleSpawns.clear();
+    m_scene.timeStep = 0.0f;
     if (m_currentScene) {
         m_currentScene->Extract(m_scene);
     }

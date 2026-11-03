@@ -5,6 +5,7 @@
 #pragma once
 
 #include <daidalos/core/Handle.hpp>
+#include <daidalos/renderer/Particles.hpp>
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
@@ -95,6 +96,10 @@ struct SceneView {
     std::vector<glm::mat4> jointMatrices;
     Atmosphere atmosphere;
     std::vector<Light> lights;
+    /// New particles of the frame (ADR-0025).
+    std::vector<ParticleSpawn> particleSpawns;
+    /// Seconds since the previous frame, by which particles move.
+    float timeStep = 0.0f;
 };
 
 } // namespace daidalos::renderer

@@ -69,8 +69,11 @@ enum class BufferUsage : std::uint32_t {
     Index = 1U << 1U,
     TransferSrc = 1U << 2U,
     TransferDst = 1U << 3U,
-    /// Readable from shaders through the storage buffer arrays, with Device::StorageIndex.
+    /// Readable from shaders through the storage buffer arrays, with Device::StorageIndex, and writable
+    /// from compute shaders.
     Storage = 1U << 4U,
+    /// Holds the arguments of CommandList::DrawIndirect.
+    Indirect = 1U << 5U,
 };
 
 [[nodiscard]] constexpr BufferUsage operator|(BufferUsage left, BufferUsage right) {
@@ -135,7 +138,9 @@ enum class TextureState {
 
 enum class IndexType { Uint16, Uint32 };
 enum class CullMode { None, Front, Back };
-enum class BlendMode { Opaque, Alpha };
+/// Alpha blends color times alpha over the target. Premultiplied adds the color as given and keeps
+/// (1 - alpha) of the target: an alpha of 0 adds light, as sparks do.
+enum class BlendMode { Opaque, Alpha, Premultiplied };
 
 /// Indices into the sampler array of the global descriptor set, declared as
 /// [[vk::binding(1, 0)]] SamplerState g_samplers[4] in shaders. ShadowCompare is a comparison sampler,
@@ -148,6 +153,13 @@ struct VertexAttribute {
     std::uint32_t location = 0;
     Format format = Format::Undefined;
     std::uint32_t offset = 0;
+};
+
+/// A compute shader with the entry point CSMain, using the same push constants and global descriptor set
+/// as graphics pipelines. Compute shaders may write storage buffers.
+struct ComputePipelineDesc {
+    std::span<const std::uint32_t> shader;
+    std::string name;
 };
 
 /// A pipeline uses the push constant block and the global descriptor set: every sampled texture at

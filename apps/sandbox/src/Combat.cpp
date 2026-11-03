@@ -239,6 +239,9 @@ void Kill(scene::Scene& scene, Zombie& zombie, Arsenal* arsenal) {
     }
 }
 
+// Where the muzzle is, from the eye: right, low and ahead, where the weapons are held.
+constexpr glm::vec3 kMuzzleOffset{0.08f, -0.075f, -0.65f};
+
 // How long a shot lights the room, in seconds.
 constexpr float kMuzzleFlashTime = 0.06f;
 
@@ -264,14 +267,28 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
     const ecs::LocalTransform& eye = world.Get<ecs::LocalTransform>(playerEntity);
     const glm::vec3 aim = eye.rotation * math::kForward;
     const physics::BodyId self = physics.CharacterBody(player.character);
-    std::vector<std::pair<physics::BodyId, int>> hits;
+    std::vector<physics::RayHit> hits;
     for (int pellet = 0; pellet < spec.pellets; ++pellet) {
         const glm::vec3 direction = glm::normalize(aim + glm::vec3(Random(random, -spec.spread, spec.spread),
                                                                    Random(random, -spec.spread, spec.spread),
                                                                    Random(random, -spec.spread, spec.spread)));
         if (const std::optional<physics::RayHit> hit =
                 physics.CastRay(eye.translation, direction, kWeaponRange, self)) {
-            hits.emplace_back(hit->body, spec.damage);
+            hits.push_back(*hit);
+        }
+    }
+
+    // A flash and a puff of smoke at the muzzle, and where each pellet lands, blood on a zombie and
+    // sparks anywhere else.
+    if (const ParticleEffects* effects = world.TryGet<ParticleEffects>(playerEntity)) {
+        const glm::vec3 muzzle = eye.translation + eye.rotation * kMuzzleOffset;
+        scene.SpawnParticles(effects->muzzleFlash, muzzle, aim, 3);
+        scene.SpawnParticles(effects->gunSmoke, muzzle, math::kUp, 6);
+        std::vector<physics::BodyId> zombieBodies;
+        world.Each<Zombie>([&](ecs::Entity, const Zombie& zombie) { zombieBodies.push_back(zombie.body); });
+        for (const physics::RayHit& hit : hits) {
+            const bool flesh = std::ranges::find(zombieBodies, hit.body) != zombieBodies.end();
+            scene.SpawnParticles(flesh ? effects->blood : effects->sparks, hit.position, hit.normal, flesh ? 20 : 12);
         }
     }
 
@@ -280,8 +297,8 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
             return;
         }
         int damage = 0;
-        for (const auto& [body, amount] : hits) {
-            damage += body == zombie.body ? amount : 0;
+        for (const physics::RayHit& hit : hits) {
+            damage += hit.body == zombie.body ? spec.damage : 0;
         }
         if (damage > 0) {
             zombie.health -= damage;

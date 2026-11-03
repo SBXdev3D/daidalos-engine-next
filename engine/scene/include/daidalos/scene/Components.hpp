@@ -71,6 +71,17 @@ struct Light {
     bool castsShadows = false;
 };
 
+/// ECS component: emits particles of an effect at the entity's WorldTransform, at a steady rate. The
+/// effect's directions are in the entity's frame (ADR-0025).
+struct ParticleEmitter {
+    renderer::ParticleEffectHandle effect;
+    /// Particles per second.
+    float rate = 10.0f;
+    bool enabled = true;
+    /// The fraction of a particle carried over to the next frame.
+    float pending = 0.0f;
+};
+
 /// ECS component: the entity's LocalTransform moves a kinematic body of the scene's physics. The entity
 /// must be at the root of the hierarchy, or under parents that do not move.
 struct KinematicBody {

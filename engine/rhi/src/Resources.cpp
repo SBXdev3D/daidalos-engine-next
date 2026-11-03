@@ -23,6 +23,7 @@ VkBufferUsageFlags ToVulkanUsage(BufferUsage usage) {
     flags |= HasFlag(usage, BufferUsage::TransferSrc) ? VK_BUFFER_USAGE_TRANSFER_SRC_BIT : 0U;
     flags |= HasFlag(usage, BufferUsage::TransferDst) ? VK_BUFFER_USAGE_TRANSFER_DST_BIT : 0U;
     flags |= HasFlag(usage, BufferUsage::Storage) ? VK_BUFFER_USAGE_STORAGE_BUFFER_BIT : 0U;
+    flags |= HasFlag(usage, BufferUsage::Indirect) ? VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT : 0U;
     return flags;
 }
 
@@ -437,8 +438,9 @@ core::Result<PipelineHandle> Device::CreatePipeline(const GraphicsPipelineDesc& 
         .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
     };
     const VkPipelineColorBlendAttachmentState blendAttachment{
-        .blendEnable = (desc.blend == BlendMode::Alpha) ? VK_TRUE : VK_FALSE,
-        .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+        .blendEnable = (desc.blend != BlendMode::Opaque) ? VK_TRUE : VK_FALSE,
+        .srcColorBlendFactor =
+            (desc.blend == BlendMode::Premultiplied) ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_SRC_ALPHA,
         .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
         .colorBlendOp = VK_BLEND_OP_ADD,
         .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
@@ -487,6 +489,36 @@ core::Result<PipelineHandle> Device::CreatePipeline(const GraphicsPipelineDesc& 
     destroyModules();
     if (result != VK_SUCCESS) {
         return tl::unexpected(VulkanError(std::format("Creating pipeline '{}'", desc.name), result));
+    }
+    m_impl->SetName(VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<std::uint64_t>(data.pipeline), desc.name);
+    return m_impl->pipelines.Insert(data);
+}
+
+core::Result<PipelineHandle> Device::CreateComputePipeline(const ComputePipelineDesc& desc) {
+    const VkShaderModuleCreateInfo moduleInfo{
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = desc.shader.size_bytes(),
+        .pCode = desc.shader.data(),
+    };
+    VkShaderModule module = VK_NULL_HANDLE;
+    if (const VkResult result = vkCreateShaderModule(m_impl->device, &moduleInfo, nullptr, &module);
+        result != VK_SUCCESS) {
+        return tl::unexpected(VulkanError(std::format("Creating the compute shader of '{}'", desc.name), result));
+    }
+    const VkComputePipelineCreateInfo pipelineInfo{
+        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                  .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                  .module = module,
+                  .pName = "CSMain"},
+        .layout = m_impl->pipelineLayout,
+    };
+    PipelineData data{.bindPoint = VK_PIPELINE_BIND_POINT_COMPUTE};
+    const VkResult result =
+        vkCreateComputePipelines(m_impl->device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &data.pipeline);
+    vkDestroyShaderModule(m_impl->device, module, nullptr);
+    if (result != VK_SUCCESS) {
+        return tl::unexpected(VulkanError(std::format("Creating compute pipeline '{}'", desc.name), result));
     }
     m_impl->SetName(VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<std::uint64_t>(data.pipeline), desc.name);
     return m_impl->pipelines.Insert(data);
