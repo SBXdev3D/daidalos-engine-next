@@ -178,7 +178,9 @@ float4 PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target
     const float3 view = toCamera / max(cameraDistance, 0.0001);
 
     const float3 ambientSpecular = AmbientSpecular(f0, roughness, max(dot(normal, view), 0.0));
-    float3 color = frame.ambient * (diffuseColor + ambientSpecular) * occlusion + emission;
+    // Light from everywhere, brighter from above than from below: what leans up catches more of it.
+    const float3 ambient = lerp(frame.ambientBelow, frame.ambient, normal.y * 0.5 + 0.5);
+    float3 color = ambient * (diffuseColor + ambientSpecular) * occlusion + emission;
     for (uint index = 0; index < frame.lightCount; ++index) {
         const LightData light = g_lights[frame.lightBuffer][index];
         const float3 offset = light.position - input.worldPosition;

@@ -30,6 +30,8 @@ struct FrameData {
     uint shadowAtlas;  // Bindless index of the depth texture that holds every shadow map.
     float shadowTexel; // One texel of the atlas, in texture coordinates.
     float normalStrength; // Multiplies every normal map's tilt.
+    float3 ambientBelow;  // Ambient light from below; ambient comes from above.
+    uint padding;
 };
 
 // A point light has a cosOuter of -2, which every direction passes.
