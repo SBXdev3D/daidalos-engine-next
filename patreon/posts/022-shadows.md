@@ -24,6 +24,8 @@ The four pictures share one big texture, cut into four squares. The old level's 
 
 Shadow maps have two classic flaws: surfaces that shadow themselves in stripes ("acne"), and shadows that float away from their objects. Claude Code fights both by nudging each lit point slightly towards the light, more so far from the lamp where each texel of the shadow covers more ground. Edges are softened by mixing nine samples.
 
+**The flashlight moved to your left hand.** At first it shone from your eyes, and a light at the eye throws every shadow straight behind what casts it, exactly where you can't see it. You pointed that out after trying it. Now it sits 30 cm to the left and a little lower, aimed at what you look at 8 m ahead, so shadows fall to the right of things, where you see them.
+
 Two things must never cast a shadow:
 
 - **A lamp's own shade.** The light sits right at the bottom of it, so anything closer than 10 cm to a light is ignored.

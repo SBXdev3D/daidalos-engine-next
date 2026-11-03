@@ -80,6 +80,10 @@ constexpr float kFlashlightRange = 32.0f;                    // Meters.
 constexpr float kFlashlightFalloff = 0.15f;                  // Fraction of the range at full light.
 constexpr float kFlashlightInnerAngle = glm::radians(13.0f); // From the axis.
 constexpr float kFlashlightOuterAngle = glm::radians(22.0f);
+// The flashlight is in the left hand, the weapon in the right: from the eye, its shadows would all fall
+// straight behind what casts them, out of sight. It aims at what the player looks at, a few meters ahead.
+constexpr glm::vec3 kFlashlightHand{-0.3f, -0.15f, 0.0f};
+constexpr float kFlashlightAimDistance = 8.0f;
 // The light of a shot, after the legacy handgun's: 0.7 grey, 45 degrees, 0.7 m in front of the eye.
 constexpr glm::vec3 kMuzzleFlashColor{1.4f, 1.25f, 0.9f};
 constexpr float kMuzzleFlashRange = 7.0f;
@@ -703,7 +707,8 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
     Player& newPlayer = world.Add<Player>(playerEntity);
     world.Add<scene::Camera>(playerEntity);
     // The lights that the player carries follow the camera.
-    newPlayer.flashlight = AddLight(world, playerEntity, glm::vec3(0.0f), glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
+    const glm::vec3 flashlightAim = glm::normalize(math::kForward * kFlashlightAimDistance - kFlashlightHand);
+    newPlayer.flashlight = AddLight(world, playerEntity, kFlashlightHand, glm::quatLookAtRH(flashlightAim, math::kUp),
                                     {.type = renderer::LightType::Spot,
                                      .color = kFlashlightColor,
                                      .range = kFlashlightRange,
@@ -856,7 +861,7 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
             StartLoopedSounds(scene, player());
         }
     });
-    systems.Add("Lights", [&, player](ecs::World& world, core::Seconds delta) {
+    systems.Add("Lights", [&, player, handedOver = false](ecs::World& world, core::Seconds delta) mutable {
         const float seconds = static_cast<float>(delta.count());
         const float darkness = std::clamp(settings.darkness, 0.0f, 1.0f);
         scene.SetAtmosphere({.fogColor = kFogColor,
@@ -867,6 +872,10 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
             turned.rotation = glm::normalize(glm::angleAxis(angle, math::kUp) * turned.rotation);
         });
         if (Player* state = world.TryGet<Player>(player())) {
+            if (settings.startWithFlashlight && !std::exchange(handedOver, true)) {
+                state->hasFlashlight = true;
+                state->flashlightOn = true;
+            }
             state->muzzleFlashTime = std::max(state->muzzleFlashTime - seconds, 0.0f);
             if (scene::Light* flashlight = world.TryGet<scene::Light>(state->flashlight)) {
                 flashlight->enabled = state->flashlightOn;

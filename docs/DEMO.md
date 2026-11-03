@@ -86,7 +86,7 @@ The numbers come from the original's code, except where the table says otherwise
 | Tab | Free the mouse |
 | Escape | Quit |
 
-`sandbox.start` places the player, with `x y z yaw pitch` in meters and degrees, and `sandbox.darkness 0` lights the whole level. `sandbox.ambient` sets how much light reaches everywhere in the dark, 0.1 by default, and 0 for pitch black away from lamps. Both are useful to reach a place quickly. The value of `sandbox.start` holds spaces, so it is quoted on the command line: `+sandbox.start "31.5 4.3 -54 0 -25"` looks down at a lit ceiling spot, whose room has its floor at 2.8 m, and `+sandbox.start "0 1.5 -36 0 10"` faces the turning alarms.
+`sandbox.start` places the player, with `x y z yaw pitch` in meters and degrees, and `sandbox.darkness 0` lights the whole level. `sandbox.flashlight true` starts with the flashlight on. `sandbox.ambient` sets how much light reaches everywhere in the dark, 0.1 by default, and 0 for pitch black away from lamps. Both are useful to reach a place quickly. The value of `sandbox.start` holds spaces, so it is quoted on the command line: `+sandbox.start "31.5 4.3 -54 0 -25"` looks down at a lit ceiling spot, whose room has its floor at 2.8 m, and `+sandbox.start "0 1.5 -36 0 10"` faces the turning alarms.
 
 ## Assets
 

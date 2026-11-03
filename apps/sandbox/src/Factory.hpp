@@ -104,6 +104,8 @@ struct Settings {
     float darkness = 1.0f;
     /// Light that reaches everywhere in the dark, far from any lamp. 0 is pitch black.
     float ambient = 0.1f;
+    /// Starts with the flashlight on, for tests, instead of finding it in the east wing.
+    bool startWithFlashlight = false;
 };
 
 /// A sound that does not stop the game when it is missing, because the game can be played without it.
