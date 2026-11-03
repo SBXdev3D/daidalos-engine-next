@@ -19,6 +19,13 @@
 
 namespace daidalos::renderer {
 
+/// How the edges of what is drawn are smoothed (ADR-0026).
+enum class Antialiasing {
+    Off,
+    /// Fast approximate antialiasing, a pass over the final image.
+    Fxaa,
+};
+
 struct RendererConfig {
     /// Enables the Vulkan validation layers if they are installed.
     bool validation = false;
@@ -39,6 +46,7 @@ struct RendererConfig {
     float fieldOfView = glm::radians(90.0f);
     /// Meters: farther, nothing is drawn or lit.
     float viewDistance = 150.0f;
+    Antialiasing antialiasing = Antialiasing::Fxaa;
 };
 
 /// How long a pass took on the GPU.
@@ -82,6 +90,7 @@ public:
     /// From the next frame; see RendererConfig.
     void SetFieldOfView(float radians);
     void SetViewDistance(float meters);
+    void SetAntialiasing(Antialiasing antialiasing);
 
     /// GPU time of each pass of a recent frame, which the GPU finished a frame or two ago. Empty on a
     /// device without timestamps, and for the first frames.

@@ -20,6 +20,7 @@
 #include <utility>
 
 #include "AmbientOcclusionPass.hpp"
+#include "FxaaPass.hpp"
 #include "MeshPass.hpp"
 #include "ParticlePass.hpp"
 #include "ShaderCompiler.hpp"
@@ -33,13 +34,14 @@ constexpr rhi::Format kDepthFormat = rhi::Format::D32Float;
 /// Lighting is computed in HDR, then tonemapped into the swapchain (ADR-0022).
 constexpr rhi::Format kHdrFormat = rhi::Format::Rgba16Float;
 /// The passes timed on the GPU, in order: each ends at a timestamp, after the one at the start.
-constexpr std::array<std::string_view, 8> kTimedPasses{"Shadows", "Prepass",   "Occlusion", "Simulation",
-                                                       "Meshes",  "Particles", "Tonemap",   "Overlay"};
+constexpr std::array<std::string_view, 9> kTimedPasses{"Shadows",   "Prepass", "Occlusion",    "Simulation", "Meshes",
+                                                       "Particles", "Tonemap", "Antialiasing", "Overlay"};
 
 // Matches TonemapPushConstants in shaders/Tonemap.hlsl.
 struct TonemapPushConstants {
     std::uint32_t hdrTexture;
     float exposure;
+    std::uint32_t encode;
 };
 
 } // namespace
@@ -59,7 +61,10 @@ struct Renderer::Impl {
         meshPass.reset();
         ambientOcclusionPass.reset();
         particlePass.reset();
+        fxaaPass.reset();
         device.DestroyPipeline(tonemap);
+        device.DestroyPipeline(tonemapEncoded);
+        device.DestroyTexture(tonemapped);
         device.DestroyTexture(depth);
         device.DestroyTexture(normals);
         device.DestroyTexture(hdr);
@@ -77,8 +82,13 @@ struct Renderer::Impl {
     std::optional<MeshPass> meshPass;
     std::optional<AmbientOcclusionPass> ambientOcclusionPass;
     std::optional<ParticlePass> particlePass;
+    std::optional<FxaaPass> fxaaPass;
     bool ambientOcclusion = true;
+    Antialiasing antialiasing = Antialiasing::Fxaa;
     rhi::PipelineHandle tonemap;
+    /// Tonemaps for FXAA, into tonemapped.
+    rhi::PipelineHandle tonemapEncoded;
+    rhi::TextureHandle tonemapped;
     rhi::TextureHandle hdr;
     rhi::TextureHandle depth;
     /// World normals of the pre-pass.
@@ -102,9 +112,16 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
     device.DestroyTexture(depth);
     device.DestroyTexture(normals);
     device.DestroyTexture(hdr);
+    device.DestroyTexture(tonemapped);
     depth = {};
     normals = {};
     hdr = {};
+    tonemapped = {};
+    DAI_TRY_ASSIGN(tonemapped,
+                   device.CreateTexture({.extent = extent,
+                                         .format = FxaaPass::kSourceFormat,
+                                         .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
+                                         .name = "Tonemapped"}));
     DAI_TRY_ASSIGN(normals, device.CreateTexture({.extent = extent,
                                                   .format = MeshPass::kNormalFormat,
                                                   .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
@@ -189,6 +206,16 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
                                       .cull = rhi::CullMode::None,
                                       .name = "Tonemap",
                                   }));
+    DAI_TRY_ASSIGN(impl->tonemapEncoded, impl->device.CreatePipeline({
+                                             .vertexShader = rhi::ToSpirv(kTonemapVsSpirv),
+                                             .fragmentShader = rhi::ToSpirv(kTonemapPsSpirv),
+                                             .colorFormat = FxaaPass::kSourceFormat,
+                                             .cull = rhi::CullMode::None,
+                                             .name = "Tonemap for FXAA",
+                                         }));
+    DAI_TRY_ASSIGN(FxaaPass fxaaPass, FxaaPass::Create(impl->device, impl->swapchain.ColorFormat()));
+    impl->fxaaPass.emplace(std::move(fxaaPass));
+    impl->antialiasing = config.antialiasing;
     DAI_TRY_ASSIGN(MeshPass meshPass, MeshPass::Create(impl->device, kHdrFormat, kDepthFormat,
                                                        {.shadowLights = config.shadowLights,
                                                         .shadowResolution = config.shadowResolution}));
@@ -259,6 +286,10 @@ void Renderer::SetFieldOfView(float radians) {
 
 void Renderer::SetViewDistance(float meters) {
     m_impl->meshPass->SetViewDistance(meters);
+}
+
+void Renderer::SetAntialiasing(Antialiasing antialiasing) {
+    m_impl->antialiasing = antialiasing;
 }
 
 void Renderer::SetNormalStrength(float strength) {
@@ -345,13 +376,25 @@ core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder
     }
     commands.WriteTimestamp();
 
+    // With FXAA, tonemapping goes to an image that the antialiasing reads, and FXAA to the back buffer.
+    const bool fxaa = impl.antialiasing == Antialiasing::Fxaa;
     commands.Transition(frame.backBuffer, rhi::TextureState::ColorTarget);
     if (status) {
         commands.Transition(impl.hdr, rhi::TextureState::ShaderRead);
-        commands.BeginRendering({.colorTarget = frame.backBuffer});
-        commands.BindPipeline(impl.tonemap);
-        commands.Push(TonemapPushConstants{impl.device.BindlessIndex(impl.hdr), impl.exposure});
+        if (fxaa) {
+            commands.Discard(impl.tonemapped, rhi::TextureState::ColorTarget);
+        }
+        commands.BeginRendering({.colorTarget = fxaa ? impl.tonemapped : frame.backBuffer});
+        commands.BindPipeline(fxaa ? impl.tonemapEncoded : impl.tonemap);
+        commands.Push(TonemapPushConstants{impl.device.BindlessIndex(impl.hdr), impl.exposure, fxaa ? 1U : 0U});
         commands.Draw(3);
+        commands.EndRendering();
+    }
+    commands.WriteTimestamp();
+    if (status && fxaa) {
+        commands.Transition(impl.tonemapped, rhi::TextureState::ShaderRead);
+        commands.BeginRendering({.colorTarget = frame.backBuffer});
+        impl.fxaaPass->Record(commands, impl.tonemapped, frame.extent);
         commands.EndRendering();
     }
     commands.WriteTimestamp();
