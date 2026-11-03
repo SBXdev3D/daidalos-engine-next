@@ -168,6 +168,7 @@ Device::Impl::~Impl() {
             vkDestroyCommandPool(device, frame.pool, nullptr);
         }
         vkDestroyCommandPool(device, immediatePool, nullptr);
+        vkDestroyQueryPool(device, timestamps, nullptr);
         vkDestroySemaphore(device, timeline, nullptr);
         if (allocator != nullptr) {
             vmaDestroyAllocator(allocator);
@@ -287,6 +288,7 @@ core::Result<void> Device::Impl::SelectPhysicalDevice(const DeviceConfig& config
             physicalDevice = candidate;
             queueFamily = *family;
             info.name = properties.deviceName;
+            timestampPeriodMs = static_cast<double>(properties.limits.timestampPeriod) / 1.0e6;
         }
     }
     if (physicalDevice == VK_NULL_HANDLE) {
@@ -387,6 +389,21 @@ core::Result<void> Device::Impl::CreateFrameResources() {
     if (const VkResult result = vkCreateCommandPool(device, &poolInfo, nullptr, &immediatePool); result != VK_SUCCESS) {
         return tl::unexpected(VulkanError("vkCreateCommandPool", result));
     }
+    std::uint32_t familyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &familyCount, nullptr);
+    std::vector<VkQueueFamilyProperties> families(familyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &familyCount, families.data());
+    if (families[queueFamily].timestampValidBits > 0 && timestampPeriodMs > 0.0) {
+        const VkQueryPoolCreateInfo queryInfo{
+            .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+            .queryType = VK_QUERY_TYPE_TIMESTAMP,
+            .queryCount = kMaxTimestamps * kFramesInFlight,
+        };
+        if (const VkResult result = vkCreateQueryPool(device, &queryInfo, nullptr, &timestamps); result != VK_SUCCESS) {
+            return tl::unexpected(VulkanError("vkCreateQueryPool", result));
+        }
+    }
+
     for (FrameSlot& frame : frames) {
         if (const VkResult result = vkCreateCommandPool(device, &poolInfo, nullptr, &frame.pool);
             result != VK_SUCCESS) {
@@ -399,6 +416,9 @@ core::Result<void> Device::Impl::CreateFrameResources() {
             .commandBufferCount = 1,
         };
         frame.recording.device = this;
+        if (timestamps != VK_NULL_HANDLE) {
+            frame.recording.firstTimestamp = static_cast<std::uint32_t>(&frame - frames.data()) * kMaxTimestamps;
+        }
         if (const VkResult result = vkAllocateCommandBuffers(device, &allocateInfo, &frame.recording.commands);
             result != VK_SUCCESS) {
             return tl::unexpected(VulkanError("vkAllocateCommandBuffers", result));
@@ -576,6 +596,26 @@ void Device::Impl::CollectGarbage(std::uint64_t completed) {
     }
 }
 
+core::Result<void> Device::Impl::ReadTimestamps(detail::CommandRecording& recording) {
+    const std::uint32_t count = std::exchange(recording.timestampCount, 0U);
+    if (!recording.firstTimestamp.has_value() || count == 0) {
+        return {};
+    }
+    // The slot's last frame is finished, so the results are there without waiting.
+    std::array<std::uint64_t, kMaxTimestamps> ticks{};
+    if (const VkResult result =
+            vkGetQueryPoolResults(device, timestamps, *recording.firstTimestamp, count, count * sizeof(std::uint64_t),
+                                  ticks.data(), sizeof(std::uint64_t), VK_QUERY_RESULT_64_BIT);
+        result != VK_SUCCESS) {
+        return tl::unexpected(VulkanError("vkGetQueryPoolResults", result));
+    }
+    completedTimestamps.resize(count);
+    for (std::uint32_t index = 0; index < count; ++index) {
+        completedTimestamps[index] = static_cast<double>(ticks[index] - ticks[0]) * timestampPeriodMs;
+    }
+    return {};
+}
+
 core::Result<std::uint64_t> Device::Impl::SubmitCommands(VkCommandBuffer commands) {
     const std::uint64_t value = NextTimelineValue();
     const VkCommandBufferSubmitInfo commandInfo{
@@ -693,6 +733,10 @@ std::uint64_t Device::ValidationErrorCount() const {
     return m_impl->validationErrors.load();
 }
 
+std::span<const double> Device::CompletedTimestamps() const {
+    return m_impl->completedTimestamps;
+}
+
 std::uint64_t Device::PresentedFrameCount() const {
     return m_impl->presentedFrames;
 }
@@ -710,6 +754,7 @@ core::Result<std::optional<Frame>> Device::BeginFrame(Swapchain* swapchain) {
     DAI_TRY(m_impl->WaitForValue(slot.submittedValue));
     DAI_TRY_ASSIGN(std::uint64_t completed, m_impl->CompletedValue());
     m_impl->CollectGarbage(completed);
+    DAI_TRY(m_impl->ReadTimestamps(slot.recording));
 
     Frame frame{CommandList(slot.recording), TextureHandle{}, Extent{}};
     if (swapchain != nullptr) {
@@ -730,6 +775,10 @@ core::Result<std::optional<Frame>> Device::BeginFrame(Swapchain* swapchain) {
     };
     if (const VkResult result = vkBeginCommandBuffer(slot.recording.commands, &beginInfo); result != VK_SUCCESS) {
         return tl::unexpected(VulkanError("vkBeginCommandBuffer", result));
+    }
+    if (slot.recording.firstTimestamp.has_value()) {
+        vkCmdResetQueryPool(slot.recording.commands, m_impl->timestamps, *slot.recording.firstTimestamp,
+                            kMaxTimestamps);
     }
     m_impl->frameOpen = true;
     return std::optional<Frame>{frame};

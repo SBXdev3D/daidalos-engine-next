@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -68,6 +69,9 @@ namespace detail {
 struct CommandRecording {
     Device::Impl* device = nullptr;
     VkCommandBuffer commands = VK_NULL_HANDLE;
+    /// First query of this recording in the timestamp pool, for frames on a device with timestamps.
+    std::optional<std::uint32_t> firstTimestamp;
+    std::uint32_t timestampCount = 0;
 };
 
 } // namespace detail
@@ -95,6 +99,8 @@ struct Device::Impl {
     /// Runs destroy once the GPU can no longer use what was recorded so far.
     void Defer(std::function<void()> destroy);
     void CollectGarbage(std::uint64_t completed);
+    /// Reads the timestamps of a finished frame into completedTimestamps.
+    [[nodiscard]] core::Result<void> ReadTimestamps(detail::CommandRecording& recording);
     /// Submits recorded commands, which signal the next timeline value, and returns that value.
     [[nodiscard]] core::Result<std::uint64_t> SubmitCommands(VkCommandBuffer commands);
     /// The command list that collects the copies of UploadBuffer and UploadTexture.
@@ -135,6 +141,10 @@ struct Device::Impl {
     bool frameOpen = false;
     std::uint64_t presentedFrames = 0;
     VkCommandPool immediatePool = VK_NULL_HANDLE;
+    /// kMaxTimestamps queries per frame slot. Null when the queue cannot write timestamps.
+    VkQueryPool timestamps = VK_NULL_HANDLE;
+    double timestampPeriodMs = 0.0;
+    std::vector<double> completedTimestamps;
     /// Copies waiting for FlushUploads, recorded in a buffer of the immediate pool.
     detail::CommandRecording uploads;
 

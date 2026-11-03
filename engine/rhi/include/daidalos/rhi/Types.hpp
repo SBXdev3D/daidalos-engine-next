@@ -23,6 +23,9 @@ using PipelineHandle = core::Handle<PipelineTag>;
 
 /// Frames that the CPU can record ahead of the GPU.
 inline constexpr std::uint32_t kFramesInFlight = 2;
+/// Timestamps that one frame can write.
+inline constexpr std::uint32_t kMaxTimestamps = 32;
+
 /// Size of the push constant block. Vulkan guarantees 128 bytes on every device.
 inline constexpr std::uint32_t kMaxPushConstantSize = 128;
 
@@ -42,6 +45,8 @@ enum class Format {
     Rg32Float,
     Rgb32Float,
     Rgba32Float,
+    /// High dynamic range color, for lighting before tonemapping.
+    Rgba16Float,
     D32Float,
     /// Block-compressed formats, with blocks of 4x4 pixels.
     Bc5Unorm,

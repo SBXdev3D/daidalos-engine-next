@@ -180,6 +180,17 @@ void CommandList::PushConstants(std::span<const std::byte> data) {
                        static_cast<std::uint32_t>(data.size()), data.data());
 }
 
+bool CommandList::WriteTimestamp() {
+    detail::CommandRecording& recording = *m_recording;
+    if (!recording.firstTimestamp.has_value() || recording.timestampCount >= kMaxTimestamps) {
+        return false;
+    }
+    vkCmdWriteTimestamp2(recording.commands, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, recording.device->timestamps,
+                         *recording.firstTimestamp + recording.timestampCount);
+    ++recording.timestampCount;
+    return true;
+}
+
 void CommandList::Draw(std::uint32_t vertexCount, std::uint32_t firstVertex) {
     vkCmdDraw(m_recording->commands, vertexCount, 1, firstVertex, 0);
 }
