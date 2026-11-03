@@ -8,6 +8,7 @@
 #include <daidalos/renderer/AssetLibrary.hpp>
 #include <daidalos/resources/AssetPath.hpp>
 
+#include <chrono>
 #include <format>
 #include <memory>
 #include <utility>
@@ -199,13 +200,17 @@ core::Result<const Model*> AssetLibrary::Build(std::string key, core::Result<Dec
     if (!decoded) {
         return tl::unexpected(std::move(decoded.error()));
     }
+    const auto start = std::chrono::steady_clock::now();
     core::Result<Model> model = BuildModel(*decoded, key);
     if (!model) {
         return tl::unexpected(std::move(model.error()));
     }
-    DAI_LOG_INFO(kModule, "Loaded model '{}': {} meshes, {} materials, {} images, {} skins, {} animations", key,
-                 decoded->data.primitives.size(), decoded->data.materials.size(), decoded->data.images.size(),
-                 decoded->data.skins.size(), decoded->data.animations.size());
+    // The time spent on the main thread, creating GPU objects: what a load costs the frame loop.
+    const std::chrono::duration<double, std::milli> built = std::chrono::steady_clock::now() - start;
+    DAI_LOG_INFO(kModule,
+                 "Loaded model '{}': {} meshes, {} materials, {} images, {} skins, {} animations, built in {:.1f} ms",
+                 key, decoded->data.primitives.size(), decoded->data.materials.size(), decoded->data.images.size(),
+                 decoded->data.skins.size(), decoded->data.animations.size(), built.count());
     return &m_models.Insert(std::move(key), std::move(*model));
 }
 
