@@ -2,6 +2,12 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
+#include <daidalos/rhi/Spirv.hpp>
+
+#include <shaders/ComputeTest.cs.spv.h>
+#include <shaders/TriangleTest.ps.spv.h>
+#include <shaders/TriangleTest.vs.spv.h>
+
 #include <array>
 #include <cstdlib>
 #include <cstring>
@@ -322,4 +328,95 @@ TEST(DeviceLifetime, MissingDriverIsReportedAsAnError) {
     ASSERT_FALSE(device.has_value());
     EXPECT_EQ(device.error().code, core::ErrorCode::NotSupported);
     EXPECT_FALSE(device.error().message.empty());
+}
+
+namespace {
+
+struct ComputeTestPush {
+    std::uint32_t values;
+    std::uint32_t arguments;
+    std::uint32_t count;
+};
+
+} // namespace
+
+TEST_F(GpuTest, ComputeShaderWritesAStorageBuffer) {
+    constexpr std::uint32_t kCount = 100;
+    const core::Result<rhi::BufferHandle> values = Device().CreateBuffer({.size = kCount * sizeof(std::uint32_t),
+                                                                          .usage = rhi::BufferUsage::Storage,
+                                                                          .memory = rhi::MemoryLocation::GpuToCpu,
+                                                                          .name = "Values"});
+    const core::Result<rhi::BufferHandle> arguments = Device().CreateBuffer(
+        {.size = 16, .usage = rhi::BufferUsage::Storage | rhi::BufferUsage::Indirect, .name = "Arguments"});
+    const core::Result<rhi::PipelineHandle> pipeline =
+        Device().CreateComputePipeline({.shader = rhi::ToSpirv(kComputeTestCsSpirv), .name = "Compute test"});
+    ASSERT_TRUE(values.has_value() && arguments.has_value());
+    ASSERT_TRUE(pipeline.has_value()) << core::Format(pipeline.error());
+
+    ASSERT_TRUE(Device()
+                    .Submit([&](rhi::CommandList& commands) {
+                        commands.BindPipeline(*pipeline);
+                        commands.Push(
+                            ComputeTestPush{Device().StorageIndex(*values), Device().StorageIndex(*arguments), kCount});
+                        commands.Dispatch((kCount + 63) / 64);
+                    })
+                    .has_value());
+
+    const auto* written = reinterpret_cast<const std::uint32_t*>(Device().Mapped(*values).data());
+    for (std::uint32_t index = 0; index < kCount; ++index) {
+        ASSERT_EQ(written[index], index * 2 + 1) << "at " << index;
+    }
+    Device().DestroyPipeline(*pipeline);
+    Device().DestroyBuffer(*values);
+    Device().DestroyBuffer(*arguments);
+}
+
+TEST_F(GpuTest, IndirectDrawUsesTheArgumentsTheGpuWrote) {
+    constexpr rhi::Extent kExtent{8, 8};
+    const core::Result<rhi::BufferHandle> values =
+        Device().CreateBuffer({.size = sizeof(std::uint32_t), .usage = rhi::BufferUsage::Storage, .name = "Values"});
+    const core::Result<rhi::BufferHandle> arguments = Device().CreateBuffer(
+        {.size = 16, .usage = rhi::BufferUsage::Storage | rhi::BufferUsage::Indirect, .name = "Arguments"});
+    const core::Result<rhi::TextureHandle> target =
+        Device().CreateTexture({.extent = kExtent,
+                                .format = rhi::Format::Rgba8Unorm,
+                                .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::TransferSrc,
+                                .name = "Target"});
+    const core::Result<rhi::BufferHandle> readback = Device().CreateBuffer(
+        {.size = 8 * 8 * 4, .usage = rhi::BufferUsage::TransferDst, .memory = rhi::MemoryLocation::GpuToCpu});
+    const core::Result<rhi::PipelineHandle> compute =
+        Device().CreateComputePipeline({.shader = rhi::ToSpirv(kComputeTestCsSpirv), .name = "Compute test"});
+    const core::Result<rhi::PipelineHandle> triangle =
+        Device().CreatePipeline({.vertexShader = rhi::ToSpirv(kTriangleTestVsSpirv),
+                                 .fragmentShader = rhi::ToSpirv(kTriangleTestPsSpirv),
+                                 .colorFormat = rhi::Format::Rgba8Unorm,
+                                 .cull = rhi::CullMode::None,
+                                 .name = "Triangle"});
+    ASSERT_TRUE(values && arguments && target && readback && compute && triangle);
+
+    ASSERT_TRUE(Device()
+                    .Submit([&](rhi::CommandList& commands) {
+                        commands.BindPipeline(*compute);
+                        commands.Push(
+                            ComputeTestPush{Device().StorageIndex(*values), Device().StorageIndex(*arguments), 1});
+                        commands.Dispatch(1);
+                        commands.Barrier();
+                        commands.Discard(*target, rhi::TextureState::ColorTarget);
+                        commands.BeginRendering({.colorTarget = *target, .clearColor = glm::vec4(0.0f)});
+                        commands.BindPipeline(*triangle);
+                        commands.DrawIndirect(*arguments);
+                        commands.EndRendering();
+                        commands.Transition(*target, rhi::TextureState::TransferSrc);
+                        commands.CopyTextureToBuffer(*target, *readback);
+                    })
+                    .has_value());
+
+    const auto* pixels = reinterpret_cast<const std::uint8_t*>(Device().Mapped(*readback).data());
+    EXPECT_EQ(pixels[(4 * 8 + 4) * 4], 255) << "the triangle covers the target";
+    Device().DestroyPipeline(*compute);
+    Device().DestroyPipeline(*triangle);
+    Device().DestroyTexture(*target);
+    for (const rhi::BufferHandle buffer : {*values, *arguments, *readback}) {
+        Device().DestroyBuffer(buffer);
+    }
 }

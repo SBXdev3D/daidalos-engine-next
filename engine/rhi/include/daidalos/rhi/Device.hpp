@@ -107,6 +107,8 @@ public:
 
     /// Fails with DeviceError if the driver rejects the SPIR-V.
     [[nodiscard]] core::Result<PipelineHandle> CreatePipeline(const GraphicsPipelineDesc& desc);
+    /// Fails with DeviceError if the driver rejects the SPIR-V.
+    [[nodiscard]] core::Result<PipelineHandle> CreateComputePipeline(const ComputePipelineDesc& desc);
     void DestroyPipeline(PipelineHandle pipeline);
 
     /// Waits for a free frame slot, acquires the next swapchain image if there is a swapchain, and

@@ -62,6 +62,7 @@ struct TextureData {
 
 struct PipelineData {
     VkPipeline pipeline = VK_NULL_HANDLE;
+    VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 };
 
 namespace detail {

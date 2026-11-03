@@ -489,16 +489,16 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
         {.binding = 0,
          .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
          .descriptorCount = kMaxBindlessTextures,
-         .stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS},
+         .stageFlags = VK_SHADER_STAGE_ALL},
         {.binding = 1,
          .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
          .descriptorCount = static_cast<std::uint32_t>(samplers.size()),
-         .stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS,
+         .stageFlags = VK_SHADER_STAGE_ALL,
          .pImmutableSamplers = samplers.data()},
         {.binding = 2,
          .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
          .descriptorCount = kMaxBindlessBuffers,
-         .stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS},
+         .stageFlags = VK_SHADER_STAGE_ALL},
     }};
     constexpr VkDescriptorBindingFlags kBindlessFlags =
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
@@ -548,7 +548,7 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
     }
 
     const VkPushConstantRange pushConstants{
-        .stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS,
+        .stageFlags = VK_SHADER_STAGE_ALL,
         .offset = 0,
         .size = kMaxPushConstantSize,
     };

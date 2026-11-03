@@ -6,10 +6,11 @@ include_guard(GLOBAL)
 # The DXC options must match kDxcArguments in engine/renderer/src/ShaderCompiler.cpp.
 #
 #   dai_add_shaders(TARGET renderer
-#       SOURCES shaders/Mesh.hlsl    # compiled
-#       INCLUDES shaders/Common.hlsli) # rebuild the sources when they change
+#       SOURCES shaders/Mesh.hlsl        # compiled, with VSMain and PSMain
+#       COMPUTE shaders/Particles.hlsl   # compiled, with CSMain: <shaders/Particles.cs.spv.h>, kParticlesCsSpirv
+#       INCLUDES shaders/Common.hlsli)   # rebuild the sources when they change
 function(dai_add_shaders)
-    cmake_parse_arguments(PARSE_ARGV 0 ARG "" "TARGET" "SOURCES;INCLUDES")
+    cmake_parse_arguments(PARSE_ARGV 0 ARG "" "TARGET" "SOURCES;COMPUTE;INCLUDES")
     set(outputRoot "${CMAKE_CURRENT_BINARY_DIR}/generated")
     file(MAKE_DIRECTORY "${outputRoot}/shaders")
 
@@ -40,8 +41,24 @@ function(dai_add_shaders)
         endforeach()
     endforeach()
 
+    foreach(source IN LISTS ARG_COMPUTE)
+        cmake_path(GET source STEM name)
+        cmake_path(ABSOLUTE_PATH source NORMALIZE OUTPUT_VARIABLE sourcePath)
+        cmake_path(GET sourcePath PARENT_PATH sourceDirectory)
+        set(output "${outputRoot}/shaders/${name}.cs.spv.h")
+        add_custom_command(
+            OUTPUT "${output}"
+            COMMAND "${DIRECTX_DXC_TOOL}" -spirv -fspv-target-env=vulkan1.3 -Zpc
+                -T cs_6_7 -E CSMain -I "${sourceDirectory}"
+                -Vn k${name}CsSpirv -Fh "${output}" "${sourcePath}"
+            DEPENDS "${sourcePath}" ${ARG_INCLUDES}
+            COMMENT "Compiling ${name} (cs)"
+            VERBATIM)
+        list(APPEND outputs "${output}")
+    endforeach()
+
     # Listed for IDEs only: left alone, the Visual Studio generator compiles .hlsl files with FXC.
-    set_source_files_properties(${ARG_SOURCES} ${ARG_INCLUDES} PROPERTIES HEADER_FILE_ONLY TRUE)
-    target_sources(${ARG_TARGET} PRIVATE ${ARG_SOURCES} ${ARG_INCLUDES} ${outputs})
+    set_source_files_properties(${ARG_SOURCES} ${ARG_COMPUTE} ${ARG_INCLUDES} PROPERTIES HEADER_FILE_ONLY TRUE)
+    target_sources(${ARG_TARGET} PRIVATE ${ARG_SOURCES} ${ARG_COMPUTE} ${ARG_INCLUDES} ${outputs})
     target_include_directories(${ARG_TARGET} PRIVATE "${outputRoot}")
 endfunction()

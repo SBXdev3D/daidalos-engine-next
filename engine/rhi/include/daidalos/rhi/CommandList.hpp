@@ -52,6 +52,7 @@ public:
     void SetViewport(std::int32_t x, std::int32_t y, std::uint32_t width, std::uint32_t height);
     void EndRendering();
 
+    /// Binds a graphics or a compute pipeline.
     void BindPipeline(PipelineHandle pipeline);
     void BindVertexBuffer(BufferHandle buffer, std::uint64_t offset = 0);
     void BindIndexBuffer(BufferHandle buffer, IndexType type, std::uint64_t offset = 0);
@@ -73,6 +74,15 @@ public:
 
     void Draw(std::uint32_t vertexCount, std::uint32_t firstVertex = 0);
     void DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex = 0, std::int32_t vertexOffset = 0);
+    /// Draws with the arguments that the GPU wrote at offset in a BufferUsage::Indirect buffer: vertex count,
+    /// instance count, first vertex and first instance, as 32-bit integers.
+    void DrawIndirect(BufferHandle arguments, std::uint64_t offset = 0);
+
+    /// Runs the bound compute pipeline on groups of threads. Outside any rendering scope.
+    void Dispatch(std::uint32_t groupsX, std::uint32_t groupsY = 1, std::uint32_t groupsZ = 1);
+    /// Everything recorded before writes its buffers before anything recorded after reads or writes them,
+    /// indirect arguments included. Textures keep their own transitions.
+    void Barrier();
 
     void CopyBuffer(BufferHandle source, BufferHandle destination, std::uint64_t size, std::uint64_t sourceOffset = 0,
                     std::uint64_t destinationOffset = 0);

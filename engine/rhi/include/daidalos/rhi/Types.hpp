@@ -69,8 +69,11 @@ enum class BufferUsage : std::uint32_t {
     Index = 1U << 1U,
     TransferSrc = 1U << 2U,
     TransferDst = 1U << 3U,
-    /// Readable from shaders through the storage buffer arrays, with Device::StorageIndex.
+    /// Readable from shaders through the storage buffer arrays, with Device::StorageIndex, and writable
+    /// from compute shaders.
     Storage = 1U << 4U,
+    /// Holds the arguments of CommandList::DrawIndirect.
+    Indirect = 1U << 5U,
 };
 
 [[nodiscard]] constexpr BufferUsage operator|(BufferUsage left, BufferUsage right) {
@@ -148,6 +151,13 @@ struct VertexAttribute {
     std::uint32_t location = 0;
     Format format = Format::Undefined;
     std::uint32_t offset = 0;
+};
+
+/// A compute shader with the entry point CSMain, using the same push constants and global descriptor set
+/// as graphics pipelines. Compute shaders may write storage buffers.
+struct ComputePipelineDesc {
+    std::span<const std::uint32_t> shader;
+    std::string name;
 };
 
 /// A pipeline uses the push constant block and the global descriptor set: every sampled texture at
