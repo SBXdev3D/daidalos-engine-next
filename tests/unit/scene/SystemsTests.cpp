@@ -125,7 +125,7 @@ TEST(ExtractScene, LowestEntityIndexWinsAmongCameras) {
     scene::ExtractScene(world, view);
 
     ASSERT_TRUE(view.camera.has_value());
-    EXPECT_FLOAT_EQ(view.camera->verticalFov, 0.5f);
+    EXPECT_EQ(view.camera->verticalFov, 0.5f);
 }
 
 TEST(ExtractScene, ReusedViewDropsThePreviousFrame) {

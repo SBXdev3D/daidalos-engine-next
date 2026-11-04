@@ -34,13 +34,19 @@ struct FrameData {
     float3 ambientBelow;  // Ambient light from below; ambient comes from above.
     uint occlusionTexture; // Half-resolution ambient occlusion, or kNoTexture.
     float2 screenTexel;    // One pixel of the frame, in texture coordinates.
-    float nearPlane;       // Of the camera: with reverse-Z at infinity, view depth is nearPlane / depth.
+    float nearPlane;       // Of the camera: LinearDepth turns a depth into meters.
     uint clusterBuffer;    // For each cluster, the first of its lights in clusterLightBuffer, and their count.
     float3 cameraForward;
     float clusterSliceScale; // A depth's slice is log(depth / nearPlane) * clusterSliceScale.
     uint clusterLightBuffer; // Indices into lightBuffer.
-    uint3 padding;
+    float farPlane;          // Nothing is drawn beyond it: the view distance.
+    uint2 padding;
 };
+
+// Meters in front of the camera, from a reverse-Z depth: 1 at the near plane, 0 at the far plane.
+float LinearDepth(FrameData frame, float depth) {
+    return frame.nearPlane * frame.farPlane / (depth * (frame.farPlane - frame.nearPlane) + frame.nearPlane);
+}
 
 // Matches renderer/src/LightClusters.hpp.
 static const uint kClusterColumns = 16;

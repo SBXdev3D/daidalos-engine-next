@@ -19,6 +19,18 @@
 
 namespace daidalos::renderer {
 
+/// How the edges of what is drawn are smoothed (ADR-0026).
+enum class Antialiasing {
+    Off,
+    /// Fast approximate antialiasing, a pass over the final image.
+    Fxaa,
+    /// Multisampling, with 2, 4 or 8 samples per pixel: geometry edges only, at a higher cost. Devices
+    /// that support fewer samples use their most.
+    Msaa2,
+    Msaa4,
+    Msaa8,
+};
+
 struct RendererConfig {
     /// Enables the Vulkan validation layers if they are installed.
     bool validation = false;
@@ -31,6 +43,15 @@ struct RendererConfig {
     float normalStrength = 1.0f;
     /// Darkens the ambient light in creases and corners (ADR-0024).
     bool ambientOcclusion = true;
+    /// Spot lights with a shadow map, from 0 to kMaxShadowedLights: the nearest that ask for one.
+    std::uint32_t shadowLights = 4;
+    /// Texels across each light's shadow map, from 256 to 4096.
+    std::uint32_t shadowResolution = 1024;
+    /// Radians across the view, for cameras that set no field of view of their own.
+    float fieldOfView = glm::radians(90.0f);
+    /// Meters: farther, nothing is drawn or lit.
+    float viewDistance = 150.0f;
+    Antialiasing antialiasing = Antialiasing::Fxaa;
 };
 
 /// How long a pass took on the GPU.
@@ -71,6 +92,10 @@ public:
     void SetExposure(float exposure);
     void SetNormalStrength(float strength);
     void SetAmbientOcclusion(bool enabled);
+    /// From the next frame; see RendererConfig.
+    void SetFieldOfView(float radians);
+    void SetViewDistance(float meters);
+    void SetAntialiasing(Antialiasing antialiasing);
 
     /// GPU time of each pass of a recent frame, which the GPU finished a frame or two ago. Empty on a
     /// device without timestamps, and for the first frames.

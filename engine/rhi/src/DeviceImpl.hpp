@@ -56,6 +56,7 @@ struct TextureData {
     std::uint32_t mipLevels = 1;
     Format format = Format::Undefined;
     TextureUsage usage = TextureUsage::None;
+    std::uint32_t samples = 1;
     TextureState state = TextureState::Undefined;
     std::uint32_t bindlessIndex = 0;
 };

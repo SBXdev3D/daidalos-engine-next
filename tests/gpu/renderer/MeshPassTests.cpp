@@ -386,6 +386,92 @@ TEST_F(MeshPassTest, SpotLightCastsTheShadowOfWhatStandsInItsWay) {
     EXPECT_GT(Pixel(20, 32).r, 100);
 }
 
+namespace {
+
+// The spot light and the scene of SpotLightCastsTheShadowOfWhatStandsInItsWay.
+renderer::Light ShadowTestLight() {
+    return {.type = renderer::LightType::Spot,
+            .position = {3.0f, 0.0f, 5.0f},
+            .direction = glm::normalize(glm::vec3(-3.0f, 0.0f, -5.0f)),
+            .range = 20.0f,
+            .falloff = 1.0f,
+            .innerAngle = glm::radians(40.0f),
+            .outerAngle = glm::radians(45.0f),
+            .castsShadows = true};
+}
+
+} // namespace
+
+TEST_F(MeshPassTest, ShadowAtlasGrowsWithTheNumberOfShadowedLights) {
+    // Nine shadows take a grid of three by three. Five dim lights nearer the camera, which ask for a
+    // shadow too, push the test light to the sixth tile: the middle of the second row.
+    m_pass.reset();
+    core::Result<MeshPass> pass =
+        MeshPass::Create(Device(), kColorFormat, kDepthFormat, {.shadowLights = 9, .shadowResolution = 256});
+    ASSERT_TRUE(pass.has_value());
+    m_pass.emplace(std::move(*pass));
+    const MeshHandle floor = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
+    const MeshHandle panel = Mesh(MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 1.0f));
+    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
+    SceneView view = LitView(TestCamera(), {floor, glm::mat4(1.0f), white}, ShadowTestLight());
+    view.draws.push_back({.mesh = panel, .material = white});
+    for (int index = 0; index < 5; ++index) {
+        view.lights.push_back({.type = renderer::LightType::Spot,
+                               .position = {0.0f, 0.0f, 5.5f + 0.1f * static_cast<float>(index)},
+                               .direction = {0.0f, 0.0f, 1.0f},
+                               .color = glm::vec3(0.001f),
+                               .range = 1.0f,
+                               .outerAngle = glm::radians(10.0f),
+                               .castsShadows = true});
+    }
+    Render(view);
+    EXPECT_LT(Pixel(20, 32).r, 10);  // In the shadow.
+    EXPECT_GT(Pixel(48, 32).r, 100); // In the light.
+}
+
+TEST_F(MeshPassTest, NoShadowedLightsLetsEveryLightThrough) {
+    m_pass.reset();
+    core::Result<MeshPass> pass = MeshPass::Create(Device(), kColorFormat, kDepthFormat, {.shadowLights = 0});
+    ASSERT_TRUE(pass.has_value());
+    m_pass.emplace(std::move(*pass));
+    const MeshHandle floor = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
+    const MeshHandle panel = Mesh(MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 1.0f));
+    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
+    SceneView view = LitView(TestCamera(), {floor, glm::mat4(1.0f), white}, ShadowTestLight());
+    view.draws.push_back({.mesh = panel, .material = white});
+    Render(view);
+    EXPECT_GT(Pixel(20, 32).r, 100);
+}
+
+TEST_F(MeshPassTest, NothingIsDrawnBeyondTheViewDistance) {
+    // A quad 5 m in front of the camera: drawn within 6 m, not within 4 m.
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
+    const SceneView view{TestCamera(), {{mesh, glm::mat4(1.0f), Material({1.0f, 0.0f, 0.0f})}}};
+    m_pass->SetViewDistance(6.0f);
+    Render(view);
+    EXPECT_FALSE(IsBackground(32, 32));
+    m_pass->SetViewDistance(4.0f);
+    Render(view);
+    EXPECT_TRUE(IsBackground(32, 32));
+}
+
+TEST_F(MeshPassTest, CameraWithoutAFieldOfViewUsesTheRenderersAcrossTheView) {
+    // A quad 2 m wide at 5 m: 90 degrees across a square view show 10 m, so it fills a fifth of the width;
+    // 30 degrees show 2.68 m, so its edges are near the sides.
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
+    CameraView camera = TestCamera();
+    camera.verticalFov.reset();
+    const SceneView view{camera, {{mesh, glm::mat4(1.0f), Material({1.0f, 0.0f, 0.0f})}}};
+    m_pass->SetFieldOfView(glm::radians(90.0f));
+    Render(view);
+    EXPECT_FALSE(IsBackground(32, 32));
+    EXPECT_TRUE(IsBackground(16, 32));
+    m_pass->SetFieldOfView(glm::radians(30.0f));
+    Render(view);
+    EXPECT_FALSE(IsBackground(16, 32));
+    EXPECT_TRUE(IsBackground(2, 32));
+}
+
 TEST_F(MeshPassTest, AmbientOcclusionDarkensACreaseAndNotAnOpenWall) {
     // A back wall facing the camera, and a side wall standing out of it at x = -1, from y = 0 to 2. Along
     // the line where they meet, the hemisphere above the back wall is half closed; far to the right, open.

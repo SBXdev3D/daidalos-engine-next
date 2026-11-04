@@ -60,6 +60,15 @@ TEST_F(WindowTest, HasRequestedSizeAndTitle) {
     EXPECT_FALSE(window.IsMinimized());
 }
 
+TEST_F(WindowTest, GoesFullscreenAndBack) {
+    Window window = CreateWindow({.fullscreen = true});
+    EXPECT_TRUE(window.IsFullscreen());
+    window.SetFullscreen(false);
+    EXPECT_FALSE(window.IsFullscreen());
+    window.SetFullscreen(true);
+    EXPECT_TRUE(window.IsFullscreen());
+}
+
 TEST_F(WindowTest, SetTitleChangesTitle) {
     Window window = CreateWindow();
 

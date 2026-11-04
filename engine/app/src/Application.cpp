@@ -7,7 +7,10 @@
 #include <daidalos/core/Profile.hpp>
 #include <daidalos/platform/CrashHandler.hpp>
 
+#include <glm/trigonometric.hpp>
+
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <format>
 #include <thread>
@@ -29,6 +32,37 @@ constexpr bool kValidationByDefault = false;
 #else
 constexpr bool kValidationByDefault = true;
 #endif
+
+float FieldOfViewRadians(const core::CVar<double>& degrees) {
+    return glm::radians(static_cast<float>(std::clamp(degrees.Get(), 30.0, 150.0)));
+}
+
+float ViewDistanceMeters(const core::CVar<double>& meters) {
+    return static_cast<float>(std::max(meters.Get(), 1.0));
+}
+
+/// The mode named by renderer.antialiasing; an unknown name keeps the default, with a warning once.
+renderer::Antialiasing AntialiasingMode(const core::CVar<std::string>& cvar) {
+    const std::string& name = cvar.Get();
+    constexpr std::array<std::pair<std::string_view, renderer::Antialiasing>, 5> kModes{{
+        {"off", renderer::Antialiasing::Off},
+        {"fxaa", renderer::Antialiasing::Fxaa},
+        {"msaa2", renderer::Antialiasing::Msaa2},
+        {"msaa4", renderer::Antialiasing::Msaa4},
+        {"msaa8", renderer::Antialiasing::Msaa8},
+    }};
+    for (const auto& [modeName, mode] : kModes) {
+        if (name == modeName) {
+            return mode;
+        }
+    }
+    static std::string reported;
+    if (reported != name) {
+        reported = name;
+        DAI_LOG_WARNING(kModule, "Unknown antialiasing '{}': use off, fxaa, msaa2, msaa4 or msaa8", name);
+    }
+    return renderer::Antialiasing::Fxaa;
+}
 
 core::Result<std::uint32_t> WindowDimension(const core::CVar<std::int64_t>& cvar) {
     const std::int64_t value = cvar.Get();
@@ -159,6 +193,8 @@ core::Result<void> Application::LoadConfiguration() {
                                                        "Main window width, in screen coordinates");
         m_windowHeight = m_cvars.Register<std::int64_t>("window.height", m_config.window.height,
                                                         "Main window height, in screen coordinates");
+        m_fullscreen = m_cvars.Register<bool>("window.fullscreen", m_config.window.fullscreen,
+                                              "Cover the display without borders, at its own resolution");
         m_vsync = m_cvars.Register<bool>("renderer.vsync", true, "Synchronize presentation with the display");
         m_exposure = m_cvars.Register<double>("renderer.exposure", 1.0, "Multiplies the light before tonemapping");
         m_anisotropy = m_cvars.Register<std::int64_t>(
@@ -167,23 +203,41 @@ core::Result<void> Application::LoadConfiguration() {
                                                     "Darken the ambient light in creases and corners");
         m_normalStrength = m_cvars.Register<double>(
             "renderer.normal_strength", 1.0, "Multiplies the relief of normal maps: 0 flattens them, 1 as authored");
+        m_shadowLights = m_cvars.Register<std::int64_t>(
+            "renderer.shadow_lights", 4, "Spot lights with a shadow, the nearest, from 0 to 16, read at startup");
+        m_shadowResolution = m_cvars.Register<std::int64_t>(
+            "renderer.shadow_resolution", 1024, "Texels across each light's shadow map, 256 to 4096, read at startup");
+        m_fieldOfView = m_cvars.Register<double>(
+            "view.fov", 90.0, "Degrees across the view, from 30 to 150, for cameras without their own");
+        m_viewDistance =
+            m_cvars.Register<double>("view.distance", 150.0, "Meters to the far plane: farther, nothing is drawn");
+        m_antialiasing = m_cvars.Register<std::string>("renderer.antialiasing", "fxaa",
+                                                       "Smoothing of edges: off, fxaa, msaa2, msaa4 or msaa8");
         m_validation = m_cvars.Register<bool>("renderer.validation", kValidationByDefault,
                                               "Enable the Vulkan validation layers, read at startup");
         m_volume = m_cvars.Register<double>("audio.volume", 1.0, "Overall volume, from 0 to 1, read at startup");
         m_effectsVolume = m_cvars.Register<double>("audio.effects", 1.0, "Volume of sound effects, read at startup");
         m_musicVolume = m_cvars.Register<double>("audio.music", 1.0, "Volume of music, read at startup");
+        m_mouseSensitivity =
+            m_cvars.Register<double>("input.mouse_sensitivity", 0.0025, "Radians of turn per mouse unit");
     }
 
-    if (!m_config.configFile.empty()) {
-        if (core::Result<void> loaded = m_cvars.LoadConfigFile(m_config.configFile); loaded) {
-            DAI_LOG_INFO(kModule, "Configuration loaded from '{}'", m_config.configFile.generic_string());
+    for (const std::filesystem::path& configFile : m_config.configFiles) {
+        const std::filesystem::path path =
+            configFile.is_relative() ? platform::ExecutableDirectory() / configFile : configFile;
+        if (core::Result<void> loaded = m_cvars.LoadConfigFile(path); loaded) {
+            DAI_LOG_INFO(kModule, "Configuration loaded from '{}'", path.generic_string());
         } else if (loaded.error().code == core::ErrorCode::NotFound) {
-            DAI_LOG_INFO(kModule, "No configuration file '{}', using defaults", m_config.configFile.generic_string());
+            DAI_LOG_INFO(kModule, "No configuration file '{}', using defaults", path.generic_string());
         } else {
             return loaded;
         }
     }
     return m_cvars.ApplyCommandLine(m_config.arguments);
+}
+
+float Application::MouseSensitivity() const {
+    return m_mouseSensitivity ? static_cast<float>(m_mouseSensitivity->Get()) : 0.0025f;
 }
 
 core::Result<void> Application::CreateMainWindow() {
@@ -198,6 +252,7 @@ core::Result<void> Application::CreateMainWindow() {
     }
     config.width = *width;
     config.height = *height;
+    config.fullscreen = m_fullscreen->Get();
     config.vulkan = m_config.rendering;
 
     DAI_TRY_ASSIGN(platform::Window window, platform::Window::Create(*m_platform, config));
@@ -225,14 +280,22 @@ core::Result<void> Application::CreateRenderer() {
     if (!m_config.rendering) {
         return {};
     }
-    DAI_TRY_ASSIGN(renderer::Renderer created,
-                   renderer::Renderer::Create(*m_window, {.validation = m_validation->Get(),
-                                                          .vsync = m_vsync->Get(),
-                                                          .exposure = static_cast<float>(m_exposure->Get()),
-                                                          .anisotropy = static_cast<float>(
-                                                              std::clamp<std::int64_t>(m_anisotropy->Get(), 1, 16)),
-                                                          .normalStrength = static_cast<float>(m_normalStrength->Get()),
-                                                          .ambientOcclusion = m_ambientOcclusion->Get()}));
+    DAI_TRY_ASSIGN(
+        renderer::Renderer created,
+        renderer::Renderer::Create(
+            *m_window,
+            {.validation = m_validation->Get(),
+             .vsync = m_vsync->Get(),
+             .exposure = static_cast<float>(m_exposure->Get()),
+             .anisotropy = static_cast<float>(std::clamp<std::int64_t>(m_anisotropy->Get(), 1, 16)),
+             .normalStrength = static_cast<float>(m_normalStrength->Get()),
+             .ambientOcclusion = m_ambientOcclusion->Get(),
+             .shadowLights = static_cast<std::uint32_t>(std::clamp<std::int64_t>(m_shadowLights->Get(), 0, 16)),
+             .shadowResolution =
+                 static_cast<std::uint32_t>(std::clamp<std::int64_t>(m_shadowResolution->Get(), 256, 4096)),
+             .fieldOfView = FieldOfViewRadians(*m_fieldOfView),
+             .viewDistance = ViewDistanceMeters(*m_viewDistance),
+             .antialiasing = AntialiasingMode(*m_antialiasing)}));
     m_renderer.emplace(std::move(created));
     return {};
 }
@@ -269,10 +332,14 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     };
 #endif
 
+    m_window->SetFullscreen(m_fullscreen->Get());
     m_renderer->SetVsync(m_vsync->Get());
     m_renderer->SetExposure(static_cast<float>(m_exposure->Get()));
     m_renderer->SetNormalStrength(static_cast<float>(m_normalStrength->Get()));
     m_renderer->SetAmbientOcclusion(m_ambientOcclusion->Get());
+    m_renderer->SetFieldOfView(FieldOfViewRadians(*m_fieldOfView));
+    m_renderer->SetViewDistance(ViewDistanceMeters(*m_viewDistance));
+    m_renderer->SetAntialiasing(AntialiasingMode(*m_antialiasing));
     core::Result<void> rendered = m_renderer->Render(m_scene, overlay);
     if (rendered && !overlayResult) {
         rendered = std::move(overlayResult);

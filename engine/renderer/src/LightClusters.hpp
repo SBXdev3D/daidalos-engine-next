@@ -18,13 +18,11 @@ namespace daidalos::renderer {
 
 /// Clustered light assignment, on the CPU (ADR-0008, amended). The view is cut into kClusterColumns by
 /// kClusterRows tiles of the screen, and each tile into kClusterSlices slices of depth, spaced
-/// exponentially from the near plane to kClusterFar. A pixel reads the lights of its cluster only.
+/// exponentially from the near plane to the far plane. A pixel reads the lights of its cluster only.
 inline constexpr std::uint32_t kClusterColumns = 16;
 inline constexpr std::uint32_t kClusterRows = 9;
 inline constexpr std::uint32_t kClusterSlices = 24;
 inline constexpr std::uint32_t kClusterCount = kClusterColumns * kClusterRows * kClusterSlices;
-/// Meters. Farther pixels use the last slice.
-inline constexpr float kClusterFar = 128.0f;
 
 /// The camera the clusters follow.
 struct ClusterCamera {
@@ -34,6 +32,8 @@ struct ClusterCamera {
     /// Width / height.
     float aspect = 1.0f;
     float nearPlane = 0.1f;
+    /// Nothing is drawn beyond it, and lights beyond it are left out.
+    float farPlane = 128.0f;
 };
 
 struct LightClusters {
@@ -50,12 +50,12 @@ struct LightClusters {
 void AssignLightsToClusters(std::span<const Light> lights, const ClusterCamera& camera, LightClusters& clusters);
 
 /// The depth slice of a view depth (meters in front of the camera), as the shader computes it.
-[[nodiscard]] std::uint32_t ClusterSlice(float viewDepth, float nearPlane);
+[[nodiscard]] std::uint32_t ClusterSlice(float viewDepth, float nearPlane, float farPlane);
 
 /// The cluster of a point in camera space, as the shader finds it from the pixel and the depth.
 [[nodiscard]] std::uint32_t ClusterOf(const glm::vec3& viewPoint, const ClusterCamera& camera);
 
 /// The scale of the depth slices in the shader: slice = log(viewDepth / nearPlane) * scale.
-[[nodiscard]] float ClusterSliceScale(float nearPlane);
+[[nodiscard]] float ClusterSliceScale(float nearPlane, float farPlane);
 
 } // namespace daidalos::renderer

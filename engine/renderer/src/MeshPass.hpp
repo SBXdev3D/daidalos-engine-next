@@ -28,11 +28,22 @@ struct FrameTargets {
     rhi::TextureHandle occlusion;
 };
 
+/// What the mesh pass is created with.
+struct MeshPassSettings {
+    /// Spot lights with a shadow map, up to kMaxShadowedLights, in an atlas with as many tiles.
+    std::uint32_t shadowLights = 4;
+    /// Texels across each shadow map.
+    std::uint32_t shadowResolution = 1024;
+    /// Samples per pixel of the targets of the pre-pass and the mesh pass.
+    std::uint32_t samples = 1;
+};
+
 /// Owns the meshes, the materials and the pipelines that draw them. It works on any target, so that
 /// tests can run it without a window. The Device must outlive it.
 class MeshPass {
 public:
-    static core::Result<MeshPass> Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
+    static core::Result<MeshPass> Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat,
+                                         const MeshPassSettings& settings = {});
 
     MeshPass(MeshPass&& other) noexcept;
     MeshPass& operator=(MeshPass&& other) = delete;
@@ -48,6 +59,10 @@ public:
 
     /// Normals of the pre-pass: world normals, times 0.5 plus 0.5.
     static constexpr rhi::Format kNormalFormat = rhi::Format::Rgba8Unorm;
+
+    /// Rebuilds the pipelines of the pre-pass and the mesh pass for targets with this many samples per
+    /// pixel. On failure the current pipelines stay in use.
+    [[nodiscard]] core::Result<void> SetSamples(std::uint32_t samples);
 
     /// Replaces the shaders of the mesh pass. The pre-pass uses the same vertex shader, so that both
     /// compute the same depth. On failure the current pipelines stay in use.
@@ -71,6 +86,10 @@ public:
 
     /// Multiplies the tilt of every normal map, from the next Prepare.
     void SetNormalStrength(float strength) { m_normalStrength = strength; }
+    /// Radians across the view, for cameras without a field of view, from the next Prepare.
+    void SetFieldOfView(float radians) { m_fieldOfView = radians; }
+    /// Meters to the far plane, from the next Prepare: farther meshes and lights are skipped.
+    void SetViewDistance(float meters) { m_viewDistance = meters; }
 
 private:
     struct Mesh {
@@ -79,6 +98,8 @@ private:
         /// Joints and weights of each vertex, read by the vertex shader. Null for a rigid mesh.
         rhi::BufferHandle skin;
         std::uint32_t indexCount = 0;
+        /// A sphere around the vertices, in the mesh's space: center and radius.
+        glm::vec4 bounds{0.0f};
     };
     struct Material {
         bool doubleSided = false;
@@ -99,7 +120,7 @@ private:
         std::uint64_t clusterLightCapacity = 0;
     };
 
-    MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
+    MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat, const MeshPassSettings& settings);
 
     [[nodiscard]] core::Result<void> CreateShadowResources();
     /// The pipelines of the pre-pass and the mesh pass, one-sided and double-sided.
@@ -127,6 +148,16 @@ private:
     rhi::PipelineHandle m_shadowPipeline;
     /// Every shadow map of a frame, side by side.
     rhi::TextureHandle m_shadowAtlas;
+    std::uint32_t m_shadowLights;
+    std::uint32_t m_shadowTileSize;
+    /// Tiles across the atlas, which is square.
+    std::uint32_t m_shadowGrid;
+    std::uint32_t m_samples;
+    /// The shaders of the mesh pass, to rebuild its pipelines.
+    std::vector<std::uint32_t> m_vertexShader;
+    std::vector<std::uint32_t> m_fragmentShader;
+    float m_fieldOfView = glm::radians(90.0f);
+    float m_viewDistance = 150.0f;
     core::SlotPool<Mesh, MeshTag> m_meshes;
     /// The index of a handle is also its index in the material table of the GPU.
     core::SlotPool<Material, MaterialTag> m_materials;
@@ -144,6 +175,8 @@ private:
         /// Index in the view.
         std::uint32_t draw;
         bool castsShadows;
+        /// Within the view distance; otherwise the draw only casts shadows.
+        bool visible;
     };
     /// The frame that Prepare filled, if any. Its instances follow m_sorted.
     FrameSlot* m_prepared = nullptr;
@@ -156,8 +189,10 @@ private:
 };
 
 /// The lights that get a shadow map: spot lights that ask for one, nearest to the camera first, at most
-/// max of them. Returns their indices in the view.
-[[nodiscard]] std::vector<std::uint32_t> ChooseShadowedLights(std::span<const Light> lights, const glm::vec3& camera,
-                                                              std::size_t max);
+/// max of them, and none whose light stops short of maxDistance from the camera. Returns their indices in
+/// the view.
+[[nodiscard]] std::vector<std::uint32_t>
+ChooseShadowedLights(std::span<const Light> lights, const glm::vec3& camera, std::size_t max,
+                     float maxDistance = std::numeric_limits<float>::infinity());
 
 } // namespace daidalos::renderer

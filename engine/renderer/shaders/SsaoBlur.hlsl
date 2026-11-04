@@ -9,7 +9,7 @@
 
 float ViewDepth(FrameData frame, float2 uv) {
     const float depth = g_textures[g_ao.depthTexture].SampleLevel(g_samplers[kSamplerNearestClamp], uv, 0.0).r;
-    return depth > 0.0 ? frame.nearPlane / depth : 1.0e6;
+    return depth > 0.0 ? LinearDepth(frame, depth) : 1.0e6;
 }
 
 float4 PSMain(float4 position : SV_Position) : SV_Target {

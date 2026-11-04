@@ -252,7 +252,7 @@ TEST_F(ApplicationTest, ConfigFileSetsWindowSizeAndCommandLineWins) {
         std::ofstream file(path, std::ios::binary);
         file << "window.width 400\nwindow.height 300\n";
     }
-    m_config.configFile = path;
+    m_config.configFiles = {path};
     m_config.arguments = {"+window.height", "100"};
     Application app(m_config);
 
@@ -263,8 +263,26 @@ TEST_F(ApplicationTest, ConfigFileSetsWindowSizeAndCommandLineWins) {
     EXPECT_EQ(m_handler.windowSize, (platform::Extent{400, 100}));
 }
 
+TEST_F(ApplicationTest, LaterConfigFileWinsAndMissingOnesAreSkipped) {
+    const std::filesystem::path engine = std::filesystem::temp_directory_path() / "daidalos_app_engine.cfg";
+    const std::filesystem::path game = std::filesystem::temp_directory_path() / "daidalos_app_game.cfg";
+    {
+        std::ofstream(engine, std::ios::binary) << "window.width 400\nwindow.height 300\n";
+        std::ofstream(game, std::ios::binary) << "window.height 250\n";
+    }
+    m_config.configFiles = {engine, std::filesystem::temp_directory_path() / "daidalos_missing_app.cfg", game};
+    Application app(m_config);
+
+    const core::Result<void> result = app.Run(m_handler);
+    std::filesystem::remove(engine);
+    std::filesystem::remove(game);
+
+    ASSERT_TRUE(result.has_value()) << core::Format(result.error());
+    EXPECT_EQ(m_handler.windowSize, (platform::Extent{400, 250}));
+}
+
 TEST_F(ApplicationTest, MissingConfigFileUsesDefaults) {
-    m_config.configFile = std::filesystem::temp_directory_path() / "daidalos_missing_app.cfg";
+    m_config.configFiles = {std::filesystem::temp_directory_path() / "daidalos_missing_app.cfg"};
     Application app(m_config);
 
     ASSERT_TRUE(app.Run(m_handler).has_value());

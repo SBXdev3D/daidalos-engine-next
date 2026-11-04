@@ -18,8 +18,8 @@ namespace daidalos::renderer {
 namespace {
 
 /// Where a slice starts, in meters from the camera.
-float SliceDepth(std::uint32_t slice, float nearPlane) {
-    return nearPlane * std::pow(kClusterFar / nearPlane, static_cast<float>(slice) / kClusterSlices);
+float SliceDepth(std::uint32_t slice, float nearPlane, float farPlane) {
+    return nearPlane * std::pow(farPlane / nearPlane, static_cast<float>(slice) / kClusterSlices);
 }
 
 /// The box in camera space around a cluster: its tile of the screen between two depths.
@@ -65,12 +65,12 @@ glm::vec2 Tangents(const ClusterCamera& camera) {
 
 } // namespace
 
-float ClusterSliceScale(float nearPlane) {
-    return static_cast<float>(kClusterSlices) / std::log(kClusterFar / nearPlane);
+float ClusterSliceScale(float nearPlane, float farPlane) {
+    return static_cast<float>(kClusterSlices) / std::log(farPlane / nearPlane);
 }
 
-std::uint32_t ClusterSlice(float viewDepth, float nearPlane) {
-    const float slice = std::log(std::max(viewDepth, nearPlane) / nearPlane) * ClusterSliceScale(nearPlane);
+std::uint32_t ClusterSlice(float viewDepth, float nearPlane, float farPlane) {
+    const float slice = std::log(std::max(viewDepth, nearPlane) / nearPlane) * ClusterSliceScale(nearPlane, farPlane);
     return std::min(static_cast<std::uint32_t>(std::max(slice, 0.0f)), kClusterSlices - 1);
 }
 
@@ -84,7 +84,7 @@ std::uint32_t ClusterOf(const glm::vec3& viewPoint, const ClusterCamera& camera)
         std::clamp((x * 0.5f + 0.5f) * kClusterColumns, 0.0f, static_cast<float>(kClusterColumns - 1)));
     const auto row = static_cast<std::uint32_t>(
         std::clamp((0.5f - y * 0.5f) * kClusterRows, 0.0f, static_cast<float>(kClusterRows - 1)));
-    return ClusterIndex(column, row, ClusterSlice(depth, camera.nearPlane));
+    return ClusterIndex(column, row, ClusterSlice(depth, camera.nearPlane, camera.farPlane));
 }
 
 void AssignLightsToClusters(std::span<const Light> lights, const ClusterCamera& camera, LightClusters& clusters) {
@@ -97,17 +97,15 @@ void AssignLightsToClusters(std::span<const Light> lights, const ClusterCamera& 
         const Light& light = lights[index];
         const glm::vec3 center = glm::vec3(camera.view * glm::vec4(light.position, 1.0f));
         const float depth = -center.z;
-        if (depth + light.range < camera.nearPlane) {
-            continue; // Entirely behind the camera.
+        if (depth + light.range < camera.nearPlane || depth - light.range > camera.farPlane) {
+            continue; // Entirely behind the camera, or beyond the far plane.
         }
-        // Only the slices that the light's sphere can reach. The first and last slices reach to the near
-        // plane and to infinity.
-        const std::uint32_t first = ClusterSlice(depth - light.range, camera.nearPlane);
-        const std::uint32_t last = ClusterSlice(depth + light.range, camera.nearPlane);
+        // Only the slices that the light's sphere can reach. The first slice reaches to the camera.
+        const std::uint32_t first = ClusterSlice(depth - light.range, camera.nearPlane, camera.farPlane);
+        const std::uint32_t last = ClusterSlice(depth + light.range, camera.nearPlane, camera.farPlane);
         for (std::uint32_t slice = first; slice <= last; ++slice) {
-            const float sliceNear = slice == 0 ? 0.0f : SliceDepth(slice, camera.nearPlane);
-            const float sliceFar = slice == kClusterSlices - 1 ? std::max(kClusterFar, depth + light.range)
-                                                               : SliceDepth(slice + 1, camera.nearPlane);
+            const float sliceNear = slice == 0 ? 0.0f : SliceDepth(slice, camera.nearPlane, camera.farPlane);
+            const float sliceFar = SliceDepth(slice + 1, camera.nearPlane, camera.farPlane);
             for (std::uint32_t row = 0; row < kClusterRows; ++row) {
                 for (std::uint32_t column = 0; column < kClusterColumns; ++column) {
                     if (SphereTouchesBox(center, light.range, ClusterBox(column, row, sliceNear, sliceFar, tangents))) {

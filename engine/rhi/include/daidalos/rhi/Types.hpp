@@ -121,6 +121,9 @@ struct TextureDesc {
     Format format = Format::Undefined;
     TextureUsage usage = TextureUsage::None;
     std::uint32_t mipLevels = 1;
+    /// Samples per pixel: 1, or up to DeviceInfo::maxSamples for a multisampled target, which shaders
+    /// cannot sample and which has one mip level. Rendering resolves it into a single-sample texture.
+    std::uint32_t samples = 1;
     std::string name;
 };
 
@@ -184,6 +187,8 @@ struct GraphicsPipelineDesc {
     bool depthWrite = true;
     CullMode cull = CullMode::Back;
     BlendMode blend = BlendMode::Opaque;
+    /// Samples per pixel of the targets it draws into.
+    std::uint32_t samples = 1;
     std::string name;
 };
 

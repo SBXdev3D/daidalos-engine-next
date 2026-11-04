@@ -27,8 +27,7 @@ TEST(ChooseShadowedLights, NearestSpotLightsThatAskForOneFirst) {
 
 TEST(ChooseShadowedLights, KeepsTheBudget) {
     const std::vector<Light> lights{Spot(9.0f), Spot(1.0f), Spot(5.0f), Spot(3.0f), Spot(7.0f), Spot(2.0f)};
-    EXPECT_EQ(renderer::ChooseShadowedLights(lights, glm::vec3(0.0f), renderer::kMaxShadowedLights),
-              (std::vector<std::uint32_t>{1, 5, 3, 2}));
+    EXPECT_EQ(renderer::ChooseShadowedLights(lights, glm::vec3(0.0f), 4), (std::vector<std::uint32_t>{1, 5, 3, 2}));
 }
 
 TEST(ChooseShadowedLights, SkipsPointLightsAndLightsWithoutShadows) {

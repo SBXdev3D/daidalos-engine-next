@@ -7,6 +7,8 @@ dai_add_module(NAME renderer
         include/daidalos/renderer/SceneView.hpp
         src/AmbientOcclusionPass.cpp
         src/AmbientOcclusionPass.hpp
+        src/FxaaPass.cpp
+        src/FxaaPass.hpp
         src/LightClusters.cpp
         src/LightClusters.hpp
         src/Material.cpp
@@ -26,7 +28,7 @@ dai_add_module(NAME renderer
 
 dai_add_shaders(TARGET daidalos_renderer
     SOURCES shaders/Mesh.hlsl shaders/Prepass.hlsl shaders/ShadowMap.hlsl shaders/Ssao.hlsl shaders/SsaoBlur.hlsl
-        shaders/Tonemap.hlsl shaders/ParticleDraw.hlsl
+        shaders/Tonemap.hlsl shaders/ParticleDraw.hlsl shaders/Fxaa.hlsl
     COMPUTE shaders/ParticleEmit.hlsl shaders/ParticleSimulate.hlsl shaders/ParticleFinish.hlsl shaders/ParticleSort.hlsl
     INCLUDES shaders/AmbientOcclusion.hlsli shaders/MeshCommon.hlsli shaders/MeshTypes.hlsli shaders/Particles.hlsli)
 

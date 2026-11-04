@@ -13,6 +13,7 @@
 #include <glm/trigonometric.hpp>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -21,7 +22,8 @@ namespace daidalos::scene {
 
 /// ECS component: the entity's WorldTransform places the camera, which looks down its local -Z.
 struct Camera {
-    float verticalFov = glm::radians(60.0f);
+    /// Radians from the bottom of the view to the top. Without one, the engine's view.fov applies.
+    std::optional<float> verticalFov;
     float nearPlane = 0.1f;
 };
 

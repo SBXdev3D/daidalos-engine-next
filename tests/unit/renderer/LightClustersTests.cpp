@@ -121,7 +121,21 @@ TEST(LightClusters, LightsListOnlyTheClustersNearThem) {
 }
 
 TEST(LightClusters, SlicesGrowWithDepthAndStopAtTheLast) {
-    EXPECT_EQ(renderer::ClusterSlice(0.1f, 0.1f), 0U);
-    EXPECT_LT(renderer::ClusterSlice(1.0f, 0.1f), renderer::ClusterSlice(10.0f, 0.1f));
-    EXPECT_EQ(renderer::ClusterSlice(1000.0f, 0.1f), renderer::kClusterSlices - 1);
+    EXPECT_EQ(renderer::ClusterSlice(0.1f, 0.1f, 128.0f), 0U);
+    EXPECT_LT(renderer::ClusterSlice(1.0f, 0.1f, 128.0f), renderer::ClusterSlice(10.0f, 0.1f, 128.0f));
+    EXPECT_EQ(renderer::ClusterSlice(1000.0f, 0.1f, 128.0f), renderer::kClusterSlices - 1);
+}
+
+TEST(LightClusters, LightBeyondTheFarPlaneReachesNoCluster) {
+    // At the origin, looking down -Z.
+    ClusterCamera camera = TestCamera();
+    camera.view = glm::mat4(1.0f);
+    camera.farPlane = 50.0f;
+    const std::vector<Light> lights{{.position = {0.0f, 0.0f, -60.0f}, .range = 5.0f},
+                                    {.position = {0.0f, 0.0f, -52.0f}, .range = 5.0f}};
+    LightClusters clusters;
+    renderer::AssignLightsToClusters(lights, camera, clusters);
+    // Only the second light, whose sphere crosses the far plane, is listed.
+    EXPECT_FALSE(clusters.lightIndices.empty());
+    EXPECT_EQ(std::ranges::count(clusters.lightIndices, 0U), 0);
 }

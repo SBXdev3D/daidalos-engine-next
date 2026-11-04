@@ -60,6 +60,10 @@ core::Result<Window> Window::Create(Platform& platform, const WindowConfig& conf
     if (config.vulkan) {
         flags |= SDL_WINDOW_VULKAN;
     }
+    if (config.fullscreen) {
+        // Without a display mode, SDL covers the display at its desktop resolution.
+        flags |= SDL_WINDOW_FULLSCREEN;
+    }
 
     SDL_Window* window =
         SDL_CreateWindow(config.title.c_str(), static_cast<int>(config.width), static_cast<int>(config.height), flags);
@@ -110,6 +114,21 @@ void Window::SetMouseCaptured(bool captured) {
 
 void Window::SetTitle(std::string_view title) {
     SDL_SetWindowTitle(m_impl->window, std::string(title).c_str());
+}
+
+bool Window::IsFullscreen() const {
+    return (SDL_GetWindowFlags(m_impl->window) & SDL_WINDOW_FULLSCREEN) != 0;
+}
+
+void Window::SetFullscreen(bool fullscreen) {
+    if (IsFullscreen() == fullscreen) {
+        return;
+    }
+    if (!SDL_SetWindowFullscreen(m_impl->window, fullscreen)) {
+        DAI_LOG_WARNING(kModule, "Cannot change to {}: {}", fullscreen ? "fullscreen" : "a window", SDL_GetError());
+        return;
+    }
+    SDL_SyncWindow(m_impl->window);
 }
 
 void Window::SetSize(Extent size) {
