@@ -54,6 +54,7 @@ With my acquired knowledge and with the help of Claude Code, I decided to redo e
 | 023 | [Corners and creases](posts/023-corners-and-creases.md) | Progress, Phase 7.3 | Draft, 1 passage for me to write |
 | 024 | [Smoke and sparks](posts/024-smoke-and-sparks.md) | Progress, Phase 7.4 | Draft, 1 passage for me to write |
 | 025 | [Settings, and smoother edges](posts/025-settings.md) | Progress, engine settings and antialiasing | Draft, 1 passage for me to write |
+| 026 | [A HUD of its own](posts/026-a-hud-of-its-own.md) | Progress, Phase 8.1 | Draft, 1 passage for me to write |
 
 ## Layout
 

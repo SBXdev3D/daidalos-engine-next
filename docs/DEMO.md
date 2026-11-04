@@ -33,7 +33,7 @@ flowchart LR
 | 5: Scene | The level in the new engine, background loading, restart, doors, pickups, red card, darkness | Done |
 | 6: Physics, audio and animation | Walking with collisions, jumps, crouching, ladders and solid doors, sound, skinned zombies and turning fans, hitscan handgun and shotgun, zombies that hunt, wounds and death | Done |
 | 7: Modern rendering | Real lights replacing the fog, the flashlight's shadow, rotating alarms, normal maps, ambient occlusion, particles for smoke, blood and green fog | 7.1 to 7.4 done: lights, alarms, normal maps, shadows, ambient occlusion, particles |
-| 8: GUI | The game's own HUD, crosshair, menus and loading screen | |
+| 8: GUI | The game's own HUD, crosshair, menus and loading screen | 8.1 done: HUD and crosshair in every build |
 | 9: AI, cinematics, optimization | Security camera, opening camera flight, better zombie navigation, culling | |
 
 Zombies come earlier than the roadmap's AI phase, because a shooter with no one to shoot is not a demo. Their state machine belongs to the game, and Phase 9 only adds what they turn out to lack.
