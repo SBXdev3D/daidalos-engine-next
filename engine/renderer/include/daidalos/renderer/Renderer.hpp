@@ -10,6 +10,7 @@
 #include <daidalos/renderer/Primitives.hpp>
 #include <daidalos/renderer/SceneView.hpp>
 #include <daidalos/rhi/Device.hpp>
+#include <daidalos/ui/Canvas.hpp>
 
 #include <functional>
 #include <memory>
@@ -101,9 +102,11 @@ public:
     /// device without timestamps, and for the first frames.
     [[nodiscard]] std::span<const PassTime> GpuTimes() const;
 
-    /// Draws one frame, following the window's size. A minimized window draws nothing. An error means
-    /// that the device is unusable and the application should stop.
-    [[nodiscard]] core::Result<void> Render(const SceneView& view, const OverlayRecorder& overlay = {});
+    /// Draws one frame, following the window's size: the scene, then the canvas if there is one, then
+    /// the overlay. A minimized window draws nothing. An error means that the device is unusable and the
+    /// application should stop.
+    [[nodiscard]] core::Result<void> Render(const SceneView& view, const ui::Canvas* canvas = nullptr,
+                                            const OverlayRecorder& overlay = {});
 
     [[nodiscard]] rhi::Device& Device();
     [[nodiscard]] rhi::Format ColorFormat() const;

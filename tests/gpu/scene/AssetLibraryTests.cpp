@@ -93,6 +93,24 @@ TEST_F(AssetLibraryTest, MissingModelIsNotFound) {
     EXPECT_EQ(model.error().code, core::ErrorCode::NotFound);
 }
 
+TEST_F(AssetLibraryTest, FontIsBakedOnceAndUploaded) {
+    AssetLibrary library(*m_renderer, DAI_PROJECT_ASSET_DIR);
+    const core::Result<const ui::Font*> font = library.LoadFont("Fonts/Rajdhani-Medium.ttf");
+    ASSERT_TRUE(font.has_value()) << core::Format(font.error());
+    EXPECT_FALSE((*font)->atlas.IsNull());
+    EXPECT_NE((*font)->data.Find(U'A'), nullptr);
+    const core::Result<const ui::Font*> again = library.LoadFont("Fonts/Rajdhani-Medium.ttf");
+    ASSERT_TRUE(again.has_value());
+    EXPECT_EQ(*again, *font);
+}
+
+TEST_F(AssetLibraryTest, MissingFontIsNotFound) {
+    AssetLibrary library(*m_renderer, kAssets);
+    const core::Result<const ui::Font*> font = library.LoadFont("no-such-font.ttf");
+    ASSERT_FALSE(font.has_value());
+    EXPECT_EQ(font.error().code, core::ErrorCode::NotFound);
+}
+
 TEST_F(AssetLibraryTest, ReleasedAssetsAreSkippedByLaterFrames) {
     ecs::World world;
     const ecs::Entity camera = world.Create();
