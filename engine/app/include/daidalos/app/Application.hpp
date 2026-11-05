@@ -16,6 +16,7 @@
 #include <daidalos/renderer/Renderer.hpp>
 #include <daidalos/renderer/SceneView.hpp>
 #include <daidalos/scene/Scene.hpp>
+#include <daidalos/ui/Canvas.hpp>
 #if DAI_DEV_TOOLS
 #include <daidalos/debugui/DebugUi.hpp>
 #endif
@@ -116,6 +117,9 @@ public:
     [[nodiscard]] const input::InputState& Input() const noexcept { return m_input; }
     /// Valid between OnStart and OnStop, when ApplicationConfig::rendering is set.
     [[nodiscard]] renderer::Renderer& Renderer();
+    /// The game's interface for this frame, begun again before each frame's updates and drawn over the
+    /// scene (ADR-0027). Empty without ApplicationConfig::rendering.
+    [[nodiscard]] ui::Canvas& Canvas() noexcept { return m_canvas; }
 #if DAI_DEV_TOOLS
     /// The overlay, or null without ApplicationConfig::rendering. Valid between OnStart and OnStop.
     [[nodiscard]] debugui::DebugUi* DebugOverlay() noexcept { return m_debugUi ? &*m_debugUi : nullptr; }
@@ -176,6 +180,7 @@ private:
     bool m_scenePending = false;
     bool m_looping = false;
     renderer::SceneView m_scene;
+    ui::Canvas m_canvas;
     input::InputState m_input;
     std::optional<core::Error> m_failure;
     bool m_quitRequested = false;

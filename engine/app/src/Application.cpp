@@ -340,7 +340,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_renderer->SetFieldOfView(FieldOfViewRadians(*m_fieldOfView));
     m_renderer->SetViewDistance(ViewDistanceMeters(*m_viewDistance));
     m_renderer->SetAntialiasing(AntialiasingMode(*m_antialiasing));
-    core::Result<void> rendered = m_renderer->Render(m_scene, overlay);
+    core::Result<void> rendered = m_renderer->Render(m_scene, &m_canvas, overlay);
     if (rendered && !overlayResult) {
         rendered = std::move(overlayResult);
     }
@@ -408,6 +408,10 @@ void Application::MainLoop(IApplicationHandler& handler) {
                     m_currentScene->RunFixedStep(timer.Config().fixedStep);
                 }
             }
+        }
+        if (m_renderer.has_value()) {
+            const platform::Extent pixels = m_window->PixelSize();
+            m_canvas.Begin({pixels.width, pixels.height});
         }
 #if DAI_DEV_TOOLS
         if (m_debugUi.has_value()) {

@@ -4,6 +4,8 @@ dai_add_app(NAME sandbox
         src/Combat.hpp
         src/Factory.cpp
         src/Factory.hpp
+        src/Hud.cpp
+        src/Hud.hpp
         src/Main.cpp
     DEPS
         daidalos::app

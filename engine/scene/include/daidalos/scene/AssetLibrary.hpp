@@ -12,6 +12,7 @@
 #include <daidalos/renderer/Renderer.hpp>
 #include <daidalos/resources/Cache.hpp>
 #include <daidalos/scene/Components.hpp>
+#include <daidalos/ui/Font.hpp>
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
@@ -97,6 +98,10 @@ public:
     void LoadModelAsync(std::string_view path, core::WorkerPool& workers,
                         std::function<void(core::Result<const Model*>)> done);
 
+    /// Returns a font baked into a distance field atlas (ADR-0027), loading it the first time. The
+    /// pointer lives as long as the library.
+    [[nodiscard]] core::Result<const ui::Font*> LoadFont(std::string_view path);
+
     [[nodiscard]] std::size_t ModelCount() const { return m_models.Size(); }
     [[nodiscard]] std::size_t TextureCount() const { return m_textures.Size(); }
 
@@ -127,6 +132,7 @@ private:
     std::filesystem::path m_root;
     resources::Cache<Model> m_models;
     resources::Cache<rhi::TextureHandle> m_textures;
+    resources::Cache<ui::Font> m_fonts;
     std::vector<renderer::MeshHandle> m_meshes;
     std::vector<renderer::MaterialHandle> m_materials;
     std::vector<renderer::ParticleEffectHandle> m_particleEffects;

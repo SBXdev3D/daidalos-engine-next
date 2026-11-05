@@ -13,6 +13,7 @@ sandbox.log
 # Assets downloaded by scripts/fetch_sample_assets.py
 /assets/*/
 !/assets/Factory/
+!/assets/Fonts/
 
 # vcpkg
 /vcpkg_installed/

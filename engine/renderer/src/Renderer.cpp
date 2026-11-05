@@ -24,6 +24,7 @@
 #include "MeshPass.hpp"
 #include "ParticlePass.hpp"
 #include "ShaderCompiler.hpp"
+#include "UiPass.hpp"
 
 namespace daidalos::renderer {
 
@@ -34,8 +35,9 @@ constexpr rhi::Format kDepthFormat = rhi::Format::D32Float;
 /// Lighting is computed in HDR, then tonemapped into the swapchain (ADR-0022).
 constexpr rhi::Format kHdrFormat = rhi::Format::Rgba16Float;
 /// The passes timed on the GPU, in order: each ends at a timestamp, after the one at the start.
-constexpr std::array<std::string_view, 9> kTimedPasses{"Shadows",   "Prepass", "Occlusion",    "Simulation", "Meshes",
-                                                       "Particles", "Tonemap", "Antialiasing", "Overlay"};
+constexpr std::array<std::string_view, 10> kTimedPasses{"Shadows",   "Prepass",   "Occlusion", "Simulation",
+                                                        "Meshes",    "Particles", "Tonemap",   "Antialiasing",
+                                                        "Interface", "Overlay"};
 
 // Matches TonemapPushConstants in shaders/Tonemap.hlsl.
 struct TonemapPushConstants {
@@ -62,6 +64,7 @@ struct Renderer::Impl {
         ambientOcclusionPass.reset();
         particlePass.reset();
         fxaaPass.reset();
+        uiPass.reset();
         device.DestroyPipeline(tonemap);
         device.DestroyPipeline(tonemapEncoded);
         device.DestroyTexture(tonemapped);
@@ -104,6 +107,7 @@ struct Renderer::Impl {
     std::optional<AmbientOcclusionPass> ambientOcclusionPass;
     std::optional<ParticlePass> particlePass;
     std::optional<FxaaPass> fxaaPass;
+    std::optional<UiPass> uiPass;
     bool ambientOcclusion = true;
     Antialiasing antialiasing = Antialiasing::Fxaa;
     /// Samples per pixel of the pre-pass and the mesh pass. With more than one, they draw into the
@@ -270,6 +274,8 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
                                          }));
     DAI_TRY_ASSIGN(FxaaPass fxaaPass, FxaaPass::Create(impl->device, impl->swapchain.ColorFormat()));
     impl->fxaaPass.emplace(std::move(fxaaPass));
+    DAI_TRY_ASSIGN(UiPass uiPass, UiPass::Create(impl->device, impl->swapchain.ColorFormat()));
+    impl->uiPass.emplace(std::move(uiPass));
     impl->antialiasing = config.antialiasing;
     impl->samples = impl->SamplesOf(config.antialiasing);
     DAI_TRY_ASSIGN(MeshPass meshPass, MeshPass::Create(impl->device, kHdrFormat, kDepthFormat,
@@ -357,7 +363,7 @@ std::span<const PassTime> Renderer::GpuTimes() const {
     return m_impl->gpuTimesValid ? std::span<const PassTime>(m_impl->gpuTimes) : std::span<const PassTime>();
 }
 
-core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder& overlay) {
+core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* canvas, const OverlayRecorder& overlay) {
     DAI_PROFILE_SCOPE("renderer::Render");
     Impl& impl = *m_impl;
 
@@ -469,6 +475,14 @@ core::Result<void> Renderer::Render(const SceneView& view, const OverlayRecorder
         commands.Transition(impl.tonemapped, rhi::TextureState::ShaderRead);
         commands.BeginRendering({.colorTarget = frame.backBuffer});
         impl.fxaaPass->Record(commands, impl.tonemapped, frame.extent);
+        commands.EndRendering();
+    }
+    commands.WriteTimestamp();
+
+    // The interface goes after the antialiasing, which would blur text, and under the debug overlay.
+    if (status && canvas != nullptr && !canvas->Commands().empty()) {
+        commands.BeginRendering({.colorTarget = frame.backBuffer});
+        status = impl.uiPass->Record(commands, *canvas);
         commands.EndRendering();
     }
     commands.WriteTimestamp();

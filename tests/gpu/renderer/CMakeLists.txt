@@ -4,6 +4,7 @@ dai_add_test(NAME daidalos_renderer_gpu_tests
         FxaaPassTests.cpp
         MeshPassTests.cpp
         RendererTests.cpp
+        UiPassTests.cpp
     DEPS
         daidalos::renderer)
 if(DAI_ENABLE_DEV_TOOLS)

@@ -10,6 +10,7 @@
 #include <glm/vec3.hpp>
 
 #include "Factory.hpp"
+#include "Hud.hpp"
 
 #if DAI_DEV_TOOLS
 #include <imgui.h>
@@ -84,6 +85,15 @@ public:
         m_assetRoot = FindAssetRoot();
         DAI_LOG_INFO("sandbox", "Assets in '{}'", m_assetRoot.string());
 
+        // The interface outlives the levels, which come and go with their scenes.
+        m_interfaceAssets = std::make_unique<scene::AssetLibrary>(app.Renderer(), m_assetRoot);
+        core::Result<sandbox::HudAssets> hud = sandbox::LoadHud(*m_interfaceAssets);
+        if (!hud) {
+            m_interfaceAssets.reset();
+            return tl::unexpected(std::move(hud.error()));
+        }
+        m_hud = *hud;
+
         // The first scene is current at once: the renderer's owner then releases it on any failure.
         app.SetScene(std::make_unique<scene::Scene>(app.Renderer(), m_assetRoot, app.Audio()));
         LoadLevel(app, *app.CurrentScene());
@@ -117,11 +127,13 @@ public:
             m_frames = 0;
             m_elapsed = core::Seconds::zero();
         }
-        DrawHud(app);
+        DrawInterface(app);
+        DrawDebugWindow(app);
     }
 
     void OnStop(app::Application& app) override {
         m_nextScene.reset();
+        m_interfaceAssets.reset();
         DAI_LOG_INFO("sandbox", "Stopping after {} frames, {} presented", m_totalFrames,
                      app.Renderer().Device().PresentedFrameCount());
         if (scene::Scene* current = app.CurrentScene()) {
@@ -140,6 +152,7 @@ private:
         target.Assets().LoadModelAsync(m_levelPath, app.Workers(),
                                        [this, &app, &target](core::Result<const scene::Model*> model) {
                                            m_loading = false;
+                                           m_levelShown = true;
                                            if (core::Result<void> built = Build(app, target, model); !built) {
                                                DAI_LOG_ERROR("sandbox", "{}", core::Format(built.error()));
                                                m_failure = std::move(built.error());
@@ -210,32 +223,23 @@ private:
         return {};
     }
 
-#if DAI_DEV_TOOLS
-    /// A cross in the middle of the screen, and red over everything for a moment after a wound.
-    static void DrawCrosshairAndWounds(const sandbox::Player& player) {
-        ImDrawList& draw = *ImGui::GetForegroundDrawList();
-        const ImVec2 size = ImGui::GetIO().DisplaySize;
-        if (player.hurtTime > 0.0f || player.dead) {
-            const float strength = player.dead ? 0.35f : 0.45f * player.hurtTime / 0.35f;
-            draw.AddRectFilled(ImVec2(0.0f, 0.0f), size, ImGui::GetColorU32(ImVec4(0.7f, 0.0f, 0.0f, strength)));
-        }
-        if (player.dead) {
+    /// The game's own interface, in every build.
+    void DrawInterface(app::Application& app) {
+        ui::Canvas& canvas = app.Canvas();
+        if (m_loading) {
+            sandbox::DrawLoading(canvas, m_hud, !m_levelShown);
             return;
         }
-        const ImVec2 center(size.x * 0.5f, size.y * 0.5f);
-        const ImU32 color = ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.8f));
-        constexpr float kGap = 3.0f;
-        constexpr float kLength = 7.0f;
-        draw.AddLine(ImVec2(center.x - kGap - kLength, center.y), ImVec2(center.x - kGap, center.y), color, 1.5f);
-        draw.AddLine(ImVec2(center.x + kGap, center.y), ImVec2(center.x + kGap + kLength, center.y), color, 1.5f);
-        draw.AddLine(ImVec2(center.x, center.y - kGap - kLength), ImVec2(center.x, center.y - kGap), color, 1.5f);
-        draw.AddLine(ImVec2(center.x, center.y + kGap), ImVec2(center.x, center.y + kGap + kLength), color, 1.5f);
+        if (scene::Scene* current = app.CurrentScene()) {
+            current->World().Each<sandbox::Player>([&](ecs::Entity /*entity*/, const sandbox::Player& player) {
+                sandbox::DrawHud(canvas, m_hud, player);
+            });
+        }
     }
-#endif
 
-    void DrawHud(app::Application& app) {
+    /// Frame rate, GPU times and help, in development builds.
+    void DrawDebugWindow(app::Application& app) {
 #if DAI_DEV_TOOLS
-        // A stand-in until the game has its own HUD (docs/DEMO.md).
         if (app.DebugOverlay() == nullptr) {
             return;
         }
@@ -249,21 +253,9 @@ private:
             }
             ImGui::TextUnformatted(line.c_str());
         }
-        if (m_loading) {
-            ImGui::TextUnformatted("Loading...");
-        }
         if (scene::Scene* current = app.CurrentScene()) {
             current->World().Each<sandbox::Player>([](ecs::Entity /*entity*/, const sandbox::Player& player) {
-                ImGui::Text("Health %d   Armor %d", player.health, player.armor);
-                const sandbox::WeaponState& weapon = player.weapons[static_cast<std::size_t>(player.weapon)];
-                ImGui::Text("%s %d / %d%s", player.weapon == sandbox::WeaponKind::Handgun ? "Handgun" : "Shotgun",
-                            weapon.magazine, weapon.reserve, player.reloading ? "   reloading" : "");
                 ImGui::Text("Zombies %d / %d", player.kills, player.zombieCount);
-                DrawCrosshairAndWounds(player);
-                ImGui::Text("%s%s", player.hasFlashlight ? "[Flashlight] " : "", player.hasRedCard ? "[Red card]" : "");
-                if (player.messageTime > 0.0f) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", player.message.c_str());
-                }
             });
         }
         ImGui::TextDisabled(
@@ -285,7 +277,11 @@ private:
     sandbox::Settings m_settings;
     std::string m_start;
     std::unique_ptr<scene::Scene> m_nextScene;
+    std::unique_ptr<scene::AssetLibrary> m_interfaceAssets;
+    sandbox::HudAssets m_hud;
     bool m_loading = false;
+    /// False until the first level is built: loading covers the screen until then.
+    bool m_levelShown = false;
     bool m_mouseCaptured = true;
     std::optional<core::Error> m_failure;
     std::optional<core::CVar<std::int64_t>> m_frameLimit;

@@ -51,6 +51,7 @@ AssetLibrary::~AssetLibrary() {
         m_renderer->DestroyMesh(mesh);
     }
     m_textures.ForEach([this](rhi::TextureHandle texture) { m_renderer->Device().DestroyTexture(texture); });
+    m_fonts.ForEach([this](const ui::Font& font) { m_renderer->Device().DestroyTexture(font.atlas); });
 }
 
 core::Result<AssetLibrary::DecodedModel> AssetLibrary::Decode(const std::filesystem::path& root,
@@ -205,6 +206,23 @@ core::Result<rhi::TextureHandle> AssetLibrary::LoadTexture(std::string_view path
     std::string key = std::format("{}|{}", identity, ToString(use));
     DecodedImage image{identity, std::move(key), resources::LoadImageFile(file, use)};
     return FindOrCreateTexture(image);
+}
+
+core::Result<const ui::Font*> AssetLibrary::LoadFont(std::string_view path) {
+    DAI_PROFILE_SCOPE("scene::LoadFont");
+    DAI_TRY_ASSIGN(std::string key, resources::NormalizeAssetPath(path));
+    if (const ui::Font* found = m_fonts.Find(key)) {
+        return found;
+    }
+    DAI_TRY_ASSIGN(std::filesystem::path file, resources::ResolveAssetPath(m_root, key));
+    const auto start = std::chrono::steady_clock::now();
+    DAI_TRY_ASSIGN(resources::FontData data, resources::LoadFontFile(file));
+    DAI_TRY_ASSIGN(rhi::TextureHandle atlas, ui::CreateFontAtlas(m_renderer->Device(), data, key));
+    DAI_LOG_INFO(
+        kModule, "Font '{}' baked in {} ms: {} glyphs, {}x{} atlas", key,
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count(),
+        data.glyphs.size(), data.atlasWidth, data.atlasHeight);
+    return &m_fonts.Insert(std::move(key), ui::Font{std::move(data), atlas});
 }
 
 core::Result<const Model*> AssetLibrary::LoadModel(std::string_view path) {
