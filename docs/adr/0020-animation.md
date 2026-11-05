@@ -20,7 +20,7 @@ Phase 6 needs zombies that wait, walk, strike and die, fans that turn, and a han
 
 - Animation adds no dependency. glTF files made by Blender or other tools play the same way as the converted ones.
 - A model with 20 joints costs 20 entities per instance. That is fine for tens of zombies, but hundreds of characters would want poses stored in one component.
-- Every joint matrix is computed and uploaded every frame, for every skinned mesh, even far away or out of view. Culling (Phase 9) should skip both.
+- Every joint matrix is computed and uploaded every frame, for every skinned mesh, even far away or out of view. Culling (Phase 10) should skip both.
 - Collisions and queries still use the bind pose of a skinned mesh. Hit boxes that follow joints come with weapons.
 - Two clips at most: there are no layers, such as running legs under a firing torso, and no additive clips.
 - Tangents are not skinned, because nothing reads them before normal mapping in Phase 7.

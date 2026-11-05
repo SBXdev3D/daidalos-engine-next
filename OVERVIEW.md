@@ -6,13 +6,13 @@
 **Initial target platform:** Windows  
 **Long-term target platforms:** Windows and Unix-like operating systems, including Linux  
 **Development environment:** Visual Studio 2022 and CMake, with cross-platform build support planned  
-**Rendering API:** Vulkan 1.3 on Windows and Linux (see ADR-0007)  
+**Rendering API:** Vulkan 1.3 on Windows and Linux (see ADR-0007); Vulkan 1.4 with mandatory hardware ray tracing from Phase 9 (see ADR-0028)  
 **Language standard:** C++20 (see ADR-0001)  
 **Licence:** CC BY-NC-SA 4.0 (see ADR-0013)  
 **Repository:** https://github.com/StephaneBX/daidalos-engine-next  
 **Decision records:** `docs/adr/`; coding and math conventions: `docs/CONVENTIONS.md`  
 **Development approach:** Modular architecture, incremental implementation, testable components, and AI-assisted development  
-**Current project status:** Phases 0 to 5 (foundation, platform and lifecycle, math, ECS and input, first renderer, resources and materials, scenes) are implemented; implementation proceeds through small, verifiable milestones, each of which improves the demo described in `docs/DEMO.md`
+**Current project status:** Phases 0 to 7 and step 8.1 (foundation to modern rendering, and the game's interface) are implemented; Phase 9 moves rendering to ray tracing (ADR-0028); implementation proceeds through small, verifiable milestones, each of which improves the demo described in `docs/DEMO.md`
 
 ---
 
@@ -879,6 +879,8 @@ It should provide a clean separation between:
 
 The renderer should not expose Vulkan implementation details to gameplay code.
 
+Sections 10.3 to 10.11 describe the rasterized renderer built in Phase 7. Phase 9 replaces its lighting with ray tracing, step by step (section 10.13, ADR-0028); each section is updated when its step lands.
+
 ## 10.2. Rendering hardware interface
 
 The RHI is responsible for abstracting the low-level graphics operations needed by the engine.
@@ -1052,6 +1054,14 @@ GPU execution
 ```
 
 This separation allows gameplay logic and scene organization to evolve independently of rendering implementation.
+
+---
+
+## 10.13. Ray-traced rendering
+
+From Phase 9 the renderer requires hardware ray tracing (ADR-0028). Rasterization keeps drawing the depth and normal prepass and the forward pass; ray queries and a reference path tracer provide shadows, indirect light, reflections and volumetric shadows. Lighting is fully dynamic, with no baking. The denoiser, radiance cache and ReSTIR samplers are the engine's own, written from the published papers.
+
+The plan in `docs/daidalos-engine-next-rendering-plan.md` describes the long-term target, including techniques deferred until measurements or content justify them.
 
 ---
 
@@ -1470,7 +1480,9 @@ The following table distinguishes candidate technologies from finalized decision
 | IDE | Visual Studio 2022 | Primary development environment |
 | Graphics API | Vulkan 1.3 | Decided, single backend (ADR-0007) |
 | GPU memory | Vulkan Memory Allocator | Decided (ADR-0007) |
-| Shaders | HLSL compiled with DXC to SPIR-V | Decided (ADR-0009) |
+| Shaders | HLSL compiled with DXC to SPIR-V | Decided (ADR-0009); replaced by Slang in Phase 9 (ADR-0028) |
+| Upscaling | FSR 2 (MIT) behind an engine interface | Decided for Phase 9 (ADR-0028) |
+| Denoising, radiance cache, many-light sampling | Own implementations | Decided (ADR-0028); NVIDIA RTX SDKs (NRD, SHaRC, RTXDI, DLSS) excluded by their licence |
 | Math | GLM | Decided (ADR-0005) |
 | Error handling | tl::expected | Decided (ADR-0003) |
 | Logging | spdlog | Decided, behind an engine facade |
@@ -1555,6 +1567,8 @@ Validation should include:
 - Backend-specific validation where available.
 
 Automated graphics tests render offscreen and compare against golden images with a tolerance. They run on software Vulkan implementations (lavapipe on Linux, SwiftShader on Windows) so that CI does not need a GPU, and the validation layers must report no errors.
+
+From Phase 9, ray-traced passes are compared with the reference path tracer (FLIP). SwiftShader has no ray tracing; lavapipe has it from Mesa 24.1. Tests that need ray tracing are skipped, with a message, on a device without it, and always run on the developer's GPU.
 
 ## 23.4. Build validation
 
@@ -1919,7 +1933,36 @@ Completion criteria:
 - Developer tools do not require gameplay code to access backend internals.
 - Runtime dependencies remain controlled.
 
-## Phase 9 — AI, Cinematics, and Indoor Optimization
+## Phase 9 — Ray-Traced Rendering
+
+**Goal:** Replace the rasterized lighting of Phase 7 with fully dynamic, ray-traced lighting (ADR-0028). The target is described in `docs/daidalos-engine-next-rendering-plan.md`; ADR-0028 records how the engine departs from it.
+
+Hardware ray tracing is mandatory and no raster fallback is kept: each step deletes the technique it replaces, and the game stays playable after every step. Each step is its own pull request:
+
+1. Vulkan 1.4, ray tracing required at device creation, every shader moved to Slang.
+2. A minimal render graph: automatic barriers, debug labels, per-pass GPU timings.
+3. Acceleration structures: compacted BLAS, refit for skinned meshes, TLAS rebuilt each frame.
+4. A reference path tracer, a Cornell box scene and golden-image tests against it.
+5. Ray-query shadows for every light, replacing the shadow atlas.
+6. Motion vectors (skinned meshes and particles included), jittered projection and TAA, replacing MSAA and FXAA.
+7. An own spatiotemporal denoiser behind `IDenoiser`; soft shadows.
+8. Diffuse global illumination: an own hash-grid radiance cache and a ray-traced bounce, replacing SSAO and the ambient term.
+9. Ray-traced reflections below a roughness threshold; glass.
+10. ReSTIR DI, with emissive triangles, and ReSTIR GI, replacing CPU light clustering.
+11. FSR 2 upscaling, auto-exposure, bloom, AgX tone mapping, HDR output.
+12. Froxel volumetric fog with ray-traced shadows, replacing exponential fog.
+
+Deferred until measurements justify them: meshlets, mesh shaders, the visibility buffer, Hi-Z occlusion, LODs, portals. Deferred until content needs them: layered material lobes, IES profiles, area lights. Out of scope: the neural rendering tier and NVIDIA's RTX SDKs (licence, see ADR-0028).
+
+Completion criteria:
+
+- The factory runs at 60 fps at 1080p on an RTX 3090.
+- No light leaks through the thin-wall test scene.
+- Real-time output matches the path tracer within a FLIP threshold on the test scenes.
+- Validation layers, synchronization validation included, report no errors.
+- Every pass reports its GPU time.
+
+## Phase 10 — AI, Cinematics, and Indoor Optimization
 
 **Goal:** Add higher-level engine capabilities.
 
@@ -1941,7 +1984,7 @@ Completion criteria:
 - Indoor visibility improvements are validated against a baseline.
 - Added complexity provides measurable or functional value.
 
-## Phase 10 — Linux Validation
+## Phase 11 — Linux Validation
 
 **Goal:** Validate the engine fully on Linux.
 
@@ -1959,7 +2002,7 @@ Completion criteria:
 - Platform-specific differences are contained in the platform layer.
 - No test is disabled on Linux without a documented reason.
 
-## Phase 11 — Editor and Production Readiness
+## Phase 12 — Editor and Production Readiness
 
 **Goal:** Make the engine practical for developing larger projects.
 
@@ -1997,6 +2040,7 @@ The following are planning estimates, not commitments.
 | Basic interactive scene | 30–60 hours | 10–20 weeks |
 | Physics, audio and animation integration | 70–130 hours | 23–43 weeks |
 | Advanced rendering | 100–180 hours | 33–60 weeks |
+| Ray-traced rendering | 250–500 hours | 83–167 weeks |
 | GUI and development tools | 50–100 hours | 17–33 weeks |
 | AI, cinematics, and indoor optimization | 40–100 hours | 13–33 weeks |
 | Linux validation | 20–50 hours | 7–17 weeks |
@@ -2217,7 +2261,13 @@ AI-assisted coding may introduce inconsistent naming, redundant abstractions, hi
 
 **Mitigation:** Use this document as a reference, inspect diffs, validate builds, and require explicit justification for substantial architectural changes.
 
-## 31.6. Integration risk
+## 31.6. Ray tracing complexity
+
+Ray-traced global illumination, denoising and resampling are research-grade techniques, and the engine implements its own.
+
+**Mitigation:** A reference path tracer before any real-time technique, image comparison against it, one small step per pull request, GPU timings on every pass. Only one GPU (an RTX 3090) is available, so AMD and Intel behaviour stays unverified.
+
+## 31.7. Integration risk
 
 Subsystems may work independently but fail when combined because of incompatible coordinate conventions, ownership rules, initialization order, or resource assumptions.
 
