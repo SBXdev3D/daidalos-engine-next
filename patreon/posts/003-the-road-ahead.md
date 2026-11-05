@@ -32,6 +32,6 @@ An engine has no natural finish line, which makes it dangerous for a solo develo
 
 ## The plan will change
 
-My estimates for all this are rough on purpose. At three hours a week, the original ranges added up to years. Then the first four phases went much faster than planned, as you'll see in the next post, but they were also the best-understood part. I'd rather re-estimate after each phase than pretend that I can see the end from here.
+I don't put dates on any of this. The first four phases went much faster than I expected, as you'll see in the next post, but they were also the best-understood part. I'd rather take stock after each phase than pretend that I can see the end from here.
 
 Whenever the plan changes, I'll tell you here, and why.

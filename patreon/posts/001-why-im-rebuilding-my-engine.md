@@ -37,9 +37,9 @@ The goal is an engine that covers everything a complete game needs: rendering, p
 
 ## The constraint that shapes everything
 
-I have about three hours a week for this project.
+I'm building this alone.
 
-That single number drives most of my technical decisions. An idea that is exciting but costs months of maintenance gets rejected. When a mature library solves a well-understood problem, I use it: SDL3 for windows today, Jolt for physics and miniaudio for sound later. I keep for myself the parts I want to understand deeply and control, such as the rendering layer and the entity system.
+That single fact drives most of my technical decisions. An idea that is exciting but costs months of maintenance gets rejected. When a mature library solves a well-understood problem, I use it: SDL3 for windows today, Jolt for physics and miniaudio for sound later. I keep for myself the parts I want to understand deeply and control, such as the rendering layer and the entity system.
 
 ## How I work: me and Claude Code
 

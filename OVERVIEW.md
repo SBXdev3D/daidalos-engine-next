@@ -46,7 +46,7 @@ The project has the following main objectives:
 8. Provide a reusable 2D GUI system for menus, HUDs, cursors, loading screens, and other in-game interfaces.
 9. Provide development and debugging tools, including an editor or editor-like application.
 10. Keep the architecture portable enough to support Windows and Unix-like platforms.
-11. Make the project maintainable by a single developer working approximately three hours per week.
+11. Make the project maintainable by a single developer.
 12. Use Claude Code as a development assistant without sacrificing correctness, architectural understanding, or code quality.
 
 ## 1.3. Guiding principles
@@ -186,9 +186,7 @@ Portal rendering should be considered an optional specialized system, introduced
 
 The project is expected to be developed primarily by one person.
 
-Development time is limited to approximately three hours per week.
-
-This constraint has major architectural consequences.
+This has major architectural consequences.
 
 The engine must prioritize:
 
@@ -1698,7 +1696,7 @@ Inspect installed versions, documentation, headers, and actual build behavior.
 
 The roadmap below describes a logical sequence, not a fixed calendar.
 
-Tasks should be adjusted according to actual repository state, technical discoveries, and available time.
+Tasks should be adjusted according to actual repository state and technical discoveries.
 
 ## Phase 0 — Repository and Build Foundation
 
@@ -2025,37 +2023,7 @@ The editor must grow according to actual development needs rather than attemptin
 
 ---
 
-# 27. Milestones and Time Estimates
-
-The project has a strict time constraint of approximately three hours per week.
-
-The following are planning estimates, not commitments.
-
-| Milestone | Indicative effort | Approximate elapsed time at 3 h/week |
-|---|---:|---:|
-| Minimal build and application foundation | 30–60 hours | 10–20 weeks |
-| ECS and transform foundation | 40–80 hours | 13–27 weeks |
-| First working renderer | 80–150 hours | 27–50 weeks |
-| Asset loading and basic materials | 40–80 hours | 13–27 weeks |
-| Basic interactive scene | 30–60 hours | 10–20 weeks |
-| Physics, audio and animation integration | 70–130 hours | 23–43 weeks |
-| Advanced rendering | 100–180 hours | 33–60 weeks |
-| Ray-traced rendering | 250–500 hours | 83–167 weeks |
-| GUI and development tools | 50–100 hours | 17–33 weeks |
-| AI, cinematics, and indoor optimization | 40–100 hours | 13–33 weeks |
-| Linux validation | 20–50 hours | 7–17 weeks |
-
-These ranges overlap conceptually in some areas and must not be summed mechanically into a precise project deadline.
-
-They also exclude or underrepresent the uncertainty associated with debugging graphics APIs, learning unfamiliar technologies, integrating dependencies, and reworking architectural decisions.
-
-The practical strategy is to define small milestones and update estimates after each completed phase.
-
-Claude Code may accelerate implementation, boilerplate creation, test writing, and repository exploration, but it does not eliminate the time needed for architectural decisions, debugging, integration, validation, and understanding.
-
----
-
-# 28. First Vertical Slice
+# 27. First Vertical Slice
 
 The first end-to-end milestone should be deliberately small.
 
@@ -2080,11 +2048,11 @@ Once this vertical slice works, replace hard-coded mesh data with loaded assets,
 
 ---
 
-# 29. Claude Code Operating Instructions
+# 28. Claude Code Operating Instructions
 
 These instructions are intended to guide all AI-assisted development on Daidalos Engine Next.
 
-## 29.1. Understand the repository before modifying it
+## 28.1. Understand the repository before modifying it
 
 Before making substantial changes:
 
@@ -2100,7 +2068,7 @@ Do not assume that the repository matches this document perfectly. The code may 
 
 When a discrepancy is found, report it and determine whether the document or implementation should change.
 
-## 29.2. Do not invent existing functionality
+## 28.2. Do not invent existing functionality
 
 Never claim that a module, class, test, build target, or feature already exists unless it has been verified in the repository.
 
@@ -2111,7 +2079,7 @@ Clearly distinguish between:
 - Proposed improvement.
 - Unresolved architectural decision.
 
-## 29.3. Prefer small changes
+## 28.3. Prefer small changes
 
 For each task:
 
@@ -2126,7 +2094,7 @@ For each task:
 
 Do not rewrite unrelated modules merely to make the code stylistically uniform.
 
-## 29.4. Ask before changing fundamental decisions
+## 28.4. Ask before changing fundamental decisions
 
 Do not silently change:
 
@@ -2143,7 +2111,7 @@ If a fundamental decision must change, explain the problem, the alternatives, an
 
 Small local decisions may be made independently when they follow established project principles.
 
-## 29.5. Verify library APIs
+## 28.5. Verify library APIs
 
 When using third-party libraries:
 
@@ -2154,7 +2122,7 @@ When using third-party libraries:
 - Keep dependency-specific details isolated.
 - Document non-obvious integration choices.
 
-## 29.6. Build and test honestly
+## 28.6. Build and test honestly
 
 Never claim that code compiles, tests pass, or a graphics feature works unless that result has been verified.
 
@@ -2162,7 +2130,7 @@ If the required toolchain, SDK, device, or runtime is unavailable, state what co
 
 A plausible implementation is not equivalent to a validated implementation.
 
-## 29.7. Maintain architectural consistency
+## 28.7. Maintain architectural consistency
 
 Before adding a class or subsystem, ask:
 
@@ -2175,7 +2143,7 @@ Before adding a class or subsystem, ask:
 - How can it be tested?
 - What is the simplest viable design?
 
-## 29.8. Preserve developer understanding
+## 28.8. Preserve developer understanding
 
 When implementing complex C++ or graphics functionality, provide concise explanations of:
 
@@ -2190,7 +2158,7 @@ Avoid generating large volumes of unexplained code.
 
 The goal is to help build a maintainable engine, not merely to produce code quickly.
 
-## 29.9. Update documentation
+## 28.9. Update documentation
 
 When a meaningful architectural decision is finalized:
 
@@ -2203,7 +2171,7 @@ Do not update the document merely to describe every minor code change.
 
 ---
 
-# 30. Definition of Done
+# 29. Definition of Done
 
 A task is not complete merely because source code has been generated.
 
@@ -2227,47 +2195,41 @@ For cross-platform changes, do not claim cross-platform correctness solely becau
 
 ---
 
-# 31. Project Risks
+# 30. Project Risks
 
 The principal project risks are:
 
-## 31.1. Scope expansion
+## 30.1. Scope expansion
 
 The combination of a custom renderer, two graphics APIs, ECS, physics, audio, AI, GUI, and editor tools can easily exceed the available development time.
 
 **Mitigation:** Prioritize a working vertical slice and implement only capabilities required by the next milestone.
 
-## 31.2. Graphics API complexity
+## 30.2. Graphics API complexity
 
 Vulkan requires careful handling of synchronization, resource lifetime, and explicit GPU operations.
 
 **Mitigation:** Use a single backend, Vulkan 1.3 features that simplify the API (dynamic rendering, synchronization2), validation layers in every Debug run, and a deferred-destruction queue from the first renderer.
 
-## 31.3. Excessive abstraction
+## 30.3. Excessive abstraction
 
 An attempt to support every future requirement can produce interfaces that are difficult to implement and debug.
 
 **Mitigation:** Introduce abstractions based on concrete requirements, especially for backend independence and resource ownership.
 
-## 31.4. Limited weekly time
-
-Context switching, setup, debugging, and documentation consume a significant fraction of a three-hour weekly schedule.
-
-**Mitigation:** Keep tasks small, preserve build instructions, maintain a clear next-action list, and finish sessions with a known working state.
-
-## 31.5. AI-generated architectural drift
+## 30.4. AI-generated architectural drift
 
 AI-assisted coding may introduce inconsistent naming, redundant abstractions, hidden dependencies, or code that compiles but does not follow the intended architecture.
 
 **Mitigation:** Use this document as a reference, inspect diffs, validate builds, and require explicit justification for substantial architectural changes.
 
-## 31.6. Ray tracing complexity
+## 30.5. Ray tracing complexity
 
 Ray-traced global illumination, denoising and resampling are research-grade techniques, and the engine implements its own.
 
 **Mitigation:** A reference path tracer before any real-time technique, image comparison against it, one small step per pull request, GPU timings on every pass. Only one GPU (an RTX 3090) is available, so AMD and Intel behaviour stays unverified.
 
-## 31.7. Integration risk
+## 30.6. Integration risk
 
 Subsystems may work independently but fail when combined because of incompatible coordinate conventions, ownership rules, initialization order, or resource assumptions.
 
@@ -2275,7 +2237,7 @@ Subsystems may work independently but fail when combined because of incompatible
 
 ---
 
-# 32. Immediate Next Steps
+# 31. Immediate Next Steps
 
 At the beginning of a development session, determine the current repository state before selecting the next task.
 
@@ -2298,7 +2260,7 @@ The initial objective is a minimal, reliable foundation that can be extended wit
 
 ---
 
-# 33. Final Project Philosophy
+# 32. Final Project Philosophy
 
 Daidalos Engine Next should be developed as a practical, maintainable engine rather than an attempt to reproduce the entire feature set of a commercial game engine.
 
@@ -2321,4 +2283,4 @@ When choosing between implementing infrastructure from scratch and using a matur
 
 When choosing between adding another feature and stabilizing the current milestone, prioritize stabilization.
 
-**The ultimate objective is to build a functional, extensible 3D engine that can support real game development while remaining feasible for a single developer working on a limited weekly schedule.**
+**The ultimate objective is to build a functional, extensible 3D engine that can support real game development while remaining feasible for a single developer.**

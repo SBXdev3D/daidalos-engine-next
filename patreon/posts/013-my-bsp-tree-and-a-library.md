@@ -34,7 +34,7 @@ About 2,400 lines of hand-written BSP code became 370, and that isn't a fair cou
 
 Visibility also went with the BSP tree. The old engine could skip what you can't see, and the new one doesn't cull anything yet. The plan is bounding volumes first, and anything fancier only if measurements justify it.
 
-With about three hours a week, I think it's the right trade.
+Working alone, I think it's the right trade.
 
 BSP trees have been with Daidalos from the start. The very first version, in 2008, already had one, in OpenGL and without shaders, and I wrote it myself, like everything else in it. The old engine kept the idea: each scene cut into convex zones, and a binary tree saying what is solid and what isn't. It's the technique of Doom, Quake and Half-Life, games set indoors where nothing gets destroyed, which is exactly what Daidalos is.
 
