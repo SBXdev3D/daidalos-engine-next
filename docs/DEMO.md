@@ -36,7 +36,7 @@ flowchart LR
 | 8: GUI | The game's own HUD, crosshair, menus and loading screen | 8.1 done: HUD and crosshair in every build |
 | 9: AI, cinematics, optimization | Security camera, opening camera flight, better zombie navigation, culling | |
 
-Zombies come earlier than the roadmap's AI phase, because a shooter with no one to shoot is not a demo. Their state machine belongs to the game, and Phase 9 only adds what they turn out to lack.
+Zombies come earlier than the roadmap's AI phase, because a shooter with no one to shoot is not a demo. Their state machine belongs to the game, and Phase 10 only adds what they turn out to lack.
 
 ## Where it should improve on the original
 

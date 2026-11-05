@@ -22,7 +22,7 @@ The sandbox also showed that lifetimes were wrong. It owned its `AssetLibrary` d
 
 - A loading level does not freeze the window, except for the moment when its GPU objects are created, which still happens in one go on the main thread.
 - A texture shared by two models is decoded twice and created once, because workers cannot look into the cache.
-- Levels cannot carry gameplay data beyond node names. The sandbox encodes attributes in those names, like `door;id=-5;radius=-1`, which is enough for one level and awkward for many. An editor (Phase 11), or glTF `extras`, is the way out.
+- Levels cannot carry gameplay data beyond node names. The sandbox encodes attributes in those names, like `door;id=-5;radius=-1`, which is enough for one level and awkward for many. An editor (Phase 12), or glTF `extras`, is the way out.
 - Entities cannot be saved. Nothing needs that yet.
 - A system added to a scene must not capture anything that dies before the scene.
 

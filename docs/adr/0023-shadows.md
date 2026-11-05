@@ -21,7 +21,7 @@ Since Phase 7.1 the factory has real lights, but they shine through walls. The r
 
 - In the factory's alarm hall, the four shadow maps take 0.28 to 0.37 ms of GPU time at 1280×720 on an RTX 3090 in Release, with every draw of the level drawn into each map.
 - A fifth lamp near the player lights through walls until it becomes one of the four nearest. Moving through the level can make a lamp's shadow appear or vanish.
-- Every draw is drawn into every shadow map, even far outside its cone: culling (Phase 9) should skip them.
+- Every draw is drawn into every shadow map, even far outside its cone: culling (Phase 10) should skip them.
 - The atlas costs 16 MiB of GPU memory, used or not.
 
 ## Alternatives considered

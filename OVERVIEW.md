@@ -6,13 +6,13 @@
 **Initial target platform:** Windows  
 **Long-term target platforms:** Windows and Unix-like operating systems, including Linux  
 **Development environment:** Visual Studio 2022 and CMake, with cross-platform build support planned  
-**Rendering API:** Vulkan 1.3 on Windows and Linux (see ADR-0007)  
+**Rendering API:** Vulkan 1.3 on Windows and Linux (see ADR-0007); Vulkan 1.4 with mandatory hardware ray tracing from Phase 9 (see ADR-0028)  
 **Language standard:** C++20 (see ADR-0001)  
 **Licence:** CC BY-NC-SA 4.0 (see ADR-0013)  
 **Repository:** https://github.com/StephaneBX/daidalos-engine-next  
 **Decision records:** `docs/adr/`; coding and math conventions: `docs/CONVENTIONS.md`  
 **Development approach:** Modular architecture, incremental implementation, testable components, and AI-assisted development  
-**Current project status:** Phases 0 to 5 (foundation, platform and lifecycle, math, ECS and input, first renderer, resources and materials, scenes) are implemented; implementation proceeds through small, verifiable milestones, each of which improves the demo described in `docs/DEMO.md`
+**Current project status:** Phases 0 to 7 and step 8.1 (foundation to modern rendering, and the game's interface) are implemented; Phase 9 moves rendering to ray tracing (ADR-0028); implementation proceeds through small, verifiable milestones, each of which improves the demo described in `docs/DEMO.md`
 
 ---
 
@@ -46,7 +46,7 @@ The project has the following main objectives:
 8. Provide a reusable 2D GUI system for menus, HUDs, cursors, loading screens, and other in-game interfaces.
 9. Provide development and debugging tools, including an editor or editor-like application.
 10. Keep the architecture portable enough to support Windows and Unix-like platforms.
-11. Make the project maintainable by a single developer working approximately three hours per week.
+11. Make the project maintainable by a single developer.
 12. Use Claude Code as a development assistant without sacrificing correctness, architectural understanding, or code quality.
 
 ## 1.3. Guiding principles
@@ -186,9 +186,7 @@ Portal rendering should be considered an optional specialized system, introduced
 
 The project is expected to be developed primarily by one person.
 
-Development time is limited to approximately three hours per week.
-
-This constraint has major architectural consequences.
+This has major architectural consequences.
 
 The engine must prioritize:
 
@@ -879,6 +877,8 @@ It should provide a clean separation between:
 
 The renderer should not expose Vulkan implementation details to gameplay code.
 
+Sections 10.3 to 10.11 describe the rasterized renderer built in Phase 7. Phase 9 replaces its lighting with ray tracing, step by step (section 10.13, ADR-0028); each section is updated when its step lands.
+
 ## 10.2. Rendering hardware interface
 
 The RHI is responsible for abstracting the low-level graphics operations needed by the engine.
@@ -1052,6 +1052,14 @@ GPU execution
 ```
 
 This separation allows gameplay logic and scene organization to evolve independently of rendering implementation.
+
+---
+
+## 10.13. Ray-traced rendering
+
+From Phase 9 the renderer requires hardware ray tracing (ADR-0028). Rasterization keeps drawing the depth and normal prepass and the forward pass; ray queries and a reference path tracer provide shadows, indirect light, reflections and volumetric shadows. Lighting is fully dynamic, with no baking. The denoiser, radiance cache and ReSTIR samplers are the engine's own, written from the published papers.
+
+The plan in `docs/daidalos-engine-next-rendering-plan.md` describes the long-term target, including techniques deferred until measurements or content justify them.
 
 ---
 
@@ -1470,7 +1478,9 @@ The following table distinguishes candidate technologies from finalized decision
 | IDE | Visual Studio 2022 | Primary development environment |
 | Graphics API | Vulkan 1.3 | Decided, single backend (ADR-0007) |
 | GPU memory | Vulkan Memory Allocator | Decided (ADR-0007) |
-| Shaders | HLSL compiled with DXC to SPIR-V | Decided (ADR-0009) |
+| Shaders | HLSL compiled with DXC to SPIR-V | Decided (ADR-0009); replaced by Slang in Phase 9 (ADR-0028) |
+| Upscaling | FSR 2 (MIT) behind an engine interface | Decided for Phase 9 (ADR-0028) |
+| Denoising, radiance cache, many-light sampling | Own implementations | Decided (ADR-0028); NVIDIA RTX SDKs (NRD, SHaRC, RTXDI, DLSS) excluded by their licence |
 | Math | GLM | Decided (ADR-0005) |
 | Error handling | tl::expected | Decided (ADR-0003) |
 | Logging | spdlog | Decided, behind an engine facade |
@@ -1555,6 +1565,8 @@ Validation should include:
 - Backend-specific validation where available.
 
 Automated graphics tests render offscreen and compare against golden images with a tolerance. They run on software Vulkan implementations (lavapipe on Linux, SwiftShader on Windows) so that CI does not need a GPU, and the validation layers must report no errors.
+
+From Phase 9, ray-traced passes are compared with the reference path tracer (FLIP). SwiftShader has no ray tracing; lavapipe has it from Mesa 24.1. Tests that need ray tracing are skipped, with a message, on a device without it, and always run on the developer's GPU.
 
 ## 23.4. Build validation
 
@@ -1684,7 +1696,7 @@ Inspect installed versions, documentation, headers, and actual build behavior.
 
 The roadmap below describes a logical sequence, not a fixed calendar.
 
-Tasks should be adjusted according to actual repository state, technical discoveries, and available time.
+Tasks should be adjusted according to actual repository state and technical discoveries.
 
 ## Phase 0 — Repository and Build Foundation
 
@@ -1919,7 +1931,36 @@ Completion criteria:
 - Developer tools do not require gameplay code to access backend internals.
 - Runtime dependencies remain controlled.
 
-## Phase 9 — AI, Cinematics, and Indoor Optimization
+## Phase 9 — Ray-Traced Rendering
+
+**Goal:** Replace the rasterized lighting of Phase 7 with fully dynamic, ray-traced lighting (ADR-0028). The target is described in `docs/daidalos-engine-next-rendering-plan.md`; ADR-0028 records how the engine departs from it.
+
+Hardware ray tracing is mandatory and no raster fallback is kept: each step deletes the technique it replaces, and the game stays playable after every step. Each step is its own pull request:
+
+1. Vulkan 1.4, ray tracing required at device creation, every shader moved to Slang.
+2. A minimal render graph: automatic barriers, debug labels, per-pass GPU timings.
+3. Acceleration structures: compacted BLAS, refit for skinned meshes, TLAS rebuilt each frame.
+4. A reference path tracer, a Cornell box scene and golden-image tests against it.
+5. Ray-query shadows for every light, replacing the shadow atlas.
+6. Motion vectors (skinned meshes and particles included), jittered projection and TAA, replacing MSAA and FXAA.
+7. An own spatiotemporal denoiser behind `IDenoiser`; soft shadows.
+8. Diffuse global illumination: an own hash-grid radiance cache and a ray-traced bounce, replacing SSAO and the ambient term.
+9. Ray-traced reflections below a roughness threshold; glass.
+10. ReSTIR DI, with emissive triangles, and ReSTIR GI, replacing CPU light clustering.
+11. FSR 2 upscaling, auto-exposure, bloom, AgX tone mapping, HDR output.
+12. Froxel volumetric fog with ray-traced shadows, replacing exponential fog.
+
+Deferred until measurements justify them: meshlets, mesh shaders, the visibility buffer, Hi-Z occlusion, LODs, portals. Deferred until content needs them: layered material lobes, IES profiles, area lights. Out of scope: the neural rendering tier and NVIDIA's RTX SDKs (licence, see ADR-0028).
+
+Completion criteria:
+
+- The factory runs at 60 fps at 1080p on an RTX 3090.
+- No light leaks through the thin-wall test scene.
+- Real-time output matches the path tracer within a FLIP threshold on the test scenes.
+- Validation layers, synchronization validation included, report no errors.
+- Every pass reports its GPU time.
+
+## Phase 10 — AI, Cinematics, and Indoor Optimization
 
 **Goal:** Add higher-level engine capabilities.
 
@@ -1941,7 +1982,7 @@ Completion criteria:
 - Indoor visibility improvements are validated against a baseline.
 - Added complexity provides measurable or functional value.
 
-## Phase 10 — Linux Validation
+## Phase 11 — Linux Validation
 
 **Goal:** Validate the engine fully on Linux.
 
@@ -1959,7 +2000,7 @@ Completion criteria:
 - Platform-specific differences are contained in the platform layer.
 - No test is disabled on Linux without a documented reason.
 
-## Phase 11 — Editor and Production Readiness
+## Phase 12 — Editor and Production Readiness
 
 **Goal:** Make the engine practical for developing larger projects.
 
@@ -1982,36 +2023,7 @@ The editor must grow according to actual development needs rather than attemptin
 
 ---
 
-# 27. Milestones and Time Estimates
-
-The project has a strict time constraint of approximately three hours per week.
-
-The following are planning estimates, not commitments.
-
-| Milestone | Indicative effort | Approximate elapsed time at 3 h/week |
-|---|---:|---:|
-| Minimal build and application foundation | 30–60 hours | 10–20 weeks |
-| ECS and transform foundation | 40–80 hours | 13–27 weeks |
-| First working renderer | 80–150 hours | 27–50 weeks |
-| Asset loading and basic materials | 40–80 hours | 13–27 weeks |
-| Basic interactive scene | 30–60 hours | 10–20 weeks |
-| Physics, audio and animation integration | 70–130 hours | 23–43 weeks |
-| Advanced rendering | 100–180 hours | 33–60 weeks |
-| GUI and development tools | 50–100 hours | 17–33 weeks |
-| AI, cinematics, and indoor optimization | 40–100 hours | 13–33 weeks |
-| Linux validation | 20–50 hours | 7–17 weeks |
-
-These ranges overlap conceptually in some areas and must not be summed mechanically into a precise project deadline.
-
-They also exclude or underrepresent the uncertainty associated with debugging graphics APIs, learning unfamiliar technologies, integrating dependencies, and reworking architectural decisions.
-
-The practical strategy is to define small milestones and update estimates after each completed phase.
-
-Claude Code may accelerate implementation, boilerplate creation, test writing, and repository exploration, but it does not eliminate the time needed for architectural decisions, debugging, integration, validation, and understanding.
-
----
-
-# 28. First Vertical Slice
+# 27. First Vertical Slice
 
 The first end-to-end milestone should be deliberately small.
 
@@ -2036,11 +2048,11 @@ Once this vertical slice works, replace hard-coded mesh data with loaded assets,
 
 ---
 
-# 29. Claude Code Operating Instructions
+# 28. Claude Code Operating Instructions
 
 These instructions are intended to guide all AI-assisted development on Daidalos Engine Next.
 
-## 29.1. Understand the repository before modifying it
+## 28.1. Understand the repository before modifying it
 
 Before making substantial changes:
 
@@ -2056,7 +2068,7 @@ Do not assume that the repository matches this document perfectly. The code may 
 
 When a discrepancy is found, report it and determine whether the document or implementation should change.
 
-## 29.2. Do not invent existing functionality
+## 28.2. Do not invent existing functionality
 
 Never claim that a module, class, test, build target, or feature already exists unless it has been verified in the repository.
 
@@ -2067,7 +2079,7 @@ Clearly distinguish between:
 - Proposed improvement.
 - Unresolved architectural decision.
 
-## 29.3. Prefer small changes
+## 28.3. Prefer small changes
 
 For each task:
 
@@ -2082,7 +2094,7 @@ For each task:
 
 Do not rewrite unrelated modules merely to make the code stylistically uniform.
 
-## 29.4. Ask before changing fundamental decisions
+## 28.4. Ask before changing fundamental decisions
 
 Do not silently change:
 
@@ -2099,7 +2111,7 @@ If a fundamental decision must change, explain the problem, the alternatives, an
 
 Small local decisions may be made independently when they follow established project principles.
 
-## 29.5. Verify library APIs
+## 28.5. Verify library APIs
 
 When using third-party libraries:
 
@@ -2110,7 +2122,7 @@ When using third-party libraries:
 - Keep dependency-specific details isolated.
 - Document non-obvious integration choices.
 
-## 29.6. Build and test honestly
+## 28.6. Build and test honestly
 
 Never claim that code compiles, tests pass, or a graphics feature works unless that result has been verified.
 
@@ -2118,7 +2130,7 @@ If the required toolchain, SDK, device, or runtime is unavailable, state what co
 
 A plausible implementation is not equivalent to a validated implementation.
 
-## 29.7. Maintain architectural consistency
+## 28.7. Maintain architectural consistency
 
 Before adding a class or subsystem, ask:
 
@@ -2131,7 +2143,7 @@ Before adding a class or subsystem, ask:
 - How can it be tested?
 - What is the simplest viable design?
 
-## 29.8. Preserve developer understanding
+## 28.8. Preserve developer understanding
 
 When implementing complex C++ or graphics functionality, provide concise explanations of:
 
@@ -2146,7 +2158,7 @@ Avoid generating large volumes of unexplained code.
 
 The goal is to help build a maintainable engine, not merely to produce code quickly.
 
-## 29.9. Update documentation
+## 28.9. Update documentation
 
 When a meaningful architectural decision is finalized:
 
@@ -2159,7 +2171,7 @@ Do not update the document merely to describe every minor code change.
 
 ---
 
-# 30. Definition of Done
+# 29. Definition of Done
 
 A task is not complete merely because source code has been generated.
 
@@ -2183,41 +2195,41 @@ For cross-platform changes, do not claim cross-platform correctness solely becau
 
 ---
 
-# 31. Project Risks
+# 30. Project Risks
 
 The principal project risks are:
 
-## 31.1. Scope expansion
+## 30.1. Scope expansion
 
 The combination of a custom renderer, two graphics APIs, ECS, physics, audio, AI, GUI, and editor tools can easily exceed the available development time.
 
 **Mitigation:** Prioritize a working vertical slice and implement only capabilities required by the next milestone.
 
-## 31.2. Graphics API complexity
+## 30.2. Graphics API complexity
 
 Vulkan requires careful handling of synchronization, resource lifetime, and explicit GPU operations.
 
 **Mitigation:** Use a single backend, Vulkan 1.3 features that simplify the API (dynamic rendering, synchronization2), validation layers in every Debug run, and a deferred-destruction queue from the first renderer.
 
-## 31.3. Excessive abstraction
+## 30.3. Excessive abstraction
 
 An attempt to support every future requirement can produce interfaces that are difficult to implement and debug.
 
 **Mitigation:** Introduce abstractions based on concrete requirements, especially for backend independence and resource ownership.
 
-## 31.4. Limited weekly time
-
-Context switching, setup, debugging, and documentation consume a significant fraction of a three-hour weekly schedule.
-
-**Mitigation:** Keep tasks small, preserve build instructions, maintain a clear next-action list, and finish sessions with a known working state.
-
-## 31.5. AI-generated architectural drift
+## 30.4. AI-generated architectural drift
 
 AI-assisted coding may introduce inconsistent naming, redundant abstractions, hidden dependencies, or code that compiles but does not follow the intended architecture.
 
 **Mitigation:** Use this document as a reference, inspect diffs, validate builds, and require explicit justification for substantial architectural changes.
 
-## 31.6. Integration risk
+## 30.5. Ray tracing complexity
+
+Ray-traced global illumination, denoising and resampling are research-grade techniques, and the engine implements its own.
+
+**Mitigation:** A reference path tracer before any real-time technique, image comparison against it, one small step per pull request, GPU timings on every pass. Only one GPU (an RTX 3090) is available, so AMD and Intel behaviour stays unverified.
+
+## 30.6. Integration risk
 
 Subsystems may work independently but fail when combined because of incompatible coordinate conventions, ownership rules, initialization order, or resource assumptions.
 
@@ -2225,7 +2237,7 @@ Subsystems may work independently but fail when combined because of incompatible
 
 ---
 
-# 32. Immediate Next Steps
+# 31. Immediate Next Steps
 
 At the beginning of a development session, determine the current repository state before selecting the next task.
 
@@ -2248,7 +2260,7 @@ The initial objective is a minimal, reliable foundation that can be extended wit
 
 ---
 
-# 33. Final Project Philosophy
+# 32. Final Project Philosophy
 
 Daidalos Engine Next should be developed as a practical, maintainable engine rather than an attempt to reproduce the entire feature set of a commercial game engine.
 
@@ -2271,4 +2283,4 @@ When choosing between implementing infrastructure from scratch and using a matur
 
 When choosing between adding another feature and stabilizing the current milestone, prioritize stabilization.
 
-**The ultimate objective is to build a functional, extensible 3D engine that can support real game development while remaining feasible for a single developer working on a limited weekly schedule.**
+**The ultimate objective is to build a functional, extensible 3D engine that can support real game development while remaining feasible for a single developer.**

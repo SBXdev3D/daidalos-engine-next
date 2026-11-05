@@ -7,7 +7,7 @@ images: [architecture.png, frame.png]
 
 # How the engine fits together
 
-Game engines tend to die the same way: everything ends up depending on everything else, until touching the audio code somehow breaks the shadows. With three hours a week, I can't afford that. So the first thing I designed wasn't a feature, it was a set of walls.
+Game engines tend to die the same way: everything ends up depending on everything else, until touching the audio code somehow breaks the shadows. Working alone, I can't afford that. So the first thing I designed wasn't a feature, it was a set of walls.
 
 ## A stack of modules
 

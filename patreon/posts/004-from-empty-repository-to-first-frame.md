@@ -50,7 +50,7 @@ The phase also brought a Dear ImGui debug overlay, drawn through my own renderin
 
 ## The elephant in the room
 
-My plan estimated roughly 150 to 290 hours for this stretch, which at three hours a week means a year or two. It landed in five days.
+My plan estimated roughly 150 to 290 hours of work for this stretch. It landed in five days.
 
 This is what working with Claude Code changes. It doesn't change who's accountable for the code, and I'm wary of reading too much into that figure: this is the most thoroughly documented part of any engine, and a lot of it hasn't faced real-world use yet. Harder questions are coming, where the answer isn't in any book.
 
