@@ -318,3 +318,36 @@ TEST(CVarCommandLine, LonePlusIsIgnored) {
     EXPECT_TRUE(registry.ApplyCommandLine(arguments).has_value());
     EXPECT_TRUE(registry.UnregisteredNames().empty());
 }
+
+TEST(CVarConfig, LinesKeepNamesValuesAndNumbers) {
+    const Result<std::vector<ConfigLine>> lines =
+        ParseConfigLines("# settings\nview.fov 75\n\n  window.title \"A # B\" # quoted\n", "user.cfg");
+    ASSERT_TRUE(lines.has_value()) << Format(lines.error());
+    ASSERT_EQ(lines->size(), 2u);
+    EXPECT_EQ((*lines)[0].name, "view.fov");
+    EXPECT_EQ((*lines)[0].value, "75");
+    EXPECT_EQ((*lines)[0].number, 2u);
+    EXPECT_EQ((*lines)[1].name, "window.title");
+    EXPECT_EQ((*lines)[1].value, "A # B");
+    EXPECT_EQ((*lines)[1].number, 4u);
+}
+
+TEST(CVarConfig, InvalidTextAppliesNothing) {
+    CVarRegistry registry;
+    const CVar<std::int64_t> width = registry.Register<std::int64_t>("window.width", 1280, "");
+    EXPECT_FALSE(registry.ParseConfig("window.width 800\nwindow.title \"open\n", "test.cfg").has_value());
+    EXPECT_EQ(width.Get(), 1280);
+}
+
+TEST(CVarConfig, FormattedLinesReadBack) {
+    for (const std::string_view value : {"75", "", "two words", "a#b", "msaa4", "0.0025"}) {
+        const std::string line = FormatConfigLine("some.name", value);
+        const Result<std::vector<ConfigLine>> lines = ParseConfigLines(line, "test");
+        ASSERT_TRUE(lines.has_value()) << line;
+        ASSERT_EQ(lines->size(), 1u) << line;
+        EXPECT_EQ((*lines)[0].name, "some.name");
+        EXPECT_EQ((*lines)[0].value, value) << line;
+    }
+    EXPECT_EQ(FormatConfigLine("view.fov", "90"), "view.fov 90");
+    EXPECT_EQ(FormatConfigLine("a.b", "x y"), "a.b \"x y\"");
+}

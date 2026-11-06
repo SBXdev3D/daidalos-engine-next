@@ -159,7 +159,8 @@ Result<void> CVarRegistry::Set(std::string_view name, std::string_view text) {
     return {};
 }
 
-Result<void> CVarRegistry::ParseConfig(std::string_view text, std::string_view sourceName) {
+Result<std::vector<ConfigLine>> ParseConfigLines(std::string_view text, std::string_view sourceName) {
+    std::vector<ConfigLine> lines;
     std::size_t lineNumber = 0;
     while (!text.empty()) {
         ++lineNumber;
@@ -198,9 +199,22 @@ Result<void> CVarRegistry::ParseConfig(std::string_view text, std::string_view s
                 return lineError(std::format("missing value for '{}'", name));
             }
         }
+        lines.push_back({std::string(name), std::string(value), lineNumber});
+    }
+    return lines;
+}
 
-        if (Result<void> result = Set(name, value); !result) {
-            return lineError(result.error().message);
+std::string FormatConfigLine(std::string_view name, std::string_view value) {
+    const bool quoted = value.empty() || value.find_first_of(" \t#") != std::string_view::npos;
+    return quoted ? std::format("{} \"{}\"", name, value) : std::format("{} {}", name, value);
+}
+
+Result<void> CVarRegistry::ParseConfig(std::string_view text, std::string_view sourceName) {
+    DAI_TRY_ASSIGN(const std::vector<ConfigLine> lines, ParseConfigLines(text, sourceName));
+    for (const ConfigLine& line : lines) {
+        if (Result<void> result = Set(line.name, line.value); !result) {
+            return MakeError(ErrorCode::ParseError, kModule,
+                             std::format("{}:{}: {}", sourceName, line.number, result.error().message));
         }
     }
     return {};

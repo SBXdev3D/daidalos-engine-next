@@ -31,6 +31,24 @@ concept CVarType =
 /// Formats a value the way it is written in config files: true/false, 42, 0.5, text.
 [[nodiscard]] std::string ToString(const CVarValue& value);
 
+/// One "name value" line of config text.
+struct ConfigLine {
+    std::string name;
+    /// Without its quotes.
+    std::string value;
+    /// From 1, for messages.
+    std::size_t number = 0;
+};
+
+/// Reads config text: one "name value" per line, '#' starts a comment, and a value in double quotes
+/// keeps its spaces (there are no escape sequences). sourceName appears in error messages. Fails at the
+/// first invalid line. Names are not checked here.
+[[nodiscard]] Result<std::vector<ConfigLine>> ParseConfigLines(std::string_view text, std::string_view sourceName);
+
+/// A line that ParseConfigLines reads back as this name and value: in double quotes when the value is
+/// empty or holds a space, a tab or '#'. Values cannot hold double quotes or line breaks.
+[[nodiscard]] std::string FormatConfigLine(std::string_view name, std::string_view value);
+
 /// A registered variable.
 struct CVarEntry {
     std::string name;
@@ -78,9 +96,8 @@ public:
     /// until that name is registered.
     Result<void> Set(std::string_view name, std::string_view text);
 
-    /// Applies config text: one "name value" per line, '#' starts a comment, and a value in double
-    /// quotes keeps its spaces (there are no escape sequences). sourceName appears in error messages.
-    /// Stops at the first invalid line.
+    /// Applies config text, as read by ParseConfigLines. Stops at the first invalid line, after applying
+    /// none of them if the text itself is invalid.
     Result<void> ParseConfig(std::string_view text, std::string_view sourceName);
 
     /// Reads a file and applies it with ParseConfig. Fails with NotFound if the file does not exist.
