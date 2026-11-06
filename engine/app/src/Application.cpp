@@ -13,6 +13,8 @@
 #include <array>
 #include <chrono>
 #include <format>
+#include <fstream>
+#include <iterator>
 #include <thread>
 #include <utility>
 #include <variant>
@@ -215,9 +217,9 @@ core::Result<void> Application::LoadConfiguration() {
                                                        "Smoothing of edges: off, fxaa, msaa2, msaa4 or msaa8");
         m_validation = m_cvars.Register<bool>("renderer.validation", kValidationByDefault,
                                               "Enable the Vulkan validation layers, read at startup");
-        m_volume = m_cvars.Register<double>("audio.volume", 1.0, "Overall volume, from 0 to 1, read at startup");
-        m_effectsVolume = m_cvars.Register<double>("audio.effects", 1.0, "Volume of sound effects, read at startup");
-        m_musicVolume = m_cvars.Register<double>("audio.music", 1.0, "Volume of music, read at startup");
+        m_volume = m_cvars.Register<double>("audio.volume", 1.0, "Overall volume, from 0 to 1");
+        m_effectsVolume = m_cvars.Register<double>("audio.effects", 1.0, "Volume of sound effects, from 0 to 1");
+        m_musicVolume = m_cvars.Register<double>("audio.music", 1.0, "Volume of music, from 0 to 1");
         m_mouseSensitivity =
             m_cvars.Register<double>("input.mouse_sensitivity", 0.0025, "Radians of turn per mouse unit");
     }
@@ -233,7 +235,84 @@ core::Result<void> Application::LoadConfiguration() {
             return loaded;
         }
     }
+    DAI_TRY(LoadUserSettings());
     return m_cvars.ApplyCommandLine(m_config.arguments);
+}
+
+std::filesystem::path Application::UserConfigPath() const {
+    const std::filesystem::path& file = m_config.userConfigFile;
+    return file.is_relative() ? platform::ExecutableDirectory() / file : file;
+}
+
+core::Result<void> Application::LoadUserSettings() {
+    m_userSettings.clear();
+    if (m_config.userConfigFile.empty()) {
+        return {};
+    }
+    const std::filesystem::path path = UserConfigPath();
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(path, error)) {
+        return {};
+    }
+    std::ifstream file(path, std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    if (!file.is_open() || file.bad()) {
+        return core::MakeError(core::ErrorCode::IoError, kModule,
+                               std::format("Cannot read '{}'", path.generic_string()));
+    }
+    DAI_TRY_ASSIGN(const std::vector<core::ConfigLine> lines, core::ParseConfigLines(text, path.generic_string()));
+    for (const core::ConfigLine& line : lines) {
+        if (core::Result<void> set = m_cvars.Set(line.name, line.value); !set) {
+            return core::MakeError(core::ErrorCode::ParseError, kModule,
+                                   std::format("{}:{}: {}", path.generic_string(), line.number, set.error().message));
+        }
+        m_userSettings.insert_or_assign(line.name, line.value);
+    }
+    DAI_LOG_INFO(kModule, "Player's settings loaded from '{}'", path.generic_string());
+    return {};
+}
+
+core::Result<void> Application::ChangeSetting(std::string_view name, std::string_view value) {
+    if (m_cvars.Find(name) == nullptr) {
+        return core::MakeError(core::ErrorCode::NotFound, kModule, std::format("No setting '{}'", name));
+    }
+    DAI_TRY(m_cvars.Set(name, value));
+    m_userSettings.insert_or_assign(std::string(name), std::string(value));
+    return {};
+}
+
+core::Result<void> Application::SaveSettings() {
+    if (m_config.userConfigFile.empty()) {
+        return {};
+    }
+    std::string text = "# The player's settings, written by the game's options. They override daidalos.cfg and the\n"
+                       "# game's own file; command-line arguments override them. Delete a line to go back to those.\n";
+    for (const auto& [name, value] : m_userSettings) {
+        text += core::FormatConfigLine(name, value);
+        text += '\n';
+    }
+
+    // A new file replaces the old one only once it is complete.
+    const std::filesystem::path path = UserConfigPath();
+    std::filesystem::path temporary = path;
+    temporary += ".new";
+    {
+        std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
+        file.write(text.data(), static_cast<std::streamsize>(text.size()));
+        if (!file.flush()) {
+            return core::MakeError(core::ErrorCode::IoError, kModule,
+                                   std::format("Cannot write '{}'", temporary.generic_string()));
+        }
+    }
+    std::error_code error;
+    std::filesystem::rename(temporary, path, error);
+    if (error) {
+        std::filesystem::remove(temporary, error);
+        return core::MakeError(core::ErrorCode::IoError, kModule,
+                               std::format("Cannot replace '{}': {}", path.generic_string(), error.message()));
+    }
+    DAI_LOG_INFO(kModule, "Player's settings saved to '{}'", path.generic_string());
+    return {};
 }
 
 float Application::MouseSensitivity() const {
@@ -395,6 +474,10 @@ void Application::MainLoop(IApplicationHandler& handler) {
         }
 
         m_workers->Deliver();
+        if (m_audio.has_value()) {
+            m_audio->SetVolumes(static_cast<float>(m_volume->Get()), static_cast<float>(m_effectsVolume->Get()),
+                                static_cast<float>(m_musicVolume->Get()));
+        }
 
         const auto now = std::chrono::steady_clock::now();
         const core::FrameTime time = timer.Advance(now - previous);

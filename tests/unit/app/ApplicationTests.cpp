@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <vector>
@@ -88,6 +89,8 @@ protected:
         m_config.platform.videoDriver = "dummy";
         m_config.window.width = 320;
         m_config.window.height = 200;
+        // A user.cfg left next to the tests must not change them.
+        m_config.userConfigFile.clear();
     }
 
     // Asserts that everything Run started has been stopped.
@@ -279,6 +282,63 @@ TEST_F(ApplicationTest, LaterConfigFileWinsAndMissingOnesAreSkipped) {
 
     ASSERT_TRUE(result.has_value()) << core::Format(result.error());
     EXPECT_EQ(m_handler.windowSize, (platform::Extent{400, 250}));
+}
+
+TEST_F(ApplicationTest, PlayerSettingsComeAfterConfigFilesAndBeforeTheCommandLine) {
+    const std::filesystem::path engine = std::filesystem::temp_directory_path() / "daidalos_app_engine.cfg";
+    const std::filesystem::path user = std::filesystem::temp_directory_path() / "daidalos_app_user.cfg";
+    {
+        std::ofstream(engine, std::ios::binary) << "window.width 400\nwindow.height 300\n";
+        std::ofstream(user, std::ios::binary) << "window.width 500\nwindow.height 350\n";
+    }
+    m_config.configFiles = {engine};
+    m_config.userConfigFile = user;
+    m_config.arguments = {"+window.height", "100"};
+    Application app(m_config);
+
+    const core::Result<void> result = app.Run(m_handler);
+    std::filesystem::remove(engine);
+    std::filesystem::remove(user);
+
+    ASSERT_TRUE(result.has_value()) << core::Format(result.error());
+    EXPECT_EQ(m_handler.windowSize, (platform::Extent{500, 100}));
+}
+
+TEST_F(ApplicationTest, ChangedSettingsAreSavedWithTheEarlierOnesButNotTheCommandLine) {
+    const std::filesystem::path user = std::filesystem::temp_directory_path() / "daidalos_app_saved.cfg";
+    std::ofstream(user, std::ios::binary) << "view.fov 75\n";
+    m_config.userConfigFile = user;
+    m_config.arguments = {"+window.width", "640"};
+    m_handler.quitAfterFrames = 1;
+    m_handler.onUpdate = [](Application& app, const core::FrameTime& /*time*/) {
+        EXPECT_TRUE(app.ChangeSetting("input.mouse_sensitivity", "0.004").has_value());
+        EXPECT_TRUE(app.ChangeSetting("renderer.antialiasing", "msaa4").has_value());
+        const core::Result<void> unknown = app.ChangeSetting("input.unknown", "1");
+        ASSERT_FALSE(unknown.has_value());
+        EXPECT_EQ(unknown.error().code, core::ErrorCode::NotFound);
+        EXPECT_FALSE(app.ChangeSetting("window.fullscreen", "maybe").has_value());
+        EXPECT_FLOAT_EQ(app.MouseSensitivity(), 0.004f);
+        const core::Result<void> saved = app.SaveSettings();
+        EXPECT_TRUE(saved.has_value()) << core::Format(saved.error());
+    };
+    Application app(m_config);
+
+    const core::Result<void> result = app.Run(m_handler);
+    std::ifstream file(user, std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+    std::filesystem::remove(user);
+
+    ASSERT_TRUE(result.has_value()) << core::Format(result.error());
+    const core::Result<std::vector<core::ConfigLine>> lines = core::ParseConfigLines(text, "saved");
+    ASSERT_TRUE(lines.has_value()) << text;
+    ASSERT_EQ(lines->size(), 3u) << text;
+    EXPECT_EQ((*lines)[0].name, "input.mouse_sensitivity");
+    EXPECT_EQ((*lines)[0].value, "0.004");
+    EXPECT_EQ((*lines)[1].name, "renderer.antialiasing");
+    EXPECT_EQ((*lines)[1].value, "msaa4");
+    EXPECT_EQ((*lines)[2].name, "view.fov");
+    EXPECT_EQ((*lines)[2].value, "75");
 }
 
 TEST_F(ApplicationTest, MissingConfigFileUsesDefaults) {

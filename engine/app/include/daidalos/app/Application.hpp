@@ -23,9 +23,12 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace daidalos::app {
@@ -66,6 +69,10 @@ struct ApplicationConfig {
     /// next to the executable, where the build copies the engine's daidalos.cfg; a game adds its own
     /// file after it. Missing files are skipped.
     std::vector<std::filesystem::path> configFiles{"daidalos.cfg"};
+    /// The player's own settings, which Application::SaveSettings writes, read after the config files
+    /// and before the command line. Relative to the executable's directory, like them. Empty reads and
+    /// writes none.
+    std::filesystem::path userConfigFile{"user.cfg"};
     /// Command-line arguments; "+name value" pairs override cvars.
     std::vector<std::string> arguments;
     platform::PlatformConfig platform;
@@ -127,6 +134,13 @@ public:
     /// Null when silent, which a scene accepts. Scenes must be created with this engine to be heard.
     [[nodiscard]] audio::AudioEngine* Audio() noexcept { return m_audio.has_value() ? &*m_audio : nullptr; }
     [[nodiscard]] core::CVarRegistry& CVars() noexcept { return m_cvars; }
+    /// Sets a cvar, as an options menu does, and keeps the value among the player's settings, which
+    /// SaveSettings writes. The value is text, as in config files. Fails, changing nothing, if the
+    /// name is not registered or the value does not parse.
+    core::Result<void> ChangeSetting(std::string_view name, std::string_view value);
+    /// Writes the player's settings to ApplicationConfig::userConfigFile: those it held at the start
+    /// and those changed since, so that settings from the command line are not kept by accident.
+    core::Result<void> SaveSettings();
     /// Radians of turn per unit of mouse movement, from input.mouse_sensitivity.
     [[nodiscard]] float MouseSensitivity() const;
     [[nodiscard]] const ApplicationConfig& Config() const noexcept { return m_config; }
@@ -137,6 +151,8 @@ private:
     /// Stops whatever is started, in reverse order.
     void Stop();
     core::Result<void> LoadConfiguration();
+    core::Result<void> LoadUserSettings();
+    [[nodiscard]] std::filesystem::path UserConfigPath() const;
     core::Result<void> CreateMainWindow();
     void CreateAudio();
     core::Result<void> CreateRenderer();
@@ -149,6 +165,8 @@ private:
 
     ApplicationConfig m_config;
     core::CVarRegistry m_cvars;
+    /// The player's settings, by name, as text: see ChangeSetting.
+    std::map<std::string, std::string, std::less<>> m_userSettings;
     std::optional<core::CVar<std::int64_t>> m_windowWidth;
     std::optional<core::CVar<std::int64_t>> m_windowHeight;
     std::optional<core::CVar<bool>> m_vsync;
