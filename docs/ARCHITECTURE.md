@@ -35,7 +35,7 @@ Every module also links to `core`; the graph only shows it for the bottom row.
 | `physics` | Collisions, characters and ray queries of a scene | Jolt |
 | `audio` | Output, mixing, clips and voices of a scene, silent without an output | miniaudio, stb_vorbis |
 | `scene` | Entities (`ecs::`), animation (`animation::`), the asset library, the engine's components, the systems that tie entities to the renderer, physics and sounds, and the scene itself | |
-| `app` | Startup and shutdown in order, main loop, current scene | |
+| `app` | Startup and shutdown in order, main loop, current scene, the player's settings, the developer console and tools (development builds) | |
 
 Headers are included by namespace, not by module: `<daidalos/math/Transform.hpp>` lives in `core`, and `<daidalos/ecs/World.hpp>` in `scene`.
 
@@ -184,7 +184,7 @@ flowchart LR
     H -->|"exposure,<br/>PBR Neutral"| S["Swapchain<br/>sRGB"]
 ```
 
-A light's color is what a white surface facing it reflects up close, and it fades linearly to zero at its range, as in the legacy engine. Normal maps follow glTF (green up, bitangent from the tangent's `w`), and meshes that lack tangents get MikkTSpace ones at load. Each frame, lights are assigned to 16×9×24 clusters of the view on the CPU, and a pixel shades only the lights of its cluster (ADR-0008). A pre-pass writes depth and normals first, so that the mesh pass shades each pixel once, and ambient occlusion darkens the ambient light in creases (ADR-0024). The ambient light itself comes more from above than from below. Spot lights can cast shadows: each frame, the nearest the camera that ask for one, four by default, get a tile of the shadow atlas (ADR-0023). Nothing beyond the view distance is drawn or lit: the projection has a far plane there, and the clusters end at it. Edges are smoothed by FXAA after tonemapping, or by multisampling the pre-pass and the mesh pass, which resolve into the targets the later passes read (ADR-0026). Draws can opt out, as the sandbox's weapons do. Each pass is timed with GPU timestamps, which `Renderer::GpuTimes` returns and the sandbox's overlay shows.
+A light's color is what a white surface facing it reflects up close, and it fades linearly to zero at its range, as in the legacy engine. Normal maps follow glTF (green up, bitangent from the tangent's `w`), and meshes that lack tangents get MikkTSpace ones at load. Each frame, lights are assigned to 16×9×24 clusters of the view on the CPU, and a pixel shades only the lights of its cluster (ADR-0008). A pre-pass writes depth and normals first, so that the mesh pass shades each pixel once, and ambient occlusion darkens the ambient light in creases (ADR-0024). The ambient light itself comes more from above than from below. Spot lights can cast shadows: each frame, the nearest the camera that ask for one, four by default, get a tile of the shadow atlas (ADR-0023). Nothing beyond the view distance is drawn or lit: the projection has a far plane there, and the clusters end at it. Edges are smoothed by FXAA after tonemapping, or by multisampling the pre-pass and the mesh pass, which resolve into the targets the later passes read (ADR-0026). Draws can opt out, as the sandbox's weapons do. Each pass is timed with GPU timestamps, which `Renderer::GpuTimes` returns and the developer tools show.
 
 `MeshPass` keeps one frame slot per frame in flight, so the CPU never writes data the GPU is still reading. Shaders are HLSL, compiled to SPIR-V by DXC during the build and embedded in the binary. In development builds, the sources are watched and recompiled by the `dxc` executable (ADR-0009).
 
@@ -205,6 +205,24 @@ flowchart LR
 Fonts are baked into signed distance fields when they load, so text stays sharp at any size. The interface draws after tonemapping and antialiasing, so that FXAA does not blur text, and under the debug overlay.
 
 Menus use `ui::Context`, immediate mode too: buttons, toggles, sliders and choices draw themselves on the canvas and return whether the mouse or the keyboard used them, and the game keeps the values (ADR-0029). The context only remembers which widget has the focus, by its place in the frame. Behind a menu, `Scene::SetPaused` stops the scene's systems, physics, animations, particles and sounds, and the scene is still drawn as it was.
+
+## Developer tools
+
+Development builds have tools on top of the Dear ImGui overlay, opened with the key under Escape (ADR-0030). While they are open, the pointer is free and the game gets no keyboard or mouse input; the game itself keeps running.
+
+```mermaid
+flowchart LR
+    E["Platform events<br/>keys, mouse, text"] --> T{"Tools open?"}
+    T -->|"no"| I["InputState<br/>the game"]
+    T -->|"yes"| O["ImGui overlay"]
+    E --> O
+    O --> C["Console<br/>log, cvars, commands"]
+    O --> S["Statistics<br/>frame and GPU times,<br/>Renderer::Stats, video memory"]
+    O --> N["Entities<br/>hierarchy and inspectors"]
+    O --> R["Resources<br/>AssetLibrary::Describe"]
+```
+
+The console runs a command, shows a cvar, or sets one for this run; its log is a sink that keeps the last lines from every thread. Components have no reflection: each type the inspector shows has a small function that draws it, and games add their own components, windows and commands.
 
 ## Particles
 
