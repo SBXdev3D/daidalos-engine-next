@@ -18,6 +18,8 @@
 #include <daidalos/scene/Scene.hpp>
 #include <daidalos/ui/Canvas.hpp>
 #if DAI_DEV_TOOLS
+#include <daidalos/app/Console.hpp>
+#include <daidalos/app/DevTools.hpp>
 #include <daidalos/debugui/DebugUi.hpp>
 #endif
 
@@ -130,6 +132,14 @@ public:
 #if DAI_DEV_TOOLS
     /// The overlay, or null without ApplicationConfig::rendering. Valid between OnStart and OnStop.
     [[nodiscard]] debugui::DebugUi* DebugOverlay() noexcept { return m_debugUi ? &*m_debugUi : nullptr; }
+    /// The developer tools (ADR-0030), or null without ApplicationConfig::rendering. Valid between
+    /// OnStart and OnStop.
+    [[nodiscard]] DevTools* Tools() noexcept { return m_devTools ? &*m_devTools : nullptr; }
+    /// Opens or closes the tools, as the key under Escape does. Open, they free the pointer and the game
+    /// gets no keyboard or mouse input; closed, the pointer is captured again if it was.
+    void SetToolsOpen(bool open);
+    /// Every log message and the console's output, while the application runs.
+    [[nodiscard]] ConsoleLog& ConsoleOutput() noexcept { return m_consoleLog; }
 #endif
     /// Null when silent, which a scene accepts. Scenes must be created with this engine to be heard.
     [[nodiscard]] audio::AudioEngine* Audio() noexcept { return m_audio.has_value() ? &*m_audio : nullptr; }
@@ -191,7 +201,11 @@ private:
     std::optional<audio::AudioEngine> m_audio;
     std::optional<renderer::Renderer> m_renderer;
 #if DAI_DEV_TOOLS
+    ConsoleLog m_consoleLog;
     std::optional<debugui::DebugUi> m_debugUi;
+    std::optional<DevTools> m_devTools;
+    /// Whether the pointer was captured when the tools opened.
+    bool m_mouseCapturedBeforeTools = false;
 #endif
     std::unique_ptr<scene::Scene> m_currentScene;
     std::unique_ptr<scene::Scene> m_pendingScene;

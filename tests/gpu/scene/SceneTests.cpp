@@ -224,3 +224,47 @@ TEST_F(ApplicationScene, SceneDestroyedWhileLoadingNeverCallsBack) {
 }
 
 } // namespace
+
+#if DAI_DEV_TOOLS
+TEST_F(ApplicationScene, ToolsDrawEveryWindowOverAScene) {
+    FunctionHandler handler;
+    ecs::Entity light;
+    handler.start = [&light](app::Application& app) -> core::Result<void> {
+        auto scene = std::make_unique<scene::Scene>(app.Renderer(), DAI_TEST_ASSET_DIR);
+        DAI_TRY_ASSIGN(const scene::Model* model, scene->Assets().LoadModel(kModel));
+        DAI_TRY(scene::Instantiate(scene->World(), *model));
+        light = scene->World().Create();
+        scene->World().Add<ecs::LocalTransform>(light);
+        scene->World().Add<scene::Light>(light);
+        scene->World().Add<scene::NodeName>(light, scene::NodeName{"Lamp"});
+        app.SetScene(std::move(scene));
+
+        app::DevTools* tools = app.Tools();
+        EXPECT_NE(tools, nullptr);
+        if (tools != nullptr) {
+            tools->AddWindow("Game", [] {});
+        }
+        return {};
+    };
+    std::uint64_t validationErrors = 0;
+    handler.update = [&light, &validationErrors](app::Application& app, std::uint64_t frame) {
+        app::DevTools& tools = *app.Tools();
+        if (frame == 1) {
+            app.SetToolsOpen(true);
+            EXPECT_TRUE(tools.IsOpen());
+            tools.GetConsole().Execute("windows");
+            tools.GetConsole().Execute("view.fov 70");
+            tools.Select(light);
+        } else if (frame == 4) {
+            app.SetToolsOpen(false);
+        } else if (frame == 6) {
+            validationErrors = app.Renderer().Device().ValidationErrorCount();
+            tools.GetConsole().Execute("quit");
+        }
+    };
+    RUN_OR_SKIP(handler);
+    ASSERT_TRUE(result.has_value()) << core::Format(result.error());
+    EXPECT_DOUBLE_EQ(std::get<double>(application.CVars().Find("view.fov")->value), 70.0);
+    EXPECT_EQ(validationErrors, 0U);
+}
+#endif

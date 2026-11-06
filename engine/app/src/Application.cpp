@@ -147,7 +147,12 @@ core::Result<void> Application::Run(IApplicationHandler& handler) {
 }
 
 core::Result<void> Application::Start(IApplicationHandler& handler) {
-    DAI_TRY(Starting("logging", logging::Initialize(m_config.log)));
+    logging::LogConfig log = m_config.log;
+#if DAI_DEV_TOOLS
+    m_consoleLog.Clear();
+    log.sinks.push_back(&m_consoleLog);
+#endif
+    DAI_TRY(Starting("logging", logging::Initialize(log)));
     m_loggingStarted = true;
     if (!m_config.crashDumpDirectory.empty()) {
         DAI_TRY(Starting("crash handler", platform::InstallCrashHandler({m_config.crashDumpDirectory, "crash"})));
@@ -174,6 +179,7 @@ void Application::Stop() {
     m_scenePending = false;
     m_currentScene.reset();
 #if DAI_DEV_TOOLS
+    m_devTools.reset();
     m_debugUi.reset();
 #endif
     m_renderer.reset();
@@ -385,6 +391,7 @@ core::Result<void> Application::CreateDebugOverlay() {
         DAI_TRY_ASSIGN(debugui::DebugUi created,
                        debugui::DebugUi::Create(m_renderer->Device(), m_renderer->ColorFormat()));
         m_debugUi.emplace(std::move(created));
+        m_devTools.emplace(*this);
     }
 #endif
     return {};
@@ -459,7 +466,27 @@ void Application::MainLoop(IApplicationHandler& handler) {
                 m_platform->PollEvents(events);
             }
             for (const platform::Event& event : events) {
+#if DAI_DEV_TOOLS
+                if (const auto* key = std::get_if<platform::KeyPressed>(&event);
+                    key != nullptr && key->key == platform::Key::Grave && !key->repeat && m_devTools.has_value()) {
+                    SetToolsOpen(!m_devTools->IsOpen());
+                    continue;
+                }
+                // The tools take the keyboard and the mouse while they are open.
+                const bool forTools = m_devTools.has_value() && m_devTools->IsOpen() &&
+                                      (std::holds_alternative<platform::KeyPressed>(event) ||
+                                       std::holds_alternative<platform::KeyReleased>(event) ||
+                                       std::holds_alternative<platform::TextEntered>(event) ||
+                                       std::holds_alternative<platform::MouseMoved>(event) ||
+                                       std::holds_alternative<platform::MouseButtonPressed>(event) ||
+                                       std::holds_alternative<platform::MouseButtonReleased>(event) ||
+                                       std::holds_alternative<platform::MouseWheelScrolled>(event));
+                if (!forTools) {
+                    m_input.Process(event);
+                }
+#else
                 m_input.Process(event);
+#endif
                 HandleEvent(event);
 #if DAI_DEV_TOOLS
                 if (m_debugUi.has_value()) {
@@ -508,6 +535,12 @@ void Application::MainLoop(IApplicationHandler& handler) {
                 m_currentScene->RunFrame(time.delta, static_cast<float>(time.alpha));
             }
         }
+#if DAI_DEV_TOOLS
+        if (m_devTools.has_value()) {
+            DAI_PROFILE_SCOPE("DevTools");
+            m_devTools->Draw(time);
+        }
+#endif
         if (m_renderer.has_value()) {
             DAI_PROFILE_SCOPE("Render");
             RenderFrame(handler);
@@ -516,6 +549,24 @@ void Application::MainLoop(IApplicationHandler& handler) {
     }
     m_looping = false;
 }
+
+#if DAI_DEV_TOOLS
+void Application::SetToolsOpen(bool open) {
+    if (!m_devTools.has_value() || m_devTools->IsOpen() == open) {
+        return;
+    }
+    m_devTools->SetOpen(open);
+    if (open) {
+        m_mouseCapturedBeforeTools = m_window->IsMouseCaptured();
+        m_window->SetMouseCaptured(false);
+        // Keys held now would never be released for the game.
+        m_input.Process(platform::WindowFocusLost{m_window->Id()});
+    } else if (m_mouseCapturedBeforeTools) {
+        m_window->SetMouseCaptured(true);
+    }
+    m_window->SetTextInput(open);
+}
+#endif
 
 void Application::HandleEvent(const platform::Event& event) {
     if (std::holds_alternative<platform::QuitRequested>(event)) {
