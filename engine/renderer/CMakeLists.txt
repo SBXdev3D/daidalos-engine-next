@@ -6,10 +6,12 @@ dai_add_module(NAME renderer
         include/daidalos/renderer/Renderer.hpp
         include/daidalos/renderer/SceneView.hpp
         include/daidalos/ui/Canvas.hpp
+        include/daidalos/ui/Context.hpp
         include/daidalos/ui/Font.hpp
         src/AmbientOcclusionPass.cpp
         src/AmbientOcclusionPass.hpp
         src/Canvas.cpp
+        src/Context.cpp
         src/FxaaPass.cpp
         src/FxaaPass.hpp
         src/LightClusters.cpp

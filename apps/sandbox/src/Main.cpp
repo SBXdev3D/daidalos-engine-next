@@ -11,6 +11,7 @@
 
 #include "Factory.hpp"
 #include "Hud.hpp"
+#include "Menus.hpp"
 
 #if DAI_DEV_TOOLS
 #include <imgui.h>
@@ -81,6 +82,10 @@ public:
             app.CVars()
                 .Register<std::string>("sandbox.start", "", "Where to start: 'x y z yaw pitch', in meters and degrees")
                 .Get();
+        m_menuAtStart =
+            app.CVars()
+                .Register<bool>("sandbox.menu", true, "Show the main menu at the start; false plays at once")
+                .Get();
         m_actions = sandbox::MakeActions();
         m_assetRoot = FindAssetRoot();
         DAI_LOG_INFO("sandbox", "Assets in '{}'", m_assetRoot.string());
@@ -93,6 +98,7 @@ public:
             return tl::unexpected(std::move(hud.error()));
         }
         m_hud = *hud;
+        m_ui.SetStyle(sandbox::MenuStyle(m_hud));
 
         // The first scene is current at once: the renderer's owner then releases it on any failure.
         app.SetScene(std::make_unique<scene::Scene>(app.Renderer(), m_assetRoot, app.Audio()));
@@ -103,16 +109,39 @@ public:
 
     void OnUpdate(app::Application& app, const core::FrameTime& time) override {
         const input::InputState& input = app.Input();
-        if (m_actions.WasPressed(input, sandbox::Quit)) {
-            app.RequestQuit();
+        const auto delta = static_cast<float>(time.delta.count());
+        // A menu closes in one frame and the game goes on in a later one, once the button that closed it
+        // is released: the guns fire for as long as it is held.
+        if (m_resumePending && !m_actions.IsDown(input, sandbox::Fire)) {
+            m_resumePending = false;
+            if (app.CurrentScene() != nullptr) {
+                app.CurrentScene()->SetPaused(false);
+            }
         }
-        if (m_actions.WasPressed(input, sandbox::ToggleMouse)) {
-            m_mouseCaptured = !m_mouseCaptured;
-            app.MainWindow().SetMouseCaptured(m_mouseCaptured);
-        }
-        if (m_actions.WasPressed(input, sandbox::Restart) && !m_loading) {
-            m_nextScene = std::make_unique<scene::Scene>(app.Renderer(), m_assetRoot, app.Audio());
-            LoadLevel(app, *m_nextScene);
+        m_settings.mouseSensitivity = app.MouseSensitivity();
+
+        if (m_loading) {
+            m_loadingSeconds += delta;
+        } else if (m_screen == sandbox::Screen::None) {
+            if (m_actions.WasPressed(input, sandbox::Menu)) {
+                OpenScreen(app, sandbox::Screen::Pause);
+            } else {
+                if (m_actions.WasPressed(input, sandbox::ToggleMouse)) {
+                    m_mouseCaptured = !m_mouseCaptured;
+                    app.MainWindow().SetMouseCaptured(m_mouseCaptured);
+                }
+                if (m_actions.WasPressed(input, sandbox::Restart)) {
+                    Restart(app);
+                }
+                m_playSeconds += delta;
+                WatchTheEnd(app, delta);
+            }
+        } else if (m_actions.WasPressed(input, sandbox::Menu)) {
+            if (m_screen == sandbox::Screen::Pause) {
+                OpenScreen(app, sandbox::Screen::None);
+            } else if (m_screen == sandbox::Screen::Options) {
+                CloseOptions(app);
+            }
         }
         ++m_totalFrames;
         if (m_frameLimit->Get() > 0 && m_totalFrames >= m_frameLimit->Get()) {
@@ -149,20 +178,117 @@ public:
 private:
     void LoadLevel(app::Application& app, scene::Scene& target) {
         m_loading = true;
-        target.Assets().LoadModelAsync(m_levelPath, app.Workers(),
-                                       [this, &app, &target](core::Result<const scene::Model*> model) {
-                                           m_loading = false;
-                                           m_levelShown = true;
-                                           if (core::Result<void> built = Build(app, target, model); !built) {
-                                               DAI_LOG_ERROR("sandbox", "{}", core::Format(built.error()));
-                                               m_failure = std::move(built.error());
-                                               app.RequestQuit();
-                                               return;
-                                           }
-                                           if (m_nextScene) {
-                                               app.SetScene(std::move(m_nextScene));
-                                           }
-                                       });
+        m_loadingSeconds = 0.0f;
+        target.Assets().LoadModelAsync(
+            m_levelPath, app.Workers(), [this, &app, &target](core::Result<const scene::Model*> model) {
+                m_loading = false;
+                m_levelShown = true;
+                if (core::Result<void> built = Build(app, target, model); !built) {
+                    DAI_LOG_ERROR("sandbox", "{}", core::Format(built.error()));
+                    m_failure = std::move(built.error());
+                    app.RequestQuit();
+                    return;
+                }
+                m_playSeconds = 0.0f;
+                m_endSeconds = 0.0f;
+                if (m_nextScene) {
+                    app.SetScene(std::move(m_nextScene));
+                    OpenScreen(app, sandbox::Screen::None);
+                } else {
+                    // The first level waits behind the main menu.
+                    OpenScreen(app, m_menuAtStart ? sandbox::Screen::Main : sandbox::Screen::None);
+                }
+            });
+    }
+
+    /// Starts the level over in a new scene, which replaces this one once it is built.
+    void Restart(app::Application& app) {
+        if (m_loading) {
+            return;
+        }
+        m_screen = sandbox::Screen::None;
+        m_ui.ResetFocus();
+        m_nextScene = std::make_unique<scene::Scene>(app.Renderer(), m_assetRoot, app.Audio());
+        LoadLevel(app, *m_nextScene);
+    }
+
+    /// Shows a screen, or none to play. The scene stops behind every screen, and the mouse is free to
+    /// point at buttons.
+    void OpenScreen(app::Application& app, sandbox::Screen screen) {
+        if (screen == sandbox::Screen::Options) {
+            m_optionsReturn = m_screen;
+            m_settingsChanged = false;
+        }
+        m_screen = screen;
+        m_ui.ResetFocus();
+        const bool playing = screen == sandbox::Screen::None;
+        m_mouseCaptured = playing;
+        app.MainWindow().SetMouseCaptured(playing);
+        if (playing) {
+            m_resumePending = true;
+        } else if (scene::Scene* current = app.CurrentScene()) {
+            current->SetPaused(true);
+        }
+    }
+
+    void CloseOptions(app::Application& app) {
+        if (m_settingsChanged) {
+            if (core::Result<void> saved = app.SaveSettings(); !saved) {
+                DAI_LOG_ERROR("sandbox", "{}", core::Format(saved.error()));
+            }
+        }
+        OpenScreen(app, m_optionsReturn);
+    }
+
+    /// Death, or the last zombie's, ends the game after a moment, the time to see it happen.
+    void WatchTheEnd(app::Application& app, float delta) {
+        constexpr float kEndDelay = 2.0f;
+        const sandbox::Player* player = FindPlayer(app);
+        if (player == nullptr) {
+            return;
+        }
+        const bool dead = player->dead;
+        const bool cleared = player->zombieCount > 0 && player->kills >= player->zombieCount;
+        if (!dead && !cleared) {
+            m_endSeconds = 0.0f;
+            return;
+        }
+        m_endSeconds += delta;
+        if (m_endSeconds >= kEndDelay) {
+            OpenScreen(app, dead ? sandbox::Screen::Dead : sandbox::Screen::Complete);
+        }
+    }
+
+    void HandleChoice(app::Application& app, sandbox::MenuChoice choice) {
+        switch (choice) {
+        case sandbox::MenuChoice::None:
+            break;
+        case sandbox::MenuChoice::Play:
+        case sandbox::MenuChoice::Resume:
+            OpenScreen(app, sandbox::Screen::None);
+            break;
+        case sandbox::MenuChoice::Restart:
+            Restart(app);
+            break;
+        case sandbox::MenuChoice::Options:
+            OpenScreen(app, sandbox::Screen::Options);
+            break;
+        case sandbox::MenuChoice::Back:
+            CloseOptions(app);
+            break;
+        case sandbox::MenuChoice::Quit:
+            app.RequestQuit();
+            break;
+        }
+    }
+
+    [[nodiscard]] static const sandbox::Player* FindPlayer(app::Application& app) {
+        const sandbox::Player* found = nullptr;
+        if (scene::Scene* current = app.CurrentScene()) {
+            current->World().Each<sandbox::Player>(
+                [&found](ecs::Entity /*entity*/, const sandbox::Player& player) { found = &player; });
+        }
+        return found;
     }
 
     core::Result<void> Build(app::Application& app, scene::Scene& target,
@@ -226,15 +352,42 @@ private:
     /// The game's own interface, in every build.
     void DrawInterface(app::Application& app) {
         ui::Canvas& canvas = app.Canvas();
+        const platform::Extent window = app.MainWindow().Size();
+        m_ui.Begin(canvas, app.Input(), {static_cast<float>(window.width), static_cast<float>(window.height)});
         if (m_loading) {
-            sandbox::DrawLoading(canvas, m_hud, !m_levelShown);
+            sandbox::DrawLoading(canvas, m_hud, !m_levelShown, m_loadingSeconds);
             return;
         }
-        if (scene::Scene* current = app.CurrentScene()) {
-            current->World().Each<sandbox::Player>([&](ecs::Entity /*entity*/, const sandbox::Player& player) {
-                sandbox::DrawHud(canvas, m_hud, player);
-            });
+        const sandbox::Player* player = FindPlayer(app);
+        if (player != nullptr && (m_screen == sandbox::Screen::None || m_screen == sandbox::Screen::Dead)) {
+            sandbox::DrawHud(canvas, m_hud, *player);
         }
+
+        sandbox::MenuChoice choice = sandbox::MenuChoice::None;
+        switch (m_screen) {
+        case sandbox::Screen::None:
+            break;
+        case sandbox::Screen::Main:
+            choice = sandbox::DrawMainMenu(m_ui, canvas, m_hud);
+            break;
+        case sandbox::Screen::Pause:
+            choice = sandbox::DrawPauseMenu(m_ui, canvas, m_hud);
+            break;
+        case sandbox::Screen::Options:
+            choice = sandbox::DrawOptions(m_ui, canvas, m_hud, app, m_settingsChanged);
+            break;
+        case sandbox::Screen::Dead:
+            if (player != nullptr) {
+                choice = sandbox::DrawDeathScreen(m_ui, canvas, m_hud, *player);
+            }
+            break;
+        case sandbox::Screen::Complete:
+            if (player != nullptr) {
+                choice = sandbox::DrawCompleteScreen(m_ui, canvas, m_hud, *player, m_playSeconds);
+            }
+            break;
+        }
+        HandleChoice(app, choice);
     }
 
     /// Frame rate, GPU times and help, in development builds.
@@ -259,7 +412,8 @@ private:
             });
         }
         ImGui::TextDisabled(
-            "WASD: move. Shift: run. Space: jump. C: crouch. E: use. F: flashlight. F5: restart. Tab: free the mouse.");
+            "WASD: move. Shift: run. Space: jump. C: crouch. E: use. F: flashlight. Esc: menu. F5: restart. Tab: free "
+            "the mouse.");
         ImGui::TextDisabled("Left button: fire. R: reload. 1, 2, Q or the wheel: weapons.");
         if (const std::string& error = app.Renderer().ShaderError(); !error.empty()) {
             ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "Shader reload failed:");
@@ -279,6 +433,17 @@ private:
     std::unique_ptr<scene::Scene> m_nextScene;
     std::unique_ptr<scene::AssetLibrary> m_interfaceAssets;
     sandbox::HudAssets m_hud;
+    ui::Context m_ui;
+    sandbox::Screen m_screen = sandbox::Screen::None;
+    /// Where the options go back to.
+    sandbox::Screen m_optionsReturn = sandbox::Screen::Main;
+    bool m_settingsChanged = false;
+    bool m_menuAtStart = true;
+    bool m_resumePending = false;
+    /// Seconds of play in this level, and since it ended, by death or victory.
+    float m_playSeconds = 0.0f;
+    float m_endSeconds = 0.0f;
+    float m_loadingSeconds = 0.0f;
     bool m_loading = false;
     /// False until the first level is built: loading covers the screen until then.
     bool m_levelShown = false;

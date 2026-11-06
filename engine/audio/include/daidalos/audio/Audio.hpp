@@ -53,6 +53,9 @@ public:
     /// Mixes the next samples, interleaved by channel. Only without a device.
     void Read(std::span<float> samples);
 
+    /// The overall volume and those of the buses, from 0 to 1, as AudioConfig sets them at the start.
+    void SetVolumes(float volume, float effectsVolume, float musicVolume);
+
     struct Impl;
     [[nodiscard]] Impl& Internals() { return *m_impl; }
 
@@ -93,13 +96,19 @@ public:
     [[nodiscard]] core::Result<ClipHandle> Load(std::string_view path, const ClipOptions& options = {});
     [[nodiscard]] std::size_t ClipCount() const;
 
-    /// Returns a null voice if the clip is null, when silent, or when too many sounds are playing.
+    /// Returns a null voice if the clip is null, when silent, when paused, or when too many sounds are
+    /// playing.
     VoiceHandle Play(ClipHandle clip, const PlayOptions& options = {});
     /// A voice that ended, or a null one, is ignored.
     void Stop(VoiceHandle voice);
     void SetPosition(VoiceHandle voice, const glm::vec3& position);
     [[nodiscard]] bool IsPlaying(VoiceHandle voice) const;
     [[nodiscard]] std::size_t VoiceCount() const;
+
+    /// Holds every voice where it is, for a game's pause menu, and lets them go on when unpaused. New
+    /// voices do not start while paused.
+    void SetPaused(bool paused);
+    [[nodiscard]] bool IsPaused() const;
 
     /// Direction and up must be normalized.
     void SetListener(const glm::vec3& position, const glm::vec3& forward, const glm::vec3& up);

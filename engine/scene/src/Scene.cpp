@@ -36,7 +36,15 @@ glm::quat RotationBetween(const glm::vec3& from, const glm::vec3& to) {
 Scene::Scene(renderer::Renderer& renderer, std::filesystem::path assetRoot, audio::AudioEngine* audio)
     : m_assets(renderer, assetRoot), m_sounds(audio, std::move(assetRoot)) {}
 
+void Scene::SetPaused(bool paused) {
+    m_paused = paused;
+    m_sounds.SetPaused(paused);
+}
+
 void Scene::RunFixedStep(core::Seconds step) {
+    if (m_paused) {
+        return;
+    }
     m_fixedSystems.Run(m_world, step);
     const auto seconds = static_cast<float>(step.count());
     SyncKinematicBodies(m_world, m_physics, seconds);
@@ -52,6 +60,11 @@ void Scene::SpawnParticles(renderer::ParticleEffectHandle effect, const glm::vec
 }
 
 void Scene::RunFrame(core::Seconds delta, float fixedAlpha) {
+    if (m_paused) {
+        // Particles hold still too: they move by the time of the last frame.
+        m_frameDelta = 0.0f;
+        return;
+    }
     m_fixedAlpha = fixedAlpha;
     m_frameDelta = static_cast<float>(delta.count());
     m_frameSystems.Run(m_world, delta);

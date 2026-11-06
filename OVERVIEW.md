@@ -12,7 +12,7 @@
 **Repository:** https://github.com/StephaneBX/daidalos-engine-next  
 **Decision records:** `docs/adr/`; coding and math conventions: `docs/CONVENTIONS.md`  
 **Development approach:** Modular architecture, incremental implementation, testable components, and AI-assisted development  
-**Current project status:** Phases 0 to 7 and step 8.1 (foundation to modern rendering, and the game's interface) are implemented; Phase 9 moves rendering to ray tracing (ADR-0028); implementation proceeds through small, verifiable milestones, each of which improves the demo described in `docs/DEMO.md`
+**Current project status:** Phases 0 to 7 and steps 8.1 and 8.2 (foundation to modern rendering, the game's interface and its menus) are implemented; Phase 9 moves rendering to ray tracing (ADR-0028); implementation proceeds through small, verifiable milestones, each of which improves the demo described in `docs/DEMO.md`
 
 ---
 

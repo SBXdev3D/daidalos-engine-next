@@ -7,6 +7,8 @@ dai_add_app(NAME sandbox
         src/Hud.cpp
         src/Hud.hpp
         src/Main.cpp
+        src/Menus.cpp
+        src/Menus.hpp
     DEPS
         daidalos::app
         daidalos::scene

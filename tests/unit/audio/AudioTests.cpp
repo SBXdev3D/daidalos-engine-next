@@ -209,6 +209,35 @@ TEST_F(AudioTest, MusicBusHasItsOwnVolume) {
     EXPECT_NEAR(Mix().left, full * 0.25f, full * 0.05f);
 }
 
+TEST_F(AudioTest, VolumesChangeWhilePlaying) {
+    m_sounds->Play(Clip("long.wav"), {.loop = true});
+    const float full = Mix().left;
+    m_engine->SetVolumes(0.5f, 0.5f, 1.0f);
+    Mix(); // Volume changes are smoothed.
+    EXPECT_NEAR(Mix().left, full * 0.25f, full * 0.05f);
+}
+
+TEST_F(AudioTest, PausedVoicesHoldTheirPlaceAndGoOn) {
+    const audio::VoiceHandle voice = m_sounds->Play(Clip("short.wav"));
+    Mix();
+    m_sounds->SetPaused(true);
+    EXPECT_TRUE(m_sounds->IsPaused());
+    Mix(); // What was already mixed ends.
+    for (int block = 0; block < 10; ++block) {
+        EXPECT_FLOAT_EQ(Mix().left, 0.0f);
+    }
+    m_sounds->Update();
+    EXPECT_TRUE(m_sounds->IsPlaying(voice));
+    EXPECT_FALSE(m_sounds->Play(Clip("long.wav")));
+
+    // The 0.2 s tone had a tenth of a second left.
+    m_sounds->SetPaused(false);
+    EXPECT_GT(Mix().left, 0.1f);
+    Mix();
+    m_sounds->Update();
+    EXPECT_FALSE(m_sounds->IsPlaying(voice));
+}
+
 TEST_F(AudioTest, DestroyingTheWorldSilencesIt) {
     m_sounds->Play(Clip("long.wav"), {.loop = true});
     EXPECT_GT(Mix().left, 0.1f);

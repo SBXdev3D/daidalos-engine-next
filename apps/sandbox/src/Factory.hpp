@@ -33,7 +33,8 @@ enum Action : daidalos::input::Action {
     ToggleFlashlight,
     Restart,
     ToggleMouse,
-    Quit,
+    /// Pauses the game, or goes back from a menu.
+    Menu,
     Fire,
     /// The gamepad's trigger, which fires past half of its travel.
     FireTrigger,
