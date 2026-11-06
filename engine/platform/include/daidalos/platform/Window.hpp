@@ -54,6 +54,11 @@ public:
     void SetTitle(std::string_view title);
     /// Hides the pointer and reports motion without limits, for looking around in a game.
     void SetMouseCaptured(bool captured);
+    [[nodiscard]] bool IsMouseCaptured() const;
+    /// Delivers TextEntered events while on, for text fields. Off by default, because some systems show
+    /// an on-screen keyboard or an input method window while it is on.
+    void SetTextInput(bool enabled);
+    [[nodiscard]] bool IsTextInputEnabled() const;
     /// Resizes the window, in screen coordinates, and waits for the system to apply it.
     void SetSize(Extent size);
     /// Covers the display without borders, or goes back to a window, and waits for the system to apply

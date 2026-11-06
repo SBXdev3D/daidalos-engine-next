@@ -112,6 +112,22 @@ void Window::SetMouseCaptured(bool captured) {
     SDL_SetWindowRelativeMouseMode(m_impl->window, captured);
 }
 
+bool Window::IsMouseCaptured() const {
+    return SDL_GetWindowRelativeMouseMode(m_impl->window);
+}
+
+void Window::SetTextInput(bool enabled) {
+    if (enabled) {
+        SDL_StartTextInput(m_impl->window);
+    } else {
+        SDL_StopTextInput(m_impl->window);
+    }
+}
+
+bool Window::IsTextInputEnabled() const {
+    return SDL_TextInputActive(m_impl->window);
+}
+
 void Window::SetTitle(std::string_view title) {
     SDL_SetWindowTitle(m_impl->window, std::string(title).c_str());
 }

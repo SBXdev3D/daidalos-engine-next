@@ -17,7 +17,7 @@ namespace daidalos::debugui {
 
 /// Dear ImGui overlay (ADR-0015), drawn through the RHI and fed with platform events, so it depends on
 /// neither SDL nor Vulkan. Between BeginFrame and EndFrame, code calls ImGui functions directly.
-/// Text fields do not work yet: the platform does not deliver text events.
+/// Text fields need platform::Window::SetTextInput to be on.
 ///
 /// Each frame: ProcessEvent() for every event, BeginFrame(), ImGui calls, EndFrame(), then Draw()
 /// inside a rendering scope if the frame is drawn. Only one DebugUi can exist at a time.

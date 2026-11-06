@@ -9,6 +9,7 @@
 #include <glm/vec2.hpp>
 
 #include <cstdint>
+#include <string>
 #include <variant>
 
 namespace daidalos::platform {
@@ -143,10 +144,18 @@ struct GamepadAxisMoved {
     bool operator==(const GamepadAxisMoved&) const = default;
 };
 
+/// Text typed while Window::SetTextInput is on, in UTF-8: one or more characters, after the keyboard
+/// layout and dead keys are applied. Key presses still arrive as KeyPressed.
+struct TextEntered {
+    WindowId window{};
+    std::string text;
+    bool operator==(const TextEntered&) const = default;
+};
+
 /// Platform event, independent of SDL.
 using Event = std::variant<QuitRequested, WindowCloseRequested, WindowResized, WindowMinimized, WindowRestored,
                            WindowFocusGained, WindowFocusLost, KeyPressed, KeyReleased, MouseMoved, MouseButtonPressed,
                            MouseButtonReleased, MouseWheelScrolled, GamepadConnected, GamepadDisconnected,
-                           GamepadButtonPressed, GamepadButtonReleased, GamepadAxisMoved>;
+                           GamepadButtonPressed, GamepadButtonReleased, GamepadAxisMoved, TextEntered>;
 
 } // namespace daidalos::platform
