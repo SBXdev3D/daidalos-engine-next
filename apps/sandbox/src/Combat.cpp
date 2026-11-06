@@ -208,7 +208,7 @@ void HurtPlayer(scene::Scene& scene, ecs::Entity playerEntity, int damage) {
     player.health = 0;
     player.dead = true;
     player.reloading = false;
-    player.message = "You are dead. Press F5 to start again.";
+    player.message = "You are dead.";
     player.messageTime = kDeadMessageTime;
     if (arsenal != nullptr) {
         scene.Sounds().Play(arsenal->die);

@@ -722,6 +722,16 @@ void UpdateDoors(scene::Scene& scene, ecs::Entity playerEntity, float delta) {
     });
 }
 
+/// The factory's darkness and fog, which follow the settings.
+void ApplyAtmosphere(scene::Scene& scene, const Settings& settings) {
+    const float darkness = std::clamp(settings.darkness, 0.0f, 1.0f);
+    scene.SetAtmosphere(
+        {.fogColor = kFogColor,
+         .fogDensity = kFogDensity * darkness,
+         .ambient = glm::mix(glm::vec3(1.0f), kAmbientTint * settings.ambient * kAmbientAbove, darkness),
+         .ambientBelow = glm::mix(glm::vec3(1.0f), kAmbientTint * settings.ambient * kAmbientBelow, darkness)});
+}
+
 } // namespace
 
 input::ActionMap MakeActions() {
@@ -747,8 +757,9 @@ input::ActionMap MakeActions() {
     actions.Bind(ToggleFlashlight, GamepadButton::North);
     actions.Bind(Restart, Key::F5);
     actions.Bind(ToggleMouse, Key::Tab);
-    actions.Bind(Quit, Key::Escape);
-    actions.Bind(Quit, GamepadButton::Back);
+    actions.Bind(Menu, Key::Escape);
+    actions.Bind(Menu, GamepadButton::Start);
+    actions.Bind(Menu, GamepadButton::Back);
     actions.Bind(Fire, platform::MouseButton::Left);
     actions.BindAxis(FireTrigger, GamepadAxis::RightTrigger);
     actions.Bind(Reload, Key::R);
@@ -948,6 +959,8 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
         scene.World().Each<Player>([&found](ecs::Entity entity, const Player& /*player*/) { found = entity; });
         return found;
     };
+    // Also before the first frame, for a scene that starts paused behind the main menu.
+    ApplyAtmosphere(scene, settings);
     ecs::Schedule& fixed = scene.FixedSystems();
     fixed.Add("Movement", [&, player](ecs::World& world, core::Seconds step) {
         if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
@@ -990,12 +1003,7 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
     });
     systems.Add("Lights", [&, player, handedOver = false](ecs::World& world, core::Seconds delta) mutable {
         const float seconds = static_cast<float>(delta.count());
-        const float darkness = std::clamp(settings.darkness, 0.0f, 1.0f);
-        scene.SetAtmosphere(
-            {.fogColor = kFogColor,
-             .fogDensity = kFogDensity * darkness,
-             .ambient = glm::mix(glm::vec3(1.0f), kAmbientTint * settings.ambient * kAmbientAbove, darkness),
-             .ambientBelow = glm::mix(glm::vec3(1.0f), kAmbientTint * settings.ambient * kAmbientBelow, darkness)});
+        ApplyAtmosphere(scene, settings);
         world.Each<Alarm, ecs::LocalTransform>([seconds](ecs::Entity, const Alarm& alarm, ecs::LocalTransform& turned) {
             const float angle = glm::radians(alarm.degreesPerSecond) * seconds;
             turned.rotation = glm::normalize(glm::angleAxis(angle, math::kUp) * turned.rotation);

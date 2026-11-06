@@ -19,6 +19,8 @@ struct HudAssets {
     /// The legacy hud.png: health, armor, ammo and flashlight icons.
     daidalos::rhi::TextureHandle icons;
     daidalos::rhi::TextureHandle crosshair;
+    /// The legacy loading screen's gear, which turns while a level loads.
+    daidalos::rhi::TextureHandle gear;
 };
 
 [[nodiscard]] daidalos::core::Result<HudAssets> LoadHud(daidalos::scene::AssetLibrary& assets);
@@ -27,8 +29,9 @@ struct HudAssets {
 /// flashlight icon at the top right and the crosshair in the middle, with the last message above it.
 void DrawHud(daidalos::ui::Canvas& canvas, const HudAssets& hud, const Player& player);
 
-/// "LOADING..." in the middle of a black screen, as the legacy demo showed; over the current level
-/// instead when there is one.
-void DrawLoading(daidalos::ui::Canvas& canvas, const HudAssets& hud, bool coverScreen);
+/// The legacy loading screen: "LOADING..." in the middle of a black screen, and a gear turning in the
+/// bottom-right corner; over the current level, darkened, when there is one. seconds is how long it has
+/// been loading, which turns the gear. There is no progress bar: a level is one file, loaded at once.
+void DrawLoading(daidalos::ui::Canvas& canvas, const HudAssets& hud, bool coverScreen, float seconds);
 
 } // namespace sandbox

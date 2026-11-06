@@ -4,6 +4,8 @@
 
 #include "Hud.hpp"
 
+#include <glm/gtc/constants.hpp>
+
 #include <algorithm>
 #include <format>
 #include <string>
@@ -58,6 +60,7 @@ core::Result<HudAssets> LoadHud(scene::AssetLibrary& assets) {
     DAI_TRY_ASSIGN(hud.boldFont, assets.LoadFont("Fonts/Rajdhani-Bold.ttf"));
     DAI_TRY_ASSIGN(hud.icons, assets.LoadTexture("Factory/hud.png"));
     DAI_TRY_ASSIGN(hud.crosshair, assets.LoadTexture("Factory/crosshair.png"));
+    DAI_TRY_ASSIGN(hud.gear, assets.LoadTexture("Factory/gear.png"));
     return hud;
 }
 
@@ -128,17 +131,20 @@ void DrawHud(ui::Canvas& canvas, const HudAssets& hud, const Player& player) {
     }
 }
 
-void DrawLoading(ui::Canvas& canvas, const HudAssets& hud, bool coverScreen) {
+void DrawLoading(ui::Canvas& canvas, const HudAssets& hud, bool coverScreen, float seconds) {
     const glm::vec2 size = canvas.Size();
-    if (coverScreen) {
-        canvas.FillRect({{0.0f, 0.0f}, size}, {0.0f, 0.0f, 0.0f, 1.0f});
-    }
+    canvas.FillRect({{0.0f, 0.0f}, size}, {0.0f, 0.0f, 0.0f, coverScreen ? 1.0f : 0.6f});
     canvas.DrawText(*hud.boldFont, "LOADING...", size * 0.5f,
-                    {.size = coverScreen ? 80.0f : 40.0f,
+                    {.size = 80.0f,
                      .color = glm::vec4(1.0f),
                      .horizontal = ui::Align::Center,
                      .vertical = ui::Align::Center,
                      .shadowColor = kShadow});
+    // As in the legacy CLoadingView: 256 units in the corner, a quarter turn per second.
+    constexpr float kGearSize = 256.0f;
+    constexpr float kTurnsPerSecond = 0.25f;
+    canvas.DrawImage(hud.gear, {size - kGearSize, glm::vec2(kGearSize)},
+                     {.rotation = glm::two_pi<float>() * kTurnsPerSecond * seconds});
 }
 
 } // namespace sandbox
