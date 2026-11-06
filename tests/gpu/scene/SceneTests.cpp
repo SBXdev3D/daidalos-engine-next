@@ -131,6 +131,32 @@ TEST_F(ApplicationScene, SystemsRunAndTheCurrentSceneIsDrawn) {
     EXPECT_EQ(frameRuns, 4);
 }
 
+TEST_F(ApplicationScene, PausedSceneRunsNoSystems) {
+    int frameRuns = 0;
+    FunctionHandler handler;
+    handler.start = [&frameRuns](app::Application& app) -> core::Result<void> {
+        auto scene = std::make_unique<scene::Scene>(app.Renderer(), DAI_TEST_ASSET_DIR);
+        scene->FrameSystems().Add("Count",
+                                  [&frameRuns](ecs::World& /*world*/, core::Seconds /*delta*/) { ++frameRuns; });
+        app.SetScene(std::move(scene));
+        return {};
+    };
+    handler.update = [](app::Application& app, std::uint64_t frame) {
+        // Frames 1 and 2 are paused; the scene runs after the handler's update.
+        if (frame == 1) {
+            app.CurrentScene()->SetPaused(true);
+            EXPECT_TRUE(app.CurrentScene()->IsPaused());
+        } else if (frame == 3) {
+            app.CurrentScene()->SetPaused(false);
+        } else if (frame == 4) {
+            app.RequestQuit();
+        }
+    };
+    RUN_OR_SKIP(handler);
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(frameRuns, 3);
+}
+
 TEST_F(ApplicationScene, ModelLoadsOnAWorkerDuringTheLoop) {
     bool loaded = false;
     FunctionHandler handler;

@@ -56,10 +56,16 @@ public:
     void SpawnParticles(renderer::ParticleEffectHandle effect, const glm::vec3& position, const glm::vec3& direction,
                         std::uint32_t count);
 
-    /// Runs the fixed systems, then moves the physics to where they left the entities.
+    /// Stops time in the scene, for a game's pause menu: its systems, physics, animations, particles and
+    /// sounds hold where they are, and it is still drawn as it was.
+    void SetPaused(bool paused);
+    [[nodiscard]] bool IsPaused() const { return m_paused; }
+
+    /// Runs the fixed systems, then moves the physics to where they left the entities. Does nothing
+    /// while paused.
     void RunFixedStep(core::Seconds step);
     /// Runs the frame systems, then plays the animations. fixedAlpha is how far this frame is into the
-    /// next fixed step, in [0, 1).
+    /// next fixed step, in [0, 1). Does nothing while paused.
     void RunFrame(core::Seconds delta, float fixedAlpha = 0.0f);
     /// For frame systems that draw between two fixed steps.
     [[nodiscard]] float FixedAlpha() const { return m_fixedAlpha; }
@@ -78,6 +84,7 @@ private:
     ecs::Entity m_activeCamera;
     renderer::Atmosphere m_atmosphere;
     float m_fixedAlpha = 0.0f;
+    bool m_paused = false;
     /// Seconds of the last frame, for the particles of the next view.
     float m_frameDelta = 0.0f;
     std::vector<renderer::ParticleSpawn> m_bursts;
