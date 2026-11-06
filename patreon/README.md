@@ -57,6 +57,7 @@ With my acquired knowledge and with the help of Claude Code, I decided to redo e
 | 026 | [A HUD of its own](posts/026-a-hud-of-its-own.md) | Progress, Phase 8.1 | Draft, 1 passage for me to write |
 | 027 | [Going ray-traced](posts/027-going-ray-traced.md) | Roadmap, Phase 9 | Draft, 1 passage for me to write |
 | 028 | [Press Escape](posts/028-press-escape.md) | Progress, Phase 8.2 | Draft, 1 passage for me to write |
+| 029 | [Under the hood, while it runs](posts/029-under-the-hood-while-it-runs.md) | Progress, Phase 8.3 | Draft, 1 passage for me to write |
 
 ## Layout
 
