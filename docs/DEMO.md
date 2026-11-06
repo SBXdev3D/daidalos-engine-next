@@ -33,7 +33,7 @@ flowchart LR
 | 5: Scene | The level in the new engine, background loading, restart, doors, pickups, red card, darkness | Done |
 | 6: Physics, audio and animation | Walking with collisions, jumps, crouching, ladders and solid doors, sound, skinned zombies and turning fans, hitscan handgun and shotgun, zombies that hunt, wounds and death | Done |
 | 7: Modern rendering | Real lights replacing the fog, the flashlight's shadow, rotating alarms, normal maps, ambient occlusion, particles for smoke, blood and green fog | 7.1 to 7.4 done: lights, alarms, normal maps, shadows, ambient occlusion, particles |
-| 8: GUI | The game's own HUD, crosshair, menus and loading screen | 8.1 done: HUD and crosshair in every build |
+| 8: GUI | The game's own HUD, crosshair, menus and loading screen | 8.1 and 8.2 done: HUD and crosshair in every build; loading screen with the turning gear, main, pause and options menus, death and "factory cleared" screens |
 | 9: AI, cinematics, optimization | Security camera, opening camera flight, better zombie navigation, culling | |
 
 Zombies come earlier than the roadmap's AI phase, because a shooter with no one to shoot is not a demo. Their state machine belongs to the game, and Phase 10 only adds what they turn out to lack.
@@ -54,6 +54,8 @@ build/windows-msvc/apps/sandbox/Release/sandbox.exe
 ```
 
 If the level is missing, the sandbox shows a test floor. Other glTF files can be tried with `+sandbox.scene <path>`.
+
+The level loads behind the legacy loading screen, then waits behind the main menu; `+sandbox.menu false` starts playing at once. Escape pauses. The options apply at once and are saved to `user.cfg` next to the executable when you leave them; delete it to go back to the defaults. The game ends two seconds after the player dies, or after the last zombie dies, with the time taken.
 
 `scripts/import_legacy_level.py` is not part of running the demo. It converts the legacy level again, or brings more legacy content over. It also bakes the animated MilkShape models to glTF files of their own: the zombie, the fans and the handgun, whose clips are the frame ranges the legacy game played.
 
