@@ -141,6 +141,12 @@ void AudioEngine::Read(std::span<float> samples) {
     ma_engine_read_pcm_frames(&m_impl->engine, samples.data(), samples.size() / channels, nullptr);
 }
 
+void AudioEngine::SetVolumes(float volume, float effectsVolume, float musicVolume) {
+    ma_engine_set_volume(&m_impl->engine, std::clamp(volume, 0.0f, 1.0f));
+    ma_sound_group_set_volume(&m_impl->effects, std::clamp(effectsVolume, 0.0f, 1.0f));
+    ma_sound_group_set_volume(&m_impl->music, std::clamp(musicVolume, 0.0f, 1.0f));
+}
+
 struct SoundWorld::State {
     struct Clip {
         std::filesystem::path file;
@@ -164,6 +170,7 @@ struct SoundWorld::State {
     std::map<std::string, ClipHandle, std::less<>> clipsByPath;
     core::SlotPool<Voice, VoiceTag> voices;
     std::vector<VoiceHandle> playing;
+    bool paused = false;
 };
 
 SoundWorld::SoundWorld(AudioEngine* engine, std::filesystem::path root)
@@ -214,7 +221,7 @@ VoiceHandle SoundWorld::Play(ClipHandle clip, const PlayOptions& options) {
     State& state = *m_state;
     ma_engine* engine = state.Engine();
     State::Clip* found = state.clips.TryGet(clip);
-    if (engine == nullptr || found == nullptr || state.voices.Size() >= kMaxVoices) {
+    if (engine == nullptr || found == nullptr || state.paused || state.voices.Size() >= kMaxVoices) {
         return {};
     }
 
@@ -266,6 +273,27 @@ bool SoundWorld::IsPlaying(VoiceHandle voice) const {
 
 std::size_t SoundWorld::VoiceCount() const {
     return m_state->voices.Size();
+}
+
+void SoundWorld::SetPaused(bool paused) {
+    State& state = *m_state;
+    if (state.paused == paused) {
+        return;
+    }
+    state.paused = paused;
+    // Stopping keeps a sound's place: starting it again goes on from there.
+    for (const VoiceHandle handle : state.playing) {
+        ma_sound* sound = state.voices.Get(handle).sound->Get();
+        if (paused) {
+            ma_sound_stop(sound);
+        } else {
+            ma_sound_start(sound);
+        }
+    }
+}
+
+bool SoundWorld::IsPaused() const {
+    return m_state->paused;
 }
 
 void SoundWorld::SetListener(const glm::vec3& position, const glm::vec3& forward, const glm::vec3& up) {
