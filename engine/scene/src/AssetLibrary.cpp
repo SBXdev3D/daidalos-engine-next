@@ -208,6 +208,19 @@ core::Result<rhi::TextureHandle> AssetLibrary::LoadTexture(std::string_view path
     return FindOrCreateTexture(image);
 }
 
+std::vector<AssetLibrary::AssetInfo> AssetLibrary::Describe() const {
+    std::vector<AssetInfo> assets;
+    m_models.ForEachEntry(
+        [&assets](const std::string& key, const Model& /*model*/) { assets.push_back({AssetInfo::Kind::Model, key}); });
+    m_textures.ForEachEntry([&assets](const std::string& key, const rhi::TextureHandle& /*texture*/) {
+        assets.push_back({AssetInfo::Kind::Texture, key});
+    });
+    m_fonts.ForEachEntry([&assets](const std::string& key, const ui::Font& /*font*/) {
+        assets.push_back({AssetInfo::Kind::Font, key});
+    });
+    return assets;
+}
+
 core::Result<const ui::Font*> AssetLibrary::LoadFont(std::string_view path) {
     DAI_PROFILE_SCOPE("scene::LoadFont");
     DAI_TRY_ASSIGN(std::string key, resources::NormalizeAssetPath(path));

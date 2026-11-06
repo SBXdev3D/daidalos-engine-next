@@ -104,6 +104,19 @@ public:
 
     [[nodiscard]] std::size_t ModelCount() const { return m_models.Size(); }
     [[nodiscard]] std::size_t TextureCount() const { return m_textures.Size(); }
+    [[nodiscard]] std::size_t FontCount() const { return m_fonts.Size(); }
+
+    /// One asset the library holds, for diagnostics.
+    struct AssetInfo {
+        enum class Kind : std::uint8_t { Model, Texture, Font };
+        Kind kind = Kind::Model;
+        /// The key it was loaded by: a path under the root, or a model's path and an image's index.
+        std::string path;
+    };
+    /// Models, then textures, then fonts, each by path.
+    [[nodiscard]] std::vector<AssetInfo> Describe() const;
+    /// Loads started with LoadModelAsync that have not been delivered yet.
+    [[nodiscard]] std::size_t PendingLoadCount() const { return m_pending.size(); }
 
 private:
     struct DecodedImage {

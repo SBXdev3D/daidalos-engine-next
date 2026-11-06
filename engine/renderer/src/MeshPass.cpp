@@ -592,6 +592,18 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         instances[index] = {
             draw.world, skinned ? m_device->StorageIndex(mesh.skin) : 0, skinned ? draw.firstJoint : kNoJoints, {}};
     }
+    m_counts = {.draws = static_cast<std::uint32_t>(view.draws.size()),
+                .lights = static_cast<std::uint32_t>(view.lights.size()),
+                .shadowedLights = m_shadowCount};
+    for (const SortedDraw& sorted : m_sorted) {
+        if (sorted.visible) {
+            ++m_counts.drawnDraws;
+            m_counts.triangles += m_meshes.Get(sorted.mesh).indexCount / 3;
+        }
+        if (sorted.castsShadows) {
+            m_counts.shadowDraws += m_shadowCount;
+        }
+    }
     m_prepared = &slot;
     return {};
 }

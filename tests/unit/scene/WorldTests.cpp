@@ -317,3 +317,16 @@ TEST(EachErrors, IterationCanContinueAfterAnAbortedLoop) {
 
     EXPECT_TRUE(world.Remove<Position>(entity));
 }
+
+TEST(Entities, EachEntityVisitsTheLiveOnesByIndex) {
+    World world;
+    const Entity first = world.Create();
+    const Entity second = world.Create();
+    const Entity third = world.Create();
+    world.Destroy(second);
+    const Entity reused = world.Create();
+
+    std::vector<Entity> visited;
+    world.EachEntity([&visited](Entity entity) { visited.push_back(entity); });
+    EXPECT_EQ(visited, (std::vector<Entity>{first, reused, third}));
+}

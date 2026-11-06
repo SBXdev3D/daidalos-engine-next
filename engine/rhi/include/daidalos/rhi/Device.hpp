@@ -59,6 +59,16 @@ struct Frame {
 /// GPU object goes away when the timeline semaphore shows that the GPU no longer uses it. Resources
 /// still alive when the Device is destroyed are released, with a warning. Destroying a null or stale
 /// handle does nothing.
+/// What a device holds, for diagnostics.
+struct MemoryStats {
+    /// Bytes of device-local memory in use by this process, and how much the system lets it use.
+    std::uint64_t usedBytes = 0;
+    std::uint64_t budgetBytes = 0;
+    std::size_t buffers = 0;
+    std::size_t textures = 0;
+    std::size_t pipelines = 0;
+};
+
 class Device {
 public:
     /// Private to the module; named here because command lists refer to it.
@@ -85,6 +95,8 @@ public:
     [[nodiscard]] std::span<const double> CompletedTimestamps() const;
     /// Objects waiting for the GPU to finish with them.
     [[nodiscard]] std::size_t PendingDestructionCount() const;
+    /// Device-local memory and live objects, now.
+    [[nodiscard]] MemoryStats Memory() const;
 
     [[nodiscard]] core::Result<BufferHandle> CreateBuffer(const BufferDesc& desc);
     void DestroyBuffer(BufferHandle buffer);

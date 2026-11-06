@@ -40,6 +40,14 @@ public:
         }
     }
 
+    /// Calls the function with each key and value, in key order.
+    template <class Function>
+    void ForEachEntry(Function&& function) const {
+        for (const auto& [key, value] : m_values) {
+            function(key, *value);
+        }
+    }
+
     void Clear() { m_values.clear(); }
     [[nodiscard]] std::size_t Size() const { return m_values.size(); }
 

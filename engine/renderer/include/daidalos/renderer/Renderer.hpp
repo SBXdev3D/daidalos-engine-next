@@ -55,6 +55,24 @@ struct RendererConfig {
     Antialiasing antialiasing = Antialiasing::Fxaa;
 };
 
+/// What the renderer did in the last frame it drew, and what it holds, for diagnostics.
+struct FrameStats {
+    /// Draws in the view, and those within the view distance.
+    std::uint32_t draws = 0;
+    std::uint32_t drawnDraws = 0;
+    /// Triangles of the drawn draws, once each: the pre-pass and the shadow maps draw them again.
+    std::uint64_t triangles = 0;
+    std::uint32_t lights = 0;
+    std::uint32_t shadowedLights = 0;
+    /// Draws into the shadow maps, all lights together.
+    std::uint32_t shadowDraws = 0;
+    std::uint32_t particleSpawns = 0;
+    /// Objects the renderer holds.
+    std::size_t meshes = 0;
+    std::size_t materials = 0;
+    std::size_t particleEffects = 0;
+};
+
 /// How long a pass took on the GPU.
 struct PassTime {
     std::string_view name;
@@ -101,6 +119,8 @@ public:
     /// GPU time of each pass of a recent frame, which the GPU finished a frame or two ago. Empty on a
     /// device without timestamps, and for the first frames.
     [[nodiscard]] std::span<const PassTime> GpuTimes() const;
+    /// Counts of the last frame drawn, and of the objects held now.
+    [[nodiscard]] FrameStats Stats() const;
 
     /// Draws one frame, following the window's size: the scene, then the canvas if there is one, then
     /// the overlay. A minimized window draws nothing. An error means that the device is unusable and the

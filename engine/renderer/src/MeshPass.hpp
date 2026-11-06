@@ -73,6 +73,18 @@ public:
     /// rendering scope. Draws whose mesh has been destroyed are skipped, and draws whose material has been
     /// use the default one. Without a camera, or after a failure to allocate, the frame draws nothing.
     [[nodiscard]] core::Result<void> Prepare(const SceneView& view, const FrameTargets& targets);
+    /// What the last Prepare chose to draw: FrameStats' draw, triangle and light counts.
+    struct Counts {
+        std::uint32_t draws = 0;
+        std::uint32_t drawnDraws = 0;
+        std::uint64_t triangles = 0;
+        std::uint32_t lights = 0;
+        std::uint32_t shadowedLights = 0;
+        std::uint32_t shadowDraws = 0;
+    };
+    [[nodiscard]] const Counts& LastCounts() const { return m_counts; }
+    [[nodiscard]] std::size_t MeshCount() const { return m_meshes.Size(); }
+    [[nodiscard]] std::size_t MaterialCount() const { return m_materials.Size(); }
     /// Draws the shadow maps of the prepared frame, outside any rendering scope.
     void RecordShadows(rhi::CommandList& commands);
     /// Writes depth and normals, inside a rendering scope with a kNormalFormat target and a cleared depth.
@@ -181,6 +193,7 @@ private:
     /// The frame that Prepare filled, if any. Its instances follow m_sorted.
     FrameSlot* m_prepared = nullptr;
     std::uint32_t m_shadowCount = 0;
+    Counts m_counts;
     float m_normalStrength = 1.0f;
     /// Reused from frame to frame.
     LightClusters m_clusters;
