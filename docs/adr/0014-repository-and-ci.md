@@ -11,6 +11,7 @@ The repository was hosted on Bitbucket with an unused pipeline template. It also
 
 - The repository is hosted on GitHub: https://github.com/StephaneBX/daidalos-engine-next. The Bitbucket repository remains as the `bitbucket` remote until it is archived.
 - CI runs on GitHub Actions: Windows (MSVC) and Linux (Clang), build and test on every push and pull request.
+  *Amended 2026-11-07:* CI runs one job, Linux Clang Debug with AddressSanitizer and UBSan plus the formatting check, on pull requests that change more than documentation. GitHub minutes are limited, and Windows is built and tested locally in every configuration before a pull request is opened.
 - Every CI step can also be run locally with the same CMake presets.
 - Legacy code in `Core/` is deleted as each part is replaced; it is not kept in a legacy folder (git history keeps it).
 

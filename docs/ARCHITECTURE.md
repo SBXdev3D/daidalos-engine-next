@@ -247,7 +247,7 @@ Effects are created on the Renderer from a `ParticleEffectDesc`; `AssetLibrary::
 | `tests/unit/<module>/` | Logic of one module, one executable per module | No |
 | `tests/gpu/<module>/` | `rhi`, `renderer` (with the debug overlay) and `scene` on a real driver, with no mock device | Yes, or lavapipe on Linux |
 
-CI runs on pull requests and on `main`: Windows MSVC and Linux Clang, in Debug, Release, ASan and Profile, plus a formatting check. Linux runs all GPU tests on lavapipe, under a virtual display. Windows runners have no Vulkan, so they skip those tests.
+CI runs one job on pull requests (ADR-0014): the formatting check, then Linux Clang Debug with AddressSanitizer and UBSan, with all GPU tests on lavapipe under a virtual display. Pull requests that only change documentation skip it. Windows MSVC (Debug, Release, ASan, Profile) is built and tested locally.
 
 ## Known gaps
 

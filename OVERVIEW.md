@@ -260,7 +260,7 @@ CMake is the build system (ADR-0001). It supports cross-platform project configu
 
 Configurations are defined with `CMakePresets.json`. Third-party dependencies are managed with vcpkg in manifest mode (`vcpkg.json` with a pinned baseline). The former Visual Studio solution and NuGet packages are retired.
 
-Continuous integration runs on GitHub Actions (Windows MSVC and Linux Clang), and every build must also be reproducible locally with the same presets (ADR-0014).
+Continuous integration runs on GitHub Actions (one Linux Clang job; Windows MSVC is built and tested locally), and every build must also be reproducible locally with the same presets (ADR-0014).
 
 The repository should eventually support:
 
