@@ -8,6 +8,8 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/geometric.hpp>
 
+#include <FLIP.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -152,25 +154,32 @@ protected:
             created(kDepthFormat, rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled, "Depth");
         const rhi::TextureHandle normals =
             created(MeshPass::kNormalFormat, rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled, "Normals");
-        EXPECT_TRUE(Device()
-                        .Submit([&](rhi::CommandList& commands) {
-                            ASSERT_TRUE(m_pass->Prepare(view, {.extent = extent}).has_value());
-                            renderer::RenderGraph graph;
-                            graph.AddPass({.name = "Prepass",
-                                           .rendering = rhi::RenderingDesc{.colorTarget = normals,
-                                                                           .clearColor = glm::vec4(0.0f),
-                                                                           .depthTarget = depth,
-                                                                           .clearDepth = 0.0f}},
-                                          [&](rhi::CommandList& list) { m_pass->RecordPrepass(list); });
-                            graph.AddPass({.name = "Meshes",
-                                           .rendering = rhi::RenderingDesc{.colorTarget = color,
-                                                                           .clearColor = glm::vec4(0.0f),
-                                                                           .depthTarget = depth},
-                                           .textures = {{m_pass->ShadowAtlas(), rhi::Access::FragmentShaderRead}}},
-                                          [&](rhi::CommandList& list) { m_pass->Record(list); });
-                            graph.Execute(commands);
-                        })
-                        .has_value());
+        EXPECT_TRUE(
+            Device()
+                .Submit([&](rhi::CommandList& commands) {
+                    const core::Result<std::uint32_t> structure = m_scene->Reserve(0, view.draws.size());
+                    ASSERT_TRUE(structure.has_value());
+                    ASSERT_TRUE(
+                        m_pass->Prepare(view, {.extent = extent, .accelerationStructure = *structure}).has_value());
+                    ASSERT_TRUE(m_scene->Prepare(m_pass->TracedDraws()).has_value());
+                    renderer::RenderGraph graph;
+                    m_pass->AddSkinning(graph);
+                    m_scene->AddBuild(graph);
+                    graph.AddPass({.name = "Prepass",
+                                   .rendering = rhi::RenderingDesc{.colorTarget = normals,
+                                                                   .clearColor = glm::vec4(0.0f),
+                                                                   .depthTarget = depth,
+                                                                   .clearDepth = 0.0f}},
+                                  [&](rhi::CommandList& list) { m_pass->RecordPrepass(list); });
+                    graph.AddPass({.name = "Meshes",
+                                   .rendering = rhi::RenderingDesc{.colorTarget = color,
+                                                                   .clearColor = glm::vec4(0.0f),
+                                                                   .depthTarget = depth},
+                                   .structures = {{m_scene->Structure(), rhi::Access::RayQueryRead}}},
+                                  [&](rhi::CommandList& list) { m_pass->Record(list); });
+                    graph.Execute(commands);
+                })
+                .has_value());
         Image image = Read(color, extent);
         Device().DestroyTexture(color);
         Device().DestroyTexture(depth);
@@ -342,4 +351,58 @@ TEST_F(PathTracerTest, DISABLED_WriteCornellBoxReference) {
     std::ofstream(golden, std::ios::binary)
         .write(reinterpret_cast<const char*>(image.data()),
                static_cast<std::streamsize>(image.size() * sizeof(glm::vec4)));
+}
+
+namespace {
+
+// The mean FLIP error of an image against a reference (Andersson et al. 2020), for HDR images: 0 when
+// they look the same, 1 when they could not differ more.
+float Flip(const Image& reference, const Image& test, rhi::Extent extent) {
+    std::vector<float> referenceColors;
+    std::vector<float> testColors;
+    for (std::size_t index = 0; index < reference.size(); ++index) {
+        for (int channel = 0; channel < 3; ++channel) {
+            referenceColors.push_back(reference[index][channel]);
+            testColors.push_back(test[index][channel]);
+        }
+    }
+    FLIP::Parameters parameters;
+    float mean = 0.0f;
+    float* errors = nullptr;
+    FLIP::evaluate(referenceColors.data(), testColors.data(), static_cast<int>(extent.width),
+                   static_cast<int>(extent.height), true, parameters, false, true, mean, &errors);
+    delete[] errors;
+    return mean;
+}
+
+} // namespace
+
+TEST_F(PathTracerTest, RayTracedShadowsMatchThePathTracer) {
+    // The Cornell box's direct light, from the mesh pass and from one bounce of the path tracer. Without
+    // shadows, the path tracer's image is far from the mesh pass's: the score tells shadows apart.
+    const renderer::CornellBox box = renderer::MakeCornellBox();
+    SceneView view;
+    view.camera = LookAt(box.eye, box.target, box.verticalFov);
+    view.atmosphere = Dark();
+    view.lights.push_back(box.light);
+    for (const renderer::CornellPart& part : box.parts) {
+        view.draws.push_back({.mesh = m_cube, .world = part.world, .material = Material(part.material)});
+    }
+    constexpr rhi::Extent kExtent{96, 96};
+    const Image raster = Rasterize(view, kExtent);
+    // Through the pixels' centers, as the mesh pass samples them: what differs is shading, not edges.
+    const Image traced = Trace(view, kExtent, {.maxBounces = 1, .seed = 11, .jitter = false}, 1);
+    SceneView unshadowed = view;
+    for (renderer::DrawItem& draw : unshadowed.draws) {
+        draw.castsShadows = false;
+    }
+    const Image tracedWithoutShadows = Trace(unshadowed, kExtent, {.maxBounces = 1, .seed = 11, .jitter = false}, 1);
+
+    const float withShadows = Flip(traced, raster, kExtent);
+    const float withoutShadows = Flip(tracedWithoutShadows, raster, kExtent);
+    RecordProperty("flip", std::to_string(withShadows));
+    RecordProperty("flipWithoutShadows", std::to_string(withoutShadows));
+    // Measured on an RTX 3090: 0.014, and 0.113 without shadows.
+    EXPECT_LT(withShadows, 0.03f);
+    EXPECT_GT(withoutShadows, 4.0f * withShadows);
 }
