@@ -99,6 +99,7 @@ public:
         }
         m_hud = *hud;
         m_ui.SetStyle(sandbox::MenuStyle(m_hud));
+        AddDevTools(app);
 
         // The first scene is current at once: the renderer's owner then releases it on any failure.
         app.SetScene(std::make_unique<scene::Scene>(app.Renderer(), m_assetRoot, app.Audio()));
@@ -157,7 +158,6 @@ public:
             m_elapsed = core::Seconds::zero();
         }
         DrawInterface(app);
-        DrawDebugWindow(app);
     }
 
     void OnStop(app::Application& app) override {
@@ -390,36 +390,44 @@ private:
         HandleChoice(app, choice);
     }
 
-    /// Frame rate, GPU times and help, in development builds.
-    void DrawDebugWindow(app::Application& app) {
+    /// The game's part of the developer tools, in development builds: its own window, the player in
+    /// the entity inspector, and a restart command.
+    void AddDevTools(app::Application& app) {
 #if DAI_DEV_TOOLS
-        if (app.DebugOverlay() == nullptr) {
+        app::DevTools* tools = app.Tools();
+        if (tools == nullptr) {
             return;
         }
-        ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_FirstUseEver);
-        ImGui::Begin("Daidalos", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-        ImGui::Text("%.0f FPS", m_fps);
-        if (const std::span<const renderer::PassTime> times = app.Renderer().GpuTimes(); !times.empty()) {
-            std::string line = "GPU";
-            for (const renderer::PassTime& pass : times) {
-                line += std::format("   {} {:.2f} ms", pass.name, pass.milliseconds);
+        tools->AddWindow("Game", [&app] {
+            if (scene::Scene* current = app.CurrentScene()) {
+                current->World().Each<sandbox::Player>([](ecs::Entity /*entity*/, const sandbox::Player& player) {
+                    ImGui::Text("Zombies %d / %d", player.kills, player.zombieCount);
+                });
             }
-            ImGui::TextUnformatted(line.c_str());
-        }
-        if (scene::Scene* current = app.CurrentScene()) {
-            current->World().Each<sandbox::Player>([](ecs::Entity /*entity*/, const sandbox::Player& player) {
-                ImGui::Text("Zombies %d / %d", player.kills, player.zombieCount);
-            });
-        }
-        ImGui::TextDisabled(
-            "WASD: move. Shift: run. Space: jump. C: crouch. E: use. F: flashlight. Esc: menu. F5: restart. Tab: free "
-            "the mouse.");
-        ImGui::TextDisabled("Left button: fire. R: reload. 1, 2, Q or the wheel: weapons.");
-        if (const std::string& error = app.Renderer().ShaderError(); !error.empty()) {
-            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "Shader reload failed:");
-            ImGui::TextUnformatted(error.c_str());
-        }
-        ImGui::End();
+            ImGui::TextDisabled("WASD: move. Shift: run. Space: jump. C: crouch. E: use. F: flashlight.");
+            ImGui::TextDisabled("Esc: menu. F5: restart. Tab: free the mouse.");
+            ImGui::TextDisabled("Left button: fire. R: reload. 1, 2, Q or the wheel: weapons.");
+        });
+        tools->AddInspector<sandbox::Player>("Player", [](sandbox::Player& player) {
+            ImGui::SliderInt("Health", &player.health, 0, 200);
+            ImGui::SliderInt("Armor", &player.armor, 0, 200);
+            ImGui::Checkbox("Has the flashlight", &player.hasFlashlight);
+            ImGui::Checkbox("Has the red card", &player.hasRedCard);
+            for (std::size_t kind = 0; kind < sandbox::kWeaponKinds; ++kind) {
+                sandbox::WeaponState& weapon = player.weapons[kind];
+                ImGui::PushID(static_cast<int>(kind));
+                ImGui::Checkbox(kind == 0 ? "Handgun" : "Shotgun", &weapon.owned);
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(120.0f);
+                ImGui::InputInt("Reserve", &weapon.reserve);
+                ImGui::PopID();
+            }
+            ImGui::Text("Feet %.2f %.2f %.2f, %d kills of %d", player.feet.x, player.feet.y, player.feet.z,
+                        player.kills, player.zombieCount);
+        });
+        tools->GetConsole().AddCommand(
+            "restart", "Starts the level over, as F5 does",
+            [this, &app](app::Console& /*console*/, std::span<const std::string> /*args*/) { Restart(app); });
 #else
         static_cast<void>(app);
 #endif

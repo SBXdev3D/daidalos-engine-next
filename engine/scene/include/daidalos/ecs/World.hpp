@@ -63,6 +63,16 @@ public:
     bool Destroy(Entity entity);
     [[nodiscard]] bool IsAlive(Entity entity) const;
     [[nodiscard]] std::size_t AliveCount() const { return m_aliveCount; }
+    /// Calls the function with every live entity, by index. It must not create or destroy entities.
+    template <class Function>
+        requires std::is_invocable_v<Function&, Entity>
+    void EachEntity(Function&& function) const {
+        for (std::uint32_t index = 0; index < m_generations.size(); ++index) {
+            if (m_alive[index]) {
+                function(Entity(index, m_generations[index]));
+            }
+        }
+    }
 
     /// Attaches the child as the last child of the parent, or detaches it when the parent is null.
     /// Fails with InvalidArgument when either entity is not alive or when the parent is the child

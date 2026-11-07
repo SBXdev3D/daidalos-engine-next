@@ -46,6 +46,8 @@ public:
     void Draw(rhi::CommandList& commands, std::uint32_t frameBuffer, rhi::TextureHandle depth,
               const glm::vec3& cameraRight, const glm::vec3& cameraUp);
 
+    [[nodiscard]] std::size_t EffectCount() const { return m_effects.Size(); }
+
 private:
     struct Effect {};
     /// Spawn requests of one frame in flight.

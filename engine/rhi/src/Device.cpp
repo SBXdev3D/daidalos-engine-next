@@ -8,6 +8,7 @@
 #include <daidalos/rhi/Device.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <format>
 #include <limits>
@@ -779,6 +780,25 @@ std::uint64_t Device::PresentedFrameCount() const {
 
 std::size_t Device::PendingDestructionCount() const {
     return m_impl->deferred.size();
+}
+
+MemoryStats Device::Memory() const {
+    MemoryStats stats;
+    stats.buffers = m_impl->buffers.Size();
+    stats.textures = m_impl->textures.Size();
+    stats.pipelines = m_impl->pipelines.Size();
+
+    const VkPhysicalDeviceMemoryProperties* properties = nullptr;
+    vmaGetMemoryProperties(m_impl->allocator, &properties);
+    std::array<VmaBudget, VK_MAX_MEMORY_HEAPS> budgets{};
+    vmaGetHeapBudgets(m_impl->allocator, budgets.data());
+    for (std::uint32_t heap = 0; heap < properties->memoryHeapCount; ++heap) {
+        if ((properties->memoryHeaps[heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0) {
+            stats.usedBytes += budgets[heap].usage;
+            stats.budgetBytes += budgets[heap].budget;
+        }
+    }
+    return stats;
 }
 
 core::Result<std::optional<Frame>> Device::BeginFrame(Swapchain* swapchain) {

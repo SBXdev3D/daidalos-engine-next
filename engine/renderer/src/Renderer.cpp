@@ -108,6 +108,8 @@ struct Renderer::Impl {
     std::optional<ParticlePass> particlePass;
     std::optional<FxaaPass> fxaaPass;
     std::optional<UiPass> uiPass;
+    /// Bursts and emissions of the last view drawn, for FrameStats.
+    std::uint32_t particleSpawns = 0;
     bool ambientOcclusion = true;
     Antialiasing antialiasing = Antialiasing::Fxaa;
     /// Samples per pixel of the pre-pass and the mesh pass. With more than one, they draw into the
@@ -363,6 +365,21 @@ std::span<const PassTime> Renderer::GpuTimes() const {
     return m_impl->gpuTimesValid ? std::span<const PassTime>(m_impl->gpuTimes) : std::span<const PassTime>();
 }
 
+FrameStats Renderer::Stats() const {
+    const Impl& impl = *m_impl;
+    const MeshPass::Counts& counts = impl.meshPass->LastCounts();
+    return {.draws = counts.draws,
+            .drawnDraws = counts.drawnDraws,
+            .triangles = counts.triangles,
+            .lights = counts.lights,
+            .shadowedLights = counts.shadowedLights,
+            .shadowDraws = counts.shadowDraws,
+            .particleSpawns = impl.particleSpawns,
+            .meshes = impl.meshPass->MeshCount(),
+            .materials = impl.meshPass->MaterialCount(),
+            .particleEffects = impl.particlePass->EffectCount()};
+}
+
 core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* canvas, const OverlayRecorder& overlay) {
     DAI_PROFILE_SCOPE("renderer::Render");
     Impl& impl = *m_impl;
@@ -389,6 +406,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         const rhi::TextureHandle occlusion =
             impl.ambientOcclusion ? impl.ambientOcclusionPass->Output() : rhi::TextureHandle{};
         status = impl.meshPass->Prepare(view, {.extent = frame.extent, .occlusion = occlusion});
+        impl.particleSpawns = static_cast<std::uint32_t>(view.particleSpawns.size());
     }
     if (status) {
         impl.meshPass->RecordShadows(commands);

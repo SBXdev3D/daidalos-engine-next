@@ -265,6 +265,8 @@ void DebugUi::ProcessEvent(const platform::Event& event) {
             } else if constexpr (std::is_same_v<T, platform::KeyReleased>) {
                 UpdateModifiers(io, value.key, false);
                 io.AddKeyEvent(ToImGuiKey(value.key), false);
+            } else if constexpr (std::is_same_v<T, platform::TextEntered>) {
+                io.AddInputCharactersUTF8(value.text.c_str());
             } else if constexpr (std::is_same_v<T, platform::WindowFocusGained>) {
                 io.AddFocusEvent(true);
             } else if constexpr (std::is_same_v<T, platform::WindowFocusLost>) {

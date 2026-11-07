@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 namespace daidalos::platform::detail {
 
@@ -160,6 +161,12 @@ std::optional<Event> TranslateEvent(const SDL_Event& event) {
         }
         return KeyReleased{window, *key};
     }
+
+    case SDL_EVENT_TEXT_INPUT:
+        if (event.text.text == nullptr || event.text.text[0] == 0) {
+            return std::nullopt;
+        }
+        return TextEntered{static_cast<WindowId>(event.text.windowID), std::string(event.text.text)};
 
     case SDL_EVENT_MOUSE_MOTION:
         return MouseMoved{static_cast<WindowId>(event.motion.windowID), glm::vec2(event.motion.x, event.motion.y),

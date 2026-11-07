@@ -83,6 +83,18 @@ TEST(EventTranslation, QuitBecomesQuitRequested) {
     EXPECT_EQ(TranslateEvent(event), std::optional<Event>(QuitRequested{}));
 }
 
+TEST(EventTranslation, TextInputBecomesTextEntered) {
+    SDL_Event event{};
+    event.type = SDL_EVENT_TEXT_INPUT;
+    event.text.windowID = 7;
+    const char* text = "\xC3\xA9t\xC3\xA9"; // "été" in UTF-8.
+    event.text.text = text;
+    EXPECT_EQ(TranslateEvent(event), std::optional<Event>(TextEntered{kWindow, text}));
+
+    event.text.text = "";
+    EXPECT_EQ(TranslateEvent(event), std::nullopt) << "Empty text is no event";
+}
+
 TEST(EventTranslation, WindowEventsKeepTheirWindowId) {
     EXPECT_EQ(TranslateEvent(WindowEvent(SDL_EVENT_WINDOW_CLOSE_REQUESTED)),
               std::optional<Event>(WindowCloseRequested{kWindow}));

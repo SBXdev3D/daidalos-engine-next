@@ -69,6 +69,17 @@ TEST_F(AssetLibraryTest, RepeatedRequestsReturnTheSameModel) {
     EXPECT_EQ(library.ModelCount(), 1U);
 }
 
+TEST_F(AssetLibraryTest, DescribesWhatItHoldsByPath) {
+    AssetLibrary library(*m_renderer, kAssets);
+    ASSERT_TRUE(library.LoadModel("quad.gltf").has_value());
+    const std::vector<AssetLibrary::AssetInfo> assets = library.Describe();
+    ASSERT_FALSE(assets.empty());
+    EXPECT_EQ(assets.front().kind, AssetLibrary::AssetInfo::Kind::Model);
+    EXPECT_EQ(assets.front().path, "quad.gltf");
+    EXPECT_EQ(assets.size(), 1 + library.TextureCount());
+    EXPECT_EQ(library.PendingLoadCount(), 0U);
+}
+
 TEST_F(AssetLibraryTest, TextureSharedByTwoModelsIsLoadedOnce) {
     AssetLibrary library(*m_renderer, kAssets);
     ASSERT_TRUE(library.LoadModel("quad.gltf").has_value());
