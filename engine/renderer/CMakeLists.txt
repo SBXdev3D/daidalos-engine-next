@@ -22,6 +22,8 @@ dai_add_module(NAME renderer
         src/ParticlePass.cpp
         src/ParticlePass.hpp
         src/Primitives.cpp
+        src/RayTracingScene.cpp
+        src/RayTracingScene.hpp
         src/RenderGraph.cpp
         src/RenderGraph.hpp
         src/Renderer.cpp
@@ -37,8 +39,9 @@ dai_add_module(NAME renderer
 
 dai_add_shaders(TARGET daidalos_renderer
     SOURCES shaders/Mesh.slang shaders/Prepass.slang shaders/ShadowMap.slang shaders/Ssao.slang shaders/SsaoBlur.slang
-        shaders/Tonemap.slang shaders/ParticleDraw.slang shaders/Fxaa.slang shaders/Ui.slang
-    COMPUTE shaders/ParticleEmit.slang shaders/ParticleSimulate.slang shaders/ParticleFinish.slang shaders/ParticleSort.slang
+        shaders/Tonemap.slang shaders/ParticleDraw.slang shaders/Fxaa.slang shaders/Ui.slang shaders/RayDebug.slang
+    COMPUTE shaders/Skinning.slang shaders/ParticleEmit.slang shaders/ParticleSimulate.slang
+        shaders/ParticleFinish.slang shaders/ParticleSort.slang
     INCLUDES shaders/AmbientOcclusion.slangh shaders/MeshCommon.slangh shaders/MeshTypes.slangh shaders/Particles.slangh)
 
 target_compile_definitions(daidalos_renderer

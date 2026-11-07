@@ -15,6 +15,7 @@
 #include <shaders/Prepass.ps.spv.h>
 #include <shaders/ShadowMap.ps.spv.h>
 #include <shaders/ShadowMap.vs.spv.h>
+#include <shaders/Skinning.cs.spv.h>
 
 #include <algorithm>
 #include <array>
@@ -37,9 +38,19 @@ struct MeshPushConstants {
     std::uint32_t materialBuffer;
     std::uint32_t instanceIndex;
     std::uint32_t materialIndex;
-    std::uint32_t jointBuffer;
     std::uint32_t shadowIndex;
 };
+
+struct SkinningPushConstants {
+    std::uint32_t source;
+    std::uint32_t skin;
+    std::uint32_t joints;
+    std::uint32_t firstJoint;
+    std::uint32_t target;
+    std::uint32_t firstVertex;
+    std::uint32_t vertexCount;
+};
+constexpr std::uint32_t kSkinningGroupSize = 64;
 
 struct FrameData {
     glm::mat4 viewProjection;
@@ -63,7 +74,8 @@ struct FrameData {
     float clusterSliceScale;
     std::uint32_t clusterLightBuffer;
     float farPlane;
-    std::array<std::uint32_t, 2> padding;
+    std::uint32_t accelerationStructure;
+    std::uint32_t padding;
 };
 static_assert(sizeof(FrameData) == 256);
 
@@ -132,10 +144,12 @@ LightData ToGpu(const Light& light) {
 
 struct InstanceData {
     glm::mat4 world;
-    std::uint32_t skinBuffer;
-    std::uint32_t firstJoint; // kNoJoints for a rigid draw.
-    std::array<std::uint32_t, 2> padding;
+    std::uint32_t vertexBuffer;
+    std::uint32_t firstVertex;
+    std::uint32_t indexBuffer;
+    std::uint32_t material;
 };
+static_assert(sizeof(resources::Vertex) == 12 * sizeof(float), "Matches kVertexFloats in MeshTypes.slangh");
 static_assert(sizeof(InstanceData) == 80);
 static_assert(sizeof(resources::SkinWeights) == 24, "Matches SkinVertex in MeshTypes.slangh");
 
@@ -183,7 +197,9 @@ MeshPass::MeshPass(MeshPass&& other) noexcept
       m_materialTable(std::exchange(other.m_materialTable, {})),
       m_materialCapacity(std::exchange(other.m_materialCapacity, 0)),
       m_defaultMaterial(std::exchange(other.m_defaultMaterial, {})),
-      m_frameSlots(std::exchange(other.m_frameSlots, {})), m_nextFrameSlot(other.m_nextFrameSlot) {}
+      m_frameSlots(std::exchange(other.m_frameSlots, {})), m_nextFrameSlot(other.m_nextFrameSlot),
+      m_skinned(std::exchange(other.m_skinned, {})), m_skinnedCapacity(std::exchange(other.m_skinnedCapacity, 0)),
+      m_skinningPipeline(std::exchange(other.m_skinningPipeline, {})) {}
 
 MeshPass::~MeshPass() {
     DestroyPipelines(m_pipelines);
@@ -191,8 +207,11 @@ MeshPass::~MeshPass() {
         m_device->DestroyBuffer(mesh.vertices);
         m_device->DestroyBuffer(mesh.indices);
         m_device->DestroyBuffer(mesh.skin);
+        m_device->DestroyAccelerationStructure(mesh.structure);
     });
     m_device->DestroyBuffer(m_materialTable);
+    m_device->DestroyBuffer(m_skinned);
+    m_device->DestroyPipeline(m_skinningPipeline);
     for (const FrameSlot& slot : m_frameSlots) {
         m_device->DestroyBuffer(slot.frame);
         m_device->DestroyBuffer(slot.instances);
@@ -211,6 +230,8 @@ core::Result<MeshPass> MeshPass::Create(rhi::Device& device, rhi::Format colorFo
     MeshPass pass(device, colorFormat, depthFormat, settings);
     DAI_TRY(pass.ReplaceShaders(rhi::ToSpirv(kMeshVsSpirv), rhi::ToSpirv(kMeshPsSpirv)));
     DAI_TRY(pass.CreateShadowResources());
+    DAI_TRY_ASSIGN(pass.m_skinningPipeline,
+                   device.CreateComputePipeline({.shader = rhi::ToSpirv(kSkinningCsSpirv), .name = "Skinning"}));
     // Plain white plastic. glTF's default material is a metal, which looks black without reflections.
     DAI_TRY_ASSIGN(MaterialHandle defaultMaterial, pass.CreateMaterial({.metallicFactor = 0.0f}));
     pass.m_defaultMaterial = defaultMaterial;
@@ -331,13 +352,16 @@ core::Result<MeshHandle> MeshPass::CreateMesh(const resources::MeshData& data, c
     const auto vertexBytes = std::as_bytes(std::span(data.vertices));
     const auto indexBytes = std::as_bytes(std::span(data.indices));
 
-    DAI_TRY_ASSIGN(rhi::BufferHandle vertices,
-                   m_device->CreateBuffer({.size = vertexBytes.size(),
-                                           .usage = rhi::BufferUsage::Vertex | rhi::BufferUsage::TransferDst,
-                                           .name = std::format("{} vertices", name)}));
+    DAI_TRY_ASSIGN(
+        rhi::BufferHandle vertices,
+        m_device->CreateBuffer({.size = vertexBytes.size(),
+                                .usage = rhi::BufferUsage::Vertex | rhi::BufferUsage::TransferDst |
+                                         rhi::BufferUsage::Storage | rhi::BufferUsage::AccelerationStructureInput,
+                                .name = std::format("{} vertices", name)}));
     core::Result<rhi::BufferHandle> indices =
         m_device->CreateBuffer({.size = indexBytes.size(),
-                                .usage = rhi::BufferUsage::Index | rhi::BufferUsage::TransferDst,
+                                .usage = rhi::BufferUsage::Index | rhi::BufferUsage::TransferDst |
+                                         rhi::BufferUsage::Storage | rhi::BufferUsage::AccelerationStructureInput,
                                 .name = std::format("{} indices", name)});
     if (!indices) {
         m_device->DestroyBuffer(vertices);
@@ -359,10 +383,29 @@ core::Result<MeshHandle> MeshPass::CreateMesh(const resources::MeshData& data, c
             return m_device->UploadBuffer(buffer, skinBytes);
         });
     }
+    // The mesh's triangles for rays, built with the uploads right after its vertices arrive.
+    const auto vertexCount = static_cast<std::uint32_t>(data.vertices.size());
+    const auto indexCount = static_cast<std::uint32_t>(data.indices.size());
+    rhi::AccelerationStructureHandle structure;
+    if (uploaded) {
+        core::Result<rhi::AccelerationStructureHandle> created =
+            m_device->CreateAccelerationStructure({.level = rhi::AccelerationStructureLevel::Bottom,
+                                                   .geometry = {.vertices = vertices,
+                                                                .vertexStride = sizeof(resources::Vertex),
+                                                                .vertexCount = vertexCount,
+                                                                .indices = *indices,
+                                                                .indexCount = indexCount},
+                                                   .name = name});
+        uploaded = created.and_then([&](rhi::AccelerationStructureHandle built) {
+            structure = built;
+            return m_device->BuildWithUploads(built);
+        });
+    }
     if (!uploaded) {
         m_device->DestroyBuffer(vertices);
         m_device->DestroyBuffer(*indices);
         m_device->DestroyBuffer(skin);
+        m_device->DestroyAccelerationStructure(structure);
         return tl::unexpected(std::move(uploaded.error()));
     }
     // The box's center, and the farthest vertex from it: not the smallest sphere, but a tight one.
@@ -377,8 +420,7 @@ core::Result<MeshHandle> MeshPass::CreateMesh(const resources::MeshData& data, c
     for (const resources::Vertex& vertex : data.vertices) {
         radius = std::max(radius, glm::distance(center, vertex.position));
     }
-    return m_meshes.Insert(
-        {vertices, *indices, skin, static_cast<std::uint32_t>(data.indices.size()), glm::vec4(center, radius)});
+    return m_meshes.Insert({vertices, *indices, skin, structure, vertexCount, indexCount, glm::vec4(center, radius)});
 }
 
 void MeshPass::DestroyMesh(MeshHandle mesh) {
@@ -386,6 +428,7 @@ void MeshPass::DestroyMesh(MeshHandle mesh) {
         m_device->DestroyBuffer(removed->vertices);
         m_device->DestroyBuffer(removed->indices);
         m_device->DestroyBuffer(removed->skin);
+        m_device->DestroyAccelerationStructure(removed->structure);
     }
 }
 
@@ -430,7 +473,7 @@ core::Result<MaterialHandle> MeshPass::CreateMaterial(const MaterialDesc& desc) 
         .padding = {},
     };
 
-    const MaterialHandle material = m_materials.Insert({desc.doubleSided});
+    const MaterialHandle material = m_materials.Insert({desc.doubleSided, desc.alphaCutoff > 0.0f});
     if (core::Result<void> reserved = ReserveMaterialSlot(material.Index()); !reserved) {
         m_materials.Remove(material);
         return tl::unexpected(std::move(reserved.error()));
@@ -499,6 +542,8 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     m_prepared = nullptr;
     m_shadowCount = 0;
     m_sorted.clear();
+    m_skinningJobs.clear();
+    m_traced.clear();
     if (!view.camera.has_value()) {
         return {};
     }
@@ -540,7 +585,8 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                           ClusterSliceScale(camera.nearPlane, farPlane),
                           m_device->StorageIndex(slot.clusterLights),
                           farPlane,
-                          {}};
+                          targets.accelerationStructure,
+                          0};
     std::memcpy(m_device->Mapped(slot.clusters).data(), m_clusters.ranges.data(),
                 m_clusters.ranges.size() * sizeof(glm::uvec2));
     if (!m_clusters.lightIndices.empty()) {
@@ -581,18 +627,65 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         const glm::vec3 center(draw.world * glm::vec4(glm::vec3(bounds), 1.0f));
         const bool visible =
             draw.firstJoint != kNoJoints || glm::distance(center, cameraPosition) - bounds.w * scale <= farPlane;
-        m_sorted.push_back(
-            {(doubleSided << 32U) | draw.mesh.Index(), draw.mesh, material, index, draw.castsShadows, visible});
+        m_sorted.push_back({(doubleSided << 32U) | draw.mesh.Index(), draw.mesh, material, index, draw.castsShadows,
+                            visible, kNotSkinned});
     }
     std::ranges::sort(m_sorted, {}, &SortedDraw::key);
-    auto* instances = reinterpret_cast<InstanceData*>(m_device->Mapped(slot.instances).data());
-    for (std::size_t index = 0; index < m_sorted.size(); ++index) {
-        const DrawItem& draw = view.draws[m_sorted[index].draw];
+
+    // Skinned draws get their vertices from the skinning pass, one after the other in m_skinned. A skinned
+    // draw needs the skin of its mesh, and joints that the view holds. Otherwise it is rigid.
+    m_skinningJobs.clear();
+    std::uint32_t skinnedVertices = 0;
+    for (SortedDraw& sorted : m_sorted) {
+        const DrawItem& draw = view.draws[sorted.draw];
         const Mesh& mesh = m_meshes.Get(draw.mesh);
-        // A skinned draw needs the skin of its mesh, and joints that the view holds. Otherwise it is rigid.
-        const bool skinned = mesh.skin && draw.firstJoint != kNoJoints && draw.firstJoint < view.jointMatrices.size();
-        instances[index] = {
-            draw.world, skinned ? m_device->StorageIndex(mesh.skin) : 0, skinned ? draw.firstJoint : kNoJoints, {}};
+        if (mesh.skin && draw.firstJoint != kNoJoints && draw.firstJoint < view.jointMatrices.size()) {
+            sorted.firstSkinnedVertex = skinnedVertices;
+            m_skinningJobs.push_back({m_device->StorageIndex(mesh.vertices), m_device->StorageIndex(mesh.skin),
+                                      draw.firstJoint, skinnedVertices, mesh.vertexCount});
+            skinnedVertices += mesh.vertexCount;
+        }
+    }
+    if (skinnedVertices > m_skinnedCapacity) {
+        const std::uint64_t capacity = std::max<std::uint64_t>(skinnedVertices, m_skinnedCapacity * 2);
+        DAI_TRY_ASSIGN(rhi::BufferHandle created,
+                       m_device->CreateBuffer({.size = capacity * sizeof(resources::Vertex),
+                                               .usage = rhi::BufferUsage::Vertex | rhi::BufferUsage::Storage |
+                                                        rhi::BufferUsage::AccelerationStructureInput,
+                                               .name = "Skinned vertices"}));
+        m_device->DestroyBuffer(m_skinned);
+        m_skinned = created;
+        m_skinnedCapacity = capacity;
+    }
+
+    auto* instances = reinterpret_cast<InstanceData*>(m_device->Mapped(slot.instances).data());
+    m_traced.clear();
+    for (std::size_t index = 0; index < m_sorted.size(); ++index) {
+        const SortedDraw& sorted = m_sorted[index];
+        const DrawItem& draw = view.draws[sorted.draw];
+        const Mesh& mesh = m_meshes.Get(draw.mesh);
+        const Material& material = m_materials.Get(sorted.material);
+        const bool skinned = sorted.firstSkinnedVertex != kNotSkinned;
+        // Skinned vertices are in world space already.
+        const glm::mat4 world = skinned ? glm::mat4(1.0f) : draw.world;
+        instances[index] = {world, m_device->StorageIndex(skinned ? m_skinned : mesh.vertices),
+                            skinned ? sorted.firstSkinnedVertex : 0, m_device->StorageIndex(mesh.indices),
+                            sorted.material.Index()};
+        TracedDraw& traced = m_traced.emplace_back();
+        traced.world = world;
+        traced.opaque = !material.alphaTested;
+        traced.doubleSided = material.doubleSided;
+        traced.castsShadows = sorted.castsShadows;
+        if (skinned) {
+            traced.skinned = {.vertices = m_skinned,
+                              .vertexOffset = std::uint64_t{sorted.firstSkinnedVertex} * sizeof(resources::Vertex),
+                              .vertexStride = sizeof(resources::Vertex),
+                              .vertexCount = mesh.vertexCount,
+                              .indices = mesh.indices,
+                              .indexCount = mesh.indexCount};
+        } else {
+            traced.structure = mesh.structure;
+        }
     }
     m_counts = {.draws = static_cast<std::uint32_t>(view.draws.size()),
                 .lights = static_cast<std::uint32_t>(view.lights.size()),
@@ -610,13 +703,62 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     return {};
 }
 
+std::uint32_t MeshPass::InstanceDataIndex() const {
+    DAI_ASSERT(m_prepared != nullptr, "No frame is prepared");
+    return m_device->StorageIndex(m_prepared->instances);
+}
+
+void MeshPass::AddSkinning(RenderGraph& graph) {
+    if (m_prepared == nullptr || m_skinningJobs.empty()) {
+        return;
+    }
+    PassDesc desc{.name = "Skinning", .buffers = {{m_skinned, rhi::Access::ComputeShaderWrite}}};
+    for (const SortedDraw& sorted : m_sorted) {
+        if (sorted.firstSkinnedVertex != kNotSkinned) {
+            const Mesh& mesh = m_meshes.Get(sorted.mesh);
+            desc.buffers.push_back({mesh.vertices, rhi::Access::ComputeShaderRead});
+            desc.buffers.push_back({mesh.skin, rhi::Access::ComputeShaderRead});
+        }
+    }
+    graph.AddPass(std::move(desc), [this](rhi::CommandList& commands) {
+        DAI_PROFILE_SCOPE("renderer::MeshPass::Skinning");
+        commands.BindPipeline(m_skinningPipeline);
+        const std::uint32_t joints = m_device->StorageIndex(m_prepared->joints);
+        const std::uint32_t target = m_device->StorageIndex(m_skinned);
+        // The draws write separate vertices: no dispatch waits for another.
+        for (const SkinningJob& job : m_skinningJobs) {
+            commands.Push(SkinningPushConstants{job.source, job.skin, joints, job.firstJoint, target, job.firstVertex,
+                                                job.vertexCount});
+            commands.Dispatch((job.vertexCount + kSkinningGroupSize - 1) / kSkinningGroupSize);
+        }
+    });
+}
+
 void MeshPass::AddShadows(RenderGraph& graph) {
     if (m_prepared == nullptr || m_shadowCount == 0) {
         return;
     }
-    graph.AddPass(
-        {.name = "Shadows", .rendering = rhi::RenderingDesc{.depthTarget = m_shadowAtlas, .clearDepth = 0.0f}},
-        [this](rhi::CommandList& commands) { RecordShadows(commands); });
+    graph.AddPass({.name = "Shadows",
+                   .rendering = rhi::RenderingDesc{.depthTarget = m_shadowAtlas, .clearDepth = 0.0f},
+                   .buffers = {{SkinnedVertices(), rhi::Access::VertexInputRead}}},
+                  [this](rhi::CommandList& commands) { RecordShadows(commands); });
+}
+
+void MeshPass::BindGeometry(rhi::CommandList& commands, const SortedDraw& draw, rhi::BufferHandle& boundVertices,
+                            std::uint64_t& boundOffset, MeshHandle& boundIndices) {
+    const Mesh& mesh = m_meshes.Get(draw.mesh);
+    const bool skinned = draw.firstSkinnedVertex != kNotSkinned;
+    const rhi::BufferHandle vertices = skinned ? m_skinned : mesh.vertices;
+    const std::uint64_t offset = skinned ? std::uint64_t{draw.firstSkinnedVertex} * sizeof(resources::Vertex) : 0;
+    if (vertices != boundVertices || offset != boundOffset) {
+        commands.BindVertexBuffer(vertices, offset);
+        boundVertices = vertices;
+        boundOffset = offset;
+    }
+    if (draw.mesh != boundIndices) {
+        commands.BindIndexBuffer(mesh.indices, rhi::IndexType::Uint32);
+        boundIndices = draw.mesh;
+    }
 }
 
 void MeshPass::RecordShadows(rhi::CommandList& commands) {
@@ -628,7 +770,6 @@ void MeshPass::RecordShadows(rhi::CommandList& commands) {
         .materialBuffer = m_device->StorageIndex(m_materialTable),
         .instanceIndex = 0,
         .materialIndex = 0,
-        .jointBuffer = m_device->StorageIndex(m_prepared->joints),
         .shadowIndex = 0,
     };
     for (std::uint32_t shadow = 0; shadow < m_shadowCount; ++shadow) {
@@ -636,18 +777,16 @@ void MeshPass::RecordShadows(rhi::CommandList& commands) {
                              static_cast<std::int32_t>((shadow / m_shadowGrid) * m_shadowTileSize), m_shadowTileSize,
                              m_shadowTileSize);
         push.shadowIndex = shadow;
-        MeshHandle boundMesh;
+        rhi::BufferHandle boundVertices;
+        std::uint64_t boundOffset = 0;
+        MeshHandle boundIndices;
         for (std::uint32_t index = 0; index < m_sorted.size(); ++index) {
             const SortedDraw& draw = m_sorted[index];
             if (!draw.castsShadows) {
                 continue;
             }
             const Mesh& mesh = m_meshes.Get(draw.mesh);
-            if (draw.mesh != boundMesh) {
-                commands.BindVertexBuffer(mesh.vertices);
-                commands.BindIndexBuffer(mesh.indices, rhi::IndexType::Uint32);
-                boundMesh = draw.mesh;
-            }
+            BindGeometry(commands, draw, boundVertices, boundOffset, boundIndices);
             push.instanceIndex = index;
             push.materialIndex = draw.material.Index();
             commands.Push(push);
@@ -681,11 +820,12 @@ void MeshPass::RecordDraws(rhi::CommandList& commands, rhi::PipelineHandle oneSi
         .materialBuffer = m_device->StorageIndex(m_materialTable),
         .instanceIndex = 0,
         .materialIndex = 0,
-        .jointBuffer = m_device->StorageIndex(m_prepared->joints),
         .shadowIndex = 0,
     };
     rhi::PipelineHandle boundPipeline;
-    MeshHandle boundMesh;
+    rhi::BufferHandle boundVertices;
+    std::uint64_t boundOffset = 0;
+    MeshHandle boundIndices;
     for (std::uint32_t index = 0; index < m_sorted.size(); ++index) {
         const SortedDraw& draw = m_sorted[index];
         if (!draw.visible) {
@@ -697,11 +837,7 @@ void MeshPass::RecordDraws(rhi::CommandList& commands, rhi::PipelineHandle oneSi
             commands.BindPipeline(pipeline);
             boundPipeline = pipeline;
         }
-        if (draw.mesh != boundMesh) {
-            commands.BindVertexBuffer(mesh.vertices);
-            commands.BindIndexBuffer(mesh.indices, rhi::IndexType::Uint32);
-            boundMesh = draw.mesh;
-        }
+        BindGeometry(commands, draw, boundVertices, boundOffset, boundIndices);
         push.instanceIndex = index;
         push.materialIndex = draw.material.Index();
         commands.Push(push);

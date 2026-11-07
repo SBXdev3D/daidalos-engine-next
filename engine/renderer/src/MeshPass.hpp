@@ -28,6 +28,22 @@ struct FrameTargets {
     rhi::Extent extent;
     /// The ambient occlusion of the frame, or null to leave ambient light unoccluded.
     rhi::TextureHandle occlusion;
+    /// Index of the top-level acceleration structure the frame traces, for FrameData.
+    std::uint32_t accelerationStructure = 0;
+};
+
+/// A draw as rays see it (ADR-0033). Rigid draws use their mesh's bottom-level structure; skinned draws
+/// have a structure refitted each frame to their skinned vertices.
+struct TracedDraw {
+    /// Null for a skinned draw.
+    rhi::AccelerationStructureHandle structure;
+    /// For a skinned draw: its skinned vertices and its mesh's indices.
+    rhi::TriangleGeometry skinned;
+    glm::mat4 world{1.0f};
+    /// Its material has no alpha test.
+    bool opaque = true;
+    bool doubleSided = false;
+    bool castsShadows = true;
 };
 
 /// What the mesh pass is created with.
@@ -87,6 +103,18 @@ public:
     [[nodiscard]] const Counts& LastCounts() const { return m_counts; }
     [[nodiscard]] std::size_t MeshCount() const { return m_meshes.Size(); }
     [[nodiscard]] std::size_t MaterialCount() const { return m_materials.Size(); }
+    /// Adds the pass that skins the prepared frame's skinned draws, if it has any, as "Skinning". It must
+    /// come before every pass that draws or traces them.
+    void AddSkinning(RenderGraph& graph);
+    /// The skinned vertices of the prepared frame, which the passes that draw meshes read as vertices. Null
+    /// when the frame has no skinned draw.
+    [[nodiscard]] rhi::BufferHandle SkinnedVertices() const {
+        return m_skinningJobs.empty() ? rhi::BufferHandle{} : m_skinned;
+    }
+    /// The prepared frame's draws, in the order of its instances: a ray's custom index is an instance.
+    [[nodiscard]] std::span<const TracedDraw> TracedDraws() const { return m_traced; }
+    /// The storage index of the prepared frame's instances.
+    [[nodiscard]] std::uint32_t InstanceDataIndex() const;
     /// Adds the pass that draws the shadow maps of the prepared frame, if it has any, as "Shadows".
     void AddShadows(RenderGraph& graph);
     /// The shadow maps, which Record reads.
@@ -111,14 +139,26 @@ private:
     struct Mesh {
         rhi::BufferHandle vertices;
         rhi::BufferHandle indices;
-        /// Joints and weights of each vertex, read by the vertex shader. Null for a rigid mesh.
+        /// Joints and weights of each vertex, read by the skinning pass. Null for a rigid mesh.
         rhi::BufferHandle skin;
+        /// Its triangles for rays, built once.
+        rhi::AccelerationStructureHandle structure;
+        std::uint32_t vertexCount = 0;
         std::uint32_t indexCount = 0;
         /// A sphere around the vertices, in the mesh's space: center and radius.
         glm::vec4 bounds{0.0f};
     };
     struct Material {
         bool doubleSided = false;
+        bool alphaTested = false;
+    };
+    /// One skinned draw of the frame, for the skinning pass.
+    struct SkinningJob {
+        std::uint32_t source;
+        std::uint32_t skin;
+        std::uint32_t firstJoint;
+        std::uint32_t firstVertex;
+        std::uint32_t vertexCount;
     };
     /// What one frame in flight reads. A frame slot is free again when its turn comes, because there
     /// are never more frames in flight than slots.
@@ -195,7 +235,13 @@ private:
         bool castsShadows;
         /// Within the view distance; otherwise the draw only casts shadows.
         bool visible;
+        /// Where its skinned vertices start in m_skinned, or kNotSkinned.
+        std::uint32_t firstSkinnedVertex;
     };
+    static constexpr std::uint32_t kNotSkinned = 0xFFFFFFFF;
+    /// Binds the vertices and indices of a draw, unless they are bound already.
+    void BindGeometry(rhi::CommandList& commands, const SortedDraw& draw, rhi::BufferHandle& boundVertices,
+                      std::uint64_t& boundOffset, MeshHandle& boundIndices);
     /// The frame that Prepare filled, if any. Its instances follow m_sorted.
     FrameSlot* m_prepared = nullptr;
     std::uint32_t m_shadowCount = 0;
@@ -205,6 +251,12 @@ private:
     LightClusters m_clusters;
     /// Reused from frame to frame.
     std::vector<SortedDraw> m_sorted;
+    /// The skinned vertices of the frame's skinned draws, in world space, written by the skinning pass.
+    rhi::BufferHandle m_skinned;
+    std::uint64_t m_skinnedCapacity = 0;
+    rhi::PipelineHandle m_skinningPipeline;
+    std::vector<SkinningJob> m_skinningJobs;
+    std::vector<TracedDraw> m_traced;
 };
 
 /// The lights that get a shadow map: spot lights that ask for one, nearest to the camera first, at most

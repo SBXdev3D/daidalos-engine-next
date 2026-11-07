@@ -192,6 +192,7 @@ private:
     std::optional<core::CVar<bool>> m_ambientOcclusion;
     std::optional<core::CVar<bool>> m_validation;
     std::optional<core::CVar<bool>> m_syncValidation;
+    std::optional<core::CVar<std::string>> m_debugView;
     std::optional<core::CVar<double>> m_volume;
     std::optional<core::CVar<double>> m_effectsVolume;
     std::optional<core::CVar<double>> m_musicVolume;

@@ -14,7 +14,6 @@ struct MeshPushConstants {
     uint materialBuffer;
     uint instanceIndex;
     uint materialIndex;
-    uint jointBuffer;
     uint shadowIndex; // The shadow map being drawn, in the shadow pass.
 };
 
@@ -40,7 +39,8 @@ struct FrameData {
     float clusterSliceScale; // A depth's slice is log(depth / nearPlane) * clusterSliceScale.
     uint clusterLightBuffer; // Indices into lightBuffer.
     float farPlane;          // Nothing is drawn beyond it: the view distance.
-    uint2 padding;
+    uint accelerationStructure; // The frame's top-level structure in g_accelerationStructures.
+    uint padding;
 };
 
 // Meters in front of the camera, from a reverse-Z depth: 1 at the near plane, 0 at the far plane.
@@ -77,14 +77,18 @@ struct ShadowData {
     float normalOffset;
 };
 
-static const uint kNoJoints = 0xFFFFFFFF;
-
+// One per draw of the frame, in the order of the sorted draws; also what a ray hit's custom index points to.
+// A skinned draw's vertices were skinned by the frame's skinning pass, in world space: its world is identity.
 struct InstanceData {
     float4x4 world;
-    uint skinBuffer;
-    uint firstJoint; // kNoJoints for a rigid draw.
-    uint2 padding;
+    uint vertexBuffer; // Storage index of the vertices, kVertexFloats floats each.
+    uint firstVertex;  // Of the draw, in vertexBuffer.
+    uint indexBuffer;  // Storage index of the 32-bit indices.
+    uint material;
 };
+
+// Floats per vertex: position, normal, tangent and uv, as resources::Vertex.
+static const uint kVertexFloats = 12;
 
 // One per joint of the frame's skinned draws: its world matrix times its inverse bind matrix.
 struct JointData {
@@ -160,28 +164,13 @@ float Attenuation(LightData light, float distanceToLight, float3 toLight) {
     return distance * cone;
 }
 
-#ifndef DAI_NO_MESH_PUSH_CONSTANTS
-// The joints of a skinned vertex, blended by their weights (ADR-0020).
-float4x4 SkinMatrix(InstanceData instance, uint vertexId) {
-    const SkinVertex skin = g_skins[instance.skinBuffer][vertexId];
-    const uint first = instance.firstJoint;
-    const uint joints = g_push.jointBuffer;
-    return g_joints[joints][first + (skin.joints01 & 0xFFFF)].matrix * skin.weight0 +
-           g_joints[joints][first + (skin.joints01 >> 16)].matrix * skin.weight1 +
-           g_joints[joints][first + (skin.joints23 & 0xFFFF)].matrix * skin.weight2 +
-           g_joints[joints][first + (skin.joints23 >> 16)].matrix * skin.weight3;
+// Transforms a normal with the cofactor matrix, which stays correct under non-uniform scale and
+// needs no inverse.
+float3 TransformNormal(float4x4 world, float3 normal) {
+    const float3 x = float3(world[0][0], world[1][0], world[2][0]);
+    const float3 y = float3(world[0][1], world[1][1], world[2][1]);
+    const float3 z = float3(world[0][2], world[1][2], world[2][2]);
+    return cross(y, z) * normal.x + cross(z, x) * normal.y + cross(x, y) * normal.z;
 }
-
-// Where a draw places its vertex: the instance's world matrix, or its joints for a skinned draw.
-float4x4 WorldMatrix(InstanceData instance, uint vertexId) {
-    // Not a ternary operator: it may evaluate both sides, and read a skin that rigid draws lack.
-    float4x4 world = instance.world;
-    if (instance.firstJoint != kNoJoints) {
-        world = SkinMatrix(instance, vertexId);
-    }
-    return world;
-}
-
-#endif
 
 #endif

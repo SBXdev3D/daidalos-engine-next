@@ -17,11 +17,11 @@ struct VertexOutput {
     [[vk::location(0)]] float2 uv : TEXCOORD;
 };
 
-VertexOutput VSMain(VertexInput input, uint vertexId : SV_VulkanVertexID) {
+VertexOutput VSMain(VertexInput input) {
     const InstanceData instance = g_instances[g_push.instanceBuffer][g_push.instanceIndex];
     const ShadowData shadow = g_shadows[g_frames[g_push.frameBuffer][0].shadowBuffer][g_push.shadowIndex];
     VertexOutput output;
-    output.clipPosition = mul(shadow.viewProjection, mul(WorldMatrix(instance, vertexId), float4(input.position, 1.0)));
+    output.clipPosition = mul(shadow.viewProjection, mul(instance.world, float4(input.position, 1.0)));
     output.uv = input.uv;
     return output;
 }

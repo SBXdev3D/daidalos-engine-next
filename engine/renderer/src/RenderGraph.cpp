@@ -38,6 +38,18 @@ void AddBuffer(std::vector<rhi::BufferUse>& uses, const rhi::BufferUse& use) {
     found->access = found->access | use.access;
 }
 
+void AddStructure(std::vector<rhi::AccelerationStructureUse>& uses, const rhi::AccelerationStructureUse& use) {
+    if (!use.structure) {
+        return;
+    }
+    const auto found = std::ranges::find(uses, use.structure, &rhi::AccelerationStructureUse::structure);
+    if (found == uses.end()) {
+        uses.push_back(use);
+        return;
+    }
+    found->access = found->access | use.access;
+}
+
 } // namespace
 
 void RenderGraph::AddPass(PassDesc desc, PassRecorder record) {
@@ -66,6 +78,9 @@ std::vector<PlannedPass> RenderGraph::Plan() const {
         for (const rhi::BufferUse& use : desc.buffers) {
             AddBuffer(step.buffers, use);
         }
+        for (const rhi::AccelerationStructureUse& use : desc.structures) {
+            AddStructure(step.structures, use);
+        }
         step.group = desc.group.empty() ? desc.name : desc.group;
         step.startsGroup = planned.size() == 1 || step.group != previousGroup;
         previousGroup = step.group;
@@ -93,7 +108,7 @@ std::vector<std::string_view> RenderGraph::Execute(rhi::CommandList& commands) {
         if (ownLabel) {
             commands.BeginLabel(desc.name);
         }
-        commands.Use(step.textures, step.buffers);
+        commands.Use(step.textures, step.buffers, step.structures);
         if (desc.rendering.has_value()) {
             commands.BeginRendering(*desc.rendering);
         }

@@ -43,6 +43,20 @@ float ViewDistanceMeters(const core::CVar<double>& meters) {
     return static_cast<float>(std::max(meters.Get(), 1.0));
 }
 
+/// The view named by renderer.debug_view; an unknown name shows the lit scene, with a warning once.
+renderer::DebugView DebugViewMode(const core::CVar<std::string>& cvar) {
+    const std::string& name = cvar.Get();
+    if (name == "rays") {
+        return renderer::DebugView::Rays;
+    }
+    static std::string warned;
+    if (name != "off" && name != warned) {
+        warned = name;
+        DAI_LOG_WARNING(kModule, "Unknown debug view '{}': use off or rays", name);
+    }
+    return renderer::DebugView::Off;
+}
+
 /// The mode named by renderer.antialiasing; an unknown name keeps the default, with a warning once.
 renderer::Antialiasing AntialiasingMode(const core::CVar<std::string>& cvar) {
     const std::string& name = cvar.Get();
@@ -223,6 +237,8 @@ core::Result<void> Application::LoadConfiguration() {
                                                        "Smoothing of edges: off, fxaa, msaa2, msaa4 or msaa8");
         m_validation = m_cvars.Register<bool>("renderer.validation", kValidationByDefault,
                                               "Enable the Vulkan validation layers, read at startup");
+        m_debugView = m_cvars.Register<std::string>("renderer.debug_view", "off",
+                                                    "Shows a debug view instead of the lit scene: off, or rays");
         m_syncValidation = m_cvars.Register<bool>(
             "renderer.sync_validation", false,
             "With validation, also check the synchronization between passes (slow), read at startup");
@@ -384,7 +400,8 @@ core::Result<void> Application::CreateRenderer() {
                  static_cast<std::uint32_t>(std::clamp<std::int64_t>(m_shadowResolution->Get(), 256, 4096)),
              .fieldOfView = FieldOfViewRadians(*m_fieldOfView),
              .viewDistance = ViewDistanceMeters(*m_viewDistance),
-             .antialiasing = AntialiasingMode(*m_antialiasing)}));
+             .antialiasing = AntialiasingMode(*m_antialiasing),
+             .debugView = DebugViewMode(*m_debugView)}));
     m_renderer.emplace(std::move(created));
     return {};
 }
@@ -430,6 +447,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_renderer->SetFieldOfView(FieldOfViewRadians(*m_fieldOfView));
     m_renderer->SetViewDistance(ViewDistanceMeters(*m_viewDistance));
     m_renderer->SetAntialiasing(AntialiasingMode(*m_antialiasing));
+    m_renderer->SetDebugView(DebugViewMode(*m_debugView));
     core::Result<void> rendered = m_renderer->Render(m_scene, &m_canvas, overlay);
     if (rendered && !overlayResult) {
         rendered = std::move(overlayResult);
