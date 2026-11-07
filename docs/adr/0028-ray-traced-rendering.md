@@ -30,13 +30,14 @@ Phase 7 built a rasterized renderer: clustered forward lights, four shadow maps,
 | 9.3 | Acceleration structures: compacted BLAS, refit for skinned meshes, TLAS each frame (compaction deferred, ADR-0033) | vertex-shader skinning |
 | 9.4 | Reference path tracer, Cornell box, golden-image tests | — |
 | 9.5 | Ray-query shadows for every light | shadow atlas (ADR-0023) |
-| 9.6 | Motion vectors, jitter, TAA | MSAA, FXAA (ADR-0026) |
-| 9.7 | Own spatiotemporal denoiser, soft shadows | — |
-| 9.8 | Diffuse GI: own hash-grid radiance cache and a ray-traced bounce | SSAO, hemisphere ambient (ADR-0024) |
-| 9.9 | Ray-traced reflections, glass | ambient specular (ADR-0022) |
-| 9.10 | ReSTIR DI with emissive triangles, ReSTIR GI | CPU light clustering (ADR-0008) |
-| 9.11 | FSR 2, auto-exposure, bloom, AgX, HDR output | PBR Neutral tone mapping |
-| 9.12 | Froxel volumetrics with ray-traced shadows | exponential fog |
+| 9.6 | Sky: cube textures, the sky where nothing is drawn and for rays that leave the scene (added 2026-11-07, ADR-0036) | the fog color as a backdrop |
+| 9.7 | Motion vectors, jitter, TAA | MSAA, FXAA (ADR-0026) |
+| 9.8 | Own spatiotemporal denoiser, soft shadows | — |
+| 9.9 | Diffuse GI: own hash-grid radiance cache and a ray-traced bounce | SSAO, hemisphere ambient (ADR-0024) |
+| 9.10 | Ray-traced reflections, glass | ambient specular (ADR-0022) |
+| 9.11 | ReSTIR DI with emissive triangles, ReSTIR GI | CPU light clustering (ADR-0008) |
+| 9.12 | FSR 2, auto-exposure, bloom, AgX, HDR output | PBR Neutral tone mapping |
+| 9.13 | Froxel volumetrics with ray-traced shadows | exponential fog |
 
 ADR-0008, 0009, 0023 and 0024, and the antialiasing part of 0026, become superseded when their step merges.
 

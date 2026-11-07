@@ -1,6 +1,6 @@
 # Architecture
 
-How the engine is built today, through Phase 9.5: real lights with ray-traced shadows, clustered lights, ambient occlusion, PBR materials, normal maps and particles on the GPU. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
+How the engine is built today, through Phase 9.6: real lights with ray-traced shadows, a sky, clustered lights, ambient occlusion, PBR materials, normal maps and particles on the GPU. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
 
 ## Modules
 
@@ -155,17 +155,18 @@ Solid arrows own, and dotted arrows only refer. GPU objects are never held by po
 
 ## How the GPU reads its data
 
-The renderer uses bindless access: one descriptor set holds every texture, storage buffer, storage image and top-level acceleration structure, and each draw only pushes indices. A ray's hit finds its draw's InstanceData by its custom index.
+The renderer uses bindless access: one descriptor set holds every texture, cube texture, storage buffer, storage image and top-level acceleration structure, and each draw only pushes indices. A ray's hit finds its draw's InstanceData by its custom index.
 
 ```mermaid
 flowchart LR
-    P["Push constants<br/>buffer and element indices"] --> FB["FrameData<br/>view-projection, fog, ambient"]
+    P["Push constants<br/>buffer and element indices"] --> FB["FrameData<br/>view-projection, fog,<br/>ambient, sky"]
     FB --> LB["LightData<br/>every light of the frame"]
     P --> IB["InstanceData<br/>world matrix, vertices,<br/>indices, material"]
     IB --> VB["Vertices and indices<br/>of the mesh, or its<br/>skinned vertices"]
     P --> MB["MaterialData<br/>factors and texture indices"]
     MB --> T["Bindless texture array"]
     FB --> AS["The frame's acceleration<br/>structure, by index"]
+    FB --> CT["Bindless cube array<br/>the sky"]
 ```
 
 ## Lighting
@@ -177,14 +178,14 @@ flowchart LR
     E["scene::Light<br/>on entities"] -->|"ExtractScene"| L["SceneView::lights<br/>position, direction, color, range"]
     AS["Acceleration structure<br/>of the frame"] -->|"a shadow ray<br/>per light"| M
     L -->|"CPU clustering<br/>16×9×24"| CL["Cluster light lists"]
-    CL --> M["Mesh pass<br/>GGX, normal maps,<br/>shadows, ambient, fog"]
+    CL --> M["Mesh pass<br/>GGX, normal maps,<br/>shadows, ambient, fog,<br/>then the sky"]
     P["Pre-pass<br/>depth, normals"] --> AO["Ambient occlusion<br/>half resolution"]
     AO --> M
     M --> H["HDR target<br/>Rgba16Float"]
     H -->|"exposure,<br/>PBR Neutral"| S["Swapchain<br/>sRGB"]
 ```
 
-A light's color is what a white surface facing it reflects up close, and it fades linearly to zero at its range, as in the legacy engine. Normal maps follow glTF (green up, bitangent from the tangent's `w`), and meshes that lack tangents get MikkTSpace ones at load. Each frame, lights are assigned to 16×9×24 clusters of the view on the CPU, and a pixel shades only the lights of its cluster (ADR-0008). A pre-pass writes depth and normals first, so that the mesh pass shades each pixel once, and ambient occlusion darkens the ambient light in creases (ADR-0024). The ambient light itself comes more from above than from below. Every light casts shadows: for each light of its cluster that would light it, a pixel casts a ray towards the light against the frame's acceleration structure, and alpha-tested surfaces let light through their holes (ADR-0035). Nothing beyond the view distance is drawn or lit: the projection has a far plane there, and the clusters end at it. Edges are smoothed by FXAA after tonemapping, or by multisampling the pre-pass and the mesh pass, which resolve into the targets the later passes read (ADR-0026). Draws can opt out, as the sandbox's weapons do. Each group of passes is timed with GPU timestamps, which `Renderer::GpuTimes` returns and the developer tools show.
+A light's color is what a white surface facing it reflects up close, and it fades linearly to zero at its range, as in the legacy engine. Normal maps follow glTF (green up, bitangent from the tangent's `w`), and meshes that lack tangents get MikkTSpace ones at load. Each frame, lights are assigned to 16×9×24 clusters of the view on the CPU, and a pixel shades only the lights of its cluster (ADR-0008). A pre-pass writes depth and normals first, so that the mesh pass shades each pixel once, and ambient occlusion darkens the ambient light in creases (ADR-0024). The ambient light itself comes more from above than from below. Every light casts shadows: for each light of its cluster that would light it, a pixel casts a ray towards the light against the frame's acceleration structure, and alpha-tested surfaces let light through their holes (ADR-0035). Where nothing is drawn, the mesh pass ends with the level's sky, a cube texture, behind everything (ADR-0036). Nothing beyond the view distance is drawn or lit: the projection has a far plane there, and the clusters end at it. Edges are smoothed by FXAA after tonemapping, or by multisampling the pre-pass and the mesh pass, which resolve into the targets the later passes read (ADR-0026). Draws can opt out, as the sandbox's weapons do. Each group of passes is timed with GPU timestamps, which `Renderer::GpuTimes` returns and the developer tools show.
 
 `MeshPass` keeps one frame slot per frame in flight, so the CPU never writes data the GPU is still reading. Shaders are written in Slang, compiled to SPIR-V by `slangc` during the build and embedded in the binary. In development builds, the sources are watched and recompiled by the `slangc` executable (ADR-0031).
 
@@ -205,7 +206,7 @@ Rays are traced against a top-level acceleration structure rebuilt every frame f
 
 ## The reference path tracer
 
-`renderer.debug_view path` replaces the lit scene with the reference path tracer (ADR-0034): a compute pass that traces one path per pixel per frame against the frame's acceleration structure and averages them while the view stays. It shades hits with the same materials, lights and BSDF as the mesh pass; the BSDF lives in one Slang module, `Bsdf.slang`, that both import. It is what the ray-traced techniques of Phase 9 are compared with. `sandbox.scene cornell` builds its test scene, the Cornell box.
+`renderer.debug_view path` replaces the lit scene with the reference path tracer (ADR-0034): a compute pass that traces one path per pixel per frame against the frame's acceleration structure and averages them while the view stays. It shades hits with the same materials, lights and BSDF as the mesh pass, and rays that leave the scene find the same sky; the BSDF lives in one Slang module, `Bsdf.slang`, that both import. It is what the ray-traced techniques of Phase 9 are compared with. `sandbox.scene cornell` builds its test scene, the Cornell box.
 
 ## The game's interface
 

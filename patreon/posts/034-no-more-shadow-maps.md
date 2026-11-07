@@ -38,11 +38,11 @@ At 1280×720 on an RTX 3090. Tracing a ray per light turned out cheaper than dra
 
 ## What isn't done
 
-- **Shadows are hard-edged.** Real lights have a size, which blurs shadows; that needs random rays and a denoiser, step 7.
-- **Smoke and particles** still don't cast or receive shadows. That waits for ray-traced fog, step 12.
+- **Shadows are hard-edged.** Real lights have a size, which blurs shadows; that needs random rays and a denoiser, step 8.
+- **Smoke and particles** still don't cast or receive shadows. That waits for ray-traced fog, step 13.
 - **I didn't score the factory itself against the path tracer yet,** only the Cornell box.
 - **Linux is still unverified.**
 
 ## Next
 
-Step 6: motion vectors and temporal antialiasing, which every later step needs to blend frames together.
+Step 6: a sky. The factory's biggest room is open to it, and rays that leave the level must find it.

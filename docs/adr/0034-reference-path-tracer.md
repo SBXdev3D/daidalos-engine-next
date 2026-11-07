@@ -20,7 +20,7 @@ Step 9.4 of ADR-0028. Each later step of Phase 9 replaces a raster technique wit
 ## Consequences
 
 - One bounce of the path tracer agrees with the mesh pass to 0.03% in total over the pixels away from edges.
-- The factory is lit mostly by its ambient term and the player's flashlight. Path traced, with light bouncing instead of an ambient term, it is much darker; the level's lights will need work when ray-traced indirect light replaces the ambient term (9.8).
+- The factory is lit mostly by its ambient term and the player's flashlight. Path traced, with light bouncing instead of an ambient term, it is much darker; the level's lights will need work when ray-traced indirect light replaces the ambient term (9.9, numbered 9.8 when this was written).
 - GPU time at 1280×720 on an RTX 3090, one path per pixel: 0.25 ms in the factory with four bounces, 0.03 ms with one, 0.05 ms in the Cornell box. Few lights reach most surfaces, which keeps it cheap.
 - The device now also needs storage image descriptors that can be updated after binding.
 

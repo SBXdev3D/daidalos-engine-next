@@ -1942,13 +1942,14 @@ Hardware ray tracing is mandatory and no raster fallback is kept: each step dele
 3. Acceleration structures: a BLAS per mesh, refit for skinned meshes, TLAS rebuilt each frame (done, ADR-0033; compaction deferred until memory asks for it).
 4. A reference path tracer, a Cornell box scene and golden-image tests against it (done, ADR-0034; FLIP comes with step 5).
 5. Ray-query shadows for every light, replacing the shadow atlas (done, ADR-0035: hard shadows; soft ones come with the denoiser).
-6. Motion vectors (skinned meshes and particles included), jittered projection and TAA, replacing MSAA and FXAA.
-7. An own spatiotemporal denoiser behind `IDenoiser`; soft shadows.
-8. Diffuse global illumination: an own hash-grid radiance cache and a ray-traced bounce, replacing SSAO and the ambient term.
-9. Ray-traced reflections below a roughness threshold; glass.
-10. ReSTIR DI, with emissive triangles, and ReSTIR GI, replacing CPU light clustering.
-11. FSR 2 upscaling, auto-exposure, bloom, AgX tone mapping, HDR output.
-12. Froxel volumetric fog with ray-traced shadows, replacing exponential fog.
+6. A sky: cube textures, the level's sky seen through its openings and found by the rays that leave the scene (done, ADR-0036).
+7. Motion vectors (skinned meshes and particles included), jittered projection and TAA, replacing MSAA and FXAA.
+8. An own spatiotemporal denoiser behind `IDenoiser`; soft shadows.
+9. Diffuse global illumination: an own hash-grid radiance cache and a ray-traced bounce, replacing SSAO and the ambient term.
+10. Ray-traced reflections below a roughness threshold; glass.
+11. ReSTIR DI, with emissive triangles, and ReSTIR GI, replacing CPU light clustering.
+12. FSR 2 upscaling, auto-exposure, bloom, AgX tone mapping, HDR output.
+13. Froxel volumetric fog with ray-traced shadows, replacing exponential fog.
 
 Deferred until measurements justify them: meshlets, mesh shaders, the visibility buffer, Hi-Z occlusion, LODs, portals. Deferred until content needs them: layered material lobes, IES profiles, area lights. Out of scope: the neural rendering tier and NVIDIA's RTX SDKs (licence, see ADR-0028).
 
