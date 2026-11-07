@@ -16,6 +16,8 @@
 #include <algorithm>
 #include <utility>
 
+#include "RenderGraph.hpp"
+
 namespace daidalos::renderer {
 
 namespace {
@@ -94,29 +96,36 @@ core::Result<void> AmbientOcclusionPass::Resize(rhi::Extent frame) {
     return {};
 }
 
-void AmbientOcclusionPass::Record(rhi::CommandList& commands, std::uint32_t frameBuffer, rhi::TextureHandle depth,
-                                  rhi::TextureHandle normals) {
-    DAI_PROFILE_SCOPE("renderer::AmbientOcclusion");
-    AmbientOcclusionPushConstants push{
+void AmbientOcclusionPass::AddTo(RenderGraph& graph, std::uint32_t frameBuffer, rhi::TextureHandle depth,
+                                 rhi::TextureHandle normals) {
+    const AmbientOcclusionPushConstants push{
         frameBuffer,         m_device->BindlessIndex(depth), m_device->BindlessIndex(normals), 0, kRadius, kIntensity,
         Texel(m_frameExtent)};
-    commands.Discard(m_raw, rhi::TextureState::ColorTarget);
-    commands.BeginRendering({.colorTarget = m_raw});
-    commands.BindPipeline(m_occlusionPipeline);
-    commands.Push(push);
-    commands.Draw(3);
-    commands.EndRendering();
+    graph.AddPass({.name = "Ambient occlusion",
+                   .group = "Occlusion",
+                   .rendering = rhi::RenderingDesc{.colorTarget = m_raw},
+                   .textures = {{m_raw, rhi::Access::ColorTarget, true},
+                                {depth, rhi::Access::FragmentShaderRead},
+                                {normals, rhi::Access::FragmentShaderRead}}},
+                  [this, push](rhi::CommandList& commands) {
+                      DAI_PROFILE_SCOPE("renderer::AmbientOcclusion");
+                      commands.BindPipeline(m_occlusionPipeline);
+                      commands.Push(push);
+                      commands.Draw(3);
+                  });
 
-    commands.Transition(m_raw, rhi::TextureState::ShaderRead);
-    commands.Discard(m_blurred, rhi::TextureState::ColorTarget);
-    commands.BeginRendering({.colorTarget = m_blurred});
-    commands.BindPipeline(m_blurPipeline);
-    push.sourceTexture = m_device->BindlessIndex(m_raw);
-    push.sourceTexel = Texel(m_extent);
-    commands.Push(push);
-    commands.Draw(3);
-    commands.EndRendering();
-    commands.Transition(m_blurred, rhi::TextureState::ShaderRead);
+    AmbientOcclusionPushConstants blur = push;
+    blur.sourceTexture = m_device->BindlessIndex(m_raw);
+    blur.sourceTexel = Texel(m_extent);
+    graph.AddPass({.name = "Occlusion blur",
+                   .group = "Occlusion",
+                   .rendering = rhi::RenderingDesc{.colorTarget = m_blurred},
+                   .textures = {{m_blurred, rhi::Access::ColorTarget, true}, {m_raw, rhi::Access::FragmentShaderRead}}},
+                  [this, blur](rhi::CommandList& commands) {
+                      commands.BindPipeline(m_blurPipeline);
+                      commands.Push(blur);
+                      commands.Draw(3);
+                  });
 }
 
 } // namespace daidalos::renderer

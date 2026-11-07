@@ -36,7 +36,8 @@ protected:
             GTEST_SKIP() << core::Format(window.error());
         }
         m_window.emplace(std::move(*window));
-        core::Result<renderer::Renderer> target = renderer::Renderer::Create(*m_window, {.validation = true});
+        core::Result<renderer::Renderer> target =
+            renderer::Renderer::Create(*m_window, {.validation = true, .synchronizationValidation = true});
         if (!target) {
             ASSERT_EQ(target.error().code, core::ErrorCode::NotSupported) << core::Format(target.error());
             GTEST_SKIP() << core::Format(target.error());

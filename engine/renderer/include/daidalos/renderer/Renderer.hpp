@@ -35,6 +35,8 @@ enum class Antialiasing {
 struct RendererConfig {
     /// Enables the Vulkan validation layers if they are installed.
     bool validation = false;
+    /// With validation, also checks that barriers order every use of every resource. Slow.
+    bool synchronizationValidation = false;
     bool vsync = true;
     /// Multiplies the light before tonemapping.
     float exposure = 1.0f;

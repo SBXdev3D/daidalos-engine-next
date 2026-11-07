@@ -42,7 +42,8 @@ protected:
 
     // Creates a renderer, or returns nothing and skips where the device is not suitable.
     std::optional<renderer::Renderer> CreateRenderer() {
-        core::Result<renderer::Renderer> created = renderer::Renderer::Create(*m_window, {.validation = true});
+        core::Result<renderer::Renderer> created =
+            renderer::Renderer::Create(*m_window, {.validation = true, .synchronizationValidation = true});
         if (!created) {
             EXPECT_EQ(created.error().code, core::ErrorCode::NotSupported) << core::Format(created.error());
             return std::nullopt;

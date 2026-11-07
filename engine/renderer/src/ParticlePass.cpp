@@ -23,6 +23,8 @@
 #include <utility>
 #include <vector>
 
+#include "RenderGraph.hpp"
+
 namespace daidalos::renderer {
 
 namespace {
@@ -263,10 +265,10 @@ void ParticlePass::DestroyEffect(ParticleEffectHandle effect) {
     m_effects.Remove(effect);
 }
 
-core::Result<void> ParticlePass::Simulate(rhi::CommandList& commands, std::span<const ParticleSpawn> spawns,
-                                          float timeStep, std::uint32_t frameBuffer, rhi::TextureHandle depth,
-                                          rhi::TextureHandle normals) {
-    DAI_PROFILE_SCOPE("renderer::ParticlePass::Simulate");
+core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, std::span<const ParticleSpawn> spawns,
+                                               float timeStep, std::uint32_t frameBuffer, rhi::TextureHandle depth,
+                                               rhi::TextureHandle normals) {
+    DAI_PROFILE_SCOPE("renderer::ParticlePass::AddSimulation");
     FrameSlot& slot = m_frameSlots[m_nextFrameSlot];
     m_nextFrameSlot = (m_nextFrameSlot + 1) % rhi::kFramesInFlight;
 
@@ -322,31 +324,47 @@ core::Result<void> ParticlePass::Simulate(rhi::CommandList& commands, std::span<
     push.normalTexture = m_device->BindlessIndex(normals);
     push.capacity = kMaxParticles;
 
-    commands.Barrier(); // After the previous frame's draw, and the uploads.
+    // Emission, simulation and finish read and write most of the pool's buffers.
+    const std::vector<rhi::BufferUse> pool{{m_particles, rhi::Access::ComputeShaderWrite},
+                                           {m_dead, rhi::Access::ComputeShaderWrite},
+                                           {m_alive[m_current], rhi::Access::ComputeShaderWrite},
+                                           {m_alive[next], rhi::Access::ComputeShaderWrite},
+                                           {m_keys, rhi::Access::ComputeShaderWrite},
+                                           {m_counters, rhi::Access::ComputeShaderWrite},
+                                           {m_arguments, rhi::Access::ComputeShaderWrite}};
+    const auto dispatch = [push](rhi::PipelineHandle pipeline, std::uint32_t groups) {
+        return [push, pipeline, groups](rhi::CommandList& commands) {
+            commands.BindPipeline(pipeline);
+            commands.Push(push);
+            commands.Dispatch(groups);
+        };
+    };
     if (emitted > 0) {
-        commands.BindPipeline(m_emit);
-        commands.Push(push);
-        commands.Dispatch((emitted + kGroupSize - 1) / kGroupSize);
-        commands.Barrier();
+        graph.AddPass({.name = "Particle emission", .group = "Simulation", .buffers = pool},
+                      dispatch(m_emit, (emitted + kGroupSize - 1) / kGroupSize));
     }
-    commands.BindPipeline(m_simulate);
-    commands.Push(push);
-    commands.Dispatch(kGroups);
-    commands.Barrier();
-    commands.BindPipeline(m_finish);
-    commands.Push(push);
-    commands.Dispatch(kGroups);
-    commands.Barrier();
+    graph.AddPass({.name = "Particle simulation",
+                   .group = "Simulation",
+                   // Particles bounce off the pre-pass's surfaces.
+                   .textures = {{depth, rhi::Access::ComputeShaderRead}, {normals, rhi::Access::ComputeShaderRead}},
+                   .buffers = pool},
+                  dispatch(m_simulate, kGroups));
+    graph.AddPass({.name = "Particle finish", .group = "Simulation", .buffers = pool}, dispatch(m_finish, kGroups));
 
     // Bitonic sort over the whole pool: the slots past the alive particles sort last. Groups sort
     // kSortLocal keys in their own memory; only the longer steps need a dispatch each.
-    commands.BindPipeline(m_sort);
     const auto sort = [&](std::uint32_t block, std::uint32_t step) {
-        push.sortBlock = block;
-        push.sortStep = step;
-        commands.Push(push);
-        commands.Dispatch(step == 0 ? kMaxParticles / kSortLocal : kMaxParticles / 2 / kSortThreads);
-        commands.Barrier();
+        ParticlePushConstants sortPush = push;
+        sortPush.sortBlock = block;
+        sortPush.sortStep = step;
+        const std::uint32_t groups = step == 0 ? kMaxParticles / kSortLocal : kMaxParticles / 2 / kSortThreads;
+        graph.AddPass(
+            {.name = "Particle sort", .group = "Simulation", .buffers = {{m_keys, rhi::Access::ComputeShaderWrite}}},
+            [this, sortPush, groups](rhi::CommandList& commands) {
+                commands.BindPipeline(m_sort);
+                commands.Push(sortPush);
+                commands.Dispatch(groups);
+            });
     };
     sort(std::min(kSortLocal, kMaxParticles), 0);
     for (std::uint32_t block = kSortLocal * 2; block <= kMaxParticles; block *= 2) {
@@ -359,9 +377,8 @@ core::Result<void> ParticlePass::Simulate(rhi::CommandList& commands, std::span<
     return {};
 }
 
-void ParticlePass::Draw(rhi::CommandList& commands, std::uint32_t frameBuffer, rhi::TextureHandle depth,
-                        const glm::vec3& cameraRight, const glm::vec3& cameraUp) {
-    DAI_PROFILE_SCOPE("renderer::ParticlePass::Draw");
+void ParticlePass::AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::TextureHandle depth,
+                           rhi::TextureHandle target, const glm::vec3& cameraRight, const glm::vec3& cameraUp) {
     ParticlePushConstants push{};
     push.particles = m_device->StorageIndex(m_particles);
     push.keys = m_device->StorageIndex(m_keys);
@@ -371,9 +388,19 @@ void ParticlePass::Draw(rhi::CommandList& commands, std::uint32_t frameBuffer, r
     push.capacity = kMaxParticles;
     push.cameraRight = cameraRight;
     push.cameraUp = cameraUp;
-    commands.BindPipeline(m_draw);
-    commands.Push(push);
-    commands.DrawIndirect(m_arguments);
+    // Over the meshes, back to front; they read the depth to fade into surfaces.
+    graph.AddPass({.name = "Particles",
+                   .rendering = rhi::RenderingDesc{.colorTarget = target},
+                   .textures = {{depth, rhi::Access::FragmentShaderRead}},
+                   .buffers = {{m_particles, rhi::Access::VertexShaderRead},
+                               {m_keys, rhi::Access::VertexShaderRead},
+                               {m_arguments, rhi::Access::IndirectRead}}},
+                  [this, push](rhi::CommandList& commands) {
+                      DAI_PROFILE_SCOPE("renderer::ParticlePass::Draw");
+                      commands.BindPipeline(m_draw);
+                      commands.Push(push);
+                      commands.DrawIndirect(m_arguments);
+                  });
 }
 
 } // namespace daidalos::renderer

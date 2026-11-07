@@ -21,6 +21,8 @@
 
 namespace daidalos::renderer {
 
+class RenderGraph;
+
 /// The targets of a frame that the mesh pass needs to know about.
 struct FrameTargets {
     rhi::Extent extent;
@@ -85,8 +87,10 @@ public:
     [[nodiscard]] const Counts& LastCounts() const { return m_counts; }
     [[nodiscard]] std::size_t MeshCount() const { return m_meshes.Size(); }
     [[nodiscard]] std::size_t MaterialCount() const { return m_materials.Size(); }
-    /// Draws the shadow maps of the prepared frame, outside any rendering scope.
-    void RecordShadows(rhi::CommandList& commands);
+    /// Adds the pass that draws the shadow maps of the prepared frame, if it has any, as "Shadows".
+    void AddShadows(RenderGraph& graph);
+    /// The shadow maps, which Record reads.
+    [[nodiscard]] rhi::TextureHandle ShadowAtlas() const { return m_shadowAtlas; }
     /// Writes depth and normals, inside a rendering scope with a kNormalFormat target and a cleared depth.
     void RecordPrepass(rhi::CommandList& commands);
     /// Shades the prepared frame inside a rendering scope whose depth holds the pre-pass's: each pixel is
@@ -146,6 +150,8 @@ private:
                                                                   std::span<const std::uint32_t> fragmentShader,
                                                                   rhi::CullMode cull, bool prepass);
     void DestroyPipelines(Pipelines& pipelines);
+    /// Draws the shadow maps inside the rendering scope of the atlas.
+    void RecordShadows(rhi::CommandList& commands);
     /// Draws the sorted draws with these pipelines, one-sided and double-sided.
     void RecordDraws(rhi::CommandList& commands, rhi::PipelineHandle oneSided, rhi::PipelineHandle doubleSided);
     [[nodiscard]] core::Result<void> PrepareFrameSlot(FrameSlot& slot, const SceneView& view);

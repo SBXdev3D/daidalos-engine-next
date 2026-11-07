@@ -17,6 +17,8 @@
 
 namespace daidalos::renderer {
 
+class RenderGraph;
+
 /// Particles simulated on the GPU (ADR-0025): one pool of kMaxParticles, with a dead list and two alive
 /// lists. Each frame emits, simulates, sorts by depth and draws them with one indirect draw; the CPU
 /// never reads them back. The Device must outlive it.
@@ -34,17 +36,17 @@ public:
     /// Particles of the effect still alive keep using its slot, which a new effect may reuse.
     void DestroyEffect(ParticleEffectHandle effect);
 
-    /// Emits the spawns and moves every particle by timeStep, outside any rendering scope. depth and
-    /// normals, from the pre-pass, must be in the ShaderRead state; frameBuffer is the storage index of the
+    /// Adds the passes that emit the spawns, move every particle by timeStep and sort them, in the group
+    /// "Simulation". depth and normals come from the pre-pass; frameBuffer is the storage index of the
     /// frame's FrameData. Spawns of destroyed effects are skipped.
-    [[nodiscard]] core::Result<void> Simulate(rhi::CommandList& commands, std::span<const ParticleSpawn> spawns,
-                                              float timeStep, std::uint32_t frameBuffer, rhi::TextureHandle depth,
-                                              rhi::TextureHandle normals);
+    [[nodiscard]] core::Result<void> AddSimulation(RenderGraph& graph, std::span<const ParticleSpawn> spawns,
+                                                   float timeStep, std::uint32_t frameBuffer, rhi::TextureHandle depth,
+                                                   rhi::TextureHandle normals);
 
-    /// Draws the particles inside a rendering scope with a color target only. depth must be in the
-    /// ShaderRead state: particles test it themselves, to fade softly where they meet surfaces.
-    void Draw(rhi::CommandList& commands, std::uint32_t frameBuffer, rhi::TextureHandle depth,
-              const glm::vec3& cameraRight, const glm::vec3& cameraUp);
+    /// Adds the pass that draws the particles over target, as "Particles". They read depth themselves, to
+    /// fade softly where they meet surfaces.
+    void AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::TextureHandle depth, rhi::TextureHandle target,
+                 const glm::vec3& cameraRight, const glm::vec3& cameraUp);
 
     [[nodiscard]] std::size_t EffectCount() const { return m_effects.Size(); }
 
