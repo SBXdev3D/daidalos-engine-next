@@ -1,6 +1,6 @@
 # ADR-0009: Shader language and compilation
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0031 (2026-11-07)
 - **Date:** 2026-10-27
 
 ## Context

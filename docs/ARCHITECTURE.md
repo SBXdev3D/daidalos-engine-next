@@ -30,7 +30,7 @@ Every module also links to `core`; the graph only shows it for the bottom row.
 | `core` | `Result`, `Error`, `DAI_ASSERT`, `DAI_TRY`, handles, slot pool, frame timer, worker pool, cvars, profiling macros, logging (`logging::`), conventions, transforms, projections and boxes (`math::`) | spdlog; GLM, tl::expected and Tracy are public on purpose |
 | `platform` | Window, events, Vulkan surface, processes, crash dumps, and keyboard, mouse and gamepad state with actions (`input::`) | SDL3 |
 | `resources` | Asset paths, caches, decoding of files into plain CPU data | fastgltf, KTX, stb |
-| `rhi` | Vulkan 1.3 device, swapchain, buffers, textures, pipelines, command lists, batched uploads | Vulkan, volk, VMA |
+| `rhi` | Vulkan 1.4 device with ray queries, swapchain, buffers, textures, pipelines, command lists, batched uploads | Vulkan, volk, VMA |
 | `renderer` | Draws a `SceneView`: mesh pass, skinning, materials, shader hot reload, the game's interface (`ui::`), and the debug overlay (`debugui::`, development builds) | Dear ImGui, stb_truetype (in `resources`) |
 | `physics` | Collisions, characters and ray queries of a scene | Jolt |
 | `audio` | Output, mixing, clips and voices of a scene, silent without an output | miniaudio, stb_vorbis |
@@ -186,7 +186,7 @@ flowchart LR
 
 A light's color is what a white surface facing it reflects up close, and it fades linearly to zero at its range, as in the legacy engine. Normal maps follow glTF (green up, bitangent from the tangent's `w`), and meshes that lack tangents get MikkTSpace ones at load. Each frame, lights are assigned to 16×9×24 clusters of the view on the CPU, and a pixel shades only the lights of its cluster (ADR-0008). A pre-pass writes depth and normals first, so that the mesh pass shades each pixel once, and ambient occlusion darkens the ambient light in creases (ADR-0024). The ambient light itself comes more from above than from below. Spot lights can cast shadows: each frame, the nearest the camera that ask for one, four by default, get a tile of the shadow atlas (ADR-0023). Nothing beyond the view distance is drawn or lit: the projection has a far plane there, and the clusters end at it. Edges are smoothed by FXAA after tonemapping, or by multisampling the pre-pass and the mesh pass, which resolve into the targets the later passes read (ADR-0026). Draws can opt out, as the sandbox's weapons do. Each pass is timed with GPU timestamps, which `Renderer::GpuTimes` returns and the developer tools show.
 
-`MeshPass` keeps one frame slot per frame in flight, so the CPU never writes data the GPU is still reading. Shaders are HLSL, compiled to SPIR-V by DXC during the build and embedded in the binary. In development builds, the sources are watched and recompiled by the `dxc` executable (ADR-0009).
+`MeshPass` keeps one frame slot per frame in flight, so the CPU never writes data the GPU is still reading. Shaders are written in Slang, compiled to SPIR-V by `slangc` during the build and embedded in the binary. In development builds, the sources are watched and recompiled by the `slangc` executable (ADR-0031).
 
 ## The game's interface
 

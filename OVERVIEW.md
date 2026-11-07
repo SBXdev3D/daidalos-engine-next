@@ -6,7 +6,7 @@
 **Initial target platform:** Windows  
 **Long-term target platforms:** Windows and Unix-like operating systems, including Linux  
 **Development environment:** Visual Studio 2022 and CMake, with cross-platform build support planned  
-**Rendering API:** Vulkan 1.3 on Windows and Linux (see ADR-0007); Vulkan 1.4 with mandatory hardware ray tracing from Phase 9 (see ADR-0028)  
+**Rendering API:** Vulkan 1.4 with mandatory hardware ray tracing, on Windows and Linux (see ADR-0007, ADR-0028, ADR-0031)  
 **Language standard:** C++20 (see ADR-0001)  
 **Licence:** CC BY-NC-SA 4.0 (see ADR-0013)  
 **Repository:** https://github.com/StephaneBX/daidalos-engine-next  
@@ -906,7 +906,7 @@ API-specific functionality may be exposed through carefully designed capabilitie
 
 ## 10.3. Vulkan backend
 
-Vulkan 1.3 is the single rendering backend, on Windows and Linux (ADR-0007). It uses dynamic rendering, synchronization2, and descriptor indexing, with the Vulkan Memory Allocator (VMA) for GPU memory.
+Vulkan 1.4 is the single rendering backend, on Windows and Linux (ADR-0007, ADR-0031). It requires hardware ray tracing through ray queries, and uses dynamic rendering, synchronization2, and descriptor indexing, with the Vulkan Memory Allocator (VMA) for GPU memory.
 
 The backend must explicitly handle:
 
@@ -972,7 +972,7 @@ The implementation should follow a documented material workflow and consistent t
 
 Shader code should be organized to avoid unnecessary duplication between rendering passes.
 
-Shaders are written in HLSL and compiled offline to SPIR-V with DXC as part of the CMake build (ADR-0009). Shader hot reload is available in development builds.
+Shaders are written in Slang and compiled offline to SPIR-V with `slangc` as part of the CMake build (ADR-0031). Shader hot reload is available in development builds.
 
 ## 10.8. Normal mapping
 
@@ -1476,9 +1476,9 @@ The following table distinguishes candidate technologies from finalized decision
 | Build system | CMake + presets | Decided (ADR-0001) |
 | Dependency management | vcpkg (manifest mode) | Decided (ADR-0001) |
 | IDE | Visual Studio 2022 | Primary development environment |
-| Graphics API | Vulkan 1.3 | Decided, single backend (ADR-0007) |
+| Graphics API | Vulkan 1.4 with hardware ray tracing | Decided, single backend (ADR-0007, ADR-0031) |
 | GPU memory | Vulkan Memory Allocator | Decided (ADR-0007) |
-| Shaders | HLSL compiled with DXC to SPIR-V | Decided (ADR-0009); replaced by Slang in Phase 9 (ADR-0028) |
+| Shaders | Slang compiled with slangc to SPIR-V | Decided (ADR-0031, replacing HLSL and DXC of ADR-0009) |
 | Upscaling | FSR 2 (MIT) behind an engine interface | Decided for Phase 9 (ADR-0028) |
 | Denoising, radiance cache, many-light sampling | Own implementations | Decided (ADR-0028); NVIDIA RTX SDKs (NRD, SHaRC, RTXDI, DLSS) excluded by their licence |
 | Math | GLM | Decided (ADR-0005) |
@@ -1937,7 +1937,7 @@ Completion criteria:
 
 Hardware ray tracing is mandatory and no raster fallback is kept: each step deletes the technique it replaces, and the game stays playable after every step. Each step is its own pull request:
 
-1. Vulkan 1.4, ray tracing required at device creation, every shader moved to Slang.
+1. Vulkan 1.4, ray tracing (acceleration structures and ray queries) required at device creation, every shader moved to Slang (done, ADR-0031).
 2. A minimal render graph: automatic barriers, debug labels, per-pass GPU timings.
 3. Acceleration structures: compacted BLAS, refit for skinned meshes, TLAS rebuilt each frame.
 4. A reference path tracer, a Cornell box scene and golden-image tests against it.

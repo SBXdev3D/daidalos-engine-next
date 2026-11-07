@@ -10,9 +10,9 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0004](0004-platform-layer.md) | SDL3 behind concrete wrappers | Accepted |
 | [0005](0005-math-and-coordinates.md) | GLM, right-handed, Y-up, reverse-Z | Accepted |
 | [0006](0006-ecs.md) | Custom sparse-set ECS with generational handles | Accepted |
-| [0007](0007-rendering-api.md) | Vulkan 1.3 as the single rendering API, concrete RHI | Accepted, amended |
+| [0007](0007-rendering-api.md) | Vulkan as the single rendering API (1.4 from Phase 9), concrete RHI | Accepted, amended |
 | [0008](0008-clustered-forward.md) | Clustered forward rendering | Accepted, amended |
-| [0009](0009-shaders.md) | HLSL compiled to SPIR-V with DXC from vcpkg, hot reload | Accepted, amended |
+| [0009](0009-shaders.md) | HLSL compiled to SPIR-V with DXC from vcpkg, hot reload | Superseded by 0031 |
 | [0010](0010-asset-formats.md) | glTF 2.0 + KTX2 in UASTC, transcoded at load | Accepted, amended |
 | [0011](0011-threading-model.md) | Main-thread logic, one asset worker pool | Accepted |
 | [0012](0012-indoor-visibility.md) | Frustum + BVH, portals only if measured, no BSP | Accepted |
@@ -34,3 +34,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0028](0028-ray-traced-rendering.md) | Ray-traced rendering: mandatory hardware ray tracing, Vulkan 1.4, Slang, own denoiser, no raster fallback | Accepted |
 | [0029](0029-menus-pause-and-player-settings.md) | Menus: immediate-mode widgets, scenes that pause, the player's settings in user.cfg | Accepted |
 | [0030](0030-developer-tools.md) | Developer tools: console, statistics, entity inspector and resources, on the ImGui overlay | Accepted |
+| [0031](0031-slang-and-vulkan-1-4.md) | Slang shaders, Vulkan 1.4, hardware ray tracing through ray queries | Accepted |

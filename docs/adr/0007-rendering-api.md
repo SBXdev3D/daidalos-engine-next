@@ -1,6 +1,6 @@
 # ADR-0007: Vulkan 1.3 as the single rendering API
 
-- **Status:** Accepted, amended 2026-10-30 and 2026-11-01
+- **Status:** Accepted, amended 2026-10-30, 2026-11-01 and 2026-11-07
 - **Date:** 2026-10-27
 
 ## Context
@@ -52,3 +52,7 @@ the swapchain requires them.
 ## Amendment (2026-11-03): uploads are recorded, not waited for
 
 `Device::UploadBuffer` and `UploadTexture` used to submit one copy and wait for the GPU each time, which made a level take tens of milliseconds to reach the GPU. They now record their copies into one pending command buffer. It goes to the queue, with a barrier, ahead of the next `BeginFrame`, `Submit` or `WaitIdle`, so everything submitted later sees the data, and its staging buffers are released by the timeline semaphore like any destroyed resource. Uploads remain forbidden between `BeginFrame` and `EndFrame`.
+
+## Amendment (2026-11-07): Vulkan 1.4 and ray queries
+
+Vulkan 1.4 replaces 1.3, and the device must support acceleration structures and ray queries, with buffer device addresses (ADR-0028, ADR-0031).
