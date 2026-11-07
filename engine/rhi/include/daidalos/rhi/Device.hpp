@@ -74,8 +74,9 @@ public:
     /// Private to the module; named here because command lists refer to it.
     struct Impl;
 
-    /// Fails with NotSupported if there is no Vulkan loader or no device with Vulkan 1.3 and the
-    /// required features, and with DeviceError if the device cannot be created.
+    /// Fails with NotSupported if there is no Vulkan loader or no device with Vulkan 1.4, hardware ray
+    /// tracing (acceleration structures and ray queries, ADR-0028) and the other required features; the
+    /// message names what each device lacks. Fails with DeviceError if the device cannot be created.
     static core::Result<Device> Create(const DeviceConfig& config);
 
     Device(Device&& other) noexcept;

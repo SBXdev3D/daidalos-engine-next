@@ -28,7 +28,7 @@ namespace daidalos::renderer {
 
 namespace {
 
-// These structures match their twins in shaders/MeshTypes.hlsli.
+// These structures match their twins in shaders/MeshTypes.slangh.
 struct MeshPushConstants {
     std::uint32_t frameBuffer;
     std::uint32_t instanceBuffer;
@@ -135,7 +135,7 @@ struct InstanceData {
     std::array<std::uint32_t, 2> padding;
 };
 static_assert(sizeof(InstanceData) == 80);
-static_assert(sizeof(resources::SkinWeights) == 24, "Matches SkinVertex in MeshTypes.hlsli");
+static_assert(sizeof(resources::SkinWeights) == 24, "Matches SkinVertex in MeshTypes.slangh");
 
 struct GpuMaterial {
     glm::vec4 baseColorFactor;

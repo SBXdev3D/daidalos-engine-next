@@ -27,7 +27,7 @@ namespace daidalos::renderer {
 
 namespace {
 
-// These structures match their twins in shaders/Particles.hlsli.
+// These structures match their twins in shaders/Particles.slangh.
 struct GpuParticle {
     glm::vec3 position;
     float age;
@@ -112,7 +112,7 @@ constexpr std::uint32_t kGroupSize = 64;
 constexpr std::uint32_t kGroups = (kMaxParticles + kGroupSize - 1) / kGroupSize;
 constexpr std::uint32_t kInitialEffectCapacity = 16;
 constexpr std::uint64_t kInitialSpawnCapacity = 64;
-// The sort's groups, as in ParticleSort.hlsl: each sorts kSortLocal keys in its own memory.
+// The sort's groups, as in ParticleSort.slang: each sorts kSortLocal keys in its own memory.
 constexpr std::uint32_t kSortThreads = 1024;
 constexpr std::uint32_t kSortLocal = 2 * kSortThreads;
 static_assert(std::has_single_bit(kMaxParticles) && kMaxParticles >= kSortLocal,

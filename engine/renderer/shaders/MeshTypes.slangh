@@ -2,8 +2,8 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
-#ifndef DAIDALOS_MESH_TYPES_HLSLI
-#define DAIDALOS_MESH_TYPES_HLSLI
+#ifndef DAIDALOS_MESH_TYPES_SLANGH
+#define DAIDALOS_MESH_TYPES_SLANGH
 
 // Each structure matches its C++ twin in engine/renderer/src/MeshPass.cpp.
 
@@ -174,7 +174,7 @@ float4x4 SkinMatrix(InstanceData instance, uint vertexId) {
 
 // Where a draw places its vertex: the instance's world matrix, or its joints for a skinned draw.
 float4x4 WorldMatrix(InstanceData instance, uint vertexId) {
-    // Not a ternary operator: HLSL would evaluate both sides, and read a skin that rigid draws lack.
+    // Not a ternary operator: it may evaluate both sides, and read a skin that rigid draws lack.
     float4x4 world = instance.world;
     if (instance.firstJoint != kNoJoints) {
         world = SkinMatrix(instance, vertexId);

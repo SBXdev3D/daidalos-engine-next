@@ -15,6 +15,6 @@ target_include_directories(daidalos_renderer_gpu_tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/.."
     "${PROJECT_SOURCE_DIR}/engine/renderer/src")
 target_compile_definitions(daidalos_renderer_gpu_tests PRIVATE
-    DAI_DXC_PATH="${DIRECTX_DXC_TOOL}"
+    DAI_SLANGC_PATH="${SLANGC_EXECUTABLE}"
     DAI_SHADER_SOURCE_DIR="${PROJECT_SOURCE_DIR}/engine/renderer/shaders"
     DAI_TEST_ASSET_DIR="${PROJECT_SOURCE_DIR}/tests/assets")

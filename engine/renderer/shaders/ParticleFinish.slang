@@ -5,7 +5,7 @@
 // After the simulation (ADR-0025): the slots of the sort past the alive particles get a depth of 0, which
 // sorts them last; thread 0 writes the arguments of the draw and makes the next alive list current.
 
-#include "Particles.hlsli"
+#include "Particles.slangh"
 
 [numthreads(64, 1, 1)]
 void CSMain(uint3 id : SV_DispatchThreadID) {

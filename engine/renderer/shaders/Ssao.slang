@@ -5,7 +5,7 @@
 // Screen-space ambient occlusion at half resolution (ADR-0024): how much of the hemisphere above a pixel
 // is closed by nearby geometry, from the pre-pass's depth and normals. 1 is open, 0 fully occluded.
 
-#include "AmbientOcclusion.hlsli"
+#include "AmbientOcclusion.slangh"
 
 static const uint kSamples = 16;
 static const float kTwoPi = 6.2831853;

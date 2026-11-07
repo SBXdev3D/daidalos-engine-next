@@ -1,6 +1,6 @@
 # Daidalos Engine Next
 
-A modular C++20 real-time 3D engine for indoor environments, rendering with Vulkan 1.3 on Windows and Linux.
+A modular C++20 real-time 3D engine for indoor environments, rendering with Vulkan 1.4 and hardware ray tracing on Windows and Linux.
 
 The project is at an early stage. Phases 0 to 5 of the roadmap in [OVERVIEW.md](OVERVIEW.md) are done:
 
@@ -9,7 +9,7 @@ The project is at an early stage. Phases 0 to 5 of the roadmap in [OVERVIEW.md](
 | `core` | `Result` and `Error`, `DAI_ASSERT`, `DAI_TRY`, generational handles, frame timer, worker pool, configuration variables (cvars), profiling macros, logging over spdlog, and GLM with the engine's conventions: axes, TRS transforms, reverse-Z projections, bounding boxes |
 | `platform` | SDL3 window, window and input events, Vulkan surfaces, process execution, crash dumps (Windows), and keyboard, mouse and gamepad state with actions |
 | `resources` | Asset paths and caching, glTF models, PNG, JPEG and KTX2 images, as plain CPU data |
-| `rhi` | Vulkan 1.3 device, swapchain, buffers, textures with mip levels and BC compression, pipelines, command lists, batched uploads, deferred destruction |
+| `rhi` | Vulkan 1.4 device with ray queries, swapchain, buffers, textures with mip levels and BC compression, pipelines, command lists, batched uploads, deferred destruction |
 | `renderer` | HDR rendering with PBR materials, normal maps, point and spot lights, clustered on the CPU, spot-light shadows, a depth pre-pass, ambient occlusion, particles simulated on the GPU and tonemapping, skinning, GPU timings, shader hot reload, and the Dear ImGui overlay in development builds |
 | `physics` | Jolt behind a small API: static meshes, kinematic boxes, raycasts, character movement |
 | `audio` | miniaudio behind a small API: clips, voices, 3D sounds, buses, silent without an output |
@@ -34,11 +34,11 @@ The sandbox is a first-person demo in a dark factory, the remake of the legacy e
 | Build tools | CMake 3.25+ | CMake 3.25+, Ninja, pkg-config |
 | System packages | | X11 and Wayland development packages, for SDL3 (see below) |
 | Dependencies | vcpkg | vcpkg |
-| To run | A Vulkan 1.3 driver | A Vulkan 1.3 driver (`mesa-vulkan-drivers` provides lavapipe without a GPU) |
+| To run | A Vulkan 1.4 driver and a GPU with hardware ray tracing (NVIDIA RTX 30xx class or newer) | The same (a recent `mesa-vulkan-drivers` provides lavapipe, with ray queries, without a GPU) |
 | Optional | [Vulkan SDK](https://vulkan.lunarg.com/), for the validation layers | `vulkan-validationlayers` |
 | Formatting | clang-format 19 (bundled with Visual Studio's "C++ Clang tools" component) | clang-format 19 |
 
-Dependencies (SDL3, spdlog, GoogleTest, tl-expected, Vulkan headers, volk, the Vulkan Memory Allocator, DXC, Dear ImGui, fastgltf, libktx, stb, and Tracy for the profile presets) are installed automatically by vcpkg in manifest mode during the CMake configure step. They are listed in `vcpkg.json`, and their versions are pinned by the registry baseline in `vcpkg-configuration.json`.
+Dependencies (SDL3, spdlog, GoogleTest, tl-expected, Vulkan headers, volk, the Vulkan Memory Allocator, Slang, Dear ImGui, fastgltf, libktx, stb, and Tracy for the profile presets) are installed automatically by vcpkg in manifest mode during the CMake configure step. They are listed in `vcpkg.json`, and their versions are pinned by the registry baseline in `vcpkg-configuration.json`.
 
 ### vcpkg
 

@@ -5,7 +5,7 @@
 // Depth of the meshes seen from a light, into its tile of the shadow atlas (ADR-0023). Only depth is
 // written; alpha-tested materials, such as grids, cut their holes in the shadow too.
 
-#include "MeshTypes.hlsli"
+#include "MeshTypes.slangh"
 
 struct VertexInput {
     [[vk::location(0)]] float3 position : POSITION;
@@ -17,7 +17,7 @@ struct VertexOutput {
     [[vk::location(0)]] float2 uv : TEXCOORD;
 };
 
-VertexOutput VSMain(VertexInput input, uint vertexId : SV_VertexID) {
+VertexOutput VSMain(VertexInput input, uint vertexId : SV_VulkanVertexID) {
     const InstanceData instance = g_instances[g_push.instanceBuffer][g_push.instanceIndex];
     const ShadowData shadow = g_shadows[g_frames[g_push.frameBuffer][0].shadowBuffer][g_push.shadowIndex];
     VertexOutput output;

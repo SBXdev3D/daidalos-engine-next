@@ -9,7 +9,7 @@ Phase 7 built a rasterized renderer: clustered forward lights, four shadow maps,
 
 ## Decision
 
-- **Hardware ray tracing is mandatory.** The minimum GPU is an NVIDIA RTX 30xx class card (AMD RDNA 2, Intel Arc A as equivalents). The engine refuses to start, with a clear message, on a device without `VK_KHR_acceleration_structure`, `VK_KHR_ray_query`, `VK_KHR_ray_tracing_pipeline` and `VK_KHR_ray_tracing_position_fetch`.
+- **Hardware ray tracing is mandatory.** The minimum GPU is an NVIDIA RTX 30xx class card (AMD RDNA 2, Intel Arc A as equivalents). The engine refuses to start, with a clear message, on a device without `VK_KHR_acceleration_structure`, `VK_KHR_ray_query`, `VK_KHR_ray_tracing_pipeline` and `VK_KHR_ray_tracing_position_fetch`. *Amended by ADR-0031:* only acceleration structures and ray queries are required; the path tracer uses ray queries in compute, and a step that needs the other two adds them.
 - **No raster fallback.** Each step of Phase 9 deletes the technique it replaces in the same pull request. The game stays playable at every step.
 - **Vulkan 1.4** replaces Vulkan 1.3 as the baseline (ADR-0007 amended).
 - **Slang** replaces HLSL with DXC (ADR-0009 superseded). Every shader moves in one pull request. `slangc` comes from vcpkg and runs at build time and for hot reload, as DXC does today: the engine does not link the compiler.

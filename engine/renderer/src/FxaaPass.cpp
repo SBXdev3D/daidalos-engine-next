@@ -18,7 +18,7 @@ namespace daidalos::renderer {
 
 namespace {
 
-// Matches FxaaPushConstants in shaders/Fxaa.hlsl.
+// Matches FxaaPushConstants in shaders/Fxaa.slang.
 struct FxaaPushConstants {
     std::uint32_t sourceTexture;
     std::uint32_t padding;

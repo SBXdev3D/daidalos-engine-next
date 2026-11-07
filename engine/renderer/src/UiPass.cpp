@@ -19,7 +19,7 @@ namespace daidalos::renderer {
 
 namespace {
 
-// Matches PushConstants in shaders/Ui.hlsl.
+// Matches PushConstants in shaders/Ui.slang.
 struct PushConstants {
     glm::vec2 scale;
     glm::vec2 translate;

@@ -33,9 +33,17 @@ jobs:
       - name: Install build dependencies
         # Ninja, the X11 and Wayland development packages that SDL3 is built against, lavapipe with the
         # validation layers for the GPU tests, and a virtual display for the tests that need a window.
+        # The engine needs Vulkan 1.4 with ray queries (ADR-0028), which lavapipe offers only in recent
+        # Mesa releases: Mesa comes from the kisak PPA rather than from Ubuntu 24.04.
         run: |
+          sudo add-apt-repository -y ppa:kisak/kisak-mesa
           sudo apt-get update
-          sudo apt-get install -y ninja-build pkg-config             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev             libxkbcommon-dev libwayland-dev libdecor-0-dev libegl1-mesa-dev libgl1-mesa-dev libdrm-dev libgbm-dev             mesa-vulkan-drivers vulkan-validationlayers xvfb
+          sudo apt-get install -y ninja-build pkg-config             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev             libxkbcommon-dev libwayland-dev libdecor-0-dev libegl1-mesa-dev libgl1-mesa-dev libdrm-dev libgbm-dev             mesa-vulkan-drivers vulkan-validationlayers vulkan-tools xvfb
+
+      - name: Show what lavapipe supports
+        run: |
+          vulkaninfo --summary
+          vulkaninfo | grep -E "VK_KHR_(acceleration_structure|ray_query|deferred_host_operations)" || true
 
       - name: Use the runner's vcpkg
         shell: bash

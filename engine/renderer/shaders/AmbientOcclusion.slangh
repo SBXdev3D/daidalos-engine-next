@@ -2,14 +2,14 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
-#ifndef DAIDALOS_AMBIENT_OCCLUSION_HLSLI
-#define DAIDALOS_AMBIENT_OCCLUSION_HLSLI
+#ifndef DAIDALOS_AMBIENT_OCCLUSION_SLANGH
+#define DAIDALOS_AMBIENT_OCCLUSION_SLANGH
 
 // What the two passes of ambient occlusion share (ADR-0024). Each structure matches its C++ twin in
 // engine/renderer/src/AmbientOcclusionPass.cpp.
 
 #define DAI_NO_MESH_PUSH_CONSTANTS
-#include "MeshTypes.hlsli"
+#include "MeshTypes.slangh"
 
 struct AmbientOcclusionPushConstants {
     uint frameBuffer;
@@ -24,7 +24,7 @@ struct AmbientOcclusionPushConstants {
 [[vk::push_constant]] AmbientOcclusionPushConstants g_ao;
 
 // One triangle that covers the target.
-float4 VSMain(uint vertexId : SV_VertexID) : SV_Position {
+float4 VSMain(uint vertexId : SV_VulkanVertexID) : SV_Position {
     const float2 corner = float2((vertexId << 1) & 2, vertexId & 2);
     return float4(corner * 2.0 - 1.0, 0.0, 1.0);
 }

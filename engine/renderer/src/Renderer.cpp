@@ -39,7 +39,7 @@ constexpr std::array<std::string_view, 10> kTimedPasses{"Shadows",   "Prepass", 
                                                         "Meshes",    "Particles", "Tonemap",   "Antialiasing",
                                                         "Interface", "Overlay"};
 
-// Matches TonemapPushConstants in shaders/Tonemap.hlsl.
+// Matches TonemapPushConstants in shaders/Tonemap.slang.
 struct TonemapPushConstants {
     std::uint32_t hdrTexture;
     float exposure;
@@ -224,14 +224,14 @@ void Renderer::Impl::ReloadShaders() {
     }
 
     DAI_PROFILE_SCOPE("renderer::ReloadShaders");
-    const std::filesystem::path source = std::filesystem::path(DAI_SHADER_SOURCE_DIR) / "Mesh.hlsl";
-    core::Result<void> reloaded =
-        CompileShader(DAI_DXC_PATH, source, ShaderStage::Vertex).and_then([&](std::vector<std::uint32_t> vertexShader) {
-            return CompileShader(DAI_DXC_PATH, source, ShaderStage::Pixel)
-                .and_then([&](std::vector<std::uint32_t> fragmentShader) {
-                    return meshPass->ReplaceShaders(vertexShader, fragmentShader);
-                });
-        });
+    const std::filesystem::path source = std::filesystem::path(DAI_SHADER_SOURCE_DIR) / "Mesh.slang";
+    core::Result<void> reloaded = CompileShader(DAI_SLANGC_PATH, source, ShaderStage::Vertex)
+                                      .and_then([&](std::vector<std::uint32_t> vertexShader) {
+                                          return CompileShader(DAI_SLANGC_PATH, source, ShaderStage::Pixel)
+                                              .and_then([&](std::vector<std::uint32_t> fragmentShader) {
+                                                  return meshPass->ReplaceShaders(vertexShader, fragmentShader);
+                                              });
+                                      });
     if (reloaded) {
         shaderError.clear();
         DAI_LOG_INFO(kModule, "Shaders reloaded");
@@ -296,7 +296,7 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
 
 #if DAI_DEV_TOOLS
     // Installed builds have no sources to watch: they keep the embedded shaders.
-    if (std::filesystem::is_directory(DAI_SHADER_SOURCE_DIR) && std::filesystem::exists(DAI_DXC_PATH)) {
+    if (std::filesystem::is_directory(DAI_SHADER_SOURCE_DIR) && std::filesystem::exists(DAI_SLANGC_PATH)) {
         impl->shaderWatcher.emplace(DAI_SHADER_SOURCE_DIR);
         DAI_LOG_INFO(kModule, "Watching shaders in {}", DAI_SHADER_SOURCE_DIR);
     }

@@ -4,9 +4,9 @@
 
 // Depth and normal pre-pass (ADR-0024): the depth of the opaque meshes, which the mesh pass then tests
 // for equality, so that it shades each pixel once, and their world normals, for ambient occlusion. Its
-// pipeline uses the vertex shader of Mesh.hlsl, so that both passes compute the same depth.
+// pipeline uses the vertex shader of Mesh.slang, so that both passes compute the same depth.
 
-#include "MeshCommon.hlsli"
+#include "MeshCommon.slangh"
 
 float4 PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target {
     const FrameData frame = g_frames[g_push.frameBuffer][0];

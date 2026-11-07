@@ -3,7 +3,6 @@
   "name": "daidalos-engine-next",
   "version-string": "0.1.0",
   "dependencies": [
-    "directx-dxc",
     "fastgltf",
     "glm",
     "gtest",
@@ -30,6 +29,7 @@
     },
     "miniaudio",
     "mikktspace",
+    "shader-slang",
     "spdlog",
     "stb",
     "tl-expected",

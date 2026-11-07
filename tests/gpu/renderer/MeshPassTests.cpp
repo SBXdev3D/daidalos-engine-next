@@ -658,20 +658,20 @@ TEST_F(MeshPassTest, DestroyedMeshIsSkipped) {
 TEST_F(MeshPassTest, ReloadedShadersAreUsedByTheNextFrame) {
     const std::filesystem::path directory = std::filesystem::temp_directory_path() / "daidalos-reload-test";
     std::filesystem::create_directories(directory);
-    const std::filesystem::path source = directory / "Green.hlsl";
+    const std::filesystem::path source = directory / "Green.slang";
     // The vertex shader of the mesh pass, which the pre-pass shares, and a pixel shader of its own.
     std::ofstream(source) << R"(
-#include "MeshCommon.hlsli"
+#include "MeshCommon.slangh"
 float4 PSMain(VertexOutput input) : SV_Target { return float4(0.0, 1.0, 0.0, 1.0); }
 )";
-    for (const char* include : {"MeshTypes.hlsli", "MeshCommon.hlsli"}) {
+    for (const char* include : {"MeshTypes.slangh", "MeshCommon.slangh"}) {
         std::filesystem::copy_file(std::filesystem::path(DAI_SHADER_SOURCE_DIR) / include, directory / include,
                                    std::filesystem::copy_options::overwrite_existing);
     }
 
-    const auto vertex = renderer::CompileShader(DAI_DXC_PATH, source, renderer::ShaderStage::Vertex);
+    const auto vertex = renderer::CompileShader(DAI_SLANGC_PATH, source, renderer::ShaderStage::Vertex);
     ASSERT_TRUE(vertex.has_value()) << core::Format(vertex.error());
-    const auto pixel = renderer::CompileShader(DAI_DXC_PATH, source, renderer::ShaderStage::Pixel);
+    const auto pixel = renderer::CompileShader(DAI_SLANGC_PATH, source, renderer::ShaderStage::Pixel);
     ASSERT_TRUE(pixel.has_value()) << core::Format(pixel.error());
     ASSERT_TRUE(m_pass->ReplaceShaders(*vertex, *pixel).has_value());
 

@@ -15,18 +15,18 @@ namespace daidalos::renderer {
 
 enum class ShaderStage { Vertex, Pixel };
 
-/// Compiles an HLSL file with the dxc executable (ADR-0009), with the same options as the build.
+/// Compiles a Slang file with the slangc executable (ADR-0031), with the same options as the build.
 /// Fails with ParseError and the compiler's output, which names the file and line, if the shader does
-/// not compile, and with IoError if dxc cannot run.
+/// not compile, and with IoError if slangc cannot run.
 [[nodiscard]] core::Result<std::vector<std::uint32_t>>
-CompileShader(const std::filesystem::path& dxc, const std::filesystem::path& source, ShaderStage stage);
+CompileShader(const std::filesystem::path& slangc, const std::filesystem::path& source, ShaderStage stage);
 
 /// Detects edits of the shader files in a directory, by modification time.
 class ShaderWatcher {
 public:
     explicit ShaderWatcher(std::filesystem::path directory);
 
-    /// True when a .hlsl or .hlsli file was added, changed or removed since the previous call.
+    /// True when a .slang or .slangh file was added, changed or removed since the previous call.
     [[nodiscard]] bool Poll();
 
 private:

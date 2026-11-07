@@ -37,6 +37,11 @@ VKAPI_ATTR VkBool32 VKAPI_CALL OnValidationMessage(VkDebugUtilsMessageSeverityFl
     return VK_FALSE;
 }
 
+// The device extensions ray tracing needs; deferred host operations is required by acceleration structures.
+constexpr std::array<const char*, 3> kRayTracingExtensions{VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+                                                           VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+                                                           VK_KHR_RAY_QUERY_EXTENSION_NAME};
+
 bool HasLayer(const char* name) {
     std::uint32_t count = 0;
     vkEnumerateInstanceLayerProperties(&count, nullptr);
@@ -70,11 +75,21 @@ bool HasDeviceExtension(VkPhysicalDevice device, const char* name) {
 std::string MissingRequirement(VkPhysicalDevice device, const DeviceConfig& config) {
     VkPhysicalDeviceProperties properties{};
     vkGetPhysicalDeviceProperties(device, &properties);
-    if (properties.apiVersion < VK_API_VERSION_1_3) {
-        return "Vulkan 1.3";
+    if (properties.apiVersion < VK_API_VERSION_1_4) {
+        return "Vulkan 1.4";
+    }
+    // Ray tracing is required (ADR-0028), through ray queries only: no ray tracing pipelines.
+    for (const char* extension : kRayTracingExtensions) {
+        if (!HasDeviceExtension(device, extension)) {
+            return std::format("hardware ray tracing ({})", extension);
+        }
     }
 
-    VkPhysicalDeviceVulkan13Features features13{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+    VkPhysicalDeviceRayQueryFeaturesKHR rayQuery{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR};
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructure{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR, .pNext = &rayQuery};
+    VkPhysicalDeviceVulkan13Features features13{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+                                                .pNext = &accelerationStructure};
     VkPhysicalDeviceVulkan12Features features12{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
                                                 .pNext = &features13};
     VkPhysicalDeviceFeatures2 features{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &features12};
@@ -96,6 +111,10 @@ std::string MissingRequirement(VkPhysicalDevice device, const DeviceConfig& conf
         features.features.shaderSampledImageArrayDynamicIndexing == VK_FALSE ||
         features.features.shaderStorageBufferArrayDynamicIndexing == VK_FALSE) {
         return "descriptor indexing";
+    }
+    if (accelerationStructure.accelerationStructure == VK_FALSE || rayQuery.rayQuery == VK_FALSE ||
+        features12.bufferDeviceAddress == VK_FALSE) {
+        return "hardware ray tracing (acceleration structures and ray queries)";
     }
     if (features.features.textureCompressionBC == VK_FALSE) {
         return "BC texture compression";
@@ -194,8 +213,9 @@ core::Result<void> Device::Impl::CreateInstance(const DeviceConfig& config) {
 
     std::uint32_t version = 0;
     if (vkEnumerateInstanceVersion == nullptr || vkEnumerateInstanceVersion(&version) != VK_SUCCESS ||
-        version < VK_API_VERSION_1_3) {
-        return core::MakeError(core::ErrorCode::NotSupported, kModule, "The Vulkan loader does not support Vulkan 1.3");
+        version < VK_API_VERSION_1_4) {
+        return core::MakeError(core::ErrorCode::NotSupported, kModule,
+                               "The Vulkan loader does not support Vulkan 1.4: update the graphics driver");
     }
 
     std::vector<const char*> extensions;
@@ -231,7 +251,7 @@ core::Result<void> Device::Impl::CreateInstance(const DeviceConfig& config) {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = config.applicationName.c_str(),
         .pEngineName = "Daidalos Engine Next",
-        .apiVersion = VK_API_VERSION_1_3,
+        .apiVersion = VK_API_VERSION_1_4,
     };
     const VkInstanceCreateInfo createInfo{
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -244,7 +264,7 @@ core::Result<void> Device::Impl::CreateInstance(const DeviceConfig& config) {
     };
     if (const VkResult result = vkCreateInstance(&createInfo, nullptr, &instance); result != VK_SUCCESS) {
         if (result == VK_ERROR_INCOMPATIBLE_DRIVER) {
-            return core::MakeError(core::ErrorCode::NotSupported, kModule, "No Vulkan 1.3 driver is available");
+            return core::MakeError(core::ErrorCode::NotSupported, kModule, "No Vulkan 1.4 driver is available");
         }
         return tl::unexpected(VulkanError("vkCreateInstance", result));
     }
@@ -308,8 +328,18 @@ core::Result<void> Device::Impl::CreateLogicalDevice(const DeviceConfig& config)
         .pQueuePriorities = &priority,
     };
 
+    VkPhysicalDeviceRayQueryFeaturesKHR rayQuery{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR,
+        .rayQuery = VK_TRUE,
+    };
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructure{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
+        .pNext = &rayQuery,
+        .accelerationStructure = VK_TRUE,
+    };
     VkPhysicalDeviceVulkan13Features features13{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+        .pNext = &accelerationStructure,
         .shaderDemoteToHelperInvocation = VK_TRUE, // What discard in a shader compiles to.
         .synchronization2 = VK_TRUE,
         .dynamicRendering = VK_TRUE,
@@ -323,6 +353,7 @@ core::Result<void> Device::Impl::CreateLogicalDevice(const DeviceConfig& config)
         .descriptorBindingPartiallyBound = VK_TRUE,
         .runtimeDescriptorArray = VK_TRUE,
         .timelineSemaphore = VK_TRUE,
+        .bufferDeviceAddress = VK_TRUE, // Acceleration structures are built from buffer addresses.
     };
     VkPhysicalDeviceFeatures supported{};
     vkGetPhysicalDeviceFeatures(physicalDevice, &supported);
@@ -348,7 +379,7 @@ core::Result<void> Device::Impl::CreateLogicalDevice(const DeviceConfig& config)
                      .shaderStorageBufferArrayDynamicIndexing = VK_TRUE},
     };
 
-    std::vector<const char*> extensions;
+    std::vector<const char*> extensions(kRayTracingExtensions.begin(), kRayTracingExtensions.end());
     if (config.presentation) {
         extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
     }
@@ -375,11 +406,12 @@ core::Result<void> Device::Impl::CreateAllocator() {
         .vkGetDeviceProcAddr = vkGetDeviceProcAddr,
     };
     const VmaAllocatorCreateInfo createInfo{
+        .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
         .physicalDevice = physicalDevice,
         .device = device,
         .pVulkanFunctions = &functions,
         .instance = instance,
-        .vulkanApiVersion = VK_API_VERSION_1_3,
+        .vulkanApiVersion = VK_API_VERSION_1_4,
     };
     if (const VkResult result = vmaCreateAllocator(&createInfo, &allocator); result != VK_SUCCESS) {
         return tl::unexpected(VulkanError("vmaCreateAllocator", result));
