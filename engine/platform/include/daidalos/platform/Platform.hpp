@@ -23,6 +23,10 @@ struct PlatformState;
 /// Directory of the running executable, or empty if the system cannot tell.
 [[nodiscard]] std::filesystem::path ExecutableDirectory();
 
+/// Shows a modal error box, for failures a player must see, such as a GPU the engine cannot use.
+/// Works before and without a Platform. Blocks until the box is closed; logs a warning if none can be shown.
+void ShowErrorMessage(const std::string& title, const std::string& message);
+
 struct PlatformConfig {
     /// Video driver to use. Empty selects the best one for the system. "dummy" opens windows without
     /// a display, which is what tests and CI use.

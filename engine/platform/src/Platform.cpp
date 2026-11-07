@@ -127,6 +127,12 @@ std::filesystem::path ExecutableDirectory() {
     return std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(directory)));
 }
 
+void ShowErrorMessage(const std::string& title, const std::string& message) {
+    if (!SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, title.c_str(), message.c_str(), nullptr)) {
+        DAI_LOG_WARNING("platform", "Cannot show an error box: {}", SDL_GetError());
+    }
+}
+
 Platform::Platform(std::unique_ptr<detail::PlatformState> state) : m_state(std::move(state)) {}
 Platform::Platform(Platform&& other) noexcept = default;
 Platform& Platform::operator=(Platform&& other) noexcept = default;

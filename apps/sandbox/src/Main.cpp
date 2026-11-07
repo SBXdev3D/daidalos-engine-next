@@ -4,6 +4,7 @@
 
 #include <daidalos/app/Application.hpp>
 #include <daidalos/ecs/Transform.hpp>
+#include <daidalos/platform/Platform.hpp>
 #include <daidalos/renderer/Primitives.hpp>
 
 #include <glm/trigonometric.hpp>
@@ -486,7 +487,10 @@ int main(int argc, char** argv) {
         result = tl::unexpected(*sandbox.Failure());
     }
     if (!result) {
-        std::fprintf(stderr, "%s\n", core::Format(result.error()).c_str());
+        const std::string message = core::Format(result.error());
+        std::fprintf(stderr, "%s\n", message.c_str());
+        // Started from a file browser, the player has no console: the reason must be on screen.
+        platform::ShowErrorMessage("Daidalos Sandbox", message);
         return 1;
     }
     return 0;
