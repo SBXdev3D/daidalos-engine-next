@@ -23,6 +23,7 @@
 #include "FxaaPass.hpp"
 #include "MeshPass.hpp"
 #include "ParticlePass.hpp"
+#include "PathTracerPass.hpp"
 #include "RayTracingScene.hpp"
 #include "RenderGraph.hpp"
 #include "ShaderCompiler.hpp"
@@ -58,6 +59,7 @@ struct Renderer::Impl {
         if (const core::Result<void> idle = device.WaitIdle(); !idle) {
             DAI_LOG_ERROR(kModule, "Shutting down with a failed device: {}", core::Format(idle.error()));
         }
+        pathTracer.reset();
         rayTracing.reset();
         meshPass.reset();
         ambientOcclusionPass.reset();
@@ -113,6 +115,12 @@ struct Renderer::Impl {
     Antialiasing antialiasing = Antialiasing::Fxaa;
     DebugView debugView = DebugView::Off;
     std::optional<RayTracingScene> rayTracing;
+    std::optional<PathTracerPass> pathTracer;
+    PathTracerSettings pathSettings;
+    /// What the path tracer's average was made with: a change starts it over.
+    glm::mat4 pathViewProjection{0.0f};
+    PathTracerSettings pathAveraged;
+    bool pathShown = false;
     /// Samples per pixel of the pre-pass and the mesh pass. With more than one, they draw into the
     /// multisampled targets, which resolve into depth, normals and hdr.
     std::uint32_t samples = 1;
@@ -293,6 +301,10 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     DAI_TRY_ASSIGN(RayTracingScene rayTracing, RayTracingScene::Create(impl->device, kHdrFormat));
     impl->rayTracing.emplace(std::move(rayTracing));
     impl->debugView = config.debugView;
+    DAI_TRY_ASSIGN(PathTracerPass pathTracer, PathTracerPass::Create(impl->device));
+    impl->pathTracer.emplace(std::move(pathTracer));
+    impl->pathSettings = {
+        .maxBounces = config.pathBounces, .maxSamples = config.pathSamples, .background = config.pathBackground};
     DAI_TRY_ASSIGN(AmbientOcclusionPass ambientOcclusionPass, AmbientOcclusionPass::Create(impl->device));
     impl->ambientOcclusionPass.emplace(std::move(ambientOcclusionPass));
     impl->ambientOcclusion = config.ambientOcclusion;
@@ -369,6 +381,11 @@ void Renderer::SetDebugView(DebugView view) {
     m_impl->debugView = view;
 }
 
+void Renderer::SetPathTracer(std::uint32_t bounces, std::uint32_t samples) {
+    m_impl->pathSettings.maxBounces = bounces;
+    m_impl->pathSettings.maxSamples = samples;
+}
+
 void Renderer::SetNormalStrength(float strength) {
     m_impl->meshPass->SetNormalStrength(strength);
 }
@@ -389,6 +406,7 @@ FrameStats Renderer::Stats() const {
             .particleSpawns = impl.particleSpawns,
             .rayInstances = impl.rayTracing->LastStats().instances,
             .skinnedStructures = impl.rayTracing->LastStats().skinnedStructures,
+            .pathSamples = impl.debugView == DebugView::Path ? impl.pathTracer->Samples() : 0,
             .meshes = impl.meshPass->MeshCount(),
             .materials = impl.meshPass->MaterialCount(),
             .particleEffects = impl.particlePass->EffectCount()};
@@ -477,20 +495,45 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                       impl.meshPass->InstanceDataIndex());
     }
 
+    // The path tracer's average goes on while the view, the size and the settings stay; the scene itself is
+    // not compared, so that moving objects leave trails in it.
+    const bool path = status && hasFrame && impl.debugView == DebugView::Path;
+    if (path) {
+        status = impl.pathTracer->Resize(frame.extent);
+    }
+    if (path && status) {
+        const PathTracerSettings& settings = impl.pathSettings;
+        if (!impl.pathShown || impl.meshPass->ViewProjection() != impl.pathViewProjection ||
+            settings.maxBounces != impl.pathAveraged.maxBounces ||
+            settings.background != impl.pathAveraged.background) {
+            impl.pathTracer->Reset();
+        }
+        impl.pathViewProjection = impl.meshPass->ViewProjection();
+        impl.pathAveraged = settings;
+        impl.pathTracer->AddTo(graph,
+                               {.frameBuffer = impl.meshPass->FrameDataIndex(),
+                                .instanceBuffer = impl.meshPass->InstanceDataIndex(),
+                                .materialBuffer = impl.meshPass->MaterialDataIndex(),
+                                .structure = impl.rayTracing->Structure(),
+                                .skinnedVertices = impl.meshPass->SkinnedVertices()},
+                               settings);
+    }
+    impl.pathShown = path;
+
     // With FXAA, tonemapping goes to an image that the antialiasing reads, and FXAA to the back buffer.
     const bool fxaa = impl.antialiasing == Antialiasing::Fxaa;
     if (status) {
         const rhi::TextureHandle tonemapTarget = fxaa ? impl.tonemapped : frame.backBuffer;
-        graph.AddPass({.name = "Tonemap",
-                       .rendering = rhi::RenderingDesc{.colorTarget = tonemapTarget},
-                       .textures = {{tonemapTarget, rhi::Access::ColorTarget, true},
-                                    {impl.hdr, rhi::Access::FragmentShaderRead}}},
-                      [&impl, fxaa](rhi::CommandList& commands) {
-                          commands.BindPipeline(fxaa ? impl.tonemapEncoded : impl.tonemap);
-                          commands.Push(
-                              TonemapPushConstants{impl.device.BindlessIndex(impl.hdr), impl.exposure, fxaa ? 1U : 0U});
-                          commands.Draw(3);
-                      });
+        const rhi::TextureHandle source = path ? impl.pathTracer->Output() : impl.hdr;
+        graph.AddPass(
+            {.name = "Tonemap",
+             .rendering = rhi::RenderingDesc{.colorTarget = tonemapTarget},
+             .textures = {{tonemapTarget, rhi::Access::ColorTarget, true}, {source, rhi::Access::FragmentShaderRead}}},
+            [&impl, fxaa, source](rhi::CommandList& commands) {
+                commands.BindPipeline(fxaa ? impl.tonemapEncoded : impl.tonemap);
+                commands.Push(TonemapPushConstants{impl.device.BindlessIndex(source), impl.exposure, fxaa ? 1U : 0U});
+                commands.Draw(3);
+            });
     }
     if (status && fxaa) {
         graph.AddPass({.name = "Antialiasing",

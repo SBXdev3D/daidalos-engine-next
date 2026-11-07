@@ -563,6 +563,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     const glm::vec3 cameraPosition = glm::inverse(camera.view)[3];
     const glm::mat4 viewProjection =
         math::PerspectiveReverseZ(verticalFov, aspect, camera.nearPlane, farPlane) * camera.view;
+    m_viewProjection = viewProjection;
     const FrameData frame{viewProjection,
                           glm::inverse(viewProjection),
                           cameraPosition,
