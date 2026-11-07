@@ -48,10 +48,6 @@ struct TracedDraw {
 
 /// What the mesh pass is created with.
 struct MeshPassSettings {
-    /// Spot lights with a shadow map, up to kMaxShadowedLights, in an atlas with as many tiles.
-    std::uint32_t shadowLights = 4;
-    /// Texels across each shadow map.
-    std::uint32_t shadowResolution = 1024;
     /// Samples per pixel of the targets of the pre-pass and the mesh pass.
     std::uint32_t samples = 1;
 };
@@ -97,8 +93,6 @@ public:
         std::uint32_t drawnDraws = 0;
         std::uint64_t triangles = 0;
         std::uint32_t lights = 0;
-        std::uint32_t shadowedLights = 0;
-        std::uint32_t shadowDraws = 0;
     };
     [[nodiscard]] const Counts& LastCounts() const { return m_counts; }
     [[nodiscard]] std::size_t MeshCount() const { return m_meshes.Size(); }
@@ -119,10 +113,6 @@ public:
     [[nodiscard]] const glm::mat4& ViewProjection() const { return m_viewProjection; }
     /// The storage index of the material table.
     [[nodiscard]] std::uint32_t MaterialDataIndex() const { return m_device->StorageIndex(m_materialTable); }
-    /// Adds the pass that draws the shadow maps of the prepared frame, if it has any, as "Shadows".
-    void AddShadows(RenderGraph& graph);
-    /// The shadow maps, which Record reads.
-    [[nodiscard]] rhi::TextureHandle ShadowAtlas() const { return m_shadowAtlas; }
     /// Writes depth and normals, inside a rendering scope with a kNormalFormat target and a cleared depth.
     void RecordPrepass(rhi::CommandList& commands);
     /// Shades the prepared frame inside a rendering scope whose depth holds the pre-pass's: each pixel is
@@ -174,7 +164,6 @@ private:
         std::uint64_t jointCapacity = 0;
         rhi::BufferHandle lights;
         std::uint64_t lightCapacity = 0;
-        rhi::BufferHandle shadows;
         rhi::BufferHandle clusters;
         rhi::BufferHandle clusterLights;
         std::uint64_t clusterLightCapacity = 0;
@@ -182,7 +171,7 @@ private:
 
     MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat, const MeshPassSettings& settings);
 
-    [[nodiscard]] core::Result<void> CreateShadowResources();
+    [[nodiscard]] core::Result<void> CreateClusterBuffers();
     /// The pipelines of the pre-pass and the mesh pass, one-sided and double-sided.
     struct Pipelines {
         rhi::PipelineHandle prepass;
@@ -194,8 +183,6 @@ private:
                                                                   std::span<const std::uint32_t> fragmentShader,
                                                                   rhi::CullMode cull, bool prepass);
     void DestroyPipelines(Pipelines& pipelines);
-    /// Draws the shadow maps inside the rendering scope of the atlas.
-    void RecordShadows(rhi::CommandList& commands);
     /// Draws the sorted draws with these pipelines, one-sided and double-sided.
     void RecordDraws(rhi::CommandList& commands, rhi::PipelineHandle oneSided, rhi::PipelineHandle doubleSided);
     [[nodiscard]] core::Result<void> PrepareFrameSlot(FrameSlot& slot, const SceneView& view);
@@ -207,13 +194,6 @@ private:
     rhi::Format m_colorFormat;
     rhi::Format m_depthFormat;
     Pipelines m_pipelines;
-    rhi::PipelineHandle m_shadowPipeline;
-    /// Every shadow map of a frame, side by side.
-    rhi::TextureHandle m_shadowAtlas;
-    std::uint32_t m_shadowLights;
-    std::uint32_t m_shadowTileSize;
-    /// Tiles across the atlas, which is square.
-    std::uint32_t m_shadowGrid;
     std::uint32_t m_samples;
     /// The shaders of the mesh pass, to rebuild its pipelines.
     std::vector<std::uint32_t> m_vertexShader;
@@ -248,7 +228,6 @@ private:
                       std::uint64_t& boundOffset, MeshHandle& boundIndices);
     /// The frame that Prepare filled, if any. Its instances follow m_sorted.
     FrameSlot* m_prepared = nullptr;
-    std::uint32_t m_shadowCount = 0;
     Counts m_counts;
     float m_normalStrength = 1.0f;
     /// Reused from frame to frame.
@@ -263,12 +242,5 @@ private:
     std::vector<TracedDraw> m_traced;
     glm::mat4 m_viewProjection{1.0f};
 };
-
-/// The lights that get a shadow map: spot lights that ask for one, nearest to the camera first, at most
-/// max of them, and none whose light stops short of maxDistance from the camera. Returns their indices in
-/// the view.
-[[nodiscard]] std::vector<std::uint32_t>
-ChooseShadowedLights(std::span<const Light> lights, const glm::vec3& camera, std::size_t max,
-                     float maxDistance = std::numeric_limits<float>::infinity());
 
 } // namespace daidalos::renderer

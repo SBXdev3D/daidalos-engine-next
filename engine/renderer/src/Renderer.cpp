@@ -293,10 +293,8 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     impl->uiPass.emplace(std::move(uiPass));
     impl->antialiasing = config.antialiasing;
     impl->samples = impl->SamplesOf(config.antialiasing);
-    DAI_TRY_ASSIGN(MeshPass meshPass, MeshPass::Create(impl->device, kHdrFormat, kDepthFormat,
-                                                       {.shadowLights = config.shadowLights,
-                                                        .shadowResolution = config.shadowResolution,
-                                                        .samples = impl->samples}));
+    DAI_TRY_ASSIGN(MeshPass meshPass,
+                   MeshPass::Create(impl->device, kHdrFormat, kDepthFormat, {.samples = impl->samples}));
     impl->meshPass.emplace(std::move(meshPass));
     DAI_TRY_ASSIGN(RayTracingScene rayTracing, RayTracingScene::Create(impl->device, kHdrFormat));
     impl->rayTracing.emplace(std::move(rayTracing));
@@ -401,8 +399,6 @@ FrameStats Renderer::Stats() const {
             .drawnDraws = counts.drawnDraws,
             .triangles = counts.triangles,
             .lights = counts.lights,
-            .shadowedLights = counts.shadowedLights,
-            .shadowDraws = counts.shadowDraws,
             .particleSpawns = impl.particleSpawns,
             .rayInstances = impl.rayTracing->LastStats().instances,
             .skinnedStructures = impl.rayTracing->LastStats().skinnedStructures,
@@ -453,7 +449,6 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         impl.rayTracing->AddBuild(graph);
     }
     if (status) {
-        impl.meshPass->AddShadows(graph);
         // With multisampling, the samples resolve into the targets that later passes read.
         graph.AddPass(
             {.name = "Prepass",
@@ -480,9 +475,11 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                              .clearColor = glm::vec4(view.atmosphere.fogColor, 1.0f),
                                              .depthTarget = multisampled ? impl.multisampledDepth : impl.depth,
                                              .colorResolve = multisampled ? impl.hdr : rhi::TextureHandle{}},
-             .textures = {{impl.meshPass->ShadowAtlas(), rhi::Access::FragmentShaderRead},
-                          {occlusion, rhi::Access::FragmentShaderRead}},
-             .buffers = {skinnedVertices}},
+             .textures = {{occlusion, rhi::Access::FragmentShaderRead}},
+             // Shadow rays: the frame's structure, and the vertices of the skinned draws they test for alpha.
+             .buffers = {skinnedVertices, {skinnedVertices.buffer, rhi::Access::FragmentShaderRead}},
+             .structures = {{hasFrame ? impl.rayTracing->Structure() : rhi::AccelerationStructureHandle{},
+                             rhi::Access::RayQueryRead}}},
             [&impl](rhi::CommandList& commands) { impl.meshPass->Record(commands); });
     }
     if (status && hasFrame) {

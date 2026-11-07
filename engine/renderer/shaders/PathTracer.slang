@@ -9,6 +9,7 @@
 
 #define DAI_NO_MESH_PUSH_CONSTANTS
 #include "MeshTypes.slangh"
+#include "RayQueries.slangh"
 import Bsdf;
 
 struct PathTracerPushConstants {
@@ -21,7 +22,7 @@ struct PathTracerPushConstants {
     uint seed;
     uint width;
     uint height;
-    uint padding0;
+    uint jitter; // 1 to spread the paths over the pixel, 0 to send them all through its center.
     uint padding1;
     uint padding2;
     float3 background;
@@ -29,18 +30,9 @@ struct PathTracerPushConstants {
 };
 
 [[vk::push_constant]] PathTracerPushConstants g_path;
-[[vk::binding(2, 0)]] StructuredBuffer<float> g_vertexFloats[];
-[[vk::binding(2, 0)]] StructuredBuffer<uint> g_indices[];
-[[vk::binding(3, 0)]] RaytracingAccelerationStructure g_accelerationStructures[];
 [[vk::binding(4, 0)]] [[vk::image_format("rgba32f")]] RWTexture2D<float4> g_storageImages[];
 
 static const float kPi = 3.14159265;
-// Matches kMaskShadowCasters in renderer/src/RayTracingScene.hpp.
-static const uint kMaskShadowCasters = 0x01;
-// Nothing this close to a light shadows it: a lamp's own shade, around the light, would darken it. The
-// shadow maps of the mesh pass do the same (kShadowNearPlane in renderer/src/MeshPass.cpp, ADR-0023).
-static const float kShadowNearPlane = 0.1;
-
 // PCG (O'Neill 2014): a small, good random number generator.
 uint NextRandom(inout uint state) {
     state = state * 747796405u + 2891336453u;
@@ -50,111 +42,6 @@ uint NextRandom(inout uint state) {
 
 float Random(inout uint state) {
     return float(NextRandom(state) >> 8) * (1.0 / 16777216.0);
-}
-
-struct Vertex {
-    float3 position;
-    float3 normal;
-    float4 tangent;
-    float2 uv;
-};
-
-Vertex LoadVertex(InstanceData instance, uint index) {
-    const uint first = (instance.firstVertex + index) * kVertexFloats;
-    const uint buffer = instance.vertexBuffer;
-    Vertex vertex;
-    vertex.position = float3(g_vertexFloats[buffer][first], g_vertexFloats[buffer][first + 1], g_vertexFloats[buffer][first + 2]);
-    vertex.normal = float3(g_vertexFloats[buffer][first + 3], g_vertexFloats[buffer][first + 4], g_vertexFloats[buffer][first + 5]);
-    vertex.tangent = float4(g_vertexFloats[buffer][first + 6], g_vertexFloats[buffer][first + 7], g_vertexFloats[buffer][first + 8],
-                            g_vertexFloats[buffer][first + 9]);
-    vertex.uv = float2(g_vertexFloats[buffer][first + 10], g_vertexFloats[buffer][first + 11]);
-    return vertex;
-}
-
-// The three vertices of a triangle, blended by the barycentric coordinates of a hit.
-Vertex Interpolate(InstanceData instance, uint primitive, float2 barycentrics) {
-    const uint first = primitive * 3;
-    const Vertex a = LoadVertex(instance, g_indices[instance.indexBuffer][first]);
-    const Vertex b = LoadVertex(instance, g_indices[instance.indexBuffer][first + 1]);
-    const Vertex c = LoadVertex(instance, g_indices[instance.indexBuffer][first + 2]);
-    const float3 w = float3(1.0 - barycentrics.x - barycentrics.y, barycentrics.x, barycentrics.y);
-    Vertex result;
-    result.position = a.position * w.x + b.position * w.y + c.position * w.z;
-    result.normal = a.normal * w.x + b.normal * w.y + c.normal * w.z;
-    result.tangent = a.tangent * w.x + b.tangent * w.y + c.tangent * w.z;
-    result.uv = a.uv * w.x + b.uv * w.y + c.uv * w.z;
-    // The handedness of the tangent frame is a sign, not something to blend.
-    result.tangent.w = a.tangent.w;
-    return result;
-}
-
-float3 FaceNormal(InstanceData instance, uint primitive) {
-    const uint first = primitive * 3;
-    const float3 a = LoadVertex(instance, g_indices[instance.indexBuffer][first]).position;
-    const float3 b = LoadVertex(instance, g_indices[instance.indexBuffer][first + 1]).position;
-    const float3 c = LoadVertex(instance, g_indices[instance.indexBuffer][first + 2]).position;
-    return TransformNormal(instance.world, cross(b - a, c - a));
-}
-
-// Rays have no screen derivatives: textures are read at their full detail.
-float4 SampleLevelZero(uint texture, float2 uv, float4 fallback) {
-    return texture != kNoTexture ? g_textures[texture].SampleLevel(g_samplers[kSamplerLinearRepeat], uv, 0.0) : fallback;
-}
-
-// The alpha test of the mesh pass, for a candidate hit on a surface that is not opaque.
-bool PassesAlphaTest(uint instanceIndex, uint primitive, float2 barycentrics) {
-    const InstanceData instance = g_instances[g_path.instanceBuffer][instanceIndex];
-    const MaterialData material = g_materials[g_path.materialBuffer][instance.material];
-    const float2 uv = Interpolate(instance, primitive, barycentrics).uv;
-    const float alpha = material.baseColorFactor.a * SampleLevelZero(material.baseColorTexture, uv, float4(1.0, 1.0, 1.0, 1.0)).a;
-    return alpha >= material.alphaCutoff;
-}
-
-// The first surface a ray meets, alpha-tested surfaces included.
-struct Hit {
-    bool found;
-    uint instance;
-    uint primitive;
-    float2 barycentrics;
-    float distance;
-};
-
-Hit TraceClosest(RayDesc ray, uint structure) {
-    RayQuery<RAY_FLAG_NONE> query;
-    query.TraceRayInline(g_accelerationStructures[structure], RAY_FLAG_NONE, 0xFF, ray);
-    while (query.Proceed()) {
-        if (query.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
-            PassesAlphaTest(query.CandidateInstanceID(), query.CandidatePrimitiveIndex(),
-                            query.CandidateTriangleBarycentrics())) {
-            query.CommitNonOpaqueTriangleHit();
-        }
-    }
-    Hit hit;
-    hit.found = query.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
-    hit.instance = query.CommittedInstanceID();
-    hit.primitive = query.CommittedPrimitiveIndex();
-    hit.barycentrics = query.CommittedTriangleBarycentrics();
-    hit.distance = query.CommittedRayT();
-    return hit;
-}
-
-// Whether anything that casts shadows lies on the ray.
-bool Occluded(RayDesc ray, uint structure) {
-    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> query;
-    query.TraceRayInline(g_accelerationStructures[structure], RAY_FLAG_NONE, kMaskShadowCasters, ray);
-    while (query.Proceed()) {
-        if (query.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
-            PassesAlphaTest(query.CandidateInstanceID(), query.CandidatePrimitiveIndex(),
-                            query.CandidateTriangleBarycentrics())) {
-            query.CommitNonOpaqueTriangleHit();
-        }
-    }
-    return query.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
-}
-
-// Moves a ray's origin off the surface it starts from, so that it does not hit it again.
-float3 OffsetOrigin(float3 position, float3 faceNormal) {
-    return position + faceNormal * (1e-3 * (1.0 + max(abs(position.x), max(abs(position.y), abs(position.z))) * 0.01));
 }
 
 // The surface at a hit, as the mesh pass shades it: its material, read at full detail, and its normal,
@@ -226,12 +113,8 @@ float3 DirectLight(Surface surface, float3 view, FrameData frame) {
         if (all(reflected <= 0.0)) {
             continue;
         }
-        RayDesc shadow;
-        shadow.Origin = OffsetOrigin(surface.position, surface.faceNormal);
-        shadow.Direction = toLight;
-        shadow.TMin = 0.0;
-        shadow.TMax = max(distanceToLight - min(kShadowNearPlane, light.range * 0.5), 0.0);
-        if (!Occluded(shadow, frame.accelerationStructure)) {
+        if (LightReaches(surface.position, surface.faceNormal, toLight, distanceToLight, light.range,
+                         frame.accelerationStructure, g_path.instanceBuffer, g_path.materialBuffer)) {
             total += reflected;
         }
     }
@@ -250,7 +133,8 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
 
     // A camera ray through a random point of the pixel. Pixels count down from the top; clip-space Y
     // points up (CONVENTIONS.md, section 5).
-    const float2 uv = (float2(id.xy) + float2(Random(random), Random(random))) / float2(size);
+    const float2 inPixel = g_path.jitter != 0 ? float2(Random(random), Random(random)) : float2(0.5, 0.5);
+    const float2 uv = (float2(id.xy) + inPixel) / float2(size);
     const float4 through = mul(frame.inverseViewProjection, float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 0.5, 1.0));
     RayDesc ray;
     ray.Origin = frame.cameraPosition;
@@ -261,7 +145,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     float3 radiance = float3(0.0, 0.0, 0.0);
     float3 throughput = float3(1.0, 1.0, 1.0);
     for (uint bounce = 0; bounce < g_path.maxBounces; ++bounce) {
-        const Hit hit = TraceClosest(ray, frame.accelerationStructure);
+        const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_path.instanceBuffer, g_path.materialBuffer);
         if (!hit.found) {
             radiance += throughput * g_path.background;
             break;

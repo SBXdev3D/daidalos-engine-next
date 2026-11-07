@@ -44,7 +44,7 @@ struct DrawItem {
     /// Index into SceneView::jointMatrices of the first matrix of a skinned draw, whose world matrix
     /// is then ignored.
     std::uint32_t firstJoint = kNoJoints;
-    /// Drawn into the shadow maps too.
+    /// Stops the rays of shadows (ADR-0035). The first-person weapons do not.
     bool castsShadows = true;
 };
 
@@ -80,13 +80,7 @@ struct Light {
     /// Spot lights: radians from the axis, full light inside the inner angle, none outside the outer.
     float innerAngle = 0.0f;
     float outerAngle = 0.0f;
-    /// Spot lights only. Of the lights that ask for a shadow, the renderer gives one to the nearest the
-    /// camera, as many as RendererConfig::shadowLights (ADR-0023).
-    bool castsShadows = false;
 };
-
-/// The most shadow maps that a frame can draw, whatever the settings.
-inline constexpr std::size_t kMaxShadowedLights = 16;
 
 /// What the renderer draws in one frame. It holds copies, so that rendering never touches the ECS
 /// (OVERVIEW §10.12).

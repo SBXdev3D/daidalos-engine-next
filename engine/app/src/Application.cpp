@@ -228,10 +228,6 @@ core::Result<void> Application::LoadConfiguration() {
                                                     "Darken the ambient light in creases and corners");
         m_normalStrength = m_cvars.Register<double>(
             "renderer.normal_strength", 1.0, "Multiplies the relief of normal maps: 0 flattens them, 1 as authored");
-        m_shadowLights = m_cvars.Register<std::int64_t>(
-            "renderer.shadow_lights", 4, "Spot lights with a shadow, the nearest, from 0 to 16, read at startup");
-        m_shadowResolution = m_cvars.Register<std::int64_t>(
-            "renderer.shadow_resolution", 1024, "Texels across each light's shadow map, 256 to 4096, read at startup");
         m_fieldOfView = m_cvars.Register<double>(
             "view.fov", 90.0, "Degrees across the view, from 30 to 150, for cameras without their own");
         m_viewDistance =
@@ -402,9 +398,6 @@ core::Result<void> Application::CreateRenderer() {
              .anisotropy = static_cast<float>(std::clamp<std::int64_t>(m_anisotropy->Get(), 1, 16)),
              .normalStrength = static_cast<float>(m_normalStrength->Get()),
              .ambientOcclusion = m_ambientOcclusion->Get(),
-             .shadowLights = static_cast<std::uint32_t>(std::clamp<std::int64_t>(m_shadowLights->Get(), 0, 16)),
-             .shadowResolution =
-                 static_cast<std::uint32_t>(std::clamp<std::int64_t>(m_shadowResolution->Get(), 256, 4096)),
              .fieldOfView = FieldOfViewRadians(*m_fieldOfView),
              .viewDistance = ViewDistanceMeters(*m_viewDistance),
              .antialiasing = AntialiasingMode(*m_antialiasing),

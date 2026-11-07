@@ -42,11 +42,11 @@ dai_add_module(NAME renderer
         daidalos::rhi)
 
 dai_add_shaders(TARGET daidalos_renderer
-    SOURCES shaders/Mesh.slang shaders/Prepass.slang shaders/ShadowMap.slang shaders/Ssao.slang shaders/SsaoBlur.slang
+    SOURCES shaders/Mesh.slang shaders/Prepass.slang shaders/Ssao.slang shaders/SsaoBlur.slang
         shaders/Tonemap.slang shaders/ParticleDraw.slang shaders/Fxaa.slang shaders/Ui.slang shaders/RayDebug.slang
     COMPUTE shaders/PathTracer.slang shaders/Skinning.slang shaders/ParticleEmit.slang shaders/ParticleSimulate.slang
         shaders/ParticleFinish.slang shaders/ParticleSort.slang
-    INCLUDES shaders/Bsdf.slang shaders/AmbientOcclusion.slangh shaders/MeshCommon.slangh shaders/MeshTypes.slangh shaders/Particles.slangh)
+    INCLUDES shaders/Bsdf.slang shaders/RayQueries.slangh shaders/AmbientOcclusion.slangh shaders/MeshCommon.slangh shaders/MeshTypes.slangh shaders/Particles.slangh)
 
 target_compile_definitions(daidalos_renderer
     PUBLIC DAI_DEV_TOOLS=$<BOOL:${DAI_ENABLE_DEV_TOOLS}>

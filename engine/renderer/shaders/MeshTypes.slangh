@@ -14,7 +14,6 @@ struct MeshPushConstants {
     uint materialBuffer;
     uint instanceIndex;
     uint materialIndex;
-    uint shadowIndex; // The shadow map being drawn, in the shadow pass.
 };
 
 struct FrameData {
@@ -26,9 +25,7 @@ struct FrameData {
     uint lightCount;
     float3 ambient;
     uint lightBuffer;
-    uint shadowBuffer;
-    uint shadowAtlas;  // Bindless index of the depth texture that holds every shadow map.
-    float shadowTexel; // One texel of the atlas, in texture coordinates.
+    uint3 padding0;
     float normalStrength; // Multiplies every normal map's tilt.
     float3 ambientBelow;  // Ambient light from below; ambient comes from above.
     uint occlusionTexture; // Half-resolution ambient occlusion, or kNoTexture.
@@ -62,19 +59,8 @@ struct LightData {
     float3 color;
     float cosOuter;
     float cosInner;
-    uint shadow; // Index into the shadow buffer, or kNoShadow.
+    uint padding0;
     uint2 padding;
-};
-
-static const uint kNoShadow = 0xFFFFFFFF;
-
-// A shadow map: the light's view and projection, its tile in the atlas, and how far a receiver is pushed
-// along its normal per meter from the light, against shadow acne.
-struct ShadowData {
-    float4x4 viewProjection;
-    float2 atlasOffset;
-    float atlasScale;
-    float normalOffset;
 };
 
 // One per draw of the frame, in the order of the sorted draws; also what a ray hit's custom index points to.
@@ -135,10 +121,8 @@ struct MaterialData {
 [[vk::binding(2, 0)]] StructuredBuffer<JointData> g_joints[];
 [[vk::binding(2, 0)]] StructuredBuffer<SkinVertex> g_skins[];
 [[vk::binding(2, 0)]] StructuredBuffer<LightData> g_lights[];
-[[vk::binding(2, 0)]] StructuredBuffer<ShadowData> g_shadows[];
 [[vk::binding(2, 0)]] StructuredBuffer<uint2> g_clusters[];
 [[vk::binding(2, 0)]] StructuredBuffer<uint> g_clusterLights[];
-[[vk::binding(1, 0)]] SamplerComparisonState g_compareSamplers[4];
 
 // Matches rhi::SamplerIndex.
 static const uint kSamplerLinearClamp = 0;
