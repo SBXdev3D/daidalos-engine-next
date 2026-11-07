@@ -12,13 +12,14 @@
 
 namespace daidalos::gpu_tests {
 
-/// Creates a headless device with validation, or skips the test on machines without Vulkan 1.3.
+/// Creates a headless device with validation, or skips the test on machines without a suitable Vulkan 1.4 device.
 /// Any validation error fails the test.
 class GpuTest : public ::testing::Test {
 protected:
     void SetUp() override {
         rhi::DeviceConfig config;
         config.validation = true;
+        config.synchronizationValidation = true;
         core::Result<rhi::Device> created = rhi::Device::Create(config);
         if (!created) {
             ASSERT_EQ(created.error().code, core::ErrorCode::NotSupported) << core::Format(created.error());

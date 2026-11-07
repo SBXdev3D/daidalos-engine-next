@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <type_traits>
 
 namespace daidalos::rhi {
@@ -29,11 +30,24 @@ struct RenderingDesc {
     TextureHandle depthTarget;
     /// Clears the depth target. Reverse-Z clears to 0, the far plane.
     std::optional<float> clearDepth;
-    /// With multisampled targets: single-sample textures of the same size and format, in the ColorTarget
-    /// and DepthTarget states, that receive the average color and the first sample's depth when the
+    /// With multisampled targets: single-sample textures of the same size and format, used as ColorTarget
+    /// and as DepthResolve (Access), that receive the average color and the first sample's depth when the
     /// rendering ends. Null to keep the samples only.
     TextureHandle colorResolve;
     TextureHandle depthResolve;
+};
+
+/// The next use of a texture. Discard drops its content: for a texture about to be overwritten.
+struct TextureUse {
+    TextureHandle texture;
+    Access access = Access::None;
+    bool discard = false;
+};
+
+/// The next use of a buffer.
+struct BufferUse {
+    BufferHandle buffer;
+    Access access = Access::None;
 };
 
 /// Records GPU commands. It is a small value that is valid only during the Device::Submit callback
@@ -42,7 +56,11 @@ class CommandList {
 public:
     explicit CommandList(detail::CommandRecording& recording) : m_recording(&recording) {}
 
-    /// Declares the next use of a texture. The Device tracks the current state.
+    /// Declares the next uses of textures and buffers. The Device tracks what each was last used for,
+    /// and records one barrier for the uses that must wait (NextAccess). The render graph declares every
+    /// use of its passes this way (ADR-0032).
+    void Use(std::span<const TextureUse> textures, std::span<const BufferUse> buffers);
+    /// Declares the next use of a texture: Use with the access of a state.
     void Transition(TextureHandle texture, TextureState state);
     /// Same as Transition for a texture about to be overwritten: its content is dropped. It orders
     /// the new use after the previous one even when the state does not change, which a target
@@ -86,8 +104,13 @@ public:
     /// Runs the bound compute pipeline on groups of threads. Outside any rendering scope.
     void Dispatch(std::uint32_t groupsX, std::uint32_t groupsY = 1, std::uint32_t groupsZ = 1);
     /// Everything recorded before writes its buffers before anything recorded after reads or writes them,
-    /// indirect arguments included. Textures keep their own transitions.
+    /// indirect arguments included. Textures keep their own transitions. Coarse: Use is precise.
     void Barrier();
+
+    /// Names the commands up to the matching EndLabel, for graphics debuggers. Labels nest. Nothing is
+    /// recorded when the debug utilities are unavailable.
+    void BeginLabel(std::string_view name);
+    void EndLabel();
 
     void CopyBuffer(BufferHandle source, BufferHandle destination, std::uint64_t size, std::uint64_t sourceOffset = 0,
                     std::uint64_t destinationOffset = 0);

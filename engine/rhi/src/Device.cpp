@@ -61,6 +61,16 @@ bool HasInstanceExtension(const char* name) {
     });
 }
 
+bool HasLayerExtension(const char* layer, const char* name) {
+    std::uint32_t count = 0;
+    vkEnumerateInstanceExtensionProperties(layer, &count, nullptr);
+    std::vector<VkExtensionProperties> extensions(count);
+    vkEnumerateInstanceExtensionProperties(layer, &count, extensions.data());
+    return std::ranges::any_of(extensions, [name](const VkExtensionProperties& extension) {
+        return std::strcmp(extension.extensionName, name) == 0;
+    });
+}
+
 bool HasDeviceExtension(VkPhysicalDevice device, const char* name) {
     std::uint32_t count = 0;
     vkEnumerateDeviceExtensionProperties(device, nullptr, &count, nullptr);
@@ -247,6 +257,22 @@ core::Result<void> Device::Impl::CreateInstance(const DeviceConfig& config) {
     };
     const bool useMessenger = !layers.empty() && debugUtils;
 
+    // Synchronization validation is a feature of the validation layer, switched on by this extension.
+    const VkValidationFeatureEnableEXT synchronization = VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT;
+    const VkValidationFeaturesEXT validationFeatures{
+        .sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT,
+        .pNext = useMessenger ? &messengerInfo : nullptr,
+        .enabledValidationFeatureCount = 1,
+        .pEnabledValidationFeatures = &synchronization,
+    };
+    const bool validateSynchronization = config.synchronizationValidation && !layers.empty() &&
+                                         HasLayerExtension(kValidationLayer, VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
+    if (validateSynchronization) {
+        extensions.push_back(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
+    } else if (config.synchronizationValidation) {
+        DAI_LOG_WARNING(kModule, "Synchronization validation was requested but is not available");
+    }
+
     const VkApplicationInfo application{
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = config.applicationName.c_str(),
@@ -255,7 +281,9 @@ core::Result<void> Device::Impl::CreateInstance(const DeviceConfig& config) {
     };
     const VkInstanceCreateInfo createInfo{
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pNext = useMessenger ? &messengerInfo : nullptr,
+        .pNext = validateSynchronization ? static_cast<const void*>(&validationFeatures)
+                 : useMessenger          ? static_cast<const void*>(&messengerInfo)
+                                         : nullptr,
         .pApplicationInfo = &application,
         .enabledLayerCount = static_cast<std::uint32_t>(layers.size()),
         .ppEnabledLayerNames = layers.data(),
@@ -844,7 +872,7 @@ core::Result<std::optional<Frame>> Device::BeginFrame(Swapchain* swapchain) {
     m_impl->CollectGarbage(completed);
     DAI_TRY(m_impl->ReadTimestamps(slot.recording));
 
-    Frame frame{CommandList(slot.recording), TextureHandle{}, Extent{}};
+    Frame frame{CommandList(slot.recording), TextureHandle{}, Extent{}, m_impl->frameIndex};
     if (swapchain != nullptr) {
         DAI_TRY_ASSIGN(TextureHandle image, swapchain->m_impl->Acquire(m_impl->frameIndex));
         if (image.IsNull()) {
