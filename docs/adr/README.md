@@ -36,3 +36,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0030](0030-developer-tools.md) | Developer tools: console, statistics, entity inspector and resources, on the ImGui overlay | Accepted |
 | [0031](0031-slang-and-vulkan-1-4.md) | Slang shaders, Vulkan 1.4, hardware ray tracing through ray queries | Accepted |
 | [0032](0032-render-graph.md) | A render graph that places barriers, labels and times passes | Accepted |
+| [0033](0033-acceleration-structures.md) | Acceleration structures, refitted skinned draws, skinning once per frame | Accepted |

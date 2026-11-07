@@ -27,7 +27,7 @@ Phase 7 built a rasterized renderer: clustered forward lights, four shadow maps,
 |---|---|---|
 | 9.1 | Vulkan 1.4, ray tracing required, Slang | Vulkan 1.3 path, DXC |
 | 9.2 | Render graph | hand-written barriers |
-| 9.3 | Acceleration structures: compacted BLAS, refit for skinned meshes, TLAS each frame | — |
+| 9.3 | Acceleration structures: compacted BLAS, refit for skinned meshes, TLAS each frame (compaction deferred, ADR-0033) | vertex-shader skinning |
 | 9.4 | Reference path tracer, Cornell box, golden-image tests | — |
 | 9.5 | Ray-query shadows for every light | shadow atlas (ADR-0023) |
 | 9.6 | Motion vectors, jitter, TAA | MSAA, FXAA (ADR-0026) |

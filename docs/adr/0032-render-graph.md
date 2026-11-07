@@ -22,7 +22,7 @@ Step 9.2 of ADR-0028. The renderer synchronized its passes by hand: about 25 `Tr
 - `Renderer::Render` declares what each pass uses instead of how to get there; no pass in the renderer records a barrier.
 - Synchronization validation found two hazards on its first run, both older than the graph. A multisampled depth resolve happens at the color output stage, which the barriers around the resolved depth did not wait for (`Access::DepthResolve`). Two uploads into one buffer in the same batch had no barrier between their copies (`Device::UploadBuffer` now declares its write). A third was in the old code: particle simulation read depth and normals in a compute shader after a transition that only covered fragment shaders, saved by the full memory barrier that followed it.
 - Particle simulation went from 0.091 to 0.053 ms of GPU time: its up to fourteen full memory barriers became barriers on the buffers each dispatch uses. The frame's total is unchanged.
-- The first group's time includes how much it overlaps the end of the previous frame: a timestamp is not a barrier. The shadow pass, first in the frame, has measured 0.045 and 0.073 ms with the same shaders in different builds.
+- The shadow pass's time changes between builds without a change to its code: 0.045 or 0.073 ms, with the same shaders, from one build to the next. *Corrected 2026-11-07:* this was first put down to the shadow pass being the first timed; it stayed when a pass came before it (ADR-0033), and is unexplained.
 - Unit tests check the rule and the graph's plan without a GPU.
 
 ## Alternatives considered
