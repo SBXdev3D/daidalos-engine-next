@@ -133,18 +133,22 @@ protected:
                         .Submit([&](rhi::CommandList& commands) {
                             EXPECT_TRUE(m_pass->Prepare(view, {.extent = kExtent}).has_value());
                             renderer::RenderGraph graph;
+                            m_pass->AddSkinning(graph);
                             m_pass->AddShadows(graph);
+                            const rhi::BufferUse skinned{m_pass->SkinnedVertices(), rhi::Access::VertexInputRead};
                             graph.AddPass({.name = "Prepass",
                                            .rendering = rhi::RenderingDesc{.colorTarget = m_normals,
                                                                            .clearColor = glm::vec4(0.0f),
                                                                            .depthTarget = m_depth,
-                                                                           .clearDepth = 0.0f}},
+                                                                           .clearDepth = 0.0f},
+                                           .buffers = {skinned}},
                                           [&](rhi::CommandList& list) { m_pass->RecordPrepass(list); });
                             graph.AddPass({.name = "Meshes",
                                            .rendering = rhi::RenderingDesc{.colorTarget = m_color,
                                                                            .clearColor = kBackground,
                                                                            .depthTarget = m_depth},
-                                           .textures = {{m_pass->ShadowAtlas(), rhi::Access::FragmentShaderRead}}},
+                                           .textures = {{m_pass->ShadowAtlas(), rhi::Access::FragmentShaderRead}},
+                                           .buffers = {skinned}},
                                           [&](rhi::CommandList& list) { m_pass->Record(list); });
                             graph.Execute(commands);
                             commands.Transition(m_color, rhi::TextureState::TransferSrc);

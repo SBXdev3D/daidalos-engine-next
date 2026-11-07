@@ -25,6 +25,7 @@ struct PassDesc {
     std::optional<rhi::RenderingDesc> rendering;
     std::vector<rhi::TextureUse> textures;
     std::vector<rhi::BufferUse> buffers;
+    std::vector<rhi::AccelerationStructureUse> structures;
 };
 
 using PassRecorder = std::function<void(rhi::CommandList&)>;
@@ -33,6 +34,7 @@ using PassRecorder = std::function<void(rhi::CommandList&)>;
 struct PlannedPass {
     std::vector<rhi::TextureUse> textures;
     std::vector<rhi::BufferUse> buffers;
+    std::vector<rhi::AccelerationStructureUse> structures;
     std::string_view group;
     /// Its group differs from the previous pass's: a timestamp and a label start here.
     bool startsGroup = false;

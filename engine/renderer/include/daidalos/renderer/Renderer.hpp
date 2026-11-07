@@ -32,6 +32,13 @@ enum class Antialiasing {
     Msaa8,
 };
 
+/// What the frame shows instead of the lit scene, to check the renderer.
+enum class DebugView {
+    Off,
+    /// The frame's acceleration structure traced from the camera: each instance in its own color (ADR-0033).
+    Rays,
+};
+
 struct RendererConfig {
     /// Enables the Vulkan validation layers if they are installed.
     bool validation = false;
@@ -55,6 +62,7 @@ struct RendererConfig {
     /// Meters: farther, nothing is drawn or lit.
     float viewDistance = 150.0f;
     Antialiasing antialiasing = Antialiasing::Fxaa;
+    DebugView debugView = DebugView::Off;
 };
 
 /// What the renderer did in the last frame it drew, and what it holds, for diagnostics.
@@ -69,6 +77,9 @@ struct FrameStats {
     /// Draws into the shadow maps, all lights together.
     std::uint32_t shadowDraws = 0;
     std::uint32_t particleSpawns = 0;
+    /// Instances of the frame's acceleration structure, and how many skinned draws had one built.
+    std::uint32_t rayInstances = 0;
+    std::uint32_t skinnedStructures = 0;
     /// Objects the renderer holds.
     std::size_t meshes = 0;
     std::size_t materials = 0;
@@ -117,6 +128,7 @@ public:
     void SetFieldOfView(float radians);
     void SetViewDistance(float meters);
     void SetAntialiasing(Antialiasing antialiasing);
+    void SetDebugView(DebugView view);
 
     /// GPU time of each pass of a recent frame, which the GPU finished a frame or two ago. Empty on a
     /// device without timestamps, and for the first frames.

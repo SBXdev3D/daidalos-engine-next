@@ -17,9 +17,11 @@ namespace daidalos::rhi {
 struct BufferTag;
 struct TextureTag;
 struct PipelineTag;
+struct AccelerationStructureTag;
 using BufferHandle = core::Handle<BufferTag>;
 using TextureHandle = core::Handle<TextureTag>;
 using PipelineHandle = core::Handle<PipelineTag>;
+using AccelerationStructureHandle = core::Handle<AccelerationStructureTag>;
 
 /// Frames that the CPU can record ahead of the GPU.
 inline constexpr std::uint32_t kFramesInFlight = 2;
@@ -74,6 +76,8 @@ enum class BufferUsage : std::uint32_t {
     Storage = 1U << 4U,
     /// Holds the arguments of CommandList::DrawIndirect.
     Indirect = 1U << 5U,
+    /// Read by acceleration structure builds: vertices, indices or instances.
+    AccelerationStructureInput = 1U << 6U,
 };
 
 [[nodiscard]] constexpr BufferUsage operator|(BufferUsage left, BufferUsage right) {
@@ -128,8 +132,8 @@ struct TextureDesc {
 };
 
 /// How the GPU uses a texture or a buffer, from which the RHI derives barriers (CommandList::Use,
-/// ADR-0032). Reads combine; ColorTarget, DepthTarget, DepthResolve, ComputeShaderWrite and
-/// TransferWrite write.
+/// ADR-0032). Reads combine; ColorTarget, DepthTarget, DepthResolve, ComputeShaderWrite, TransferWrite
+/// and AccelerationStructureWrite write.
 enum class Access : std::uint32_t {
     None = 0,
     /// Rendered to, blending included.
@@ -149,6 +153,15 @@ enum class Access : std::uint32_t {
     /// Receives the resolve of a multisampled depth target, which Vulkan performs at the color output
     /// stage, not with the depth tests.
     DepthResolve = 1U << 10U,
+    /// An acceleration structure being built, and its scratch memory.
+    AccelerationStructureWrite = 1U << 11U,
+    /// Read by an acceleration structure build: its input buffers, or the bottom-level structures of a
+    /// top-level build.
+    AccelerationStructureRead = 1U << 12U,
+    /// An acceleration structure traced by ray queries, in fragment or compute shaders.
+    RayQueryRead = 1U << 13U,
+    /// Vertices read by the input assembler.
+    VertexInputRead = 1U << 14U,
 };
 
 [[nodiscard]] constexpr Access operator|(Access left, Access right) {
@@ -160,7 +173,7 @@ enum class Access : std::uint32_t {
 /// True if the access writes.
 [[nodiscard]] constexpr bool Writes(Access access) {
     return HasFlag(access, Access::ColorTarget | Access::DepthTarget | Access::DepthResolve |
-                               Access::ComputeShaderWrite | Access::TransferWrite);
+                               Access::ComputeShaderWrite | Access::TransferWrite | Access::AccelerationStructureWrite);
 }
 
 /// What the GPU last did with a resource: the last write, and the reads since then, which the write

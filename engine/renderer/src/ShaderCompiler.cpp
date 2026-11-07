@@ -21,10 +21,12 @@ namespace {
 
 constexpr std::string_view kModule = "renderer";
 // Must match DAI_SLANG_ARGUMENTS in cmake/DaidalosShaders.cmake.
-constexpr std::array<std::string_view, 11> kSlangArguments{"-target",
+constexpr std::array<std::string_view, 13> kSlangArguments{"-target",
                                                            "spirv",
                                                            "-profile",
                                                            "spirv_1_6",
+                                                           "-capability",
+                                                           "spvRayQueryKHR",
                                                            "-fvk-use-entrypoint-name",
                                                            "-matrix-layout-column-major",
                                                            "-O2",

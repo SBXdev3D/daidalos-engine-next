@@ -124,7 +124,8 @@ flowchart LR
     A["Animator<br/>on the model's root"] -->|"samples and blends clips"| L["LocalTransform<br/>of joint entities"]
     L -->|"PropagateTransforms"| W["WorldTransform"]
     W -->|"ExtractScene"| J["jointMatrices:<br/>world × inverse bind"]
-    J --> V["Vertex shader:<br/>four joints per vertex,<br/>by weight"]
+    J --> V["Skinning pass, compute:<br/>four joints per vertex,<br/>by weight, once per frame"]
+    V --> D["Skinned vertices<br/>drawn by every pass,<br/>traced by rays"]
 ```
 
 ## Who owns what
@@ -154,17 +155,17 @@ Solid arrows own, and dotted arrows only refer. GPU objects are never held by po
 
 ## How the GPU reads its data
 
-The renderer uses bindless access: one descriptor set holds every texture and storage buffer, and each draw only pushes indices.
+The renderer uses bindless access: one descriptor set holds every texture, storage buffer and top-level acceleration structure, and each draw only pushes indices. A ray's hit finds its draw's InstanceData by its custom index.
 
 ```mermaid
 flowchart LR
     P["Push constants<br/>buffer and element indices"] --> FB["FrameData<br/>view-projection, fog, ambient"]
     FB --> LB["LightData<br/>every light of the frame"]
-    P --> IB["InstanceData<br/>world matrix, skin, first joint"]
-    IB --> SB["Skin of the mesh<br/>joints and weights per vertex"]
-    IB --> JB["Joint matrices<br/>of the frame"]
+    P --> IB["InstanceData<br/>world matrix, vertices,<br/>indices, material"]
+    IB --> VB["Vertices and indices<br/>of the mesh, or its<br/>skinned vertices"]
     P --> MB["MaterialData<br/>factors and texture indices"]
     MB --> T["Bindless texture array"]
+    FB --> AS["The frame's acceleration<br/>structure, by index"]
 ```
 
 ## Lighting
@@ -194,10 +195,14 @@ Each frame, the renderer and its passes add their passes to a `RenderGraph`, in 
 
 ```mermaid
 flowchart LR
-    SH["Shadows"] --> PP["Prepass"] --> OC["Occlusion<br/>2 passes"] --> SI["Simulation<br/>emit, simulate,<br/>finish, sort"] --> ME["Meshes"] --> PA["Particles"] --> TO["Tonemap"] --> AA["Antialiasing"] --> UI["Interface"] --> OV["Overlay"]
+    SK["Skinning"] --> AS["Acceleration<br/>structures"] --> SH["Shadows"] --> PP["Prepass"] --> OC["Occlusion<br/>2 passes"] --> SI["Simulation<br/>emit, simulate,<br/>finish, sort"] --> ME["Meshes"] --> PA["Particles"] --> TO["Tonemap"] --> AA["Antialiasing"] --> UI["Interface"] --> OV["Overlay"]
 ```
 
 Barriers come from the RHI: each texture and buffer remembers its last write and the reads since, and `CommandList::Use` decides from that whether the next use must wait (`rhi::NextAccess`). The GPU tests run with synchronization validation, which reports any use that no barrier orders.
+
+## Acceleration structures
+
+Rays are traced against a top-level acceleration structure rebuilt every frame from the frame's draws (ADR-0033). Each mesh has a bottom-level structure, built once with its upload. Skinned draws are skinned once per frame by a compute pass, into world-space vertices that the shadow, pre-pass and mesh passes draw and that each skinned draw's own structure is refitted from, so rays and rasterization see the same surface. A ray's hit names its draw's entry in the frame's instance data, which holds its vertices, indices and material. `renderer.debug_view rays` shows the structure from the camera, one color per instance.
 
 ## The game's interface
 

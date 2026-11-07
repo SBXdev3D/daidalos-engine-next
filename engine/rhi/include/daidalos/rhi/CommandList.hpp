@@ -50,6 +50,12 @@ struct BufferUse {
     Access access = Access::None;
 };
 
+/// The next use of an acceleration structure.
+struct AccelerationStructureUse {
+    AccelerationStructureHandle structure;
+    Access access = Access::None;
+};
+
 /// Records GPU commands. It is a small value that is valid only during the Device::Submit callback
 /// or between Device::BeginFrame and Device::EndFrame that produced it.
 class CommandList {
@@ -59,7 +65,8 @@ public:
     /// Declares the next uses of textures and buffers. The Device tracks what each was last used for,
     /// and records one barrier for the uses that must wait (NextAccess). The render graph declares every
     /// use of its passes this way (ADR-0032).
-    void Use(std::span<const TextureUse> textures, std::span<const BufferUse> buffers);
+    void Use(std::span<const TextureUse> textures, std::span<const BufferUse> buffers,
+             std::span<const AccelerationStructureUse> structures = {});
     /// Declares the next use of a texture: Use with the access of a state.
     void Transition(TextureHandle texture, TextureState state);
     /// Same as Transition for a texture about to be overwritten: its content is dropped. It orders
@@ -110,6 +117,14 @@ public:
     /// Names the commands up to the matching EndLabel, for graphics debuggers. Labels nest. Nothing is
     /// recorded when the debug utilities are unavailable.
     void BeginLabel(std::string_view name);
+    /// Builds a bottom-level structure from the geometry it was created with, outside any rendering scope.
+    /// Declare the structure as AccelerationStructureWrite and its buffers as AccelerationStructureRead.
+    void BuildAccelerationStructure(AccelerationStructureHandle structure);
+    /// Builds several bottom-level structures in one command, which the GPU can run side by side.
+    void BuildAccelerationStructures(std::span<const AccelerationStructureHandle> structures);
+    /// Builds a top-level structure from count instances written in a buffer (Device::WriteInstances).
+    /// Declare the bottom-level structures it holds as AccelerationStructureRead too.
+    void BuildAccelerationStructure(AccelerationStructureHandle structure, BufferHandle instances, std::uint32_t count);
     void EndLabel();
 
     void CopyBuffer(BufferHandle source, BufferHandle destination, std::uint64_t size, std::uint64_t sourceOffset = 0,

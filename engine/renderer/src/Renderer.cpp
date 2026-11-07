@@ -23,6 +23,7 @@
 #include "FxaaPass.hpp"
 #include "MeshPass.hpp"
 #include "ParticlePass.hpp"
+#include "RayTracingScene.hpp"
 #include "RenderGraph.hpp"
 #include "ShaderCompiler.hpp"
 #include "UiPass.hpp"
@@ -57,6 +58,7 @@ struct Renderer::Impl {
         if (const core::Result<void> idle = device.WaitIdle(); !idle) {
             DAI_LOG_ERROR(kModule, "Shutting down with a failed device: {}", core::Format(idle.error()));
         }
+        rayTracing.reset();
         meshPass.reset();
         ambientOcclusionPass.reset();
         particlePass.reset();
@@ -109,6 +111,8 @@ struct Renderer::Impl {
     std::uint32_t particleSpawns = 0;
     bool ambientOcclusion = true;
     Antialiasing antialiasing = Antialiasing::Fxaa;
+    DebugView debugView = DebugView::Off;
+    std::optional<RayTracingScene> rayTracing;
     /// Samples per pixel of the pre-pass and the mesh pass. With more than one, they draw into the
     /// multisampled targets, which resolve into depth, normals and hdr.
     std::uint32_t samples = 1;
@@ -286,6 +290,9 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
                                                         .shadowResolution = config.shadowResolution,
                                                         .samples = impl->samples}));
     impl->meshPass.emplace(std::move(meshPass));
+    DAI_TRY_ASSIGN(RayTracingScene rayTracing, RayTracingScene::Create(impl->device, kHdrFormat));
+    impl->rayTracing.emplace(std::move(rayTracing));
+    impl->debugView = config.debugView;
     DAI_TRY_ASSIGN(AmbientOcclusionPass ambientOcclusionPass, AmbientOcclusionPass::Create(impl->device));
     impl->ambientOcclusionPass.emplace(std::move(ambientOcclusionPass));
     impl->ambientOcclusion = config.ambientOcclusion;
@@ -358,6 +365,10 @@ void Renderer::SetAntialiasing(Antialiasing antialiasing) {
     m_impl->antialiasing = antialiasing;
 }
 
+void Renderer::SetDebugView(DebugView view) {
+    m_impl->debugView = view;
+}
+
 void Renderer::SetNormalStrength(float strength) {
     m_impl->meshPass->SetNormalStrength(strength);
 }
@@ -376,6 +387,8 @@ FrameStats Renderer::Stats() const {
             .shadowedLights = counts.shadowedLights,
             .shadowDraws = counts.shadowDraws,
             .particleSpawns = impl.particleSpawns,
+            .rayInstances = impl.rayTracing->LastStats().instances,
+            .skinnedStructures = impl.rayTracing->LastStats().skinnedStructures,
             .meshes = impl.meshPass->MeshCount(),
             .materials = impl.meshPass->MaterialCount(),
             .particleEffects = impl.particlePass->EffectCount()};
@@ -405,8 +418,21 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     const rhi::TextureHandle occlusion =
         impl.ambientOcclusion ? impl.ambientOcclusionPass->Output() : rhi::TextureHandle{};
     if (status) {
-        status = impl.meshPass->Prepare(view, {.extent = frame.extent, .occlusion = occlusion});
+        status = impl.rayTracing->Reserve(frame.slot, view.draws.size()).and_then([&](std::uint32_t structure) {
+            return impl.meshPass->Prepare(
+                view, {.extent = frame.extent, .occlusion = occlusion, .accelerationStructure = structure});
+        });
         impl.particleSpawns = static_cast<std::uint32_t>(view.particleSpawns.size());
+    }
+    const bool hasFrame = status && view.camera.has_value();
+    if (hasFrame) {
+        status = impl.rayTracing->Prepare(impl.meshPass->TracedDraws());
+    }
+    // Skinned draws are skinned once, for every pass that draws them and for rays.
+    const rhi::BufferUse skinnedVertices{impl.meshPass->SkinnedVertices(), rhi::Access::VertexInputRead};
+    if (status && hasFrame) {
+        impl.meshPass->AddSkinning(graph);
+        impl.rayTracing->AddBuild(graph);
     }
     if (status) {
         impl.meshPass->AddShadows(graph);
@@ -418,10 +444,10 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                              .depthTarget = multisampled ? impl.multisampledDepth : impl.depth,
                                              .clearDepth = 0.0f,
                                              .colorResolve = multisampled ? impl.normals : rhi::TextureHandle{},
-                                             .depthResolve = multisampled ? impl.depth : rhi::TextureHandle{}}},
+                                             .depthResolve = multisampled ? impl.depth : rhi::TextureHandle{}},
+             .buffers = {skinnedVertices}},
             [&impl](rhi::CommandList& commands) { impl.meshPass->RecordPrepass(commands); });
     }
-    const bool hasFrame = status && view.camera.has_value();
     if (hasFrame && impl.ambientOcclusion) {
         impl.ambientOcclusionPass->AddTo(graph, impl.meshPass->FrameDataIndex(), impl.depth, impl.normals);
     }
@@ -437,13 +463,18 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                              .depthTarget = multisampled ? impl.multisampledDepth : impl.depth,
                                              .colorResolve = multisampled ? impl.hdr : rhi::TextureHandle{}},
              .textures = {{impl.meshPass->ShadowAtlas(), rhi::Access::FragmentShaderRead},
-                          {occlusion, rhi::Access::FragmentShaderRead}}},
+                          {occlusion, rhi::Access::FragmentShaderRead}},
+             .buffers = {skinnedVertices}},
             [&impl](rhi::CommandList& commands) { impl.meshPass->Record(commands); });
     }
     if (status && hasFrame) {
         const glm::mat4 cameraWorld = glm::inverse(view.camera->view);
         impl.particlePass->AddDraw(graph, impl.meshPass->FrameDataIndex(), impl.depth, impl.hdr,
                                    glm::vec3(cameraWorld[0]), glm::vec3(cameraWorld[1]));
+    }
+    if (status && hasFrame && impl.debugView == DebugView::Rays) {
+        impl.rayTracing->AddDebugView(graph, impl.hdr, impl.meshPass->FrameDataIndex(),
+                                      impl.meshPass->InstanceDataIndex());
     }
 
     // With FXAA, tonemapping goes to an image that the antialiasing reads, and FXAA to the back buffer.

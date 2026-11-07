@@ -1,10 +1,12 @@
 dai_add_module(NAME rhi
     SOURCES
+        include/daidalos/rhi/AccelerationStructure.hpp
         include/daidalos/rhi/CommandList.hpp
         include/daidalos/rhi/Device.hpp
         include/daidalos/rhi/Spirv.hpp
         include/daidalos/rhi/Swapchain.hpp
         include/daidalos/rhi/Types.hpp
+        src/AccelerationStructure.cpp
         src/CommandList.cpp
         src/Device.cpp
         src/DeviceImpl.hpp

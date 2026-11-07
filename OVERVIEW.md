@@ -1939,7 +1939,7 @@ Hardware ray tracing is mandatory and no raster fallback is kept: each step dele
 
 1. Vulkan 1.4, ray tracing (acceleration structures and ray queries) required at device creation, every shader moved to Slang (done, ADR-0031).
 2. A minimal render graph: automatic barriers, debug labels, per-pass GPU timings (done, ADR-0032).
-3. Acceleration structures: compacted BLAS, refit for skinned meshes, TLAS rebuilt each frame.
+3. Acceleration structures: a BLAS per mesh, refit for skinned meshes, TLAS rebuilt each frame (done, ADR-0033; compaction deferred until memory asks for it).
 4. A reference path tracer, a Cornell box scene and golden-image tests against it.
 5. Ray-query shadows for every light, replacing the shadow atlas.
 6. Motion vectors (skinned meshes and particles included), jittered projection and TAA, replacing MSAA and FXAA.

@@ -5,6 +5,7 @@
 #pragma once
 
 #include <daidalos/core/Result.hpp>
+#include <daidalos/rhi/AccelerationStructure.hpp>
 #include <daidalos/rhi/CommandList.hpp>
 #include <daidalos/rhi/Types.hpp>
 
@@ -73,6 +74,9 @@ struct MemoryStats {
     std::size_t buffers = 0;
     std::size_t textures = 0;
     std::size_t pipelines = 0;
+    std::size_t accelerationStructures = 0;
+    /// Bytes held by acceleration structures, scratch memory excluded.
+    std::uint64_t accelerationStructureBytes = 0;
 };
 
 class Device {
@@ -125,6 +129,24 @@ public:
     [[nodiscard]] std::uint32_t BindlessIndex(TextureHandle texture) const;
     /// Index of a BufferUsage::Storage buffer in the storage buffer arrays of shaders.
     [[nodiscard]] std::uint32_t StorageIndex(BufferHandle buffer) const;
+
+    /// Sizes and allocates an acceleration structure for its geometry or instance count. It holds nothing
+    /// until it is built (CommandList::BuildAccelerationStructure, or BuildWithUploads).
+    [[nodiscard]] core::Result<AccelerationStructureHandle>
+    CreateAccelerationStructure(const AccelerationStructureDesc& desc);
+    void DestroyAccelerationStructure(AccelerationStructureHandle structure);
+    /// Index of a top-level structure in the g_accelerationStructures array of shaders.
+    [[nodiscard]] std::uint32_t AccelerationStructureIndex(AccelerationStructureHandle structure) const;
+    /// Bytes the structure holds.
+    [[nodiscard]] std::uint64_t AccelerationStructureSize(AccelerationStructureHandle structure) const;
+    /// Builds a bottom-level structure with the uploads, after the copies recorded so far, so that it
+    /// can be built from freshly uploaded vertices. Its scratch memory is released afterwards: it cannot
+    /// be built again. Not allowed between BeginFrame and EndFrame.
+    [[nodiscard]] core::Result<void> BuildWithUploads(AccelerationStructureHandle structure);
+    /// Writes instances for a top-level build into a CpuToGpu buffer with
+    /// BufferUsage::AccelerationStructureInput, kAccelerationStructureInstanceSize bytes each, from offset.
+    void WriteInstances(BufferHandle buffer, std::uint64_t offset,
+                        std::span<const AccelerationStructureInstance> instances);
 
     /// Fails with DeviceError if the driver rejects the SPIR-V.
     [[nodiscard]] core::Result<PipelineHandle> CreatePipeline(const GraphicsPipelineDesc& desc);
