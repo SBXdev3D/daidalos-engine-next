@@ -10,7 +10,7 @@ The project is at an early stage. Phases 0 to 5 of the roadmap in [OVERVIEW.md](
 | `platform` | SDL3 window, window and input events, Vulkan surfaces, process execution, crash dumps (Windows), and keyboard, mouse and gamepad state with actions |
 | `resources` | Asset paths and caching, glTF models, PNG, JPEG and KTX2 images, as plain CPU data |
 | `rhi` | Vulkan 1.4 device with ray queries, swapchain, buffers, textures with mip levels and BC compression, pipelines, command lists, batched uploads, deferred destruction |
-| `renderer` | HDR rendering with PBR materials, normal maps, point and spot lights, clustered on the CPU, spot-light shadows, a depth pre-pass, ambient occlusion, particles simulated on the GPU and tonemapping, skinning, GPU timings, shader hot reload, and the Dear ImGui overlay in development builds |
+| `renderer` | HDR rendering with PBR materials, normal maps, point and spot lights, clustered on the CPU, ray-traced shadows for every light, a reference path tracer, a depth pre-pass, ambient occlusion, particles simulated on the GPU and tonemapping, skinning, GPU timings, shader hot reload, and the Dear ImGui overlay in development builds |
 | `physics` | Jolt behind a small API: static meshes, kinematic boxes, raycasts, character movement |
 | `audio` | miniaudio behind a small API: clips, voices, 3D sounds, buses, silent without an output |
 | `scene` | Entities with sparse-set components and a hierarchy, skeletal animation, the asset library, and the scene that ties them to the renderer, physics and sounds |
@@ -38,7 +38,7 @@ The sandbox is a first-person demo in a dark factory, the remake of the legacy e
 | Optional | [Vulkan SDK](https://vulkan.lunarg.com/), for the validation layers | `vulkan-validationlayers` |
 | Formatting | clang-format 19 (bundled with Visual Studio's "C++ Clang tools" component) | clang-format 19 |
 
-Dependencies (SDL3, spdlog, GoogleTest, tl-expected, Vulkan headers, volk, the Vulkan Memory Allocator, Slang, Dear ImGui, fastgltf, libktx, stb, and Tracy for the profile presets) are installed automatically by vcpkg in manifest mode during the CMake configure step. They are listed in `vcpkg.json`, and their versions are pinned by the registry baseline in `vcpkg-configuration.json`.
+Dependencies (SDL3, spdlog, GoogleTest, tl-expected, Vulkan headers, volk, the Vulkan Memory Allocator, Slang, Dear ImGui, fastgltf, libktx, stb, and Tracy for the profile presets) are installed automatically by vcpkg in manifest mode during the CMake configure step. They are listed in `vcpkg.json`, and their versions are pinned by the registry baseline in `vcpkg-configuration.json`. The GPU tests also use NVIDIA's FLIP (BSD 3-Clause), whose single header is in `third_party/flip`.
 
 ### vcpkg
 
@@ -111,8 +111,6 @@ sandbox.exe +window.fullscreen true +renderer.antialiasing msaa4
 | `renderer.anisotropy` | 16 | Anisotropic filtering of textures, from 1 to 16, read at startup |
 | `renderer.normal_strength` | 1 | Relief of normal maps: 0 flattens them |
 | `renderer.ambient_occlusion` | true | Darken the ambient light in creases and corners |
-| `renderer.shadow_lights` | 4 | Spot lights that cast shadows, the nearest, from 0 to 16, read at startup |
-| `renderer.shadow_resolution` | 1024 | Texels across each shadow map, from 256 to 4096, read at startup |
 | `renderer.antialiasing` | `fxaa` | `off`, `fxaa`, `msaa2`, `msaa4` or `msaa8` |
 | `renderer.validation` | true in Debug | Enable the Vulkan validation layers, if installed |
 | `view.fov` | 90 | Degrees across the screen, from 30 to 150 |

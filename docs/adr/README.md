@@ -26,7 +26,7 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0020](0020-animation.md) | Own skeletal animation, joints as entities, skinning in the vertex shader | Accepted, amended |
 | [0021](0021-module-consolidation.md) | Nine modules, each a layer or a wall around a library | Accepted |
 | [0022](0022-lighting-and-materials.md) | HDR, PBR, legacy light units, glTF normal maps with MikkTSpace | Accepted, amended |
-| [0023](0023-shadows.md) | Spot-light shadows: four per frame in one atlas, nearest first | Accepted |
+| [0023](0023-shadows.md) | Spot-light shadows: four per frame in one atlas, nearest first | Superseded by 0035 |
 | [0024](0024-prepass-and-ambient-occlusion.md) | Depth pre-pass, half-resolution SSAO, ambient light from above and below | Accepted |
 | [0025](0025-gpu-particles.md) | Particles emitted, simulated, sorted and drawn on the GPU | Accepted |
 | [0026](0026-engine-settings-and-antialiasing.md) | The engine's settings file, daidalos.cfg; shadows, view and antialiasing settings; FXAA and MSAA | Accepted |
@@ -38,3 +38,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0032](0032-render-graph.md) | A render graph that places barriers, labels and times passes | Accepted |
 | [0033](0033-acceleration-structures.md) | Acceleration structures, refitted skinned draws, skinning once per frame | Accepted |
 | [0034](0034-reference-path-tracer.md) | A reference path tracer, one BSDF in a Slang module, storage images | Accepted |
+| [0035](0035-ray-traced-shadows.md) | Ray-traced shadows for every light, FLIP in the tests | Accepted |
