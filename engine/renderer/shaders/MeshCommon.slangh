@@ -2,13 +2,13 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
-#ifndef DAIDALOS_MESH_COMMON_HLSLI
-#define DAIDALOS_MESH_COMMON_HLSLI
+#ifndef DAIDALOS_MESH_COMMON_SLANGH
+#define DAIDALOS_MESH_COMMON_SLANGH
 
 // What the depth pre-pass and the mesh pass share: the vertex shader, compiled once and used by both
 // pipelines so that their depths match exactly, and the surface of a pixel (ADR-0024).
 
-#include "MeshTypes.hlsli"
+#include "MeshTypes.slangh"
 
 static const float kPi = 3.14159265;
 
@@ -36,7 +36,7 @@ float3 TransformNormal(float4x4 world, float3 normal) {
     return cross(y, z) * normal.x + cross(z, x) * normal.y + cross(x, y) * normal.z;
 }
 
-VertexOutput VSMain(VertexInput input, uint vertexId : SV_VertexID) {
+VertexOutput VSMain(VertexInput input, uint vertexId : SV_VulkanVertexID) {
     const float4x4 viewProjection = g_frames[g_push.frameBuffer][0].viewProjection;
     const InstanceData instance = g_instances[g_push.instanceBuffer][g_push.instanceIndex];
     const float4x4 world = WorldMatrix(instance, vertexId);

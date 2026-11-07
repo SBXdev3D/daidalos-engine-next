@@ -28,7 +28,7 @@ namespace daidalos::debugui {
 
 namespace {
 
-// Matches PushConstants in shaders/DebugUi.hlsl.
+// Matches PushConstants in shaders/DebugUi.slang.
 struct PushConstants {
     glm::vec2 scale;
     glm::vec2 translate;

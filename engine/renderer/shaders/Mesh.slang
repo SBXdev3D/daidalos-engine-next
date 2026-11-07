@@ -7,7 +7,7 @@
 // lights of its cluster (ADR-0008). The nearest spot lights have a shadow map (ADR-0023).
 // The ambient light is darkened by the frame's ambient occlusion (ADR-0024).
 
-#include "MeshCommon.hlsli"
+#include "MeshCommon.slangh"
 
 // How much of a light's shadow map sees a point: 1 in full light, 0 in shadow. The point is pushed along
 // its normal, more so far from the light, where a texel covers more surface. Nine filtered comparisons

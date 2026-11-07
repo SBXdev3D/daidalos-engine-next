@@ -5,7 +5,7 @@
 // Smooths the raw ambient occlusion over 5x5 half-resolution pixels (ADR-0024), without blurring across
 // edges: a neighbor counts less the farther its depth is from the pixel's.
 
-#include "AmbientOcclusion.hlsli"
+#include "AmbientOcclusion.slangh"
 
 float ViewDepth(FrameData frame, float2 uv) {
     const float depth = g_textures[g_ao.depthTexture].SampleLevel(g_samplers[kSamplerNearestClamp], uv, 0.0).r;

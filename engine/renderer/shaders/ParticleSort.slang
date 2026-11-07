@@ -8,7 +8,7 @@
 // sortStep 0, a group sorts every block from 2 up to sortBlock if that fits in it, or else finishes the
 // block sortBlock, whose longer steps are done.
 
-#include "Particles.hlsli"
+#include "Particles.slangh"
 
 #define kThreads 1024
 #define kLocalSize (2 * kThreads)

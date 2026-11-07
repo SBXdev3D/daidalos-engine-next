@@ -2,14 +2,14 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
-#ifndef DAIDALOS_PARTICLES_HLSLI
-#define DAIDALOS_PARTICLES_HLSLI
+#ifndef DAIDALOS_PARTICLES_SLANGH
+#define DAIDALOS_PARTICLES_SLANGH
 
 // What the particle passes share (ADR-0025). Each structure matches its C++ twin in
 // engine/renderer/src/ParticlePass.cpp.
 
 #define DAI_NO_MESH_PUSH_CONSTANTS
-#include "MeshTypes.hlsli"
+#include "MeshTypes.slangh"
 
 struct Particle {
     float3 position;

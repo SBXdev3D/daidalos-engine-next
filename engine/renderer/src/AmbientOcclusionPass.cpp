@@ -20,7 +20,7 @@ namespace daidalos::renderer {
 
 namespace {
 
-// Matches AmbientOcclusionPushConstants in shaders/AmbientOcclusion.hlsli.
+// Matches AmbientOcclusionPushConstants in shaders/AmbientOcclusion.slangh.
 struct AmbientOcclusionPushConstants {
     std::uint32_t frameBuffer;
     std::uint32_t depthTexture;

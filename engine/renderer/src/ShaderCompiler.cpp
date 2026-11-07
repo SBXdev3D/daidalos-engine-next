@@ -20,12 +20,22 @@ namespace daidalos::renderer {
 namespace {
 
 constexpr std::string_view kModule = "renderer";
-// Must match dai_add_shaders in cmake/DaidalosShaders.cmake.
-constexpr std::array<std::string_view, 3> kDxcArguments{"-spirv", "-fspv-target-env=vulkan1.3", "-Zpc"};
+// Must match DAI_SLANG_ARGUMENTS in cmake/DaidalosShaders.cmake.
+constexpr std::array<std::string_view, 11> kSlangArguments{"-target",
+                                                           "spirv",
+                                                           "-profile",
+                                                           "spirv_1_6",
+                                                           "-fvk-use-entrypoint-name",
+                                                           "-matrix-layout-column-major",
+                                                           "-O2",
+                                                           "-warnings-as-errors",
+                                                           "all",
+                                                           "-warnings-disable",
+                                                           "39001"};
 
 } // namespace
 
-core::Result<std::vector<std::uint32_t>> CompileShader(const std::filesystem::path& dxc,
+core::Result<std::vector<std::uint32_t>> CompileShader(const std::filesystem::path& slangc,
                                                        const std::filesystem::path& source, ShaderStage stage) {
     const bool vertex = stage == ShaderStage::Vertex;
 
@@ -40,10 +50,10 @@ core::Result<std::vector<std::uint32_t>> CompileShader(const std::filesystem::pa
     const std::filesystem::path output =
         outputDirectory / std::format("{}.{}.spv", source.stem().string(), vertex ? "vs" : "ps");
 
-    std::vector<std::string> arguments{dxc.string()};
-    arguments.insert(arguments.end(), kDxcArguments.begin(), kDxcArguments.end());
-    arguments.insert(arguments.end(), {"-T", vertex ? "vs_6_7" : "ps_6_7", "-E", vertex ? "VSMain" : "PSMain", "-I",
-                                       source.parent_path().string(), "-Fo", output.string(), source.string()});
+    std::vector<std::string> arguments{slangc.string()};
+    arguments.insert(arguments.end(), kSlangArguments.begin(), kSlangArguments.end());
+    arguments.insert(arguments.end(), {"-entry", vertex ? "VSMain" : "PSMain", "-stage", vertex ? "vertex" : "fragment",
+                                       "-I", source.parent_path().string(), "-o", output.string(), source.string()});
 
     DAI_TRY_ASSIGN(platform::ProcessResult compiled, platform::RunProcess(arguments));
     if (compiled.exitCode != 0) {
@@ -70,7 +80,7 @@ ShaderWatcher::Snapshot ShaderWatcher::Scan() const {
     std::error_code error;
     for (const auto& entry : std::filesystem::recursive_directory_iterator(m_directory, error)) {
         const std::filesystem::path extension = entry.path().extension();
-        if (extension == ".hlsl" || extension == ".hlsli") {
+        if (extension == ".slang" || extension == ".slangh") {
             // A file being replaced by an editor can vanish between listing and reading: its time
             // stays at the default value and it shows up as changed on the next poll.
             files[entry.path()] = std::filesystem::last_write_time(entry.path(), error);

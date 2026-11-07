@@ -15,7 +15,7 @@ struct TonemapPushConstants {
 [[vk::push_constant]] TonemapPushConstants g_push;
 [[vk::binding(0, 0)]] Texture2D g_textures[];
 
-float4 VSMain(uint vertexId : SV_VertexID) : SV_Position {
+float4 VSMain(uint vertexId : SV_VulkanVertexID) : SV_Position {
     // (-1, -1), (3, -1), (-1, 3): one triangle that covers the screen.
     const float2 corner = float2((vertexId << 1) & 2, vertexId & 2);
     return float4(corner * 2.0 - 1.0, 0.0, 1.0);
@@ -45,7 +45,7 @@ float3 LinearToSrgb(float3 color) {
 }
 
 float4 PSMain(float4 position : SV_Position) : SV_Target {
-    const float3 hdr = g_textures[g_push.hdrTexture].Load(int3(position.xy, 0)).rgb;
+    const float3 hdr = g_textures[g_push.hdrTexture].Load(int3(int2(position.xy), 0)).rgb;
     const float3 color = PbrNeutral(max(hdr, 0.0) * g_push.exposure);
     if (g_push.encode != 0) {
         const float3 encoded = LinearToSrgb(saturate(color));

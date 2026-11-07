@@ -34,20 +34,20 @@ dai_add_module(NAME renderer
         daidalos::rhi)
 
 dai_add_shaders(TARGET daidalos_renderer
-    SOURCES shaders/Mesh.hlsl shaders/Prepass.hlsl shaders/ShadowMap.hlsl shaders/Ssao.hlsl shaders/SsaoBlur.hlsl
-        shaders/Tonemap.hlsl shaders/ParticleDraw.hlsl shaders/Fxaa.hlsl shaders/Ui.hlsl
-    COMPUTE shaders/ParticleEmit.hlsl shaders/ParticleSimulate.hlsl shaders/ParticleFinish.hlsl shaders/ParticleSort.hlsl
-    INCLUDES shaders/AmbientOcclusion.hlsli shaders/MeshCommon.hlsli shaders/MeshTypes.hlsli shaders/Particles.hlsli)
+    SOURCES shaders/Mesh.slang shaders/Prepass.slang shaders/ShadowMap.slang shaders/Ssao.slang shaders/SsaoBlur.slang
+        shaders/Tonemap.slang shaders/ParticleDraw.slang shaders/Fxaa.slang shaders/Ui.slang
+    COMPUTE shaders/ParticleEmit.slang shaders/ParticleSimulate.slang shaders/ParticleFinish.slang shaders/ParticleSort.slang
+    INCLUDES shaders/AmbientOcclusion.slangh shaders/MeshCommon.slangh shaders/MeshTypes.slangh shaders/Particles.slangh)
 
 target_compile_definitions(daidalos_renderer
     PUBLIC DAI_DEV_TOOLS=$<BOOL:${DAI_ENABLE_DEV_TOOLS}>
     PRIVATE
         DAI_SHADER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders"
-        DAI_DXC_PATH="${DIRECTX_DXC_TOOL}")
+        DAI_SLANGC_PATH="${SLANGC_EXECUTABLE}")
 
 # The Dear ImGui overlay exists in development builds only.
 if(DAI_ENABLE_DEV_TOOLS)
     target_sources(daidalos_renderer PRIVATE include/daidalos/debugui/DebugUi.hpp src/DebugUi.cpp)
     target_link_libraries(daidalos_renderer PUBLIC imgui::imgui)
-    dai_add_shaders(TARGET daidalos_renderer SOURCES shaders/DebugUi.hlsl)
+    dai_add_shaders(TARGET daidalos_renderer SOURCES shaders/DebugUi.slang)
 endif()

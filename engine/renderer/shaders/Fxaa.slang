@@ -28,7 +28,7 @@ static const float kSubpixel = 0.75;
 static const uint kSearchSteps = 12;
 static const float kStepSizes[kSearchSteps] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.5, 2.0, 2.0, 2.0, 2.0, 4.0, 8.0};
 
-float4 VSMain(uint vertexId : SV_VertexID) : SV_Position {
+float4 VSMain(uint vertexId : SV_VulkanVertexID) : SV_Position {
     // (-1, -1), (3, -1), (-1, 3): one triangle that covers the screen.
     const float2 corner = float2((vertexId << 1) & 2, vertexId & 2);
     return float4(corner * 2.0 - 1.0, 0.0, 1.0);

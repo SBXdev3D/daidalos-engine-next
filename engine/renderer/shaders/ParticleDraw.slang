@@ -8,7 +8,7 @@
 // mode draws both kinds.
 
 #define DAI_PARTICLES_READ_ONLY
-#include "Particles.hlsli"
+#include "Particles.slangh"
 
 struct VertexOutput {
     float4 clipPosition : SV_Position;
@@ -18,7 +18,7 @@ struct VertexOutput {
     [[vk::location(3)]] nointerpolation uint effect : EFFECT;
 };
 
-VertexOutput VSMain(uint vertexId : SV_VertexID, uint instance : SV_InstanceID) {
+VertexOutput VSMain(uint vertexId : SV_VulkanVertexID, uint instance : SV_VulkanInstanceID) {
     const Particle particle = g_particleData[g_particles.particles][g_particleKeys[g_particles.keys][instance].y];
     const ParticleEffectData effect = g_particleEffects[g_particles.effects][particle.effect];
     const FrameData frame = g_frames[g_particles.frameBuffer][0];
@@ -58,7 +58,7 @@ float4 PSMain(VertexOutput input) : SV_Target {
     // Hidden behind what the meshes drew, and fading as it gets close to it.
     const float depth = dot(input.worldPosition - frame.cameraPosition, frame.cameraForward);
     const float sceneDepth =
-        LinearDepth(frame, g_textures[g_particles.depthTexture].Load(int3(input.clipPosition.xy, 0)).r);
+        LinearDepth(frame, g_textures[g_particles.depthTexture].Load(int3(int2(input.clipPosition.xy), 0)).r);
     alpha *= saturate((sceneDepth - depth) / max(effect.softness, 0.001));
     if (alpha <= 0.001) {
         discard;

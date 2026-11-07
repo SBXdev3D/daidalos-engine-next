@@ -6,7 +6,7 @@
 // drew. Particles at the end of their life go back to the dead list; the others go to the next alive
 // list, with their depth as the key of the sort.
 
-#include "Particles.hlsli"
+#include "Particles.slangh"
 
 // Meters behind a surface where a particle still counts as touching it: farther, it is behind something.
 static const float kCollisionThickness = 0.5;

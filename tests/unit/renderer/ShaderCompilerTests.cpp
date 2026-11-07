@@ -48,9 +48,9 @@ float4 PSMain() : SV_Target { return float4(1.0, 0.0, 0.0, 1.0); }
 } // namespace
 
 TEST_F(ShaderFiles, ValidShaderCompilesToSpirv) {
-    const std::filesystem::path source = Write("Valid.hlsl", kValidShader);
+    const std::filesystem::path source = Write("Valid.slang", kValidShader);
     for (const ShaderStage stage : {ShaderStage::Vertex, ShaderStage::Pixel}) {
-        const auto words = CompileShader(DAI_DXC_PATH, source, stage);
+        const auto words = CompileShader(DAI_SLANGC_PATH, source, stage);
         ASSERT_TRUE(words.has_value()) << core::Format(words.error());
         ASSERT_FALSE(words->empty());
         EXPECT_EQ(words->front(), kSpirvMagic);
@@ -58,28 +58,29 @@ TEST_F(ShaderFiles, ValidShaderCompilesToSpirv) {
 }
 
 TEST_F(ShaderFiles, ErrorNamesTheFileAndLine) {
-    const std::filesystem::path source = Write("Broken.hlsl", "float4 VSMain() : SV_Position {\n    return nope;\n}\n");
-    const auto words = CompileShader(DAI_DXC_PATH, source, ShaderStage::Vertex);
+    const std::filesystem::path source =
+        Write("Broken.slang", "float4 VSMain() : SV_Position {\n    return nope;\n}\n");
+    const auto words = CompileShader(DAI_SLANGC_PATH, source, ShaderStage::Vertex);
     ASSERT_FALSE(words.has_value());
     EXPECT_EQ(words.error().code, core::ErrorCode::ParseError);
-    EXPECT_NE(words.error().message.find("Broken.hlsl:2"), std::string::npos) << words.error().message;
+    EXPECT_NE(words.error().message.find("Broken.slang:2"), std::string::npos) << words.error().message;
 }
 
 TEST_F(ShaderFiles, MissingCompilerIsAnIoError) {
-    const std::filesystem::path source = Write("Valid.hlsl", kValidShader);
-    const auto words = CompileShader(m_directory / "no-such-dxc", source, ShaderStage::Vertex);
+    const std::filesystem::path source = Write("Valid.slang", kValidShader);
+    const auto words = CompileShader(m_directory / "no-such-slangc", source, ShaderStage::Vertex);
     ASSERT_FALSE(words.has_value());
     EXPECT_EQ(words.error().code, core::ErrorCode::IoError);
 }
 
 TEST_F(ShaderFiles, WatcherSeesNothingWithoutEdits) {
-    Write("Mesh.hlsl", kValidShader);
+    Write("Mesh.slang", kValidShader);
     ShaderWatcher watcher(m_directory);
     EXPECT_FALSE(watcher.Poll());
 }
 
 TEST_F(ShaderFiles, WatcherSeesAnEditOnce) {
-    const std::filesystem::path source = Write("Mesh.hlsl", kValidShader);
+    const std::filesystem::path source = Write("Mesh.slang", kValidShader);
     ShaderWatcher watcher(m_directory);
 
     std::filesystem::last_write_time(source, std::filesystem::last_write_time(source) + std::chrono::seconds(5));
@@ -89,7 +90,7 @@ TEST_F(ShaderFiles, WatcherSeesAnEditOnce) {
 
 TEST_F(ShaderFiles, WatcherSeesAddedAndRemovedFiles) {
     ShaderWatcher watcher(m_directory);
-    const std::filesystem::path added = Write("Common.hlsli", "");
+    const std::filesystem::path added = Write("Common.slangh", "");
     EXPECT_TRUE(watcher.Poll());
     std::filesystem::remove(added);
     EXPECT_TRUE(watcher.Poll());
@@ -97,7 +98,7 @@ TEST_F(ShaderFiles, WatcherSeesAddedAndRemovedFiles) {
 
 TEST_F(ShaderFiles, WatcherIgnoresOtherFiles) {
     ShaderWatcher watcher(m_directory);
-    Write("Mesh.hlsl.tmp", "");
+    Write("Mesh.slang.tmp", "");
     EXPECT_FALSE(watcher.Poll());
 }
 

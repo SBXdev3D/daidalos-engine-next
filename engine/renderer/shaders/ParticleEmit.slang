@@ -5,7 +5,7 @@
 // Spawns the frame's new particles (ADR-0025): one thread each, taking a free slot from the dead list and
 // adding it to the alive list. When the pool is full, new particles are dropped.
 
-#include "Particles.hlsli"
+#include "Particles.slangh"
 
 [numthreads(64, 1, 1)]
 void CSMain(uint3 id : SV_DispatchThreadID) {
