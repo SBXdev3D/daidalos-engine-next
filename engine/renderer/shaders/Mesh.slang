@@ -8,6 +8,7 @@
 // The ambient light is darkened by the frame's ambient occlusion (ADR-0024).
 
 #include "MeshCommon.slangh"
+import Bsdf;
 
 // How much of a light's shadow map sees a point: 1 in full light, 0 in shadow. The point is pushed along
 // its normal, more so far from the light, where a texel covers more surface. Nine filtered comparisons
@@ -40,31 +41,10 @@ float ShadowFactor(FrameData frame, LightData light, float3 position, float3 nor
     return lit / 9.0;
 }
 
-// Cook-Torrance with the GGX distribution, height-correlated Smith visibility and Schlick's Fresnel,
-// over a Lambert diffuse. The result is multiplied by pi, so that a light's color is what a white
-// surface facing it reflects (ADR-0022).
+// The BSDF of the engine (Bsdf.slang), multiplied by pi, so that a light's color is what a white surface
+// facing it reflects (ADR-0022).
 float3 Shade(float3 normal, float3 view, float3 toLight, float3 diffuseColor, float3 f0, float roughness) {
-    const float nDotL = saturate(dot(normal, toLight));
-    if (nDotL <= 0.0) {
-        return float3(0.0, 0.0, 0.0);
-    }
-    const float3 halfway = normalize(view + toLight);
-    const float nDotV = max(dot(normal, view), 0.0001);
-    const float nDotH = saturate(dot(normal, halfway));
-    const float vDotH = saturate(dot(view, halfway));
-
-    const float alpha = roughness * roughness;
-    const float alpha2 = alpha * alpha;
-    const float d = nDotH * nDotH * (alpha2 - 1.0) + 1.0;
-    const float distribution = alpha2 / (kPi * d * d);
-    const float visibility =
-        0.5 / (nDotL * sqrt(nDotV * nDotV * (1.0 - alpha2) + alpha2) +
-               nDotV * sqrt(nDotL * nDotL * (1.0 - alpha2) + alpha2));
-    const float3 fresnel = f0 + (1.0 - f0) * pow(1.0 - vDotH, 5.0);
-
-    const float3 specular = distribution * visibility * fresnel;
-    const float3 diffuse = (1.0 - fresnel) * diffuseColor / kPi;
-    return (diffuse + specular) * kPi * nDotL;
+    return EvaluateBsdf(normal, view, toLight, diffuseColor, f0, roughness) * kPi;
 }
 
 // The specular part of light that comes from everywhere, without an environment to reflect: Karis's

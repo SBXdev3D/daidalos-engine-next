@@ -34,6 +34,8 @@ inline constexpr std::string_view kModule = "rhi";
 inline constexpr std::uint32_t kMaxBindlessTextures = 4096;
 /// Size of the storage buffer arrays of shaders.
 inline constexpr std::uint32_t kMaxBindlessBuffers = 4096;
+/// Storage textures that shaders can read and write at the same time.
+inline constexpr std::uint32_t kMaxStorageImages = 64;
 /// Top-level acceleration structures that shaders can trace at the same time.
 inline constexpr std::uint32_t kMaxBindlessAccelerationStructures = 16;
 
@@ -64,6 +66,7 @@ struct TextureData {
     std::uint32_t samples = 1;
     AccessState access;
     std::uint32_t bindlessIndex = 0;
+    std::uint32_t storageIndex = 0;
 };
 
 struct AccelerationStructureData {
@@ -184,6 +187,7 @@ struct Device::Impl {
     std::vector<std::uint32_t> freeBindlessIndices;
     std::vector<std::uint32_t> freeStorageIndices;
     std::vector<std::uint32_t> freeAccelerationStructureIndices;
+    std::vector<std::uint32_t> freeStorageImageIndices;
     VkDeviceSize scratchAlignment = 256;
 
     core::SlotPool<BufferData, BufferTag> buffers;

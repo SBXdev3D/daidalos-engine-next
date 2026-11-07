@@ -37,6 +37,8 @@ enum class DebugView {
     Off,
     /// The frame's acceleration structure traced from the camera: each instance in its own color (ADR-0033).
     Rays,
+    /// The reference path tracer (ADR-0034), which averages a path per pixel per frame while the view stays.
+    Path,
 };
 
 struct RendererConfig {
@@ -63,6 +65,11 @@ struct RendererConfig {
     float viewDistance = 150.0f;
     Antialiasing antialiasing = Antialiasing::Fxaa;
     DebugView debugView = DebugView::Off;
+    /// The path tracer's settings: surfaces a path meets at most (1 is direct light only), paths per pixel
+    /// after which the image stops changing, and the radiance a path that leaves the scene sees.
+    std::uint32_t pathBounces = 4;
+    std::uint32_t pathSamples = 4096;
+    glm::vec3 pathBackground{0.0f};
 };
 
 /// What the renderer did in the last frame it drew, and what it holds, for diagnostics.
@@ -80,6 +87,8 @@ struct FrameStats {
     /// Instances of the frame's acceleration structure, and how many skinned draws had one built.
     std::uint32_t rayInstances = 0;
     std::uint32_t skinnedStructures = 0;
+    /// Paths per pixel the path tracer has averaged, with DebugView::Path.
+    std::uint32_t pathSamples = 0;
     /// Objects the renderer holds.
     std::size_t meshes = 0;
     std::size_t materials = 0;
@@ -129,6 +138,8 @@ public:
     void SetViewDistance(float meters);
     void SetAntialiasing(Antialiasing antialiasing);
     void SetDebugView(DebugView view);
+    /// The path tracer starts over when they change; see RendererConfig.
+    void SetPathTracer(std::uint32_t bounces, std::uint32_t samples);
 
     /// GPU time of each pass of a recent frame, which the GPU finished a frame or two ago. Empty on a
     /// device without timestamps, and for the first frames.

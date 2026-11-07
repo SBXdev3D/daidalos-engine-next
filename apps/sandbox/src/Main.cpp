@@ -5,8 +5,10 @@
 #include <daidalos/app/Application.hpp>
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/platform/Platform.hpp>
+#include <daidalos/renderer/CornellBox.hpp>
 #include <daidalos/renderer/Primitives.hpp>
 
+#include <glm/gtc/quaternion.hpp>
 #include <glm/trigonometric.hpp>
 #include <glm/vec3.hpp>
 
@@ -65,10 +67,11 @@ public:
         DAI_LOG_INFO("sandbox", "Daidalos Engine Next {} started", DAI_VERSION);
         m_frameLimit =
             app.CVars().Register<std::int64_t>("sandbox.frames", 0, "Quit after this many frames; 0 runs until closed");
-        m_levelPath = app.CVars()
-                          .Register<std::string>("sandbox.scene", "Factory/Factory.gltf",
-                                                 "Level to load from the assets directory")
-                          .Get();
+        m_levelPath =
+            app.CVars()
+                .Register<std::string>("sandbox.scene", "Factory/Factory.gltf",
+                                       "Level to load from the assets directory, or cornell for the Cornell box")
+                .Get();
         m_settings.mouseSensitivity = app.MouseSensitivity();
         m_settings.darkness = static_cast<float>(
             app.CVars().Register<double>("sandbox.darkness", 1.0, "Multiplies the darkness; 0 shows the level").Get());
@@ -180,26 +183,33 @@ private:
     void LoadLevel(app::Application& app, scene::Scene& target) {
         m_loading = true;
         m_loadingSeconds = 0.0f;
+        if (m_levelPath == kCornellBox) {
+            OnLevelLoaded(app, target, core::MakeError(core::ErrorCode::NotFound, "sandbox", "Built in code"));
+            return;
+        }
         target.Assets().LoadModelAsync(
-            m_levelPath, app.Workers(), [this, &app, &target](core::Result<const scene::Model*> model) {
-                m_loading = false;
-                m_levelShown = true;
-                if (core::Result<void> built = Build(app, target, model); !built) {
-                    DAI_LOG_ERROR("sandbox", "{}", core::Format(built.error()));
-                    m_failure = std::move(built.error());
-                    app.RequestQuit();
-                    return;
-                }
-                m_playSeconds = 0.0f;
-                m_endSeconds = 0.0f;
-                if (m_nextScene) {
-                    app.SetScene(std::move(m_nextScene));
-                    OpenScreen(app, sandbox::Screen::None);
-                } else {
-                    // The first level waits behind the main menu.
-                    OpenScreen(app, m_menuAtStart ? sandbox::Screen::Main : sandbox::Screen::None);
-                }
-            });
+            m_levelPath, app.Workers(),
+            [this, &app, &target](core::Result<const scene::Model*> model) { OnLevelLoaded(app, target, model); });
+    }
+
+    void OnLevelLoaded(app::Application& app, scene::Scene& target, const core::Result<const scene::Model*>& model) {
+        m_loading = false;
+        m_levelShown = true;
+        if (core::Result<void> built = Build(app, target, model); !built) {
+            DAI_LOG_ERROR("sandbox", "{}", core::Format(built.error()));
+            m_failure = std::move(built.error());
+            app.RequestQuit();
+            return;
+        }
+        m_playSeconds = 0.0f;
+        m_endSeconds = 0.0f;
+        if (m_nextScene) {
+            app.SetScene(std::move(m_nextScene));
+            OpenScreen(app, sandbox::Screen::None);
+        } else {
+            // The first level waits behind the main menu.
+            OpenScreen(app, m_menuAtStart ? sandbox::Screen::Main : sandbox::Screen::None);
+        }
     }
 
     /// Starts the level over in a new scene, which replaces this one once it is built.
@@ -294,7 +304,9 @@ private:
 
     core::Result<void> Build(app::Application& app, scene::Scene& target,
                              const core::Result<const scene::Model*>& model) {
-        if (model) {
+        if (m_levelPath == kCornellBox) {
+            DAI_TRY(BuildCornellBox(app, target));
+        } else if (model) {
             core::Result<ecs::Entity> player = sandbox::BuildLevel(target, **model, m_levelPath);
             if (!player) {
                 return tl::unexpected(player.error());
@@ -317,7 +329,8 @@ private:
         glm::vec3 position{0.0f};
         float yaw = 0.0f;
         float pitch = 0.0f;
-        std::istringstream text(m_start);
+        // In front of the Cornell box's opening, unless told otherwise.
+        std::istringstream text(m_start.empty() && m_levelPath == kCornellBox ? std::string("0 1.5 9 0 0") : m_start);
         if (!(text >> position.x >> position.y >> position.z >> yaw >> pitch)) {
             return;
         }
@@ -344,6 +357,38 @@ private:
         world.Add<scene::MeshRenderer>(floor, cube);
         const std::array<glm::vec3, 4> corners{glm::vec3(-6.0f, 0.0f, -6.0f), glm::vec3(-6.0f, 0.0f, 6.0f),
                                                glm::vec3(6.0f, 0.0f, 6.0f), glm::vec3(6.0f, 0.0f, -6.0f)};
+        const std::array<std::uint32_t, 6> triangles{0, 1, 2, 0, 2, 3};
+        DAI_TRY(target.Physics().AddStaticMesh(corners, triangles));
+        DAI_TRY(sandbox::BuildLevel(target, scene::Model{}, ""));
+        return {};
+    }
+
+    /// The Cornell box (renderer::MakeCornellBox), the test scene of the path tracer: sandbox.scene cornell.
+    static core::Result<void> BuildCornellBox(app::Application& app, scene::Scene& target) {
+        const renderer::CornellBox box = renderer::MakeCornellBox();
+        DAI_TRY_ASSIGN(renderer::MeshHandle cube, app.Renderer().CreateMesh(renderer::MakeCube(), "Cornell box"));
+        ecs::World& world = target.World();
+        for (const renderer::CornellPart& part : box.parts) {
+            DAI_TRY_ASSIGN(renderer::MaterialHandle material, app.Renderer().CreateMaterial(part.material));
+            const ecs::Entity entity = world.Create();
+            ecs::LocalTransform transform;
+            transform.translation = part.position;
+            transform.rotation = glm::angleAxis(part.yaw, glm::vec3(0.0f, 1.0f, 0.0f));
+            transform.scale = part.size;
+            world.Add<ecs::LocalTransform>(entity, transform);
+            world.Add<scene::MeshRenderer>(entity, cube, material);
+        }
+        const ecs::Entity light = world.Create();
+        ecs::LocalTransform lightTransform;
+        lightTransform.translation = box.light.position;
+        world.Add<ecs::LocalTransform>(light, lightTransform);
+        world.Add<scene::Light>(light, scene::Light{.type = box.light.type,
+                                                    .color = box.light.color,
+                                                    .range = box.light.range,
+                                                    .falloff = box.light.falloff});
+        // Something to stand on, inside the room and in front of it.
+        const std::array<glm::vec3, 4> corners{glm::vec3(-2.75f, 0.0f, -2.75f), glm::vec3(-2.75f, 0.0f, 12.0f),
+                                               glm::vec3(2.75f, 0.0f, 12.0f), glm::vec3(2.75f, 0.0f, -2.75f)};
         const std::array<std::uint32_t, 6> triangles{0, 1, 2, 0, 2, 3};
         DAI_TRY(target.Physics().AddStaticMesh(corners, triangles));
         DAI_TRY(sandbox::BuildLevel(target, scene::Model{}, ""));
@@ -437,6 +482,8 @@ private:
     input::ActionMap m_actions;
     std::filesystem::path m_assetRoot;
     std::string m_levelPath;
+    /// The value of sandbox.scene that builds the Cornell box instead of loading a level.
+    static constexpr std::string_view kCornellBox = "cornell";
     sandbox::Settings m_settings;
     std::string m_start;
     std::unique_ptr<scene::Scene> m_nextScene;

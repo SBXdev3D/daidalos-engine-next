@@ -115,6 +115,10 @@ public:
     [[nodiscard]] std::span<const TracedDraw> TracedDraws() const { return m_traced; }
     /// The storage index of the prepared frame's instances.
     [[nodiscard]] std::uint32_t InstanceDataIndex() const;
+    /// The view and projection of the prepared frame.
+    [[nodiscard]] const glm::mat4& ViewProjection() const { return m_viewProjection; }
+    /// The storage index of the material table.
+    [[nodiscard]] std::uint32_t MaterialDataIndex() const { return m_device->StorageIndex(m_materialTable); }
     /// Adds the pass that draws the shadow maps of the prepared frame, if it has any, as "Shadows".
     void AddShadows(RenderGraph& graph);
     /// The shadow maps, which Record reads.
@@ -257,6 +261,7 @@ private:
     rhi::PipelineHandle m_skinningPipeline;
     std::vector<SkinningJob> m_skinningJobs;
     std::vector<TracedDraw> m_traced;
+    glm::mat4 m_viewProjection{1.0f};
 };
 
 /// The lights that get a shadow map: spot lights that ask for one, nearest to the camera first, at most

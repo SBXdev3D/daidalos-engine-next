@@ -7,6 +7,7 @@
 #include <shaders/ComputeTest.cs.spv.h>
 #include <shaders/HalfTriangleTest.ps.spv.h>
 #include <shaders/HalfTriangleTest.vs.spv.h>
+#include <shaders/StorageImageTest.cs.spv.h>
 #include <shaders/TriangleTest.ps.spv.h>
 #include <shaders/TriangleTest.vs.spv.h>
 
@@ -499,4 +500,55 @@ TEST_F(GpuTest, MultisampledTargetsResolveToTheAverageColorAndTheFirstSamplesDep
     }
     Device().DestroyBuffer(*readback);
     Device().DestroyBuffer(*depthReadback);
+}
+
+namespace {
+
+struct StorageImagePush {
+    std::uint32_t image;
+};
+
+} // namespace
+
+TEST_F(GpuTest, ComputeShaderReadsAndWritesAStorageImage) {
+    constexpr rhi::Extent kSize{8, 8};
+    const core::Result<rhi::TextureHandle> image =
+        Device().CreateTexture({.extent = kSize,
+                                .format = rhi::Format::Rgba32Float,
+                                .usage = rhi::TextureUsage::Storage | rhi::TextureUsage::TransferSrc,
+                                .name = "Storage image"});
+    const core::Result<rhi::BufferHandle> readback = Device().CreateBuffer(
+        {.size = 8 * 8 * 16, .usage = rhi::BufferUsage::TransferDst, .memory = rhi::MemoryLocation::GpuToCpu});
+    const core::Result<rhi::PipelineHandle> pipeline =
+        Device().CreateComputePipeline({.shader = rhi::ToSpirv(kStorageImageTestCsSpirv), .name = "Storage image"});
+    ASSERT_TRUE(image && readback && pipeline);
+
+    ASSERT_TRUE(Device()
+                    .Submit([&](rhi::CommandList& commands) {
+                        // Starts from what the first dispatch reads: the content of a new image is undefined.
+                        const rhi::TextureUse cleared{*image, rhi::Access::ComputeShaderWrite, true};
+                        commands.Use({&cleared, 1}, {});
+                        commands.BindPipeline(*pipeline);
+                        commands.Push(StorageImagePush{Device().StorageImageIndex(*image)});
+                        commands.Dispatch(1, 1);
+                        // The second dispatch reads what the first wrote.
+                        const rhi::TextureUse again{*image, rhi::Access::ComputeShaderWrite};
+                        commands.Use({&again, 1}, {});
+                        commands.Dispatch(1, 1);
+                        commands.Transition(*image, rhi::TextureState::TransferSrc);
+                        commands.CopyTextureToBuffer(*image, *readback);
+                    })
+                    .has_value());
+
+    // Undefined content plus two additions: only the difference between texels is known, so the test
+    // checks that a texel got (x, y) twice more than texel (0, 0).
+    const auto* texels = reinterpret_cast<const float*>(Device().Mapped(*readback).data());
+    const auto texel = [&](std::uint32_t x, std::uint32_t y, std::uint32_t channel) {
+        return texels[(std::size_t{y} * kSize.width + x) * 4 + channel];
+    };
+    EXPECT_FLOAT_EQ(texel(5, 3, 0) - texel(0, 0, 0), 10.0f);
+    EXPECT_FLOAT_EQ(texel(5, 3, 1) - texel(0, 0, 1), 6.0f);
+    Device().DestroyPipeline(*pipeline);
+    Device().DestroyTexture(*image);
+    Device().DestroyBuffer(*readback);
 }

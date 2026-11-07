@@ -125,6 +125,8 @@ public:
     /// for buffers. The levels follow each other from the largest, tightly packed (MipByteSize).
     /// The texture needs TextureUsage::TransferDst and Sampled.
     [[nodiscard]] core::Result<void> UploadTexture(TextureHandle texture, std::span<const std::byte> pixels);
+    /// Index of a TextureUsage::Storage texture in the g_storageImages array of shaders.
+    [[nodiscard]] std::uint32_t StorageImageIndex(TextureHandle texture) const;
     /// Index of a sampled texture in the g_textures array of shaders.
     [[nodiscard]] std::uint32_t BindlessIndex(TextureHandle texture) const;
     /// Index of a BufferUsage::Storage buffer in the storage buffer arrays of shaders.

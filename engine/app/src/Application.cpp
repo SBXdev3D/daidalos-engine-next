@@ -49,10 +49,13 @@ renderer::DebugView DebugViewMode(const core::CVar<std::string>& cvar) {
     if (name == "rays") {
         return renderer::DebugView::Rays;
     }
+    if (name == "path") {
+        return renderer::DebugView::Path;
+    }
     static std::string warned;
     if (name != "off" && name != warned) {
         warned = name;
-        DAI_LOG_WARNING(kModule, "Unknown debug view '{}': use off or rays", name);
+        DAI_LOG_WARNING(kModule, "Unknown debug view '{}': use off, rays or path", name);
     }
     return renderer::DebugView::Off;
 }
@@ -238,7 +241,11 @@ core::Result<void> Application::LoadConfiguration() {
         m_validation = m_cvars.Register<bool>("renderer.validation", kValidationByDefault,
                                               "Enable the Vulkan validation layers, read at startup");
         m_debugView = m_cvars.Register<std::string>("renderer.debug_view", "off",
-                                                    "Shows a debug view instead of the lit scene: off, or rays");
+                                                    "Shows a debug view instead of the lit scene: off, rays or path");
+        m_pathBounces = m_cvars.Register<std::int64_t>(
+            "renderer.path_bounces", 4, "Surfaces a path of the path tracer meets at most; 1 is direct light only");
+        m_pathSamples = m_cvars.Register<std::int64_t>(
+            "renderer.path_samples", 4096, "Paths per pixel after which the path tracer's image stops changing");
         m_syncValidation = m_cvars.Register<bool>(
             "renderer.sync_validation", false,
             "With validation, also check the synchronization between passes (slow), read at startup");
@@ -401,7 +408,9 @@ core::Result<void> Application::CreateRenderer() {
              .fieldOfView = FieldOfViewRadians(*m_fieldOfView),
              .viewDistance = ViewDistanceMeters(*m_viewDistance),
              .antialiasing = AntialiasingMode(*m_antialiasing),
-             .debugView = DebugViewMode(*m_debugView)}));
+             .debugView = DebugViewMode(*m_debugView),
+             .pathBounces = static_cast<std::uint32_t>(std::clamp<std::int64_t>(m_pathBounces->Get(), 1, 64)),
+             .pathSamples = static_cast<std::uint32_t>(std::clamp<std::int64_t>(m_pathSamples->Get(), 1, 1 << 20))}));
     m_renderer.emplace(std::move(created));
     return {};
 }
@@ -448,6 +457,8 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_renderer->SetViewDistance(ViewDistanceMeters(*m_viewDistance));
     m_renderer->SetAntialiasing(AntialiasingMode(*m_antialiasing));
     m_renderer->SetDebugView(DebugViewMode(*m_debugView));
+    m_renderer->SetPathTracer(static_cast<std::uint32_t>(std::clamp<std::int64_t>(m_pathBounces->Get(), 1, 64)),
+                              static_cast<std::uint32_t>(std::clamp<std::int64_t>(m_pathSamples->Get(), 1, 1 << 20)));
     core::Result<void> rendered = m_renderer->Render(m_scene, &m_canvas, overlay);
     if (rendered && !overlayResult) {
         rendered = std::move(overlayResult);
