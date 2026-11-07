@@ -16,6 +16,7 @@
 #include "GpuFixture.hpp"
 #include "MeshPass.hpp"
 #include "ParticlePass.hpp"
+#include "RenderGraph.hpp"
 #include "ShaderCompiler.hpp"
 
 using namespace daidalos;
@@ -131,20 +132,21 @@ protected:
         ASSERT_TRUE(Device()
                         .Submit([&](rhi::CommandList& commands) {
                             EXPECT_TRUE(m_pass->Prepare(view, {.extent = kExtent}).has_value());
-                            m_pass->RecordShadows(commands);
-                            commands.Discard(m_normals, rhi::TextureState::ColorTarget);
-                            commands.Discard(m_depth, rhi::TextureState::DepthTarget);
-                            commands.BeginRendering({.colorTarget = m_normals,
-                                                     .clearColor = glm::vec4(0.0f),
-                                                     .depthTarget = m_depth,
-                                                     .clearDepth = 0.0f});
-                            m_pass->RecordPrepass(commands);
-                            commands.EndRendering();
-                            commands.Discard(m_color, rhi::TextureState::ColorTarget);
-                            commands.BeginRendering(
-                                {.colorTarget = m_color, .clearColor = kBackground, .depthTarget = m_depth});
-                            m_pass->Record(commands);
-                            commands.EndRendering();
+                            renderer::RenderGraph graph;
+                            m_pass->AddShadows(graph);
+                            graph.AddPass({.name = "Prepass",
+                                           .rendering = rhi::RenderingDesc{.colorTarget = m_normals,
+                                                                           .clearColor = glm::vec4(0.0f),
+                                                                           .depthTarget = m_depth,
+                                                                           .clearDepth = 0.0f}},
+                                          [&](rhi::CommandList& list) { m_pass->RecordPrepass(list); });
+                            graph.AddPass({.name = "Meshes",
+                                           .rendering = rhi::RenderingDesc{.colorTarget = m_color,
+                                                                           .clearColor = kBackground,
+                                                                           .depthTarget = m_depth},
+                                           .textures = {{m_pass->ShadowAtlas(), rhi::Access::FragmentShaderRead}}},
+                                          [&](rhi::CommandList& list) { m_pass->Record(list); });
+                            graph.Execute(commands);
                             commands.Transition(m_color, rhi::TextureState::TransferSrc);
                             commands.CopyTextureToBuffer(m_color, m_readback);
                         })
@@ -495,9 +497,9 @@ TEST_F(MeshPassTest, AmbientOcclusionDarkensACreaseAndNotAnOpenWall) {
     ASSERT_TRUE(readback.has_value());
     ASSERT_TRUE(Device()
                     .Submit([&](rhi::CommandList& commands) {
-                        commands.Transition(m_depth, rhi::TextureState::ShaderRead);
-                        commands.Transition(m_normals, rhi::TextureState::ShaderRead);
-                        occlusion.Record(commands, m_pass->FrameDataIndex(), m_depth, m_normals);
+                        renderer::RenderGraph graph;
+                        occlusion.AddTo(graph, m_pass->FrameDataIndex(), m_depth, m_normals);
+                        graph.Execute(commands);
                         commands.Transition(occlusion.Output(), rhi::TextureState::TransferSrc);
                         commands.CopyTextureToBuffer(occlusion.Output(), *readback);
                     })
@@ -571,16 +573,13 @@ protected:
         ASSERT_TRUE(
             Device()
                 .Submit([&](rhi::CommandList& commands) {
-                    commands.Transition(m_depth, rhi::TextureState::ShaderRead);
-                    commands.Transition(m_normals, rhi::TextureState::ShaderRead);
+                    renderer::RenderGraph graph;
                     EXPECT_TRUE(
-                        m_particles->Simulate(commands, spawns, step, m_pass->FrameDataIndex(), m_depth, m_normals)
+                        m_particles->AddSimulation(graph, spawns, step, m_pass->FrameDataIndex(), m_depth, m_normals)
                             .has_value());
-                    commands.Transition(m_color, rhi::TextureState::ColorTarget);
-                    commands.BeginRendering({.colorTarget = m_color});
-                    m_particles->Draw(commands, m_pass->FrameDataIndex(), m_depth, glm::vec3(1, 0, 0),
-                                      glm::vec3(0, 1, 0));
-                    commands.EndRendering();
+                    m_particles->AddDraw(graph, m_pass->FrameDataIndex(), m_depth, m_color, glm::vec3(1, 0, 0),
+                                         glm::vec3(0, 1, 0));
+                    graph.Execute(commands);
                     commands.Transition(m_color, rhi::TextureState::TransferSrc);
                     commands.CopyTextureToBuffer(m_color, m_readback);
                 })

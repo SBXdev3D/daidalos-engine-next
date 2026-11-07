@@ -22,6 +22,8 @@ dai_add_module(NAME renderer
         src/ParticlePass.cpp
         src/ParticlePass.hpp
         src/Primitives.cpp
+        src/RenderGraph.cpp
+        src/RenderGraph.hpp
         src/Renderer.cpp
         src/ShaderCompiler.cpp
         src/ShaderCompiler.hpp

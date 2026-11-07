@@ -23,6 +23,7 @@
 #include "FxaaPass.hpp"
 #include "MeshPass.hpp"
 #include "ParticlePass.hpp"
+#include "RenderGraph.hpp"
 #include "ShaderCompiler.hpp"
 #include "UiPass.hpp"
 
@@ -35,10 +36,6 @@ constexpr rhi::Format kDepthFormat = rhi::Format::D32Float;
 /// Lighting is computed in HDR, then tonemapped into the swapchain (ADR-0022).
 constexpr rhi::Format kHdrFormat = rhi::Format::Rgba16Float;
 /// The passes timed on the GPU, in order: each ends at a timestamp, after the one at the start.
-constexpr std::array<std::string_view, 10> kTimedPasses{"Shadows",   "Prepass",   "Occlusion", "Simulation",
-                                                        "Meshes",    "Particles", "Tonemap",   "Antialiasing",
-                                                        "Interface", "Overlay"};
-
 // Matches TonemapPushConstants in shaders/Tonemap.slang.
 struct TonemapPushConstants {
     std::uint32_t hdrTexture;
@@ -96,8 +93,8 @@ struct Renderer::Impl {
 
     /// The targets follow the size of the back buffer.
     core::Result<void> ResizeTargets(rhi::Extent extent);
-    /// Reads the timestamps of the last finished frame into gpuTimes.
-    void ReadGpuTimes();
+    /// Reads the timestamps of the last finished frame recorded in this slot into gpuTimes.
+    void ReadGpuTimes(std::uint32_t slot);
     void ReloadShaders();
 
     platform::Window* window;
@@ -129,8 +126,10 @@ struct Renderer::Impl {
     rhi::Extent targetExtent;
     bool vsync;
     float exposure = 1.0f;
-    std::array<PassTime, kTimedPasses.size()> gpuTimes{};
-    bool gpuTimesValid = false;
+    RenderGraph graph;
+    /// The timed groups of the frame recorded in each slot, in the order of their timestamps.
+    std::array<std::vector<std::string_view>, rhi::kFramesInFlight> timedGroups;
+    std::vector<PassTime> gpuTimes;
     std::string shaderError;
 #if DAI_DEV_TOOLS
     std::optional<ShaderWatcher> shaderWatcher;
@@ -200,14 +199,15 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
     return {};
 }
 
-void Renderer::Impl::ReadGpuTimes() {
+void Renderer::Impl::ReadGpuTimes(std::uint32_t slot) {
     const std::span<const double> timestamps = device.CompletedTimestamps();
-    gpuTimesValid = timestamps.size() == kTimedPasses.size() + 1;
-    if (!gpuTimesValid) {
+    const std::vector<std::string_view>& groups = timedGroups[slot];
+    gpuTimes.clear();
+    if (timestamps.size() != groups.size() + 1) {
         return;
     }
-    for (std::size_t pass = 0; pass < kTimedPasses.size(); ++pass) {
-        gpuTimes[pass] = {kTimedPasses[pass], timestamps[pass + 1] - timestamps[pass]};
+    for (std::size_t group = 0; group < groups.size(); ++group) {
+        gpuTimes.push_back({groups[group], timestamps[group + 1] - timestamps[group]});
     }
 }
 
@@ -247,6 +247,7 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
 
     rhi::DeviceConfig deviceConfig;
     deviceConfig.validation = config.validation;
+    deviceConfig.synchronizationValidation = config.synchronizationValidation;
     deviceConfig.instanceExtensions = std::move(extensions);
     deviceConfig.presentation = true;
     deviceConfig.anisotropy = config.anisotropy;
@@ -362,7 +363,7 @@ void Renderer::SetNormalStrength(float strength) {
 }
 
 std::span<const PassTime> Renderer::GpuTimes() const {
-    return m_impl->gpuTimesValid ? std::span<const PassTime>(m_impl->gpuTimes) : std::span<const PassTime>();
+    return m_impl->gpuTimes;
 }
 
 FrameStats Renderer::Stats() const {
@@ -395,122 +396,92 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         return {}; // Nothing can be drawn this frame.
     }
     rhi::Frame& frame = *begun;
-    impl.ReadGpuTimes();
+    impl.ReadGpuTimes(frame.slot);
 
     // A failure from here on still ends the frame: the acquired image must be presented.
     core::Result<void> status = impl.ResizeTargets(frame.extent);
     const bool multisampled = impl.samples > 1;
-    rhi::CommandList& commands = frame.commands;
-    commands.WriteTimestamp();
+    RenderGraph& graph = impl.graph;
+    const rhi::TextureHandle occlusion =
+        impl.ambientOcclusion ? impl.ambientOcclusionPass->Output() : rhi::TextureHandle{};
     if (status) {
-        const rhi::TextureHandle occlusion =
-            impl.ambientOcclusion ? impl.ambientOcclusionPass->Output() : rhi::TextureHandle{};
         status = impl.meshPass->Prepare(view, {.extent = frame.extent, .occlusion = occlusion});
         impl.particleSpawns = static_cast<std::uint32_t>(view.particleSpawns.size());
     }
     if (status) {
-        impl.meshPass->RecordShadows(commands);
-    }
-    commands.WriteTimestamp();
-    if (status) {
+        impl.meshPass->AddShadows(graph);
         // With multisampling, the samples resolve into the targets that later passes read.
-        commands.Discard(impl.normals, rhi::TextureState::ColorTarget);
-        commands.Discard(impl.depth, rhi::TextureState::DepthTarget);
-        if (multisampled) {
-            commands.Discard(impl.multisampledNormals, rhi::TextureState::ColorTarget);
-            commands.Discard(impl.multisampledDepth, rhi::TextureState::DepthTarget);
-        }
-        commands.BeginRendering({.colorTarget = multisampled ? impl.multisampledNormals : impl.normals,
-                                 .clearColor = glm::vec4(0.5f, 1.0f, 0.5f, 1.0f),
-                                 .depthTarget = multisampled ? impl.multisampledDepth : impl.depth,
-                                 .clearDepth = 0.0f,
-                                 .colorResolve = multisampled ? impl.normals : rhi::TextureHandle{},
-                                 .depthResolve = multisampled ? impl.depth : rhi::TextureHandle{}});
-        impl.meshPass->RecordPrepass(commands);
-        commands.EndRendering();
+        graph.AddPass(
+            {.name = "Prepass",
+             .rendering = rhi::RenderingDesc{.colorTarget = multisampled ? impl.multisampledNormals : impl.normals,
+                                             .clearColor = glm::vec4(0.5f, 1.0f, 0.5f, 1.0f),
+                                             .depthTarget = multisampled ? impl.multisampledDepth : impl.depth,
+                                             .clearDepth = 0.0f,
+                                             .colorResolve = multisampled ? impl.normals : rhi::TextureHandle{},
+                                             .depthResolve = multisampled ? impl.depth : rhi::TextureHandle{}}},
+            [&impl](rhi::CommandList& commands) { impl.meshPass->RecordPrepass(commands); });
     }
-    commands.WriteTimestamp();
     const bool hasFrame = status && view.camera.has_value();
-    if (hasFrame) {
-        commands.Transition(impl.depth, rhi::TextureState::ShaderRead);
-        commands.Transition(impl.normals, rhi::TextureState::ShaderRead);
-    }
     if (hasFrame && impl.ambientOcclusion) {
-        impl.ambientOcclusionPass->Record(commands, impl.meshPass->FrameDataIndex(), impl.depth, impl.normals);
+        impl.ambientOcclusionPass->AddTo(graph, impl.meshPass->FrameDataIndex(), impl.depth, impl.normals);
     }
-    commands.WriteTimestamp();
     if (hasFrame) {
-        // Particles bounce off the pre-pass's surfaces.
-        status = impl.particlePass->Simulate(commands, view.particleSpawns, view.timeStep,
-                                             impl.meshPass->FrameDataIndex(), impl.depth, impl.normals);
-        if (!multisampled) {
-            commands.Transition(impl.depth, rhi::TextureState::DepthTarget);
-        }
+        status = impl.particlePass->AddSimulation(graph, view.particleSpawns, view.timeStep,
+                                                  impl.meshPass->FrameDataIndex(), impl.depth, impl.normals);
     }
-    commands.WriteTimestamp();
     if (status) {
-        commands.Discard(impl.hdr, rhi::TextureState::ColorTarget);
-        if (multisampled) {
-            commands.Discard(impl.multisampledHdr, rhi::TextureState::ColorTarget);
-        } else {
-            commands.Transition(impl.depth, rhi::TextureState::DepthTarget);
-        }
-        commands.BeginRendering({.colorTarget = multisampled ? impl.multisampledHdr : impl.hdr,
-                                 .clearColor = glm::vec4(view.atmosphere.fogColor, 1.0f),
-                                 .depthTarget = multisampled ? impl.multisampledDepth : impl.depth,
-                                 .colorResolve = multisampled ? impl.hdr : rhi::TextureHandle{}});
-        impl.meshPass->Record(commands);
-        commands.EndRendering();
+        graph.AddPass(
+            {.name = "Meshes",
+             .rendering = rhi::RenderingDesc{.colorTarget = multisampled ? impl.multisampledHdr : impl.hdr,
+                                             .clearColor = glm::vec4(view.atmosphere.fogColor, 1.0f),
+                                             .depthTarget = multisampled ? impl.multisampledDepth : impl.depth,
+                                             .colorResolve = multisampled ? impl.hdr : rhi::TextureHandle{}},
+             .textures = {{impl.meshPass->ShadowAtlas(), rhi::Access::FragmentShaderRead},
+                          {occlusion, rhi::Access::FragmentShaderRead}}},
+            [&impl](rhi::CommandList& commands) { impl.meshPass->Record(commands); });
     }
-    commands.WriteTimestamp();
     if (status && hasFrame) {
-        // Over the meshes, back to front; they read the depth to fade into surfaces.
         const glm::mat4 cameraWorld = glm::inverse(view.camera->view);
-        commands.Transition(impl.depth, rhi::TextureState::ShaderRead);
-        commands.BeginRendering({.colorTarget = impl.hdr});
-        impl.particlePass->Draw(commands, impl.meshPass->FrameDataIndex(), impl.depth, glm::vec3(cameraWorld[0]),
-                                glm::vec3(cameraWorld[1]));
-        commands.EndRendering();
+        impl.particlePass->AddDraw(graph, impl.meshPass->FrameDataIndex(), impl.depth, impl.hdr,
+                                   glm::vec3(cameraWorld[0]), glm::vec3(cameraWorld[1]));
     }
-    commands.WriteTimestamp();
 
     // With FXAA, tonemapping goes to an image that the antialiasing reads, and FXAA to the back buffer.
     const bool fxaa = impl.antialiasing == Antialiasing::Fxaa;
-    commands.Transition(frame.backBuffer, rhi::TextureState::ColorTarget);
     if (status) {
-        commands.Transition(impl.hdr, rhi::TextureState::ShaderRead);
-        if (fxaa) {
-            commands.Discard(impl.tonemapped, rhi::TextureState::ColorTarget);
-        }
-        commands.BeginRendering({.colorTarget = fxaa ? impl.tonemapped : frame.backBuffer});
-        commands.BindPipeline(fxaa ? impl.tonemapEncoded : impl.tonemap);
-        commands.Push(TonemapPushConstants{impl.device.BindlessIndex(impl.hdr), impl.exposure, fxaa ? 1U : 0U});
-        commands.Draw(3);
-        commands.EndRendering();
+        const rhi::TextureHandle tonemapTarget = fxaa ? impl.tonemapped : frame.backBuffer;
+        graph.AddPass({.name = "Tonemap",
+                       .rendering = rhi::RenderingDesc{.colorTarget = tonemapTarget},
+                       .textures = {{tonemapTarget, rhi::Access::ColorTarget, true},
+                                    {impl.hdr, rhi::Access::FragmentShaderRead}}},
+                      [&impl, fxaa](rhi::CommandList& commands) {
+                          commands.BindPipeline(fxaa ? impl.tonemapEncoded : impl.tonemap);
+                          commands.Push(
+                              TonemapPushConstants{impl.device.BindlessIndex(impl.hdr), impl.exposure, fxaa ? 1U : 0U});
+                          commands.Draw(3);
+                      });
     }
-    commands.WriteTimestamp();
     if (status && fxaa) {
-        commands.Transition(impl.tonemapped, rhi::TextureState::ShaderRead);
-        commands.BeginRendering({.colorTarget = frame.backBuffer});
-        impl.fxaaPass->Record(commands, impl.tonemapped, frame.extent);
-        commands.EndRendering();
+        graph.AddPass({.name = "Antialiasing",
+                       .rendering = rhi::RenderingDesc{.colorTarget = frame.backBuffer},
+                       .textures = {{frame.backBuffer, rhi::Access::ColorTarget, true},
+                                    {impl.tonemapped, rhi::Access::FragmentShaderRead}}},
+                      [&impl, &frame](rhi::CommandList& commands) {
+                          impl.fxaaPass->Record(commands, impl.tonemapped, frame.extent);
+                      });
     }
-    commands.WriteTimestamp();
 
     // The interface goes after the antialiasing, which would blur text, and under the debug overlay.
     if (status && canvas != nullptr && !canvas->Commands().empty()) {
-        commands.BeginRendering({.colorTarget = frame.backBuffer});
-        status = impl.uiPass->Record(commands, *canvas);
-        commands.EndRendering();
+        graph.AddPass(
+            {.name = "Interface", .rendering = rhi::RenderingDesc{.colorTarget = frame.backBuffer}},
+            [&impl, &status, canvas](rhi::CommandList& commands) { status = impl.uiPass->Record(commands, *canvas); });
     }
-    commands.WriteTimestamp();
-
     if (status && overlay) {
-        commands.BeginRendering({.colorTarget = frame.backBuffer});
-        overlay(commands, frame.extent);
-        commands.EndRendering();
+        graph.AddPass({.name = "Overlay", .rendering = rhi::RenderingDesc{.colorTarget = frame.backBuffer}},
+                      [&overlay, &frame](rhi::CommandList& commands) { overlay(commands, frame.extent); });
     }
-    commands.WriteTimestamp();
+    impl.timedGroups[frame.slot] = graph.Execute(frame.commands);
 
     core::Result<void> ended = impl.device.EndFrame(&impl.swapchain);
     return status ? ended : status;

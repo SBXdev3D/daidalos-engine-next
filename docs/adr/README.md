@@ -35,3 +35,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0029](0029-menus-pause-and-player-settings.md) | Menus: immediate-mode widgets, scenes that pause, the player's settings in user.cfg | Accepted |
 | [0030](0030-developer-tools.md) | Developer tools: console, statistics, entity inspector and resources, on the ImGui overlay | Accepted |
 | [0031](0031-slang-and-vulkan-1-4.md) | Slang shaders, Vulkan 1.4, hardware ray tracing through ray queries | Accepted |
+| [0032](0032-render-graph.md) | A render graph that places barriers, labels and times passes | Accepted |

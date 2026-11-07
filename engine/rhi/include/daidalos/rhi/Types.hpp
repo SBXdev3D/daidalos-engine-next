@@ -127,8 +127,70 @@ struct TextureDesc {
     std::string name;
 };
 
-/// What a texture is used for next. A CommandList::Transition between two states is the only
-/// synchronization that the RHI asks of its users.
+/// How the GPU uses a texture or a buffer, from which the RHI derives barriers (CommandList::Use,
+/// ADR-0032). Reads combine; ColorTarget, DepthTarget, DepthResolve, ComputeShaderWrite and
+/// TransferWrite write.
+enum class Access : std::uint32_t {
+    None = 0,
+    /// Rendered to, blending included.
+    ColorTarget = 1U << 0U,
+    /// Depth tested and written.
+    DepthTarget = 1U << 1U,
+    VertexShaderRead = 1U << 2U,
+    FragmentShaderRead = 1U << 3U,
+    ComputeShaderRead = 1U << 4U,
+    /// Read and written by compute shaders.
+    ComputeShaderWrite = 1U << 5U,
+    /// Draw arguments.
+    IndirectRead = 1U << 6U,
+    TransferRead = 1U << 7U,
+    TransferWrite = 1U << 8U,
+    Present = 1U << 9U,
+    /// Receives the resolve of a multisampled depth target, which Vulkan performs at the color output
+    /// stage, not with the depth tests.
+    DepthResolve = 1U << 10U,
+};
+
+[[nodiscard]] constexpr Access operator|(Access left, Access right) {
+    return static_cast<Access>(static_cast<std::uint32_t>(left) | static_cast<std::uint32_t>(right));
+}
+[[nodiscard]] constexpr bool HasFlag(Access flags, Access flag) {
+    return (static_cast<std::uint32_t>(flags) & static_cast<std::uint32_t>(flag)) != 0;
+}
+/// True if the access writes.
+[[nodiscard]] constexpr bool Writes(Access access) {
+    return HasFlag(access, Access::ColorTarget | Access::DepthTarget | Access::DepthResolve |
+                               Access::ComputeShaderWrite | Access::TransferWrite);
+}
+
+/// What the GPU last did with a resource: the last write, and the reads since then, which the write
+/// was made visible to. A resource never used is None and None.
+struct AccessState {
+    Access lastWrite = Access::None;
+    Access reads = Access::None;
+
+    bool operator==(const AccessState&) const = default;
+};
+
+/// The access that decides a texture's layout: its reads, or its last write if nothing read it since.
+[[nodiscard]] constexpr Access CurrentAccess(const AccessState& state) {
+    return state.reads != Access::None ? state.reads : state.lastWrite;
+}
+
+/// Whether a use must wait, and for what.
+struct AccessStep {
+    bool barrier = false;
+    /// What the barrier waits for: the last write and the reads since.
+    Access source = Access::None;
+};
+
+/// Updates the state of a resource for its next use, and says whether a barrier must come first.
+/// A write, a change of texture layout, or discarding a texture's content waits for every earlier
+/// use. A read waits for the last write unless an earlier barrier already covered its stages: reads
+/// in the same stages follow each other freely.
+[[nodiscard]] AccessStep NextAccess(AccessState& state, Access next, bool texture, bool discard = false);
+
+/// What a texture is used for next: a shorthand for an Access, used by CommandList::Transition.
 enum class TextureState {
     Undefined,
     ColorTarget,
@@ -138,6 +200,9 @@ enum class TextureState {
     TransferDst,
     Present,
 };
+
+/// The access of a texture in a state. ShaderRead is a read by any shader stage.
+[[nodiscard]] Access AccessOf(TextureState state);
 
 enum class IndexType { Uint16, Uint32 };
 enum class CullMode { None, Front, Back };

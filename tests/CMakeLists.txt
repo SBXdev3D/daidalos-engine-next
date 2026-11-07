@@ -1,6 +1,7 @@
 add_subdirectory(unit/core)
 add_subdirectory(unit/platform)
 add_subdirectory(unit/resources)
+add_subdirectory(unit/rhi)
 add_subdirectory(unit/renderer)
 add_subdirectory(unit/physics)
 add_subdirectory(unit/audio)

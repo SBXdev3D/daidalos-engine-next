@@ -219,6 +219,9 @@ core::Result<void> Device::UploadBuffer(BufferHandle buffer, std::span<const std
     std::memcpy(Mapped(staging).data(), data.data(), data.size());
     core::Result<CommandList> commands = m_impl->UploadCommands();
     if (commands) {
+        // Waits for earlier uses of the buffer, an earlier upload in the same batch included.
+        const BufferUse use{buffer, Access::TransferWrite};
+        commands->Use({}, {&use, 1});
         commands->CopyBuffer(staging, buffer, data.size());
     }
     DestroyBuffer(staging); // Released once the copy is done.

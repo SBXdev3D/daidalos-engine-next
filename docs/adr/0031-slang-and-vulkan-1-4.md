@@ -23,7 +23,7 @@ ADR-0028 moves rendering to ray tracing, on Vulkan 1.4 with Slang shaders. Step 
 
 - Every layout was checked before the switch: the 29 entry points compiled by DXC and by Slang reflect identical bindings, offsets, matrix strides, locations and built-ins.
 - Screenshots of the factory before and after are identical where nothing moves; the particles differ only as much as two runs of the same build do.
-- GPU time, RTX 3090, 1280x720 Release, averaged over 29,700 frames, two runs each: meshes 0.060 ms with DXC, 0.051 ms with Slang; particle simulation 0.091 ms with both, once Slang compiles at `-O2` (0.105 ms at its default level); shadows 0.046 ms with DXC, 0.073 ms with Slang. The shadow pass is not investigated further: step 9.5 replaces it with ray queries.
+- GPU time, RTX 3090, 1280x720 Release, averaged over 29,700 frames, two runs each: meshes 0.060 ms with DXC, 0.051 ms with Slang; particle simulation 0.091 ms with both, once Slang compiles at `-O2` (0.105 ms at its default level); shadows 0.046 ms with DXC, 0.073 ms with Slang. *Corrected 2026-11-07:* the same Slang build later measured 0.045 ms for shadows. The first pass of the frame overlaps the end of the previous one, so its time varies between builds (ADR-0032): the shadow difference was not Slang's.
 - Linux CI installs Mesa from the kisak PPA so that lavapipe offers Vulkan 1.4 and ray queries, and prints what it supports.
 - The DXC port is gone from `vcpkg.json`. The Slang port downloads Slang's released binaries.
 

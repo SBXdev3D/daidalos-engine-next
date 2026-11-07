@@ -34,7 +34,7 @@ app::ApplicationConfig RenderingConfig() {
     config.window.width = 64;
     config.window.height = 64;
     config.rendering = true;
-    config.arguments = {"+renderer.validation", "true"};
+    config.arguments = {"+renderer.validation", "true", "+renderer.sync_validation", "true"};
     return config;
 }
 

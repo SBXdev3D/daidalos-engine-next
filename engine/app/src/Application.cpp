@@ -223,6 +223,9 @@ core::Result<void> Application::LoadConfiguration() {
                                                        "Smoothing of edges: off, fxaa, msaa2, msaa4 or msaa8");
         m_validation = m_cvars.Register<bool>("renderer.validation", kValidationByDefault,
                                               "Enable the Vulkan validation layers, read at startup");
+        m_syncValidation = m_cvars.Register<bool>(
+            "renderer.sync_validation", false,
+            "With validation, also check the synchronization between passes (slow), read at startup");
         m_volume = m_cvars.Register<double>("audio.volume", 1.0, "Overall volume, from 0 to 1");
         m_effectsVolume = m_cvars.Register<double>("audio.effects", 1.0, "Volume of sound effects, from 0 to 1");
         m_musicVolume = m_cvars.Register<double>("audio.music", 1.0, "Volume of music, from 0 to 1");
@@ -370,6 +373,7 @@ core::Result<void> Application::CreateRenderer() {
         renderer::Renderer::Create(
             *m_window,
             {.validation = m_validation->Get(),
+             .synchronizationValidation = m_syncValidation->Get(),
              .vsync = m_vsync->Get(),
              .exposure = static_cast<float>(m_exposure->Get()),
              .anisotropy = static_cast<float>(std::clamp<std::int64_t>(m_anisotropy->Get(), 1, 16)),

@@ -24,6 +24,8 @@
 #include <format>
 #include <utility>
 
+#include "RenderGraph.hpp"
+
 namespace daidalos::renderer {
 
 namespace {
@@ -608,13 +610,17 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     return {};
 }
 
-void MeshPass::RecordShadows(rhi::CommandList& commands) {
-    DAI_PROFILE_SCOPE("renderer::MeshPass::RecordShadows");
+void MeshPass::AddShadows(RenderGraph& graph) {
     if (m_prepared == nullptr || m_shadowCount == 0) {
         return;
     }
-    commands.Discard(m_shadowAtlas, rhi::TextureState::DepthTarget);
-    commands.BeginRendering({.depthTarget = m_shadowAtlas, .clearDepth = 0.0f});
+    graph.AddPass(
+        {.name = "Shadows", .rendering = rhi::RenderingDesc{.depthTarget = m_shadowAtlas, .clearDepth = 0.0f}},
+        [this](rhi::CommandList& commands) { RecordShadows(commands); });
+}
+
+void MeshPass::RecordShadows(rhi::CommandList& commands) {
+    DAI_PROFILE_SCOPE("renderer::MeshPass::RecordShadows");
     commands.BindPipeline(m_shadowPipeline);
     MeshPushConstants push{
         .frameBuffer = m_device->StorageIndex(m_prepared->frame),
@@ -648,8 +654,6 @@ void MeshPass::RecordShadows(rhi::CommandList& commands) {
             commands.DrawIndexed(mesh.indexCount);
         }
     }
-    commands.EndRendering();
-    commands.Transition(m_shadowAtlas, rhi::TextureState::ShaderRead);
 }
 
 void MeshPass::RecordPrepass(rhi::CommandList& commands) {

@@ -6,6 +6,7 @@
 #include <daidalos/rhi/CommandList.hpp>
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "DeviceImpl.hpp"
@@ -17,35 +18,65 @@ namespace {
 struct StateAccess {
     VkPipelineStageFlags2 stages = VK_PIPELINE_STAGE_2_NONE;
     VkAccessFlags2 access = VK_ACCESS_2_NONE;
-    VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
 };
 
-StateAccess Describe(TextureState state) {
-    switch (state) {
-    // A swapchain image becomes usable when the acquire semaphore's wait at the color output stage
-    // ends. Its first barrier must start from that stage to run after the wait, so Undefined and
-    // Present name it rather than no stage at all.
-    case TextureState::Undefined:
-        return {.stages = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT};
-    case TextureState::ColorTarget:
-        return {VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-    case TextureState::DepthTarget:
-        return {VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL};
-    case TextureState::ShaderRead:
-        return {VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    case TextureState::TransferSrc:
-        return {VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL};
-    case TextureState::TransferDst:
-        return {VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL};
-    case TextureState::Present:
-        return {VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR};
+VkImageLayout LayoutOf(Access access) {
+    if (HasFlag(access, Access::ColorTarget)) {
+        return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     }
-    return {};
+    if (HasFlag(access, Access::DepthTarget | Access::DepthResolve)) {
+        return VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    }
+    if (HasFlag(access, Access::ComputeShaderWrite)) {
+        return VK_IMAGE_LAYOUT_GENERAL;
+    }
+    if (HasFlag(access, Access::VertexShaderRead | Access::FragmentShaderRead | Access::ComputeShaderRead)) {
+        return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+    if (HasFlag(access, Access::TransferRead)) {
+        return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    }
+    if (HasFlag(access, Access::TransferWrite)) {
+        return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    }
+    if (HasFlag(access, Access::Present)) {
+        return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    }
+    return VK_IMAGE_LAYOUT_UNDEFINED;
+}
+
+// The stages and memory accesses to wait for, or to make wait, for an access.
+StateAccess Describe(Access access, bool texture) {
+    if (access == Access::None) {
+        // A buffer's earlier uses are unknown: wait for everything. A texture without a use is new or
+        // a swapchain image, which becomes usable when the acquire semaphore's wait at the color output
+        // stage ends: its first barrier must start from that stage to run after the wait.
+        return texture ? StateAccess{.stages = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT}
+                       : StateAccess{VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT};
+    }
+    StateAccess result;
+    const auto add = [&](Access flag, VkPipelineStageFlags2 stages, VkAccessFlags2 accesses) {
+        if (HasFlag(access, flag)) {
+            result.stages |= stages;
+            result.access |= accesses;
+        }
+    };
+    add(Access::ColorTarget, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+    add(Access::DepthTarget, VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+    add(Access::DepthResolve, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+    add(Access::VertexShaderRead, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+    add(Access::FragmentShaderRead, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+    add(Access::ComputeShaderRead, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+    add(Access::ComputeShaderWrite, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+        VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
+    add(Access::IndirectRead, VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
+    add(Access::TransferRead, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+    add(Access::TransferWrite, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+    // Presentation waits on a semaphore: the barrier only has to finish before the color output ends.
+    add(Access::Present, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE);
+    return result;
 }
 
 VkImageAspectFlags AspectOf(Format format) {
@@ -59,46 +90,135 @@ VkBufferImageCopy WholeLevel(const TextureData& texture, std::uint32_t level, st
             .imageExtent = {extent.width, extent.height, 1}};
 }
 
-// Waits for the use described by the texture's current state, then moves it to the new state.
-void TextureBarrier(detail::CommandRecording& recording, TextureData& data, VkImageLayout oldLayout,
-                    TextureState state) {
-    const StateAccess source = Describe(data.state);
-    const StateAccess destination = Describe(state);
-    const VkImageMemoryBarrier2 barrier{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-        .srcStageMask = source.stages,
-        .srcAccessMask = source.access,
-        .dstStageMask = destination.stages,
-        .dstAccessMask = destination.access,
-        .oldLayout = oldLayout,
-        .newLayout = destination.layout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = data.image,
-        .subresourceRange = {.aspectMask = AspectOf(data.format), .levelCount = data.mipLevels, .layerCount = 1},
-    };
-    const VkDependencyInfo dependency{
-        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &barrier,
-    };
-    vkCmdPipelineBarrier2(recording.commands, &dependency);
-    data.state = state;
-}
-
 } // namespace
 
-void CommandList::Transition(TextureHandle texture, TextureState state) {
-    TextureData& data = m_recording->device->textures.Get(texture);
-    if (data.state == state) {
+Access AccessOf(TextureState state) {
+    switch (state) {
+    case TextureState::Undefined:
+        return Access::None;
+    case TextureState::ColorTarget:
+        return Access::ColorTarget;
+    case TextureState::DepthTarget:
+        return Access::DepthTarget;
+    case TextureState::ShaderRead:
+        return Access::VertexShaderRead | Access::FragmentShaderRead | Access::ComputeShaderRead;
+    case TextureState::TransferSrc:
+        return Access::TransferRead;
+    case TextureState::TransferDst:
+        return Access::TransferWrite;
+    case TextureState::Present:
+        return Access::Present;
+    }
+    return Access::None;
+}
+
+AccessStep NextAccess(AccessState& state, Access next, bool texture, bool discard) {
+    const Access earlier = state.lastWrite | state.reads;
+    const bool layoutChange = texture && (discard || LayoutOf(CurrentAccess(state)) != LayoutOf(next));
+    if (Writes(next) || layoutChange) {
+        // A texture that was never used needs a barrier only to leave the undefined layout.
+        const bool barrier = earlier != Access::None || !texture || LayoutOf(next) != VK_IMAGE_LAYOUT_UNDEFINED;
+        if (Writes(next)) {
+            state = {.lastWrite = next, .reads = Access::None};
+        } else {
+            state.reads = next;
+        }
+        return {.barrier = barrier, .source = earlier};
+    }
+    // A read in stages that an earlier barrier already made the last write visible to.
+    const auto covered = static_cast<std::uint32_t>(state.reads);
+    const auto wanted = static_cast<std::uint32_t>(next);
+    if ((wanted & ~covered) == 0 && (texture || earlier != Access::None)) {
+        return {};
+    }
+    state.reads = state.reads | next;
+    return {.barrier = true, .source = earlier};
+}
+
+void CommandList::Use(std::span<const TextureUse> textures, std::span<const BufferUse> buffers) {
+    Device::Impl& device = *m_recording->device;
+    std::vector<VkImageMemoryBarrier2> imageBarriers;
+    std::vector<VkBufferMemoryBarrier2> bufferBarriers;
+    for (const TextureUse& use : textures) {
+        TextureData& data = device.textures.Get(use.texture);
+        const Access before = CurrentAccess(data.access);
+        const AccessStep step = NextAccess(data.access, use.access, true, use.discard);
+        if (step.barrier) {
+            const StateAccess source = Describe(step.source, true);
+            const StateAccess destination = Describe(use.access, true);
+            imageBarriers.push_back({
+                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                .srcStageMask = source.stages,
+                .srcAccessMask = source.access,
+                .dstStageMask = destination.stages,
+                .dstAccessMask = destination.access,
+                .oldLayout = use.discard ? VK_IMAGE_LAYOUT_UNDEFINED : LayoutOf(before),
+                .newLayout = LayoutOf(CurrentAccess(data.access)),
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image = data.image,
+                .subresourceRange = {.aspectMask = AspectOf(data.format),
+                                     .levelCount = data.mipLevels,
+                                     .layerCount = 1},
+            });
+        }
+    }
+    for (const BufferUse& use : buffers) {
+        BufferData& data = device.buffers.Get(use.buffer);
+        const AccessStep step = NextAccess(data.access, use.access, false);
+        if (step.barrier) {
+            const StateAccess source = Describe(step.source, false);
+            const StateAccess destination = Describe(use.access, false);
+            bufferBarriers.push_back({
+                .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+                .srcStageMask = source.stages,
+                .srcAccessMask = source.access,
+                .dstStageMask = destination.stages,
+                .dstAccessMask = destination.access,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .buffer = data.buffer,
+                .offset = 0,
+                .size = VK_WHOLE_SIZE,
+            });
+        }
+    }
+    if (imageBarriers.empty() && bufferBarriers.empty()) {
         return;
     }
-    TextureBarrier(*m_recording, data, Describe(data.state).layout, state);
+    const VkDependencyInfo dependency{
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .bufferMemoryBarrierCount = static_cast<std::uint32_t>(bufferBarriers.size()),
+        .pBufferMemoryBarriers = bufferBarriers.data(),
+        .imageMemoryBarrierCount = static_cast<std::uint32_t>(imageBarriers.size()),
+        .pImageMemoryBarriers = imageBarriers.data(),
+    };
+    vkCmdPipelineBarrier2(m_recording->commands, &dependency);
+}
+
+void CommandList::Transition(TextureHandle texture, TextureState state) {
+    const TextureUse use{texture, AccessOf(state)};
+    Use({&use, 1}, {});
 }
 
 void CommandList::Discard(TextureHandle texture, TextureState state) {
-    TextureData& data = m_recording->device->textures.Get(texture);
-    TextureBarrier(*m_recording, data, VK_IMAGE_LAYOUT_UNDEFINED, state);
+    const TextureUse use{texture, AccessOf(state), true};
+    Use({&use, 1}, {});
+}
+
+void CommandList::BeginLabel(std::string_view name) {
+    if (!m_recording->device->debugUtils) {
+        return;
+    }
+    const std::string text(name);
+    const VkDebugUtilsLabelEXT label{.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT, .pLabelName = text.c_str()};
+    vkCmdBeginDebugUtilsLabelEXT(m_recording->commands, &label);
+}
+
+void CommandList::EndLabel() {
+    if (m_recording->device->debugUtils) {
+        vkCmdEndDebugUtilsLabelEXT(m_recording->commands);
+    }
 }
 
 void CommandList::BeginRendering(const RenderingDesc& desc) {
@@ -108,7 +228,8 @@ void CommandList::BeginRendering(const RenderingDesc& desc) {
     VkRenderingAttachmentInfo colorAttachment{.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     if (desc.colorTarget) {
         const TextureData& color = device.textures.Get(desc.colorTarget);
-        DAI_ASSERT(color.state == TextureState::ColorTarget, "The color target must be in the ColorTarget state");
+        DAI_ASSERT(CurrentAccess(color.access) == Access::ColorTarget,
+                   "The color target must be in the ColorTarget state");
         extent = color.extent;
         colorAttachment.imageView = color.view;
         colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -120,8 +241,8 @@ void CommandList::BeginRendering(const RenderingDesc& desc) {
         }
         if (desc.colorResolve) {
             const TextureData& resolve = device.textures.Get(desc.colorResolve);
-            DAI_ASSERT(resolve.state == TextureState::ColorTarget && resolve.samples == 1 && color.samples > 1 &&
-                           resolve.extent == color.extent && resolve.format == color.format,
+            DAI_ASSERT(CurrentAccess(resolve.access) == Access::ColorTarget && resolve.samples == 1 &&
+                           color.samples > 1 && resolve.extent == color.extent && resolve.format == color.format,
                        "A color resolve is a single-sample ColorTarget like the multisampled target");
             colorAttachment.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
             colorAttachment.resolveImageView = resolve.view;
@@ -132,7 +253,8 @@ void CommandList::BeginRendering(const RenderingDesc& desc) {
     VkRenderingAttachmentInfo depthAttachment{.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     if (desc.depthTarget) {
         const TextureData& depth = device.textures.Get(desc.depthTarget);
-        DAI_ASSERT(depth.state == TextureState::DepthTarget, "The depth target must be in the DepthTarget state");
+        DAI_ASSERT(CurrentAccess(depth.access) == Access::DepthTarget,
+                   "The depth target must be in the DepthTarget state");
         DAI_ASSERT(!desc.colorTarget || depth.extent == extent, "The color and depth targets must have the same size");
         extent = depth.extent;
         depthAttachment.imageView = depth.view;
@@ -142,9 +264,9 @@ void CommandList::BeginRendering(const RenderingDesc& desc) {
         depthAttachment.clearValue.depthStencil = {desc.clearDepth.value_or(0.0f), 0};
         if (desc.depthResolve) {
             const TextureData& resolve = device.textures.Get(desc.depthResolve);
-            DAI_ASSERT(resolve.state == TextureState::DepthTarget && resolve.samples == 1 && depth.samples > 1 &&
-                           resolve.extent == depth.extent && resolve.format == depth.format,
-                       "A depth resolve is a single-sample DepthTarget like the multisampled target");
+            DAI_ASSERT(CurrentAccess(resolve.access) == Access::DepthResolve && resolve.samples == 1 &&
+                           depth.samples > 1 && resolve.extent == depth.extent && resolve.format == depth.format,
+                       "A depth resolve is a single-sample DepthResolve like the multisampled target");
             // The first sample's depth: the one every device supports, and a real surface's depth.
             depthAttachment.resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
             depthAttachment.resolveImageView = resolve.view;
@@ -264,7 +386,7 @@ void CommandList::CopyBuffer(BufferHandle source, BufferHandle destination, std:
 void CommandList::CopyBufferToTexture(BufferHandle source, TextureHandle destination) {
     Device::Impl& device = *m_recording->device;
     const TextureData& texture = device.textures.Get(destination);
-    DAI_ASSERT(texture.state == TextureState::TransferDst, "The texture must be in the TransferDst state");
+    DAI_ASSERT(CurrentAccess(texture.access) == Access::TransferWrite, "The texture must be in the TransferDst state");
     std::vector<VkBufferImageCopy> regions;
     regions.reserve(texture.mipLevels);
     std::uint64_t offset = 0;
@@ -280,7 +402,7 @@ void CommandList::CopyBufferToTexture(BufferHandle source, TextureHandle destina
 void CommandList::CopyTextureToBuffer(TextureHandle source, BufferHandle destination, std::uint32_t mipLevel) {
     Device::Impl& device = *m_recording->device;
     const TextureData& texture = device.textures.Get(source);
-    DAI_ASSERT(texture.state == TextureState::TransferSrc, "The texture must be in the TransferSrc state");
+    DAI_ASSERT(CurrentAccess(texture.access) == Access::TransferRead, "The texture must be in the TransferSrc state");
     DAI_ASSERT(mipLevel < texture.mipLevels, "The texture does not have this mip level");
     const VkBufferImageCopy region = WholeLevel(texture, mipLevel, 0);
     vkCmdCopyImageToBuffer(m_recording->commands, texture.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,

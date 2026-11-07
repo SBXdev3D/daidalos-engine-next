@@ -45,6 +45,8 @@ struct BufferData {
     BufferUsage usage = BufferUsage::None;
     std::uint64_t size = 0;
     std::uint32_t storageIndex = 0;
+    /// Tracked by CommandList::Use.
+    AccessState access;
 };
 
 struct TextureData {
@@ -57,7 +59,7 @@ struct TextureData {
     Format format = Format::Undefined;
     TextureUsage usage = TextureUsage::None;
     std::uint32_t samples = 1;
-    TextureState state = TextureState::Undefined;
+    AccessState access;
     std::uint32_t bindlessIndex = 0;
 };
 

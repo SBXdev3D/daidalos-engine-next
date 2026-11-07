@@ -46,7 +46,7 @@ Graphics card time per frame, at 1280×720 on an RTX 3090, in a release build, a
 | Particle simulation | 0.091 ms | 0.091 ms |
 | Shadows | 0.046 ms | 0.073 ms |
 
-Particles were 15% slower at first, until Slang was asked to optimize harder. The shadow pass is still slower, by a few hundredths of a millisecond. I'm not chasing it: step 5 replaces shadow maps with ray-traced shadows.
+Particles were 15% slower at first, until Slang was asked to optimize harder. The shadow pass looked slower, but a later run of the very same build measured it at 0.045 ms: it is the first pass of the frame, and its timing wobbles between builds (more on that in the next post).
 
 | | |
 |---|---|

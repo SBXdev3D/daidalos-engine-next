@@ -26,6 +26,9 @@ struct DeviceConfig {
     std::string applicationName = "Daidalos Engine Next";
     /// Enables the validation layers if they are installed. Without them a warning is logged.
     bool validation = false;
+    /// With validation, also checks synchronization: hazards between uses that no barrier orders.
+    /// Slow; the GPU tests turn it on.
+    bool synchronizationValidation = false;
     /// Instance extensions needed by the window system (platform::Window::VulkanInstanceExtensions).
     std::vector<std::string> instanceExtensions;
     /// Requires a device that can present to a Swapchain. Off for headless use.
@@ -50,6 +53,9 @@ struct Frame {
     /// transitioned before use. EndFrame transitions it to Present.
     TextureHandle backBuffer;
     Extent extent;
+    /// The frame slot being recorded, below kFramesInFlight. Device::CompletedTimestamps, right after
+    /// the BeginFrame that returned this frame, holds the timestamps of the previous frame in this slot.
+    std::uint32_t slot = 0;
 };
 
 /// Owns the Vulkan instance, device, GPU memory and every resource (ADR-0007). Only one Device can

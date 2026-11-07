@@ -460,9 +460,9 @@ TEST_F(GpuTest, MultisampledTargetsResolveToTheAverageColorAndTheFirstSamplesDep
                         for (const rhi::TextureHandle target : {color, resolved}) {
                             commands.Discard(target, rhi::TextureState::ColorTarget);
                         }
-                        for (const rhi::TextureHandle target : {depth, resolvedDepth}) {
-                            commands.Discard(target, rhi::TextureState::DepthTarget);
-                        }
+                        commands.Discard(depth, rhi::TextureState::DepthTarget);
+                        const rhi::TextureUse depthResolve{resolvedDepth, rhi::Access::DepthResolve, true};
+                        commands.Use({&depthResolve, 1}, {});
                         commands.BeginRendering({.colorTarget = color,
                                                  .clearColor = glm::vec4(0.0f),
                                                  .depthTarget = depth,
