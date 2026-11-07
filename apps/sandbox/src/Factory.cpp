@@ -719,14 +719,29 @@ void UpdateDoors(scene::Scene& scene, ecs::Entity playerEntity, float delta) {
     });
 }
 
-/// The factory's darkness and fog, which follow the settings.
+/// The sky that the level's openings show: six faces next to the level, named as the legacy engine named
+/// them, in the order of a cube's faces (ADR-0036).
+core::Result<void> LoadSky(scene::Scene& scene, const std::string& directory, std::string_view name) {
+    const std::string prefix = (directory.empty() ? std::string("Sky/") : directory + "/Sky/") + std::string(name);
+    const std::array<std::string, 6> faces{prefix + "_right.png", prefix + "_left.png",  prefix + "_up.png",
+                                           prefix + "_down.png",  prefix + "_front.png", prefix + "_back.png"};
+    DAI_TRY_ASSIGN(rhi::TextureHandle sky, scene.Assets().LoadCubeTexture(faces));
+    renderer::Atmosphere atmosphere = scene.Atmosphere();
+    atmosphere.sky = sky;
+    scene.SetAtmosphere(atmosphere);
+    return {};
+}
+
+/// The factory's darkness and fog, which follow the settings. The sky stays as the level set it.
 void ApplyAtmosphere(scene::Scene& scene, const Settings& settings) {
     const float darkness = std::clamp(settings.darkness, 0.0f, 1.0f);
     scene.SetAtmosphere(
         {.fogColor = kFogColor,
          .fogDensity = kFogDensity * darkness,
          .ambient = glm::mix(glm::vec3(1.0f), kAmbientTint * settings.ambient * kAmbientAbove, darkness),
-         .ambientBelow = glm::mix(glm::vec3(1.0f), kAmbientTint * settings.ambient * kAmbientBelow, darkness)});
+         .ambientBelow = glm::mix(glm::vec3(1.0f), kAmbientTint * settings.ambient * kAmbientBelow, darkness),
+         .sky = scene.Atmosphere().sky,
+         .skyIntensity = scene.Atmosphere().skyIntensity});
 }
 
 } // namespace
@@ -902,6 +917,8 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
             AddAlarmLights(world, entity, node);
         } else if (node.kind == "spot") {
             AddSpotLight(world, entity, node);
+        } else if (const auto sky = node.attributes.find("name"); node.kind == "sky" && sky != node.attributes.end()) {
+            DAI_TRY(LoadSky(scene, directory, sky->second));
         } else if (node.kind == "particles") {
             AddParticleEmitter(world, entity, node, effects);
         } else if (node.kind == "fan") {
