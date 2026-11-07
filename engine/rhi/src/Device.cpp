@@ -566,7 +566,7 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
         return tl::unexpected(VulkanError("vkCreateSampler", result));
     }
 
-    const std::array<VkDescriptorSetLayoutBinding, 5> bindings{{
+    const std::array<VkDescriptorSetLayoutBinding, 6> bindings{{
         {.binding = 0,
          .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
          .descriptorCount = kMaxBindlessTextures,
@@ -588,11 +588,15 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
          .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
          .descriptorCount = kMaxStorageImages,
          .stageFlags = VK_SHADER_STAGE_ALL},
+        {.binding = 5,
+         .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+         .descriptorCount = kMaxBindlessCubes,
+         .stageFlags = VK_SHADER_STAGE_ALL},
     }};
     constexpr VkDescriptorBindingFlags kBindlessFlags =
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
-    const std::array<VkDescriptorBindingFlags, 5> bindingFlags{kBindlessFlags, 0, kBindlessFlags, kBindlessFlags,
-                                                               kBindlessFlags};
+    const std::array<VkDescriptorBindingFlags, 6> bindingFlags{
+        kBindlessFlags, 0, kBindlessFlags, kBindlessFlags, kBindlessFlags, kBindlessFlags};
     const VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
         .bindingCount = static_cast<std::uint32_t>(bindingFlags.size()),
@@ -613,7 +617,7 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
     const std::array<VkDescriptorPoolSize, 5> poolSizes{{
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, kMaxStorageImages},
         {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, kMaxBindlessAccelerationStructures},
-        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, kMaxBindlessTextures},
+        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, kMaxBindlessTextures + kMaxBindlessCubes},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kMaxBindlessBuffers},
         {VK_DESCRIPTOR_TYPE_SAMPLER, static_cast<std::uint32_t>(samplers.size())},
     }};
@@ -669,6 +673,9 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
     }
     for (std::uint32_t index = kMaxStorageImages; index > 0; --index) {
         freeStorageImageIndices.push_back(index - 1);
+    }
+    for (std::uint32_t index = kMaxBindlessCubes; index > 0; --index) {
+        freeCubeIndices.push_back(index - 1);
     }
     return {};
 }

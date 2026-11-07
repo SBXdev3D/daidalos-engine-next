@@ -131,6 +131,9 @@ struct TextureDesc {
     /// Samples per pixel: 1, or up to DeviceInfo::maxSamples for a multisampled target, which shaders
     /// cannot sample and which has one mip level. Rendering resolves it into a single-sample texture.
     std::uint32_t samples = 1;
+    /// Six square faces, sampled by direction: +X, -X, +Y, -Y, +Z, -Z, in that order, each with its mip
+    /// levels. Shaders find a sampled cube in g_cubeTextures, by BindlessIndex.
+    bool cube = false;
     std::string name;
 };
 

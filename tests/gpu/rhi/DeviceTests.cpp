@@ -5,6 +5,7 @@
 #include <daidalos/rhi/Spirv.hpp>
 
 #include <shaders/ComputeTest.cs.spv.h>
+#include <shaders/CubeTest.cs.spv.h>
 #include <shaders/HalfTriangleTest.ps.spv.h>
 #include <shaders/HalfTriangleTest.vs.spv.h>
 #include <shaders/StorageImageTest.cs.spv.h>
@@ -551,4 +552,56 @@ TEST_F(GpuTest, ComputeShaderReadsAndWritesAStorageImage) {
     Device().DestroyPipeline(*pipeline);
     Device().DestroyTexture(*image);
     Device().DestroyBuffer(*readback);
+}
+
+namespace {
+
+struct CubeTestPush {
+    std::uint32_t cube;
+    std::uint32_t results;
+};
+
+} // namespace
+
+TEST_F(GpuTest, CubeTextureIsSampledByDirection) {
+    // One texel per face, each its own color, in the order +X, -X, +Y, -Y, +Z, -Z.
+    const std::array<std::uint32_t, 6> faces{0xFF0000FF, 0xFF00FF00, 0xFFFF0000, 0xFF00FFFF, 0xFFFF00FF, 0xFFFFFF00};
+    const core::Result<rhi::TextureHandle> cube =
+        Device().CreateTexture({.extent = {1, 1},
+                                .format = rhi::Format::Rgba8Unorm,
+                                .usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDst,
+                                .cube = true,
+                                .name = "Cube"});
+    ASSERT_TRUE(cube.has_value()) << core::Format(cube.error());
+    ASSERT_TRUE(Device().UploadTexture(*cube, std::as_bytes(std::span(faces))).has_value());
+    const core::Result<rhi::BufferHandle> results = Device().CreateBuffer({.size = 6 * 16,
+                                                                           .usage = rhi::BufferUsage::Storage,
+                                                                           .memory = rhi::MemoryLocation::GpuToCpu,
+                                                                           .name = "Cube results"});
+    const core::Result<rhi::PipelineHandle> pipeline =
+        Device().CreateComputePipeline({.shader = rhi::ToSpirv(kCubeTestCsSpirv), .name = "Cube test"});
+    ASSERT_TRUE(results && pipeline);
+
+    ASSERT_TRUE(Device()
+                    .Submit([&](rhi::CommandList& commands) {
+                        const rhi::TextureUse sampled{*cube, rhi::Access::ComputeShaderRead};
+                        const rhi::BufferUse written{*results, rhi::Access::ComputeShaderWrite};
+                        commands.Use({&sampled, 1}, {&written, 1});
+                        commands.BindPipeline(*pipeline);
+                        commands.Push(CubeTestPush{Device().BindlessIndex(*cube), Device().StorageIndex(*results)});
+                        commands.Dispatch(1);
+                    })
+                    .has_value());
+
+    const auto* colors = reinterpret_cast<const float*>(Device().Mapped(*results).data());
+    for (std::size_t face = 0; face < faces.size(); ++face) {
+        const std::uint32_t expected = faces[face];
+        for (std::size_t channel = 0; channel < 4; ++channel) {
+            const float value = static_cast<float>((expected >> (8 * channel)) & 0xFF) / 255.0f;
+            EXPECT_NEAR(colors[face * 4 + channel], value, 1e-3f) << "face " << face << ", channel " << channel;
+        }
+    }
+    Device().DestroyPipeline(*pipeline);
+    Device().DestroyTexture(*cube);
+    Device().DestroyBuffer(*results);
 }

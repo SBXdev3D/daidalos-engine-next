@@ -247,7 +247,12 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
             core::ErrorCode::OutOfMemory, kModule,
             std::format("Texture '{}': all {} storage image slots are in use", desc.name, kMaxStorageImages));
     }
-    if (sampled && m_impl->freeBindlessIndices.empty()) {
+    DAI_ASSERT(!desc.cube ||
+                   (desc.extent.width == desc.extent.height && desc.samples == 1 && !storage &&
+                    !HasFlag(desc.usage, TextureUsage::ColorTarget) && !HasFlag(desc.usage, TextureUsage::DepthTarget)),
+               "A cube has square faces, one sample, and is only sampled and copied to");
+    std::vector<std::uint32_t>& freeSampledIndices = desc.cube ? m_impl->freeCubeIndices : m_impl->freeBindlessIndices;
+    if (sampled && freeSampledIndices.empty()) {
         return core::MakeError(
             core::ErrorCode::OutOfMemory, kModule,
             std::format("Texture '{}': all {} bindless slots are in use", desc.name, kMaxBindlessTextures));
@@ -258,11 +263,12 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
                "A multisampled texture has a supported sample count, one mip level, and is not sampled");
     const VkImageCreateInfo imageInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .flags = desc.cube ? VkImageCreateFlags{VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT} : VkImageCreateFlags{0},
         .imageType = VK_IMAGE_TYPE_2D,
         .format = ToVulkan(desc.format),
         .extent = {desc.extent.width, desc.extent.height, 1},
         .mipLevels = desc.mipLevels,
-        .arrayLayers = 1,
+        .arrayLayers = desc.cube ? 6U : 1U,
         .samples = static_cast<VkSampleCountFlagBits>(desc.samples),
         .tiling = VK_IMAGE_TILING_OPTIMAL,
         .usage = ToVulkanUsage(desc.usage),
@@ -274,6 +280,7 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
     TextureData data;
     data.extent = desc.extent;
     data.mipLevels = desc.mipLevels;
+    data.layers = imageInfo.arrayLayers;
     data.format = desc.format;
     data.usage = desc.usage;
     data.samples = desc.samples;
@@ -286,13 +293,13 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
     const VkImageViewCreateInfo viewInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = data.image,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .viewType = desc.cube ? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_2D,
         .format = imageInfo.format,
         .subresourceRange = {.aspectMask = (desc.format == Format::D32Float)
                                                ? VkImageAspectFlags{VK_IMAGE_ASPECT_DEPTH_BIT}
                                                : VkImageAspectFlags{VK_IMAGE_ASPECT_COLOR_BIT},
                              .levelCount = desc.mipLevels,
-                             .layerCount = 1},
+                             .layerCount = imageInfo.arrayLayers},
     };
     if (const VkResult result = vkCreateImageView(m_impl->device, &viewInfo, nullptr, &data.view);
         result != VK_SUCCESS) {
@@ -301,8 +308,8 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
     }
 
     if (sampled) {
-        data.bindlessIndex = m_impl->freeBindlessIndices.back();
-        m_impl->freeBindlessIndices.pop_back();
+        data.bindlessIndex = freeSampledIndices.back();
+        freeSampledIndices.pop_back();
         const VkDescriptorImageInfo descriptor{
             .imageView = data.view,
             .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -310,7 +317,7 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
         const VkWriteDescriptorSet write{
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             .dstSet = m_impl->globalSet,
-            .dstBinding = 0,
+            .dstBinding = desc.cube ? 5U : 0U,
             .dstArrayElement = data.bindlessIndex,
             .descriptorCount = 1,
             .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
@@ -347,7 +354,7 @@ void Device::DestroyTexture(TextureHandle texture) {
             vkDestroyImageView(impl->device, data.view, nullptr);
             vmaDestroyImage(impl->allocator, data.image, data.allocation);
             if (HasFlag(data.usage, TextureUsage::Sampled)) {
-                impl->freeBindlessIndices.push_back(data.bindlessIndex);
+                (data.layers == 6 ? impl->freeCubeIndices : impl->freeBindlessIndices).push_back(data.bindlessIndex);
             }
             if (HasFlag(data.usage, TextureUsage::Storage)) {
                 impl->freeStorageImageIndices.push_back(data.storageIndex);
@@ -362,6 +369,7 @@ core::Result<void> Device::UploadTexture(TextureHandle texture, std::span<const 
     for (std::uint32_t level = 0; level < data.mipLevels; ++level) {
         expectedSize += MipByteSize(data.format, MipExtent(data.extent, level));
     }
+    expectedSize *= data.layers;
     DAI_ASSERT(pixels.size() == expectedSize, "The pixels do not match the size of the texture");
 
     DAI_TRY_ASSIGN(BufferHandle staging, CreateBuffer({.size = pixels.size(),

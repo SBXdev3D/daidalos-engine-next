@@ -168,7 +168,7 @@ void CommandList::Use(std::span<const TextureUse> textures, std::span<const Buff
                 .image = data.image,
                 .subresourceRange = {.aspectMask = AspectOf(data.format),
                                      .levelCount = data.mipLevels,
-                                     .layerCount = 1},
+                                     .layerCount = data.layers},
             });
         }
     }
@@ -413,11 +413,15 @@ void CommandList::CopyBufferToTexture(BufferHandle source, TextureHandle destina
     const TextureData& texture = device.textures.Get(destination);
     DAI_ASSERT(CurrentAccess(texture.access) == Access::TransferWrite, "The texture must be in the TransferDst state");
     std::vector<VkBufferImageCopy> regions;
-    regions.reserve(texture.mipLevels);
+    regions.reserve(std::size_t{texture.mipLevels} * texture.layers);
     std::uint64_t offset = 0;
-    for (std::uint32_t level = 0; level < texture.mipLevels; ++level) {
-        regions.push_back(WholeLevel(texture, level, offset));
-        offset += MipByteSize(texture.format, MipExtent(texture.extent, level));
+    for (std::uint32_t layer = 0; layer < texture.layers; ++layer) {
+        for (std::uint32_t level = 0; level < texture.mipLevels; ++level) {
+            VkBufferImageCopy region = WholeLevel(texture, level, offset);
+            region.imageSubresource.baseArrayLayer = layer;
+            regions.push_back(region);
+            offset += MipByteSize(texture.format, MipExtent(texture.extent, level));
+        }
     }
     vkCmdCopyBufferToImage(m_recording->commands, device.buffers.Get(source).buffer, texture.image,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<std::uint32_t>(regions.size()),

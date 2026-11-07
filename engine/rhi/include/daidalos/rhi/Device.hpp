@@ -122,12 +122,13 @@ public:
     [[nodiscard]] core::Result<TextureHandle> CreateTexture(const TextureDesc& desc);
     void DestroyTexture(TextureHandle texture);
     /// Fills every mip level of a texture and leaves it in the ShaderRead state, as UploadBuffer does
-    /// for buffers. The levels follow each other from the largest, tightly packed (MipByteSize).
+    /// for buffers. The levels follow each other from the largest, tightly packed (MipByteSize); a cube's
+    /// faces follow each other, each with its levels.
     /// The texture needs TextureUsage::TransferDst and Sampled.
     [[nodiscard]] core::Result<void> UploadTexture(TextureHandle texture, std::span<const std::byte> pixels);
     /// Index of a TextureUsage::Storage texture in the g_storageImages array of shaders.
     [[nodiscard]] std::uint32_t StorageImageIndex(TextureHandle texture) const;
-    /// Index of a sampled texture in the g_textures array of shaders.
+    /// Index of a sampled texture in the g_textures array of shaders, or of a cube in g_cubeTextures.
     [[nodiscard]] std::uint32_t BindlessIndex(TextureHandle texture) const;
     /// Index of a BufferUsage::Storage buffer in the storage buffer arrays of shaders.
     [[nodiscard]] std::uint32_t StorageIndex(BufferHandle buffer) const;
