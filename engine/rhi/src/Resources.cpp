@@ -25,6 +25,10 @@ VkBufferUsageFlags ToVulkanUsage(BufferUsage usage) {
     flags |= HasFlag(usage, BufferUsage::TransferDst) ? VK_BUFFER_USAGE_TRANSFER_DST_BIT : 0U;
     flags |= HasFlag(usage, BufferUsage::Storage) ? VK_BUFFER_USAGE_STORAGE_BUFFER_BIT : 0U;
     flags |= HasFlag(usage, BufferUsage::Indirect) ? VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT : 0U;
+    flags |= HasFlag(usage, BufferUsage::AccelerationStructureInput)
+                 ? VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+                       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+                 : 0U;
     return flags;
 }
 

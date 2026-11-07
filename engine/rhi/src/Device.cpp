@@ -123,6 +123,7 @@ std::string MissingRequirement(VkPhysicalDevice device, const DeviceConfig& conf
         return "descriptor indexing";
     }
     if (accelerationStructure.accelerationStructure == VK_FALSE || rayQuery.rayQuery == VK_FALSE ||
+        accelerationStructure.descriptorBindingAccelerationStructureUpdateAfterBind == VK_FALSE ||
         features12.bufferDeviceAddress == VK_FALSE) {
         return "hardware ray tracing (acceleration structures and ray queries)";
     }
@@ -177,7 +178,7 @@ Device::Impl::~Impl() {
         vkDeviceWaitIdle(device);
         CollectGarbage(std::numeric_limits<std::uint64_t>::max());
 
-        const std::size_t leaked = buffers.Size() + textures.Size() + pipelines.Size();
+        const std::size_t leaked = buffers.Size() + textures.Size() + pipelines.Size() + accelerationStructures.Size();
         if (leaked != 0) {
             DAI_LOG_WARNING(kModule, "{} GPU resources were still alive when the device was destroyed", leaked);
         }
@@ -187,6 +188,8 @@ Device::Impl::~Impl() {
             vmaDestroyImage(allocator, data.image, data.allocation);
         });
         pipelines.ForEach([this](PipelineData& data) { vkDestroyPipeline(device, data.pipeline, nullptr); });
+        accelerationStructures.ForEach(
+            [this](AccelerationStructureData& data) { DestroyAccelerationStructureNow(data); });
 
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
@@ -364,6 +367,7 @@ core::Result<void> Device::Impl::CreateLogicalDevice(const DeviceConfig& config)
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
         .pNext = &rayQuery,
         .accelerationStructure = VK_TRUE,
+        .descriptorBindingAccelerationStructureUpdateAfterBind = VK_TRUE,
     };
     VkPhysicalDeviceVulkan13Features features13{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
@@ -424,6 +428,12 @@ core::Result<void> Device::Impl::CreateLogicalDevice(const DeviceConfig& config)
         return tl::unexpected(VulkanError("vkCreateDevice", result));
     }
     volkLoadDevice(device);
+    VkPhysicalDeviceAccelerationStructurePropertiesKHR structureProperties{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR};
+    VkPhysicalDeviceProperties2 properties2{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                                            .pNext = &structureProperties};
+    vkGetPhysicalDeviceProperties2(physicalDevice, &properties2);
+    scratchAlignment = std::max<VkDeviceSize>(structureProperties.minAccelerationStructureScratchOffsetAlignment, 1);
     vkGetDeviceQueue(device, queueFamily, 0, &queue);
     return {};
 }
@@ -554,7 +564,7 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
         return tl::unexpected(VulkanError("vkCreateSampler", result));
     }
 
-    const std::array<VkDescriptorSetLayoutBinding, 3> bindings{{
+    const std::array<VkDescriptorSetLayoutBinding, 4> bindings{{
         {.binding = 0,
          .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
          .descriptorCount = kMaxBindlessTextures,
@@ -568,10 +578,14 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
          .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
          .descriptorCount = kMaxBindlessBuffers,
          .stageFlags = VK_SHADER_STAGE_ALL},
+        {.binding = 3,
+         .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+         .descriptorCount = kMaxBindlessAccelerationStructures,
+         .stageFlags = VK_SHADER_STAGE_ALL},
     }};
     constexpr VkDescriptorBindingFlags kBindlessFlags =
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
-    const std::array<VkDescriptorBindingFlags, 3> bindingFlags{kBindlessFlags, 0, kBindlessFlags};
+    const std::array<VkDescriptorBindingFlags, 4> bindingFlags{kBindlessFlags, 0, kBindlessFlags, kBindlessFlags};
     const VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
         .bindingCount = static_cast<std::uint32_t>(bindingFlags.size()),
@@ -589,7 +603,8 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
         return tl::unexpected(VulkanError("vkCreateDescriptorSetLayout", result));
     }
 
-    const std::array<VkDescriptorPoolSize, 3> poolSizes{{
+    const std::array<VkDescriptorPoolSize, 4> poolSizes{{
+        {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, kMaxBindlessAccelerationStructures},
         {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, kMaxBindlessTextures},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kMaxBindlessBuffers},
         {VK_DESCRIPTOR_TYPE_SAMPLER, static_cast<std::uint32_t>(samplers.size())},
@@ -640,6 +655,9 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
     freeStorageIndices.reserve(kMaxBindlessBuffers);
     for (std::uint32_t index = kMaxBindlessBuffers; index > 0; --index) {
         freeStorageIndices.push_back(index - 1);
+    }
+    for (std::uint32_t index = kMaxBindlessAccelerationStructures; index > 0; --index) {
+        freeAccelerationStructureIndices.push_back(index - 1);
     }
     return {};
 }
@@ -847,6 +865,9 @@ MemoryStats Device::Memory() const {
     stats.buffers = m_impl->buffers.Size();
     stats.textures = m_impl->textures.Size();
     stats.pipelines = m_impl->pipelines.Size();
+    stats.accelerationStructures = m_impl->accelerationStructures.Size();
+    m_impl->accelerationStructures.ForEach(
+        [&stats](const AccelerationStructureData& data) { stats.accelerationStructureBytes += data.size; });
 
     const VkPhysicalDeviceMemoryProperties* properties = nullptr;
     vmaGetMemoryProperties(m_impl->allocator, &properties);

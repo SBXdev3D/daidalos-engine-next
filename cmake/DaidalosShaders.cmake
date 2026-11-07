@@ -11,10 +11,11 @@ include_guard(GLOBAL)
 
 # The slangc options, shared with hot reload: they must match kSlangArguments in
 # engine/renderer/src/ShaderCompiler.cpp. Matrices are column-major in memory, as GLM writes them.
+# Ray queries are allowed in every shader (ADR-0028); a shader declares them only if it traces rays.
 # -O2: at the default level, particle simulation took 15% more GPU time than with DXC.
 # Warning 39001 reports the descriptor aliasing that the bindless buffer arrays rely on.
 set(DAI_SLANG_ARGUMENTS
-    -target spirv -profile spirv_1_6 -fvk-use-entrypoint-name -matrix-layout-column-major
+    -target spirv -profile spirv_1_6 -capability spvRayQueryKHR -fvk-use-entrypoint-name -matrix-layout-column-major
     -O2 -warnings-as-errors all -warnings-disable 39001)
 
 set(DAI_EMBED_SPIRV_SCRIPT "${CMAKE_CURRENT_LIST_DIR}/EmbedSpirv.cmake")

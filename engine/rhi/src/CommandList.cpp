@@ -71,6 +71,14 @@ StateAccess Describe(Access access, bool texture) {
     add(Access::ComputeShaderRead, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
     add(Access::ComputeShaderWrite, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
         VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
+    add(Access::AccelerationStructureWrite, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+        VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR);
+    add(Access::AccelerationStructureRead, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+        VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+    add(Access::RayQueryRead, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+        VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+    add(Access::VertexInputRead, VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT, VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT);
+    add(Access::VertexInputRead, VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT, VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT);
     add(Access::IndirectRead, VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
     add(Access::TransferRead, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
     add(Access::TransferWrite, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
@@ -135,7 +143,8 @@ AccessStep NextAccess(AccessState& state, Access next, bool texture, bool discar
     return {.barrier = true, .source = earlier};
 }
 
-void CommandList::Use(std::span<const TextureUse> textures, std::span<const BufferUse> buffers) {
+void CommandList::Use(std::span<const TextureUse> textures, std::span<const BufferUse> buffers,
+                      std::span<const AccelerationStructureUse> structures) {
     Device::Impl& device = *m_recording->device;
     std::vector<VkImageMemoryBarrier2> imageBarriers;
     std::vector<VkBufferMemoryBarrier2> bufferBarriers;
@@ -183,11 +192,27 @@ void CommandList::Use(std::span<const TextureUse> textures, std::span<const Buff
             });
         }
     }
-    if (imageBarriers.empty() && bufferBarriers.empty()) {
+    std::vector<VkMemoryBarrier2> memoryBarriers;
+    for (const AccelerationStructureUse& use : structures) {
+        AccelerationStructureData& data = device.accelerationStructures.Get(use.structure);
+        const AccessStep step = NextAccess(data.access, use.access, false);
+        if (step.barrier) {
+            const StateAccess source = Describe(step.source, false);
+            const StateAccess destination = Describe(use.access, false);
+            memoryBarriers.push_back({.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+                                      .srcStageMask = source.stages,
+                                      .srcAccessMask = source.access,
+                                      .dstStageMask = destination.stages,
+                                      .dstAccessMask = destination.access});
+        }
+    }
+    if (imageBarriers.empty() && bufferBarriers.empty() && memoryBarriers.empty()) {
         return;
     }
     const VkDependencyInfo dependency{
         .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .memoryBarrierCount = static_cast<std::uint32_t>(memoryBarriers.size()),
+        .pMemoryBarriers = memoryBarriers.data(),
         .bufferMemoryBarrierCount = static_cast<std::uint32_t>(bufferBarriers.size()),
         .pBufferMemoryBarriers = bufferBarriers.data(),
         .imageMemoryBarrierCount = static_cast<std::uint32_t>(imageBarriers.size()),

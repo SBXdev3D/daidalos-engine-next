@@ -6,6 +6,7 @@
 
 #include <daidalos/core/Result.hpp>
 #include <daidalos/core/SlotPool.hpp>
+#include <daidalos/rhi/AccelerationStructure.hpp>
 #include <daidalos/rhi/Device.hpp>
 #include <daidalos/rhi/Swapchain.hpp>
 #include <daidalos/rhi/Types.hpp>
@@ -32,7 +33,9 @@ inline constexpr std::string_view kModule = "rhi";
 /// Size of the g_textures array of shaders.
 inline constexpr std::uint32_t kMaxBindlessTextures = 4096;
 /// Size of the storage buffer arrays of shaders.
-inline constexpr std::uint32_t kMaxBindlessBuffers = 1024;
+inline constexpr std::uint32_t kMaxBindlessBuffers = 4096;
+/// Top-level acceleration structures that shaders can trace at the same time.
+inline constexpr std::uint32_t kMaxBindlessAccelerationStructures = 16;
 
 [[nodiscard]] core::Error VulkanError(std::string_view operation, VkResult result);
 [[nodiscard]] VkFormat ToVulkan(Format format);
@@ -60,6 +63,25 @@ struct TextureData {
     TextureUsage usage = TextureUsage::None;
     std::uint32_t samples = 1;
     AccessState access;
+    std::uint32_t bindlessIndex = 0;
+};
+
+struct AccelerationStructureData {
+    VkAccelerationStructureKHR structure = VK_NULL_HANDLE;
+    VkBuffer storage = VK_NULL_HANDLE;
+    VmaAllocation storageAllocation = nullptr;
+    /// Released after a build with the uploads (Device::BuildWithUploads): such a structure is built once.
+    VkBuffer scratch = VK_NULL_HANDLE;
+    VmaAllocation scratchAllocation = nullptr;
+    VkDeviceAddress scratchAddress = 0;
+    VkDeviceAddress address = 0;
+    AccelerationStructureDesc desc;
+    std::uint64_t size = 0;
+    /// Tracked by CommandList::Use; covers the scratch memory too.
+    AccessState access;
+    /// A build was recorded: a refit structure is updated from now on.
+    bool built = false;
+    /// Slot in the shaders' array, for top-level structures.
     std::uint32_t bindlessIndex = 0;
 };
 
@@ -95,6 +117,8 @@ struct Device::Impl {
     core::Result<void> CreateGlobalDescriptors();
 
     void SetName(VkObjectType type, std::uint64_t object, const std::string& name) const;
+    /// Destroys a structure the GPU no longer uses.
+    void DestroyAccelerationStructureNow(const AccelerationStructureData& data);
 
     /// Value that the timeline semaphore reaches once what is being recorded now has finished.
     [[nodiscard]] std::uint64_t NextTimelineValue() const { return submittedValue + 1; }
@@ -159,10 +183,13 @@ struct Device::Impl {
     std::array<VkSampler, kSamplerCount> samplers{};
     std::vector<std::uint32_t> freeBindlessIndices;
     std::vector<std::uint32_t> freeStorageIndices;
+    std::vector<std::uint32_t> freeAccelerationStructureIndices;
+    VkDeviceSize scratchAlignment = 256;
 
     core::SlotPool<BufferData, BufferTag> buffers;
     core::SlotPool<TextureData, TextureTag> textures;
     core::SlotPool<PipelineData, PipelineTag> pipelines;
+    core::SlotPool<AccelerationStructureData, AccelerationStructureTag> accelerationStructures;
     std::deque<Deferred> deferred;
 
     /// Live swapchains; each must be destroyed before the device.
