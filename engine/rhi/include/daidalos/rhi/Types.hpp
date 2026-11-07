@@ -94,6 +94,9 @@ enum class TextureUsage : std::uint32_t {
     DepthTarget = 1U << 2U,
     TransferSrc = 1U << 3U,
     TransferDst = 1U << 4U,
+    /// Read and written by compute shaders through the storage image array, with Device::StorageImageIndex.
+    /// Rgba32Float only, which shaders declare.
+    Storage = 1U << 5U,
 };
 
 [[nodiscard]] constexpr TextureUsage operator|(TextureUsage left, TextureUsage right) {

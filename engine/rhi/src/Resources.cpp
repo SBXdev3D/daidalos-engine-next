@@ -39,6 +39,7 @@ VkImageUsageFlags ToVulkanUsage(TextureUsage usage) {
     flags |= HasFlag(usage, TextureUsage::DepthTarget) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : 0U;
     flags |= HasFlag(usage, TextureUsage::TransferSrc) ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0U;
     flags |= HasFlag(usage, TextureUsage::TransferDst) ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0U;
+    flags |= HasFlag(usage, TextureUsage::Storage) ? VK_IMAGE_USAGE_STORAGE_BIT : 0U;
     return flags;
 }
 
@@ -238,6 +239,14 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
     DAI_ASSERT(desc.mipLevels > 0, "A texture has at least one mip level");
 
     const bool sampled = HasFlag(desc.usage, TextureUsage::Sampled);
+    const bool storage = HasFlag(desc.usage, TextureUsage::Storage);
+    DAI_ASSERT(!storage || (desc.format == Format::Rgba32Float && desc.samples == 1),
+               "A storage texture is Rgba32Float, with one sample");
+    if (storage && m_impl->freeStorageImageIndices.empty()) {
+        return core::MakeError(
+            core::ErrorCode::OutOfMemory, kModule,
+            std::format("Texture '{}': all {} storage image slots are in use", desc.name, kMaxStorageImages));
+    }
     if (sampled && m_impl->freeBindlessIndices.empty()) {
         return core::MakeError(
             core::ErrorCode::OutOfMemory, kModule,
@@ -309,6 +318,21 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
         };
         vkUpdateDescriptorSets(m_impl->device, 1, &write, 0, nullptr);
     }
+    if (storage) {
+        data.storageIndex = m_impl->freeStorageImageIndices.back();
+        m_impl->freeStorageImageIndices.pop_back();
+        const VkDescriptorImageInfo descriptor{.imageView = data.view, .imageLayout = VK_IMAGE_LAYOUT_GENERAL};
+        const VkWriteDescriptorSet write{
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = m_impl->globalSet,
+            .dstBinding = 4,
+            .dstArrayElement = data.storageIndex,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .pImageInfo = &descriptor,
+        };
+        vkUpdateDescriptorSets(m_impl->device, 1, &write, 0, nullptr);
+    }
 
     m_impl->SetName(VK_OBJECT_TYPE_IMAGE, reinterpret_cast<std::uint64_t>(data.image), desc.name);
     return m_impl->textures.Insert(data);
@@ -324,6 +348,9 @@ void Device::DestroyTexture(TextureHandle texture) {
             vmaDestroyImage(impl->allocator, data.image, data.allocation);
             if (HasFlag(data.usage, TextureUsage::Sampled)) {
                 impl->freeBindlessIndices.push_back(data.bindlessIndex);
+            }
+            if (HasFlag(data.usage, TextureUsage::Storage)) {
+                impl->freeStorageImageIndices.push_back(data.storageIndex);
             }
         });
     }
@@ -355,6 +382,12 @@ core::Result<void> Device::UploadTexture(TextureHandle texture, std::span<const 
 std::uint32_t Device::StorageIndex(BufferHandle buffer) const {
     const BufferData& data = m_impl->buffers.Get(buffer);
     DAI_ASSERT(HasFlag(data.usage, BufferUsage::Storage), "The buffer is not a storage buffer");
+    return data.storageIndex;
+}
+
+std::uint32_t Device::StorageImageIndex(TextureHandle texture) const {
+    const TextureData& data = m_impl->textures.Get(texture);
+    DAI_ASSERT(HasFlag(data.usage, TextureUsage::Storage), "The texture is not a storage texture");
     return data.storageIndex;
 }
 
