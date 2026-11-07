@@ -155,7 +155,7 @@ Solid arrows own, and dotted arrows only refer. GPU objects are never held by po
 
 ## How the GPU reads its data
 
-The renderer uses bindless access: one descriptor set holds every texture, storage buffer and top-level acceleration structure, and each draw only pushes indices. A ray's hit finds its draw's InstanceData by its custom index.
+The renderer uses bindless access: one descriptor set holds every texture, storage buffer, storage image and top-level acceleration structure, and each draw only pushes indices. A ray's hit finds its draw's InstanceData by its custom index.
 
 ```mermaid
 flowchart LR
@@ -203,6 +203,10 @@ Barriers come from the RHI: each texture and buffer remembers its last write and
 ## Acceleration structures
 
 Rays are traced against a top-level acceleration structure rebuilt every frame from the frame's draws (ADR-0033). Each mesh has a bottom-level structure, built once with its upload. Skinned draws are skinned once per frame by a compute pass, into world-space vertices that the shadow, pre-pass and mesh passes draw and that each skinned draw's own structure is refitted from, so rays and rasterization see the same surface. A ray's hit names its draw's entry in the frame's instance data, which holds its vertices, indices and material. `renderer.debug_view rays` shows the structure from the camera, one color per instance.
+
+## The reference path tracer
+
+`renderer.debug_view path` replaces the lit scene with the reference path tracer (ADR-0034): a compute pass that traces one path per pixel per frame against the frame's acceleration structure and averages them while the view stays. It shades hits with the same materials, lights and BSDF as the mesh pass; the BSDF lives in one Slang module, `Bsdf.slang`, that both import. It is what the ray-traced techniques of Phase 9 are compared with. `sandbox.scene cornell` builds its test scene, the Cornell box.
 
 ## The game's interface
 

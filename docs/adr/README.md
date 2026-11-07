@@ -37,3 +37,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0031](0031-slang-and-vulkan-1-4.md) | Slang shaders, Vulkan 1.4, hardware ray tracing through ray queries | Accepted |
 | [0032](0032-render-graph.md) | A render graph that places barriers, labels and times passes | Accepted |
 | [0033](0033-acceleration-structures.md) | Acceleration structures, refitted skinned draws, skinning once per frame | Accepted |
+| [0034](0034-reference-path-tracer.md) | A reference path tracer, one BSDF in a Slang module, storage images | Accepted |
