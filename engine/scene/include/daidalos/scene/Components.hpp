@@ -69,8 +69,6 @@ struct Light {
     float innerAngle = glm::radians(20.0f);
     float outerAngle = glm::radians(30.0f);
     bool enabled = true;
-    /// Spot lights only, within the renderer's budget of shadow maps (ADR-0023).
-    bool castsShadows = false;
 };
 
 /// ECS component: emits particles of an effect at the entity's WorldTransform, at a steady rate. The

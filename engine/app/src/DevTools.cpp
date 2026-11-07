@@ -157,7 +157,6 @@ void DevTools::AddEngineInspectors() {
             if (ImGui::SliderFloat("Outer angle", &outer, 0.0f, 89.0f)) {
                 light.outerAngle = glm::radians(outer);
             }
-            ImGui::Checkbox("Casts shadows", &light.castsShadows);
         }
     });
     AddInspector<scene::ParticleEmitter>("Particle emitter", [](scene::ParticleEmitter& emitter) {
@@ -377,8 +376,7 @@ void DevTools::DrawStats() {
         const renderer::FrameStats stats = renderer.Stats();
         TextLine(
             std::format("Draws: {} drawn of {}, {} triangles", stats.drawnDraws, stats.draws, Count(stats.triangles)));
-        TextLine(std::format("Lights: {}, {} with a shadow; {} shadow draws", stats.lights, stats.shadowedLights,
-                             stats.shadowDraws));
+        TextLine(std::format("Lights: {}, each with ray-traced shadows", stats.lights));
         TextLine(std::format("Particle spawns: {}", stats.particleSpawns));
         if (scene::Scene* scene = m_app->CurrentScene()) {
             TextLine(std::format("Entities: {}{}", scene->World().AliveCount(), scene->IsPaused() ? ", paused" : ""));

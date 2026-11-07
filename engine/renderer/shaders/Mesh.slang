@@ -4,42 +4,13 @@
 
 // Forward shading of opaque meshes, in linear HDR (ADR-0022): metallic-roughness PBR with normal maps,
 // the frame's lights, ambient light, occlusion, emission and distance fog. A pixel evaluates only the
-// lights of its cluster (ADR-0008). The nearest spot lights have a shadow map (ADR-0023).
+// lights of its cluster (ADR-0008). Every light casts shadows: a ray towards it says whether it reaches
+// the pixel (ADR-0035).
 // The ambient light is darkened by the frame's ambient occlusion (ADR-0024).
 
 #include "MeshCommon.slangh"
+#include "RayQueries.slangh"
 import Bsdf;
-
-// How much of a light's shadow map sees a point: 1 in full light, 0 in shadow. The point is pushed along
-// its normal, more so far from the light, where a texel covers more surface. Nine filtered comparisons
-// soften the edge over about three texels.
-float ShadowFactor(FrameData frame, LightData light, float3 position, float3 normal, float distanceToLight) {
-    const ShadowData shadow = g_shadows[frame.shadowBuffer][light.shadow];
-    const float3 receiver = position + normal * (shadow.normalOffset * distanceToLight);
-    const float4 clip = mul(shadow.viewProjection, float4(receiver, 1.0));
-    if (clip.w <= 0.0) {
-        return 1.0;
-    }
-    const float3 ndc = clip.xyz / clip.w;
-    // Clip-space Y points up, and texture rows go down.
-    const float2 uv = ndc.xy * float2(0.5, -0.5) + 0.5;
-    if (any(uv < 0.0) || any(uv > 1.0)) {
-        return 1.0;
-    }
-    // The taps stay inside the light's tile of the atlas.
-    const float texel = frame.shadowTexel;
-    const float2 tileMin = shadow.atlasOffset + 1.5 * texel;
-    const float2 tileMax = shadow.atlasOffset + shadow.atlasScale - 1.5 * texel;
-    const float2 center = clamp(shadow.atlasOffset + uv * shadow.atlasScale, tileMin, tileMax);
-    float lit = 0.0;
-    for (int y = -1; y <= 1; ++y) {
-        for (int x = -1; x <= 1; ++x) {
-            lit += g_textures[frame.shadowAtlas].SampleCmpLevelZero(g_compareSamplers[kSamplerShadowCompare],
-                                                                    center + float2(x, y) * texel, ndc.z);
-        }
-    }
-    return lit / 9.0;
-}
 
 // The BSDF of the engine (Bsdf.slang), multiplied by pi, so that a light's color is what a white surface
 // facing it reflects (ADR-0022).
@@ -91,6 +62,11 @@ float4 PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target
     }
     const float3 ambient = lerp(frame.ambientBelow, frame.ambient, normal.y * 0.5 + 0.5);
     float3 color = ambient * (diffuseColor + ambientSpecular) * ambientOcclusion + emission;
+    // The face's own normal, towards the camera, from which shadow rays start.
+    float3 faceNormal = normalize(cross(ddy(input.worldPosition), ddx(input.worldPosition)));
+    if (dot(faceNormal, view) < 0.0) {
+        faceNormal = -faceNormal;
+    }
     const uint2 cluster = g_clusters[frame.clusterBuffer][ClusterOf(frame, input.clipPosition.xy, input.worldPosition)];
     for (uint entry = 0; entry < cluster.y; ++entry) {
         const LightData light = g_lights[frame.lightBuffer][g_clusterLights[frame.clusterLightBuffer][cluster.x + entry]];
@@ -100,12 +76,16 @@ float4 PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target
             continue;
         }
         const float3 toLight = offset / max(distanceToLight, 0.0001);
-        float attenuation = Attenuation(light, distanceToLight, toLight);
-        if (attenuation > 0.0 && light.shadow != kNoShadow) {
-            attenuation *= ShadowFactor(frame, light, input.worldPosition, normal, distanceToLight);
+        const float attenuation = Attenuation(light, distanceToLight, toLight);
+        if (attenuation <= 0.0) {
+            continue;
         }
-        if (attenuation > 0.0) {
-            color += light.color * attenuation * Shade(normal, view, toLight, diffuseColor, f0, roughness);
+        const float3 reflected = light.color * attenuation * Shade(normal, view, toLight, diffuseColor, f0, roughness);
+        // Only light that would add something is worth a ray.
+        if (any(reflected > 0.0) &&
+            LightReaches(input.worldPosition, faceNormal, toLight, distanceToLight, light.range,
+                         frame.accelerationStructure, g_push.instanceBuffer, g_push.materialBuffer)) {
+            color += reflected;
         }
     }
 

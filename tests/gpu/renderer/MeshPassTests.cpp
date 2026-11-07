@@ -16,6 +16,7 @@
 #include "GpuFixture.hpp"
 #include "MeshPass.hpp"
 #include "ParticlePass.hpp"
+#include "RayTracingScene.hpp"
 #include "RenderGraph.hpp"
 #include "ShaderCompiler.hpp"
 
@@ -70,6 +71,9 @@ protected:
         core::Result<MeshPass> pass = MeshPass::Create(Device(), kColorFormat, kDepthFormat);
         ASSERT_TRUE(pass.has_value()) << core::Format(pass.error());
         m_pass.emplace(std::move(*pass));
+        core::Result<renderer::RayTracingScene> scene = renderer::RayTracingScene::Create(Device(), kColorFormat);
+        ASSERT_TRUE(scene.has_value()) << core::Format(scene.error());
+        m_scene.emplace(std::move(*scene));
 
         const core::Result<rhi::TextureHandle> color =
             Device().CreateTexture({.extent = kExtent,
@@ -103,6 +107,7 @@ protected:
 
     void TearDown() override {
         if (m_pass.has_value()) {
+            m_scene.reset();
             m_pass.reset();
             Device().DestroyTexture(m_color);
             Device().DestroyTexture(m_depth);
@@ -129,32 +134,42 @@ protected:
     }
 
     void Render(const SceneView& view) {
-        ASSERT_TRUE(Device()
-                        .Submit([&](rhi::CommandList& commands) {
-                            EXPECT_TRUE(m_pass->Prepare(view, {.extent = kExtent}).has_value());
-                            renderer::RenderGraph graph;
-                            m_pass->AddSkinning(graph);
-                            m_pass->AddShadows(graph);
-                            const rhi::BufferUse skinned{m_pass->SkinnedVertices(), rhi::Access::VertexInputRead};
-                            graph.AddPass({.name = "Prepass",
-                                           .rendering = rhi::RenderingDesc{.colorTarget = m_normals,
-                                                                           .clearColor = glm::vec4(0.0f),
-                                                                           .depthTarget = m_depth,
-                                                                           .clearDepth = 0.0f},
-                                           .buffers = {skinned}},
-                                          [&](rhi::CommandList& list) { m_pass->RecordPrepass(list); });
-                            graph.AddPass({.name = "Meshes",
-                                           .rendering = rhi::RenderingDesc{.colorTarget = m_color,
-                                                                           .clearColor = kBackground,
-                                                                           .depthTarget = m_depth},
-                                           .textures = {{m_pass->ShadowAtlas(), rhi::Access::FragmentShaderRead}},
-                                           .buffers = {skinned}},
-                                          [&](rhi::CommandList& list) { m_pass->Record(list); });
-                            graph.Execute(commands);
-                            commands.Transition(m_color, rhi::TextureState::TransferSrc);
-                            commands.CopyTextureToBuffer(m_color, m_readback);
-                        })
-                        .has_value());
+        ASSERT_TRUE(
+            Device()
+                .Submit([&](rhi::CommandList& commands) {
+                    // Every light casts shadows by rays: the frame's structure comes first.
+                    const core::Result<std::uint32_t> structure = m_scene->Reserve(0, view.draws.size());
+                    ASSERT_TRUE(structure.has_value());
+                    EXPECT_TRUE(
+                        m_pass->Prepare(view, {.extent = kExtent, .accelerationStructure = *structure}).has_value());
+                    renderer::RenderGraph graph;
+                    m_pass->AddSkinning(graph);
+                    rhi::AccelerationStructureHandle traced;
+                    if (view.camera.has_value()) {
+                        ASSERT_TRUE(m_scene->Prepare(m_pass->TracedDraws()).has_value());
+                        m_scene->AddBuild(graph);
+                        traced = m_scene->Structure();
+                    }
+                    const rhi::BufferUse skinned{m_pass->SkinnedVertices(), rhi::Access::VertexInputRead};
+                    graph.AddPass({.name = "Prepass",
+                                   .rendering = rhi::RenderingDesc{.colorTarget = m_normals,
+                                                                   .clearColor = glm::vec4(0.0f),
+                                                                   .depthTarget = m_depth,
+                                                                   .clearDepth = 0.0f},
+                                   .buffers = {skinned}},
+                                  [&](rhi::CommandList& list) { m_pass->RecordPrepass(list); });
+                    graph.AddPass({.name = "Meshes",
+                                   .rendering = rhi::RenderingDesc{.colorTarget = m_color,
+                                                                   .clearColor = kBackground,
+                                                                   .depthTarget = m_depth},
+                                   .buffers = {skinned, {skinned.buffer, rhi::Access::FragmentShaderRead}},
+                                   .structures = {{traced, rhi::Access::RayQueryRead}}},
+                                  [&](rhi::CommandList& list) { m_pass->Record(list); });
+                    graph.Execute(commands);
+                    commands.Transition(m_color, rhi::TextureState::TransferSrc);
+                    commands.CopyTextureToBuffer(m_color, m_readback);
+                })
+                .has_value());
     }
 
     // Red, green and blue of a pixel, counted from the top-left corner.
@@ -168,6 +183,7 @@ protected:
     [[nodiscard]] bool IsBackground(std::uint32_t x, std::uint32_t y) { return Pixel(x, y) == glm::ivec3(0); }
 
     std::optional<MeshPass> m_pass;
+    std::optional<renderer::RayTracingScene> m_scene;
     rhi::TextureHandle m_color;
     rhi::TextureHandle m_depth;
     rhi::TextureHandle m_normals;
@@ -357,44 +373,9 @@ TEST_F(MeshPassTest, NormalMapTiltsTheSurface) {
     Device().DestroyTexture(leftTexture);
 }
 
-TEST_F(MeshPassTest, SpotLightCastsTheShadowOfWhatStandsInItsWay) {
-    // A floor facing the camera, lit from the right by a spot, and a small panel 1 m in front of it. The
-    // panel's shadow falls left of the panel, from x = -1.4 to -0.1, where the camera sees the floor.
-    const MeshHandle floor = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
-    const MeshHandle panel = Mesh(MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 1.0f));
-    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
-    renderer::Light light{.type = renderer::LightType::Spot,
-                          .position = {3.0f, 0.0f, 5.0f},
-                          .direction = glm::normalize(glm::vec3(-3.0f, 0.0f, -5.0f)),
-                          .range = 20.0f,
-                          .falloff = 1.0f,
-                          .innerAngle = glm::radians(40.0f),
-                          .outerAngle = glm::radians(45.0f)};
-    bool panelCastsShadows = true;
-    const auto render = [&] {
-        SceneView view = LitView(TestCamera(), {floor, glm::mat4(1.0f), white}, light);
-        view.draws.push_back({.mesh = panel, .material = white, .castsShadows = panelCastsShadows});
-        Render(view);
-    };
-
-    render();
-    const int withoutShadows = Pixel(20, 32).r;
-    light.castsShadows = true;
-    render();
-    EXPECT_GT(withoutShadows, 100);
-    EXPECT_LT(Pixel(20, 32).r, 10);  // In the shadow.
-    EXPECT_GT(Pixel(48, 32).r, 100); // The floor on the light's side stays lit.
-    EXPECT_GT(Pixel(32, 32).r, 100); // So does the panel itself.
-
-    // A draw that does not cast shadows lets the light through.
-    panelCastsShadows = false;
-    render();
-    EXPECT_GT(Pixel(20, 32).r, 100);
-}
-
 namespace {
 
-// The spot light and the scene of SpotLightCastsTheShadowOfWhatStandsInItsWay.
+// A spot light from the right of the floor in the shadow tests, 5 m in front of it.
 renderer::Light ShadowTestLight() {
     return {.type = renderer::LightType::Spot,
             .position = {3.0f, 0.0f, 5.0f},
@@ -402,49 +383,62 @@ renderer::Light ShadowTestLight() {
             .range = 20.0f,
             .falloff = 1.0f,
             .innerAngle = glm::radians(40.0f),
-            .outerAngle = glm::radians(45.0f),
-            .castsShadows = true};
+            .outerAngle = glm::radians(45.0f)};
 }
 
 } // namespace
 
-TEST_F(MeshPassTest, ShadowAtlasGrowsWithTheNumberOfShadowedLights) {
-    // Nine shadows take a grid of three by three. Five dim lights nearer the camera, which ask for a
-    // shadow too, push the test light to the sixth tile: the middle of the second row.
-    m_pass.reset();
-    core::Result<MeshPass> pass =
-        MeshPass::Create(Device(), kColorFormat, kDepthFormat, {.shadowLights = 9, .shadowResolution = 256});
-    ASSERT_TRUE(pass.has_value());
-    m_pass.emplace(std::move(*pass));
+TEST_F(MeshPassTest, SpotLightCastsTheShadowOfWhatStandsInItsWay) {
+    // A floor facing the camera, lit from the right by a spot, and a small panel 1 m in front of it. The
+    // panel's shadow falls left of the panel, from x = -1.4 to -0.1, where the camera sees the floor.
     const MeshHandle floor = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
     const MeshHandle panel = Mesh(MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 1.0f));
     const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
-    SceneView view = LitView(TestCamera(), {floor, glm::mat4(1.0f), white}, ShadowTestLight());
-    view.draws.push_back({.mesh = panel, .material = white});
-    for (int index = 0; index < 5; ++index) {
-        view.lights.push_back({.type = renderer::LightType::Spot,
-                               .position = {0.0f, 0.0f, 5.5f + 0.1f * static_cast<float>(index)},
-                               .direction = {0.0f, 0.0f, 1.0f},
-                               .color = glm::vec3(0.001f),
-                               .range = 1.0f,
-                               .outerAngle = glm::radians(10.0f),
-                               .castsShadows = true});
-    }
-    Render(view);
+    bool panelCastsShadows = true;
+    const auto render = [&](const renderer::Light& light) {
+        SceneView view = LitView(TestCamera(), {floor, glm::mat4(1.0f), white}, light);
+        view.draws.push_back({.mesh = panel, .material = white, .castsShadows = panelCastsShadows});
+        Render(view);
+    };
+
+    render(ShadowTestLight());
     EXPECT_LT(Pixel(20, 32).r, 10);  // In the shadow.
-    EXPECT_GT(Pixel(48, 32).r, 100); // In the light.
+    EXPECT_GT(Pixel(48, 32).r, 100); // The floor on the light's side stays lit.
+    EXPECT_GT(Pixel(32, 32).r, 100); // So does the panel itself.
+
+    // A draw that does not cast shadows lets the light through.
+    panelCastsShadows = false;
+    render(ShadowTestLight());
+    EXPECT_GT(Pixel(20, 32).r, 100);
 }
 
-TEST_F(MeshPassTest, NoShadowedLightsLetsEveryLightThrough) {
-    m_pass.reset();
-    core::Result<MeshPass> pass = MeshPass::Create(Device(), kColorFormat, kDepthFormat, {.shadowLights = 0});
-    ASSERT_TRUE(pass.has_value());
-    m_pass.emplace(std::move(*pass));
+TEST_F(MeshPassTest, PointLightCastsShadowsToo) {
     const MeshHandle floor = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
     const MeshHandle panel = Mesh(MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 1.0f));
     const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
-    SceneView view = LitView(TestCamera(), {floor, glm::mat4(1.0f), white}, ShadowTestLight());
+    renderer::Light light = ShadowTestLight();
+    light.type = renderer::LightType::Point;
+    SceneView view = LitView(TestCamera(), {floor, glm::mat4(1.0f), white}, light);
     view.draws.push_back({.mesh = panel, .material = white});
+    Render(view);
+    EXPECT_LT(Pixel(20, 32).r, 10);
+    EXPECT_GT(Pixel(48, 32).r, 100);
+}
+
+TEST_F(MeshPassTest, AlphaTestedSurfaceLetsLightThroughWhereItIsCut) {
+    // The panel's alpha is below its cutoff everywhere: the mesh pass does not draw it, and shadow rays go
+    // through it as well.
+    const MeshHandle floor = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
+    const MeshHandle panel = Mesh(MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 1.0f));
+    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
+    MaterialDesc cut;
+    cut.baseColorFactor = glm::vec4(1.0f, 1.0f, 1.0f, 0.2f);
+    cut.metallicFactor = 0.0f;
+    cut.alphaCutoff = 0.5f;
+    SceneView view = LitView(TestCamera(), {floor, glm::mat4(1.0f), white}, ShadowTestLight());
+    const core::Result<MaterialHandle> cutMaterial = m_pass->CreateMaterial(cut);
+    ASSERT_TRUE(cutMaterial.has_value());
+    view.draws.push_back({.mesh = panel, .material = *cutMaterial});
     Render(view);
     EXPECT_GT(Pixel(20, 32).r, 100);
 }

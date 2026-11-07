@@ -1,6 +1,6 @@
 # ADR-0023: Spot-light shadows
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0035 (2026-11-07)
 - **Date:** 2026-11-03
 
 ## Context

@@ -55,10 +55,6 @@ struct RendererConfig {
     float normalStrength = 1.0f;
     /// Darkens the ambient light in creases and corners (ADR-0024).
     bool ambientOcclusion = true;
-    /// Spot lights with a shadow map, from 0 to kMaxShadowedLights: the nearest that ask for one.
-    std::uint32_t shadowLights = 4;
-    /// Texels across each light's shadow map, from 256 to 4096.
-    std::uint32_t shadowResolution = 1024;
     /// Radians across the view, for cameras that set no field of view of their own.
     float fieldOfView = glm::radians(90.0f);
     /// Meters: farther, nothing is drawn or lit.
@@ -77,12 +73,9 @@ struct FrameStats {
     /// Draws in the view, and those within the view distance.
     std::uint32_t draws = 0;
     std::uint32_t drawnDraws = 0;
-    /// Triangles of the drawn draws, once each: the pre-pass and the shadow maps draw them again.
+    /// Triangles of the drawn draws, once each: the pre-pass draws them again.
     std::uint64_t triangles = 0;
     std::uint32_t lights = 0;
-    std::uint32_t shadowedLights = 0;
-    /// Draws into the shadow maps, all lights together.
-    std::uint32_t shadowDraws = 0;
     std::uint32_t particleSpawns = 0;
     /// Instances of the frame's acceleration structure, and how many skinned draws had one built.
     std::uint32_t rayInstances = 0;

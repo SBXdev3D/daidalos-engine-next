@@ -1941,7 +1941,7 @@ Hardware ray tracing is mandatory and no raster fallback is kept: each step dele
 2. A minimal render graph: automatic barriers, debug labels, per-pass GPU timings (done, ADR-0032).
 3. Acceleration structures: a BLAS per mesh, refit for skinned meshes, TLAS rebuilt each frame (done, ADR-0033; compaction deferred until memory asks for it).
 4. A reference path tracer, a Cornell box scene and golden-image tests against it (done, ADR-0034; FLIP comes with step 5).
-5. Ray-query shadows for every light, replacing the shadow atlas.
+5. Ray-query shadows for every light, replacing the shadow atlas (done, ADR-0035: hard shadows; soft ones come with the denoiser).
 6. Motion vectors (skinned meshes and particles included), jittered projection and TAA, replacing MSAA and FXAA.
 7. An own spatiotemporal denoiser behind `IDenoiser`; soft shadows.
 8. Diffuse global illumination: an own hash-grid radiance cache and a ray-traced bounce, replacing SSAO and the ambient term.

@@ -1,6 +1,6 @@
 # Architecture
 
-How the engine is built today, through Phase 7.4: real lights with shadows, clustered lights, ambient occlusion, PBR materials, normal maps and particles on the GPU. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
+How the engine is built today, through Phase 9.5: real lights with ray-traced shadows, clustered lights, ambient occlusion, PBR materials, normal maps and particles on the GPU. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
 
 ## Modules
 
@@ -88,7 +88,7 @@ sequenceDiagram
     A->>R: Render(SceneView, overlay)
     R->>R: Reload changed shaders
     R->>D: BeginFrame: send the pending uploads, read last timestamps
-    R->>D: Shadow maps of the nearest shadowed spot lights
+    R->>D: Skinning, then the frame's acceleration structures
     R->>D: Pre-pass: depth and normals
     R->>D: Ambient occlusion, at half resolution
     R->>D: Particles: emit, simulate, sort (compute)
@@ -175,8 +175,7 @@ Meshes are shaded in linear HDR with metallic-roughness PBR and the frame's ligh
 ```mermaid
 flowchart LR
     E["scene::Light<br/>on entities"] -->|"ExtractScene"| L["SceneView::lights<br/>position, direction, color, range"]
-    L -->|"nearest<br/>shadowed spots"| SM["Shadow atlas<br/>a tile per light"]
-    SM --> M
+    AS["Acceleration structure<br/>of the frame"] -->|"a shadow ray<br/>per light"| M
     L -->|"CPU clustering<br/>16×9×24"| CL["Cluster light lists"]
     CL --> M["Mesh pass<br/>GGX, normal maps,<br/>shadows, ambient, fog"]
     P["Pre-pass<br/>depth, normals"] --> AO["Ambient occlusion<br/>half resolution"]
@@ -185,7 +184,7 @@ flowchart LR
     H -->|"exposure,<br/>PBR Neutral"| S["Swapchain<br/>sRGB"]
 ```
 
-A light's color is what a white surface facing it reflects up close, and it fades linearly to zero at its range, as in the legacy engine. Normal maps follow glTF (green up, bitangent from the tangent's `w`), and meshes that lack tangents get MikkTSpace ones at load. Each frame, lights are assigned to 16×9×24 clusters of the view on the CPU, and a pixel shades only the lights of its cluster (ADR-0008). A pre-pass writes depth and normals first, so that the mesh pass shades each pixel once, and ambient occlusion darkens the ambient light in creases (ADR-0024). The ambient light itself comes more from above than from below. Spot lights can cast shadows: each frame, the nearest the camera that ask for one, four by default, get a tile of the shadow atlas (ADR-0023). Nothing beyond the view distance is drawn or lit: the projection has a far plane there, and the clusters end at it. Edges are smoothed by FXAA after tonemapping, or by multisampling the pre-pass and the mesh pass, which resolve into the targets the later passes read (ADR-0026). Draws can opt out, as the sandbox's weapons do. Each group of passes is timed with GPU timestamps, which `Renderer::GpuTimes` returns and the developer tools show.
+A light's color is what a white surface facing it reflects up close, and it fades linearly to zero at its range, as in the legacy engine. Normal maps follow glTF (green up, bitangent from the tangent's `w`), and meshes that lack tangents get MikkTSpace ones at load. Each frame, lights are assigned to 16×9×24 clusters of the view on the CPU, and a pixel shades only the lights of its cluster (ADR-0008). A pre-pass writes depth and normals first, so that the mesh pass shades each pixel once, and ambient occlusion darkens the ambient light in creases (ADR-0024). The ambient light itself comes more from above than from below. Every light casts shadows: for each light of its cluster that would light it, a pixel casts a ray towards the light against the frame's acceleration structure, and alpha-tested surfaces let light through their holes (ADR-0035). Nothing beyond the view distance is drawn or lit: the projection has a far plane there, and the clusters end at it. Edges are smoothed by FXAA after tonemapping, or by multisampling the pre-pass and the mesh pass, which resolve into the targets the later passes read (ADR-0026). Draws can opt out, as the sandbox's weapons do. Each group of passes is timed with GPU timestamps, which `Renderer::GpuTimes` returns and the developer tools show.
 
 `MeshPass` keeps one frame slot per frame in flight, so the CPU never writes data the GPU is still reading. Shaders are written in Slang, compiled to SPIR-V by `slangc` during the build and embedded in the binary. In development builds, the sources are watched and recompiled by the `slangc` executable (ADR-0031).
 
@@ -195,14 +194,14 @@ Each frame, the renderer and its passes add their passes to a `RenderGraph`, in 
 
 ```mermaid
 flowchart LR
-    SK["Skinning"] --> AS["Acceleration<br/>structures"] --> SH["Shadows"] --> PP["Prepass"] --> OC["Occlusion<br/>2 passes"] --> SI["Simulation<br/>emit, simulate,<br/>finish, sort"] --> ME["Meshes"] --> PA["Particles"] --> TO["Tonemap"] --> AA["Antialiasing"] --> UI["Interface"] --> OV["Overlay"]
+    SK["Skinning"] --> AS["Acceleration<br/>structures"] --> PP["Prepass"] --> OC["Occlusion<br/>2 passes"] --> SI["Simulation<br/>emit, simulate,<br/>finish, sort"] --> ME["Meshes"] --> PA["Particles"] --> TO["Tonemap"] --> AA["Antialiasing"] --> UI["Interface"] --> OV["Overlay"]
 ```
 
 Barriers come from the RHI: each texture and buffer remembers its last write and the reads since, and `CommandList::Use` decides from that whether the next use must wait (`rhi::NextAccess`). The GPU tests run with synchronization validation, which reports any use that no barrier orders.
 
 ## Acceleration structures
 
-Rays are traced against a top-level acceleration structure rebuilt every frame from the frame's draws (ADR-0033). Each mesh has a bottom-level structure, built once with its upload. Skinned draws are skinned once per frame by a compute pass, into world-space vertices that the shadow, pre-pass and mesh passes draw and that each skinned draw's own structure is refitted from, so rays and rasterization see the same surface. A ray's hit names its draw's entry in the frame's instance data, which holds its vertices, indices and material. `renderer.debug_view rays` shows the structure from the camera, one color per instance.
+Rays are traced against a top-level acceleration structure rebuilt every frame from the frame's draws (ADR-0033). Each mesh has a bottom-level structure, built once with its upload. Skinned draws are skinned once per frame by a compute pass, into world-space vertices that the pre-pass and the mesh pass draw and that each skinned draw's own structure is refitted from, so rays and rasterization see the same surface. A ray's hit names its draw's entry in the frame's instance data, which holds its vertices, indices and material. `renderer.debug_view rays` shows the structure from the camera, one color per instance.
 
 ## The reference path tracer
 
@@ -274,10 +273,9 @@ CI runs one job on pull requests (ADR-0014): the formatting check, then Linux Cl
 - No tool produces KTX2 files yet, although the loader reads them.
 - Ambient occlusion only sees what is on screen, and particles only collide with what is on screen.
 - Particles are lit evenly from every side, and they cast no shadow and receive none.
-- Point lights never cast shadows, and spot lights beyond the nearest shadowed ones shine through walls.
+- Shadows are hard: a point or spot light has no size yet, and soft shadows wait for the denoiser.
 - The view distance cuts the scene sharply where fog does not hide it, and a wide field of view stretches the weapon held in front of the camera, which has no field of view of its own.
 - With multisampling, alpha-tested materials are not smoothed: there is no alpha to coverage.
-- Every draw goes into every shadow map, even outside the light's cone.
 - There are no reflections: metals reflect only an estimate of the ambient light.
 - Sound passes through walls and doors: there is no occlusion.
 - Volumes are read at startup and cannot change during play.

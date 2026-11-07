@@ -29,7 +29,8 @@ struct PathTracerPushConstants {
     std::uint32_t seed;
     std::uint32_t width;
     std::uint32_t height;
-    std::array<std::uint32_t, 3> padding;
+    std::uint32_t jitter;
+    std::array<std::uint32_t, 2> padding;
     glm::vec3 background;
     float padding2;
 };
@@ -87,6 +88,7 @@ void PathTracerPass::AddTo(RenderGraph& graph, const PathTracerInputs& inputs, c
                                        settings.seed,
                                        m_extent.width,
                                        m_extent.height,
+                                       settings.jitter ? 1U : 0U,
                                        {},
                                        settings.background,
                                        0.0f};

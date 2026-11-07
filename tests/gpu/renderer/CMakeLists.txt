@@ -11,6 +11,8 @@ dai_add_test(NAME daidalos_renderer_gpu_tests
 if(DAI_ENABLE_DEV_TOOLS)
     target_sources(daidalos_renderer_gpu_tests PRIVATE DebugUiTests.cpp)
 endif()
+# FLIP compares the renderer with its path tracer (third_party/flip, tests only).
+target_include_directories(daidalos_renderer_gpu_tests SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/flip")
 # The tests run the private mesh pass on an offscreen target, without a window.
 target_include_directories(daidalos_renderer_gpu_tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/.."
