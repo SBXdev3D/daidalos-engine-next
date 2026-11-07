@@ -1,9 +1,13 @@
 name: CI
 
+# One Linux job, on pull requests only: Windows is built and tested locally, and GitHub minutes are limited.
+# Pull requests that only touch documentation or Patreon posts do not run it. It can also be started by hand.
 on:
-  push:
-    branches: [main]
   pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "patreon/**"
   workflow_dispatch:
 
 concurrency:
@@ -11,42 +15,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  format:
-    name: Formatting
+  linux:
+    # Debug with AddressSanitizer and UBSan: asserts on, plus memory and undefined-behaviour checks.
+    name: Linux Clang ASan
     runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install clang-format 19
-        run: pip install clang-format==19.1.5
-      - name: Check formatting
-        run: python scripts/format.py --check
-
-  build:
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: Windows MSVC Debug,   os: windows-2022, configure: windows-msvc,      preset: windows-msvc-debug }
-          - { name: Windows MSVC Release, os: windows-2022, configure: windows-msvc,      preset: windows-msvc-release }
-          - { name: Windows MSVC ASan,    os: windows-2022, configure: windows-msvc-asan, preset: windows-msvc-asan }
-          - { name: Windows MSVC Profile, os: windows-2022, configure: windows-msvc-profile, preset: windows-msvc-profile }
-          - { name: Linux Clang Debug,    os: ubuntu-24.04, configure: linux-clang-debug,   preset: linux-clang-debug }
-          - { name: Linux Clang Release,  os: ubuntu-24.04, configure: linux-clang-release, preset: linux-clang-release }
-          - { name: Linux Clang ASan,     os: ubuntu-24.04, configure: linux-clang-asan,    preset: linux-clang-asan }
-          - { name: Linux Clang Profile,  os: ubuntu-24.04, configure: linux-clang-profile, preset: linux-clang-profile }
     env:
       # vcpkg binary cache, persisted between runs with actions/cache.
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
+      - name: Check formatting
+        run: |
+          pip install clang-format==19.1.5
+          python3 scripts/format.py --check
+
+      - name: Install build dependencies
         # Ninja, the X11 and Wayland development packages that SDL3 is built against, lavapipe with the
         # validation layers for the GPU tests, and a virtual display for the tests that need a window.
         run: |
@@ -63,20 +47,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/.vcpkg-cache
-          key: vcpkg-${{ matrix.os }}-${{ matrix.configure }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
-          restore-keys: vcpkg-${{ matrix.os }}-${{ matrix.configure }}-
+          key: vcpkg-linux-clang-asan-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: vcpkg-linux-clang-asan-
 
       - name: Configure
-        run: cmake --preset ${{ matrix.configure }}
+        run: cmake --preset linux-clang-asan
 
       - name: Build
-        run: cmake --build --preset ${{ matrix.preset }}
-
-      - name: Test
-        if: runner.os != 'Linux'
-        run: ctest --preset ${{ matrix.preset }}
+        run: cmake --build --preset linux-clang-asan
 
       # Without -noreset, Xvfb resets when its last client leaves, and the next test finds no display.
       - name: Test on a virtual display
-        if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24 -noreset" ctest --preset ${{ matrix.preset }}
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24 -noreset" ctest --preset linux-clang-asan
