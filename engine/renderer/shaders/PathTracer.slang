@@ -147,7 +147,8 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     for (uint bounce = 0; bounce < g_path.maxBounces; ++bounce) {
         const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_path.instanceBuffer, g_path.materialBuffer);
         if (!hit.found) {
-            radiance += throughput * g_path.background;
+            // The sky, or the background a test chose when there is none.
+            radiance += throughput * (frame.skyTexture != kNoTexture ? SkyRadiance(frame, ray.Direction) : g_path.background);
             break;
         }
         const Surface surface = ShadeHit(hit, ray.Direction, frame);

@@ -2,6 +2,9 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
+#include <daidalos/renderer/Material.hpp>
+#include <daidalos/resources/ImageData.hpp>
+
 #include <glm/ext/matrix_transform.hpp>
 
 #include <array>
@@ -441,6 +444,45 @@ TEST_F(MeshPassTest, AlphaTestedSurfaceLetsLightThroughWhereItIsCut) {
     view.draws.push_back({.mesh = panel, .material = *cutMaterial});
     Render(view);
     EXPECT_GT(Pixel(20, 32).r, 100);
+}
+
+namespace {
+
+// A sky of 4 by 4 texels per face, in the order +X, -X, +Y, -Y, +Z, -Z, each of one color, as RGBA bytes.
+// Filtering blends faces near their edges: their middles keep their own colors.
+core::Result<rhi::TextureHandle> MakeSky(rhi::Device& device, const std::array<std::uint32_t, 6>& colors) {
+    std::array<resources::ImageData, 6> faces;
+    for (std::size_t face = 0; face < faces.size(); ++face) {
+        faces[face].width = 4;
+        faces[face].height = 4;
+        faces[face].format = resources::PixelFormat::Rgba8Unorm;
+        const std::vector<std::uint32_t> texels(16, colors[face]);
+        const auto bytes = std::as_bytes(std::span(texels));
+        faces[face].pixels.assign(bytes.begin(), bytes.end());
+    }
+    return renderer::CreateCubeTexture(device, faces, "Test sky");
+}
+
+} // namespace
+
+TEST_F(MeshPassTest, SkyShowsWhereNothingIsDrawn) {
+    // The camera looks down -Z: it sees the face that the legacy engine called front, the cube's +Z
+    // (ADR-0036). A quad covers the middle of the view, where the sky must not show.
+    const core::Result<rhi::TextureHandle> sky =
+        MakeSky(Device(), {0xFF0000FF, 0xFF0000FF, 0xFF0000FF, 0xFF0000FF, 0xFFFF0000, 0xFF00FF00});
+    ASSERT_TRUE(sky.has_value()) << core::Format(sky.error());
+    const MeshHandle quad = Mesh(MakeQuad(0.8f, 1.8f, -0.5f, 0.5f, 0.0f));
+    SceneView view{TestCamera(), {{quad, glm::mat4(1.0f), Material({1.0f, 1.0f, 1.0f})}}};
+    view.atmosphere.sky = *sky;
+    view.atmosphere.skyIntensity = 0.5f;
+    Render(view);
+    // Blue at half intensity straight ahead, in the middle of the +Z face; not the sky on the quad.
+    const glm::ivec3 ahead = Pixel(32, 32);
+    EXPECT_EQ(ahead.r, 0);
+    EXPECT_EQ(ahead.g, 0);
+    EXPECT_NEAR(ahead.b, 128, 1);
+    EXPECT_NE(Pixel(46, 32), ahead); // The quad, 1.3 m right of the view's middle.
+    Device().DestroyTexture(*sky);
 }
 
 TEST_F(MeshPassTest, NothingIsDrawnBeyondTheViewDistance) {
