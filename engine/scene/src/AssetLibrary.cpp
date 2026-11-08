@@ -8,6 +8,7 @@
 #include <daidalos/resources/AssetPath.hpp>
 #include <daidalos/scene/AssetLibrary.hpp>
 
+#include <array>
 #include <chrono>
 #include <format>
 #include <memory>
@@ -206,6 +207,27 @@ core::Result<rhi::TextureHandle> AssetLibrary::LoadTexture(std::string_view path
     std::string key = std::format("{}|{}", identity, ToString(use));
     DecodedImage image{identity, std::move(key), resources::LoadImageFile(file, use)};
     return FindOrCreateTexture(image);
+}
+
+core::Result<rhi::TextureHandle> AssetLibrary::LoadCubeTexture(std::span<const std::string, 6> faces) {
+    std::array<std::string, 6> identities;
+    std::string key = "cube";
+    for (std::size_t face = 0; face < faces.size(); ++face) {
+        DAI_TRY_ASSIGN(identities[face], resources::NormalizeAssetPath(faces[face]));
+        key += "|" + identities[face];
+    }
+    if (const rhi::TextureHandle* found = m_textures.Find(key)) {
+        return *found;
+    }
+    std::array<resources::ImageData, 6> images;
+    for (std::size_t face = 0; face < faces.size(); ++face) {
+        DAI_TRY_ASSIGN(std::filesystem::path file, resources::ResolveAssetPath(m_root, identities[face]));
+        DAI_TRY_ASSIGN(images[face], resources::LoadImageFile(file, resources::TextureUse::Color));
+    }
+    DAI_TRY_ASSIGN(rhi::TextureHandle texture,
+                   renderer::CreateCubeTexture(m_renderer->Device(), images, identities.front()));
+    m_textures.Insert(key, texture);
+    return texture;
 }
 
 std::vector<AssetLibrary::AssetInfo> AssetLibrary::Describe() const {

@@ -34,6 +34,8 @@ inline constexpr std::string_view kModule = "rhi";
 inline constexpr std::uint32_t kMaxBindlessTextures = 4096;
 /// Size of the storage buffer arrays of shaders.
 inline constexpr std::uint32_t kMaxBindlessBuffers = 4096;
+/// Cube textures that shaders can sample at the same time.
+inline constexpr std::uint32_t kMaxBindlessCubes = 64;
 /// Storage textures that shaders can read and write at the same time.
 inline constexpr std::uint32_t kMaxStorageImages = 64;
 /// Top-level acceleration structures that shaders can trace at the same time.
@@ -61,6 +63,8 @@ struct TextureData {
     VmaAllocation allocation = nullptr;
     Extent extent;
     std::uint32_t mipLevels = 1;
+    /// 6 for a cube, 1 otherwise.
+    std::uint32_t layers = 1;
     Format format = Format::Undefined;
     TextureUsage usage = TextureUsage::None;
     std::uint32_t samples = 1;
@@ -188,6 +192,7 @@ struct Device::Impl {
     std::vector<std::uint32_t> freeStorageIndices;
     std::vector<std::uint32_t> freeAccelerationStructureIndices;
     std::vector<std::uint32_t> freeStorageImageIndices;
+    std::vector<std::uint32_t> freeCubeIndices;
     VkDeviceSize scratchAlignment = 256;
 
     core::SlotPool<BufferData, BufferTag> buffers;

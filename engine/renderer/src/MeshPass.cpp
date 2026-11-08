@@ -14,6 +14,8 @@
 #include <shaders/Mesh.vs.spv.h>
 #include <shaders/Prepass.ps.spv.h>
 #include <shaders/Skinning.cs.spv.h>
+#include <shaders/Sky.ps.spv.h>
+#include <shaders/Sky.vs.spv.h>
 
 #include <algorithm>
 #include <array>
@@ -58,7 +60,9 @@ struct FrameData {
     std::uint32_t lightCount;
     glm::vec3 ambient;
     std::uint32_t lightBuffer;
-    std::array<std::uint32_t, 3> padding0;
+    std::uint32_t skyTexture;
+    float skyIntensity;
+    std::uint32_t padding0;
     float normalStrength;
     glm::vec3 ambientBelow;
     std::uint32_t occlusionTexture;
@@ -221,6 +225,7 @@ core::Result<rhi::PipelineHandle> MeshPass::BuildPipeline(std::span<const std::u
 }
 
 void MeshPass::DestroyPipelines(Pipelines& pipelines) {
+    m_device->DestroyPipeline(pipelines.sky);
     m_device->DestroyPipeline(pipelines.prepass);
     m_device->DestroyPipeline(pipelines.prepassDoubleSided);
     m_device->DestroyPipeline(pipelines.mesh);
@@ -241,7 +246,19 @@ core::Result<void> MeshPass::ReplaceShaders(std::span<const std::uint32_t> verte
         build(built.prepass, prepassShader, rhi::CullMode::Back, true)
             .and_then([&] { return build(built.prepassDoubleSided, prepassShader, rhi::CullMode::None, true); })
             .and_then([&] { return build(built.mesh, fragmentShader, rhi::CullMode::Back, false); })
-            .and_then([&] { return build(built.meshDoubleSided, fragmentShader, rhi::CullMode::None, false); });
+            .and_then([&] { return build(built.meshDoubleSided, fragmentShader, rhi::CullMode::None, false); })
+            .and_then([&]() -> core::Result<void> {
+                // Behind everything: drawn at the far plane, where the depth is still the cleared one.
+                DAI_TRY_ASSIGN(built.sky, m_device->CreatePipeline({.vertexShader = rhi::ToSpirv(kSkyVsSpirv),
+                                                                    .fragmentShader = rhi::ToSpirv(kSkyPsSpirv),
+                                                                    .colorFormat = m_colorFormat,
+                                                                    .depthFormat = m_depthFormat,
+                                                                    .depthWrite = false,
+                                                                    .cull = rhi::CullMode::None,
+                                                                    .samples = m_samples,
+                                                                    .name = "Sky"}));
+                return {};
+            });
     if (!result) {
         DestroyPipelines(built);
         return result;
@@ -470,6 +487,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     const glm::mat4 viewProjection =
         math::PerspectiveReverseZ(verticalFov, aspect, camera.nearPlane, farPlane) * camera.view;
     m_viewProjection = viewProjection;
+    m_hasSky = static_cast<bool>(view.atmosphere.sky);
     const FrameData frame{viewProjection,
                           glm::inverse(viewProjection),
                           cameraPosition,
@@ -478,7 +496,9 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                           static_cast<std::uint32_t>(view.lights.size()),
                           view.atmosphere.ambient,
                           m_device->StorageIndex(slot.lights),
-                          {},
+                          view.atmosphere.sky ? m_device->BindlessIndex(view.atmosphere.sky) : kNoTexture,
+                          view.atmosphere.skyIntensity,
+                          0,
                           m_normalStrength,
                           view.atmosphere.ambientBelow,
                           targets.occlusion ? m_device->BindlessIndex(targets.occlusion) : kNoTexture,
@@ -654,6 +674,11 @@ void MeshPass::RecordPrepass(rhi::CommandList& commands) {
 void MeshPass::Record(rhi::CommandList& commands) {
     DAI_PROFILE_SCOPE("renderer::MeshPass::Record");
     RecordDraws(commands, m_pipelines.mesh, m_pipelines.meshDoubleSided);
+    if (m_prepared != nullptr && m_hasSky) {
+        commands.BindPipeline(m_pipelines.sky);
+        commands.Push(MeshPushConstants{.frameBuffer = m_device->StorageIndex(m_prepared->frame)});
+        commands.Draw(3);
+    }
 }
 
 std::uint32_t MeshPass::FrameDataIndex() const {

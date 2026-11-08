@@ -50,6 +50,7 @@ public:
 
     /// Ambient light and fog of the scene, in the view handed to the renderer. Lights are entities.
     void SetAtmosphere(const renderer::Atmosphere& atmosphere) { m_atmosphere = atmosphere; }
+    [[nodiscard]] const renderer::Atmosphere& Atmosphere() const { return m_atmosphere; }
 
     /// Emits particles once, in this frame's view: count of them, leaving along direction, which stands for
     /// the effect's own direction (+Y unless it says otherwise). For impacts, flashes and the like.

@@ -39,3 +39,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0033](0033-acceleration-structures.md) | Acceleration structures, refitted skinned draws, skinning once per frame | Accepted |
 | [0034](0034-reference-path-tracer.md) | A reference path tracer, one BSDF in a Slang module, storage images | Accepted |
 | [0035](0035-ray-traced-shadows.md) | Ray-traced shadows for every light, FLIP in the tests | Accepted |
+| [0036](0036-sky.md) | A cube-texture sky, where nothing is drawn and for rays that leave the scene | Accepted |

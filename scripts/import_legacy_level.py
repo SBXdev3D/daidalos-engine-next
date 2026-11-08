@@ -95,6 +95,8 @@ LEGACY_ROUGHNESS = round(math.sqrt(math.sqrt(2.0 / (100.0 + 2.0))), 3)
 # Entities the legacy level lacks, in the engine's meters. The legacy game had a shotgun in its code and
 # shotgun shells in this level, but nothing to pick the shotgun up from: it lies next to the shells.
 # Its model comes from scripts/make_shotgun.py.
+# The faces of a legacy sky: front is +Z in the legacy engine, -Z in this one (ADR-0036).
+SKY_FACES = ("right", "left", "up", "down", "front", "back")
 EXTRA_ENTITIES = [("shotgun;model=shotgun.gltf", (-15.75, 0.0, -21.0))]
 
 # Two leftover tests, and the 31 MB ambient track, which waits for a compressed format in Phase 6.
@@ -784,6 +786,15 @@ def convert(source, scene, output):
     atlas = root.find("particleSystem/atlasTextureFile")
     if atlas is not None and atlas.text:
         tga_to_png(source / "Textures" / atlas.text.strip(), output / "particles.png")
+    # The sky that the level's openings show: six faces next to the level, and a node that names them.
+    level_node = root.find("node")
+    sky = level_node.get("skyName") if level_node is not None else None
+    if sky:
+        (output / "Sky").mkdir(exist_ok=True)
+        for face in SKY_FACES:
+            shutil.copyfile(source / "Textures" / "Sky" / f"{sky}_{face}.png", output / "Sky" / f"{sky}_{face}.png")
+        writer.node(f"sky;name={sky}")
+        counts["sky"] = 1
     for name, position in EXTRA_ENTITIES:
         writer.node(name, position)
         kind = name.split(";")[0]

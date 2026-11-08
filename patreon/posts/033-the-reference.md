@@ -32,7 +32,7 @@ The original is lit by a glowing panel in the ceiling. The engine has no lights 
 
 ## The factory, honestly
 
-Path traced, the factory is very dark. Its lamps are few and reach only a few meters; what lights most of it is a flat "ambient" light that comes from nowhere, plus the player's flashlight. The path tracer has no such light, only light that bounces. So when bounced light replaces the ambient one in step 8, the level's lighting will need work. Better to know now.
+Path traced, the factory is very dark. Its lamps are few and reach only a few meters; what lights most of it is a flat "ambient" light that comes from nowhere, plus the player's flashlight. The path tracer has no such light, only light that bounces. So when bounced light replaces the ambient one in step 9, the level's lighting will need work. Better to know now.
 
 ## The numbers
 

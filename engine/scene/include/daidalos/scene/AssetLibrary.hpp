@@ -23,6 +23,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -90,6 +91,10 @@ public:
     /// long as the library.
     [[nodiscard]] core::Result<rhi::TextureHandle>
     LoadTexture(std::string_view path, resources::TextureUse use = resources::TextureUse::Color);
+
+    /// Returns a cube texture, such as a sky, made of six color images in the order +X, -X, +Y, -Y, +Z, -Z
+    /// (renderer::CreateCubeTexture), loading it the first time. The handle lives as long as the library.
+    [[nodiscard]] core::Result<rhi::TextureHandle> LoadCubeTexture(std::span<const std::string, 6> faces);
 
     /// Same as LoadModel, but files are read and decoded on a worker, so that the main thread keeps
     /// running. The function is called on the main thread, from WorkerPool::Deliver, or at once if the

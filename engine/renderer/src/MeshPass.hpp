@@ -116,7 +116,8 @@ public:
     /// Writes depth and normals, inside a rendering scope with a kNormalFormat target and a cleared depth.
     void RecordPrepass(rhi::CommandList& commands);
     /// Shades the prepared frame inside a rendering scope whose depth holds the pre-pass's: each pixel is
-    /// shaded once, where its depth equals the pre-pass's.
+    /// shaded once, where its depth equals the pre-pass's. Then draws the sky where nothing was drawn, if
+    /// the frame has one.
     void Record(rhi::CommandList& commands);
 
     /// The storage index of the prepared frame's FrameData, for the passes that read it.
@@ -178,6 +179,7 @@ private:
         rhi::PipelineHandle prepassDoubleSided;
         rhi::PipelineHandle mesh;
         rhi::PipelineHandle meshDoubleSided;
+        rhi::PipelineHandle sky;
     };
     [[nodiscard]] core::Result<rhi::PipelineHandle> BuildPipeline(std::span<const std::uint32_t> vertexShader,
                                                                   std::span<const std::uint32_t> fragmentShader,
@@ -241,6 +243,7 @@ private:
     std::vector<SkinningJob> m_skinningJobs;
     std::vector<TracedDraw> m_traced;
     glm::mat4 m_viewProjection{1.0f};
+    bool m_hasSky = false;
 };
 
 } // namespace daidalos::renderer

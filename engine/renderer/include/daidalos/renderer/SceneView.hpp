@@ -6,6 +6,7 @@
 
 #include <daidalos/core/Handle.hpp>
 #include <daidalos/renderer/Particles.hpp>
+#include <daidalos/rhi/Types.hpp>
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
@@ -48,8 +49,8 @@ struct DrawItem {
     bool castsShadows = true;
 };
 
-/// Light that reaches every surface, and distance fog: surfaces fade into the fog color, which is
-/// also what is seen where nothing is drawn.
+/// Light that reaches every surface, distance fog, and the sky: surfaces fade into the fog color, and
+/// where nothing is drawn, the sky shows, or the fog color without one.
 struct Atmosphere {
     glm::vec3 fogColor{0.02f, 0.02f, 0.03f};
     /// Fraction of the light lost per meter; 0 for clear air.
@@ -60,6 +61,11 @@ struct Atmosphere {
     /// What comes from below. A surface facing sideways gets the average of the two, and its normal map
     /// shows where it leans up or down. The same color as ambient makes the light even.
     glm::vec3 ambientBelow{1.0f};
+    /// A cube texture (rhi::TextureDesc::cube) seen where nothing is drawn, and the light that rays which
+    /// leave the scene find (ADR-0036). Null for none.
+    rhi::TextureHandle sky;
+    /// Multiplies the sky's colors, which are linear light.
+    float skyIntensity = 1.0f;
 };
 
 enum class LightType { Point, Spot };

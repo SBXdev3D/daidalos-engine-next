@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
 #include <daidalos/renderer/CornellBox.hpp>
+#include <daidalos/renderer/Material.hpp>
 #include <daidalos/renderer/Primitives.hpp>
 
 #include <glm/ext/matrix_transform.hpp>
@@ -247,6 +248,41 @@ TEST_F(PathTracerTest, WhiteMatteSurfaceInAWhiteSkyKeepsItsEnergy) {
     const Image image =
         Trace(CubeInFront(Material(matte)), kSmall, {.maxBounces = 8, .background = glm::vec3(1.0f), .seed = 3}, 256);
     ExpectFurnace(image, 0.88f);
+}
+
+namespace {
+
+// A sky of 4 by 4 texels per face, in the order +X, -X, +Y, -Y, +Z, -Z, each of one color, as RGBA bytes.
+// Filtering blends faces near their edges: their middles keep their own colors.
+core::Result<rhi::TextureHandle> MakeSky(rhi::Device& device, const std::array<std::uint32_t, 6>& colors) {
+    std::array<resources::ImageData, 6> faces;
+    for (std::size_t face = 0; face < faces.size(); ++face) {
+        faces[face].width = 4;
+        faces[face].height = 4;
+        faces[face].format = resources::PixelFormat::Rgba8Unorm;
+        const std::vector<std::uint32_t> texels(16, colors[face]);
+        const auto bytes = std::as_bytes(std::span(texels));
+        faces[face].pixels.assign(bytes.begin(), bytes.end());
+    }
+    return renderer::CreateCubeTexture(device, faces, "Test sky");
+}
+
+} // namespace
+
+TEST_F(PathTracerTest, SkyLightsWhatItSurrounds) {
+    // The furnace again, with a white sky cube instead of a white background: what leaves the scene
+    // finds the sky, and the sky shows where nothing is.
+    MaterialDesc matte;
+    matte.metallicFactor = 0.0f;
+    matte.roughnessFactor = 1.0f;
+    const core::Result<rhi::TextureHandle> sky =
+        MakeSky(Device(), {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF});
+    ASSERT_TRUE(sky.has_value()) << core::Format(sky.error());
+    SceneView view = CubeInFront(Material(matte));
+    view.atmosphere.sky = *sky;
+    const Image image = Trace(view, kSmall, {.maxBounces = 8, .seed = 3}, 256);
+    ExpectFurnace(image, 0.88f);
+    Device().DestroyTexture(*sky);
 }
 
 TEST_F(PathTracerTest, WhiteMetalInAWhiteSkyKeepsItsEnergy) {

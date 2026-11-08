@@ -4,7 +4,9 @@
 
 #include <daidalos/renderer/Material.hpp>
 
+#include <format>
 #include <utility>
+#include <vector>
 
 namespace daidalos::renderer {
 
@@ -40,6 +42,36 @@ core::Result<rhi::TextureHandle> CreateTexture(rhi::Device& device, const resour
         return texture;
     }
     if (core::Result<void> uploaded = device.UploadTexture(*texture, image.pixels); !uploaded) {
+        device.DestroyTexture(*texture);
+        return tl::unexpected(std::move(uploaded.error()));
+    }
+    return texture;
+}
+
+core::Result<rhi::TextureHandle> CreateCubeTexture(rhi::Device& device, std::span<const resources::ImageData, 6> faces,
+                                                   const std::string& name) {
+    const resources::ImageData& first = faces.front();
+    std::vector<std::byte> pixels;
+    for (const resources::ImageData& face : faces) {
+        if (face.width != first.width || face.height != first.height || face.width != face.height ||
+            face.format != first.format || face.mipLevels != first.mipLevels) {
+            return core::MakeError(
+                core::ErrorCode::InvalidArgument, "renderer",
+                std::format("Cube '{}': the six faces must be square, of the same size and format", name));
+        }
+        pixels.insert(pixels.end(), face.pixels.begin(), face.pixels.end());
+    }
+    core::Result<rhi::TextureHandle> texture =
+        device.CreateTexture({.extent = {first.width, first.height},
+                              .format = ToRhiFormat(first.format),
+                              .usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDst,
+                              .mipLevels = first.mipLevels,
+                              .cube = true,
+                              .name = name});
+    if (!texture) {
+        return texture;
+    }
+    if (core::Result<void> uploaded = device.UploadTexture(*texture, pixels); !uploaded) {
         device.DestroyTexture(*texture);
         return tl::unexpected(std::move(uploaded.error()));
     }

@@ -25,7 +25,9 @@ struct FrameData {
     uint lightCount;
     float3 ambient;
     uint lightBuffer;
-    uint3 padding0;
+    uint skyTexture;     // Index in g_cubeTextures, or kNoTexture for no sky.
+    float skyIntensity;  // Multiplies the sky's colors.
+    uint padding0;
     float normalStrength; // Multiplies every normal map's tilt.
     float3 ambientBelow;  // Ambient light from below; ambient comes from above.
     uint occlusionTexture; // Half-resolution ambient occlusion, or kNoTexture.
@@ -115,6 +117,7 @@ struct MaterialData {
 #endif
 [[vk::binding(0, 0)]] Texture2D g_textures[];
 [[vk::binding(1, 0)]] SamplerState g_samplers[4];
+[[vk::binding(5, 0)]] TextureCube g_cubeTextures[];
 [[vk::binding(2, 0)]] StructuredBuffer<FrameData> g_frames[];
 [[vk::binding(2, 0)]] StructuredBuffer<InstanceData> g_instances[];
 [[vk::binding(2, 0)]] StructuredBuffer<MaterialData> g_materials[];
@@ -155,6 +158,17 @@ float3 TransformNormal(float4x4 world, float3 normal) {
     const float3 y = float3(world[0][1], world[1][1], world[2][1]);
     const float3 z = float3(world[0][2], world[1][2], world[2][2]);
     return cross(y, z) * normal.x + cross(z, x) * normal.y + cross(x, y) * normal.z;
+}
+
+// The light the sky sends along a direction, from where it is seen, or black without a sky (ADR-0036).
+// Sky cubes keep the faces of the legacy engine, which was left-handed: the engine's -Z is their +Z.
+float3 SkyRadiance(FrameData frame, float3 direction) {
+    if (frame.skyTexture == kNoTexture) {
+        return float3(0.0, 0.0, 0.0);
+    }
+    const float3 cube = float3(direction.x, direction.y, -direction.z);
+    return g_cubeTextures[frame.skyTexture].SampleLevel(g_samplers[kSamplerLinearClamp], cube, 0.0).rgb *
+           frame.skyIntensity;
 }
 
 #endif
