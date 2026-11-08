@@ -9,7 +9,7 @@ images: [sandbox-phase-3.png]
 
 Hello, and welcome to the development diary of Daidalos Engine Next.
 
-I'm SBX, a software engineer for more than 14 years. Daidalos is a real-time 3D engine that I write myself in C++. The copyright line at the top of its source files starts in 2011, so this is not a new idea of mine. "Next" is the point of this project: I'm rebuilding it from the ground up on modern foundations.
+I'm SBX, a software engineer for more than 14 years. Daidalos is a real-time 3D engine that I write myself in C++ back in 2011, so this is not a new idea of mine. "Next" is the point of this project: I'm rebuilding it from the ground up on modern foundations.
 
 ## Where Daidalos comes from
 
@@ -23,7 +23,7 @@ In 2011, I wanted to go further still: why not make my own 3D engine? I wanted t
 
 For years after that, I wanted to get back to the project but couldn't find the time. Then came AI. In 2026, I decided to resume it, but it had aged: old C++, an old graphics library. With what I've learned since, and with the help of Claude Code, I decided to redo everything, more modern. That's Daidalos Engine Next.
 
-[TO WRITE: what I hope to make with it.]
+My goal is not to make an Unreal Engine clone, I'm only doing this as a pure tech lover and a passionate about 3D technologies. 
 
 ![The engine today: a few cubes, a free camera and a debug overlay](../images/sandbox-phase-3.png)
 
