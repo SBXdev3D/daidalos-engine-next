@@ -3,7 +3,7 @@ title: "The reference"
 type: progress
 status: draft, 1 passage for me to write
 covers: Phase 9.4, the reference path tracer (7 November 2026)
-images: [the Cornell box, path traced and rasterized, once screenshots can be published]
+images: [shot-033-cornell-box.png]
 ---
 
 # The reference
@@ -28,7 +28,11 @@ You can't compare it with itself. So the tests attack it from the side:
 
 ## The Cornell box
 
-The original is lit by a glowing panel in the ceiling. The engine has no lights with an area yet, so a point light hangs just under the ceiling instead. The box is also in the demo: `sandbox.scene cornell`, then switch to the path tracer. Rasterized, the faces of the blocks turned away from the light are black. Path traced, they catch red and green light bouncing off the walls, and their shadows are soft. That difference is what the rest of the phase is for.
+The original is lit by a glowing panel in the ceiling. The engine has no lights with an area yet, so a point light hangs just under the ceiling instead. The box is also in the demo: `sandbox.scene cornell`, then switch to the path tracer. Rasterized, the faces of the blocks turned away from the light are flat and dark, lit only by the ambient light. Path traced, they catch red and green light bouncing off the walls, and their shadows are soft. That difference is what the rest of the phase is for.
+
+![The Cornell box twice: dark blocks on the left, blocks catching red and green light on the right](../images/shot-033-cornell-box.png)
+
+*The Cornell box in the demo, rasterized and path traced, at the end of step 4.*
 
 ## The factory, honestly
 

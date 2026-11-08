@@ -14,4 +14,4 @@ These terms cover this directory. The repository's CC BY-NC-SA 4.0 licence does 
 | Other textures (`*_d.png`, `*d.png` and the rest) | Free textures from a website | Free licence that allows commercial use |
 | `Sounds/` | Free sounds, and `enter_the_maze.ogg` converted from the original WAV | Free licence that allows commercial use |
 
-The source site and the exact licences of the free assets are not recorded yet. The author confirmed the terms above from memory, so check them before releasing the demo, and add any attribution they require.
+The source site and the exact licences of the free assets are not recorded yet. The author confirmed the terms above from memory, so check them before releasing the demo, and add any attribution they require. On 8 November 2026 the author confirmed that screenshots showing the textures can be published on Patreon.

@@ -3,7 +3,7 @@ title: "Smoke and sparks"
 type: progress
 status: draft, 1 passage for me to write
 covers: Phase 7.4 (3 November 2026)
-images: []
+images: [shot-024-muzzle-flash.png, shot-024-toxic-fog.png]
 ---
 
 # Smoke and sparks
@@ -12,7 +12,13 @@ The factory has particles again. Smoke leaks from a pipe, green fog hangs over t
 
 [TO WRITE: what the particles were like in the 2011 engine, and how it felt to see the old smoke leak again.]
 
-*Still no screenshot, for the same licence reason as before.*
+![A shot lights the lockers, with sparks and a puff of dust where the bullet hits](../images/shot-024-muzzle-flash.png)
+
+*A shot: the muzzle flash lights the room, and sparks fly where the bullet hits. End of step 7.4.*
+
+![Green fog over the floor of a corridor, lit by the flashlight, with a zombie in the distance](../images/shot-024-toxic-fog.png)
+
+*The green fog of the toxic area, in the flashlight's beam.*
 
 ## The old effects, rebuilt
 

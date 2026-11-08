@@ -3,7 +3,7 @@ title: "Under the hood, while it runs"
 type: progress
 status: draft, 1 passage for me to write
 covers: Phase 8.3, developer tools (7 November 2026)
-images: []
+images: [shot-029-dev-tools.png]
 ---
 
 # Under the hood, while it runs
@@ -12,7 +12,9 @@ The last step of Phase 8 isn't for players. In development builds, the key under
 
 [TO WRITE: how I debugged the original Daidalos without tools like these, or what I missed most.]
 
-*Still no screenshot, for the same licence reason as before.*
+![The console, the statistics and the game window open over the running game](../images/shot-029-dev-tools.png)
+
+*The tools over the running demo: the console answering `view.fov`, and the statistics. End of step 8.3.*
 
 ## A console
 

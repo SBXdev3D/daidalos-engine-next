@@ -34,7 +34,7 @@ With my acquired knowledge and with the help of Claude Code, I decided to redo e
 | 003 | [The road ahead](posts/003-the-road-ahead.md) | Roadmap | Draft |
 | 004 | [From an empty repository to a first frame](posts/004-from-empty-repository-to-first-frame.md) | Progress, Phases 0 to 3 | Draft, 1 passage for me to write |
 | 005 | [Goodbye, cubes](posts/005-goodbye-cubes.md) | Progress, Phase 4 | Draft, 1 passage for me to write |
-| 006 | [The old factory wakes up](posts/006-the-old-factory-wakes-up.md) | Progress, Phase 5 | Draft, 2 passages for me to write, no screenshot until the demo's assets are cleared |
+| 006 | [The old factory wakes up](posts/006-the-old-factory-wakes-up.md) | Progress, Phase 5 | Draft, 2 passages for me to write |
 | 007 | [What is a door made of?](posts/007-what-is-a-door-made-of.md) | Inside the engine: ECS | Draft |
 | 008 | [The handle that knows its object is gone](posts/008-the-handle-that-knows-its-object-is-gone.md) | Inside the engine: handles | Draft |
 | 009 | [From entity to pixel](posts/009-from-entity-to-pixel.md) | Inside the engine: render pipeline | Draft |
@@ -84,4 +84,5 @@ Every completed phase gets at least one progress post. A notable design decision
 - Claude Code is named as my development assistant wherever the story touches on how the work gets done.
 - No invented anecdotes. Anything only I can tell is marked `[TO WRITE: ...]` and written by me before publishing.
 - Numbers come from a real run. Screenshots come from the real engine, with no paint-over.
-- Screenshots of third-party assets are only published if their licence allows it on a paid platform, with attribution.
+- Screenshots of third-party assets are only published if their licence allows it on a paid platform. The factory's free textures are cleared for Patreon screenshots.
+- A screenshot shows the engine as it was at the end of the step its post covers: the commit is checked out and built again to take it, never the current version.

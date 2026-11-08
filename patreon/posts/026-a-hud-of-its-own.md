@@ -3,7 +3,7 @@ title: "A HUD of its own"
 type: progress
 status: draft, 1 passage for me to write
 covers: Phase 8.1, the game's interface and HUD (4 November 2026)
-images: []
+images: [shot-026-hud.png]
 ---
 
 # A HUD of its own
@@ -12,7 +12,9 @@ Until now, the demo's health, ammunition and crosshair were drawn by the engine'
 
 [TO WRITE: what the original HUD meant to me, or a memory of making hud.png.]
 
-*Still no screenshot, for the same licence reason as before.*
+![The game with its HUD: health and armor bottom left, ammunition bottom right, the flashlight icon top right, a crosshair](../images/shot-026-hud.png)
+
+*The new HUD, in a build without the developer tools, at the end of step 8.1.*
 
 ## Drawing like a painter, every frame
 

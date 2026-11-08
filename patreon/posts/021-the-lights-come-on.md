@@ -3,7 +3,7 @@ title: "The lights come on"
 type: progress
 status: draft, 1 passage for me to write
 covers: Phase 7.1 (3 November 2026)
-images: []
+images: [shot-021-lamp.png, shot-021-alarms.png]
 ---
 
 # The lights come on
@@ -12,7 +12,13 @@ Until now, the factory's darkness was a trick: fog that swallowed everything a f
 
 [TO WRITE: what it felt like to walk into the first lit room.]
 
-*Still no screenshot: the diffuse textures are free assets whose licences I have to find first.*
+![Lockers and floor tiles in the pool of a ceiling lamp, with the relief of the tiles visible](../images/shot-021-lamp.png)
+
+*A ceiling lamp over the lockers, with the normal maps back, at the end of step 7.1.*
+
+![The central hall behind its bars, with two red alarm lights](../images/shot-021-alarms.png)
+
+*The alarms in the central hall. Their red light still goes through the bars: shadows come next.*
 
 ## Every lamp of the old level
 

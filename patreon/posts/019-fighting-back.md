@@ -3,7 +3,7 @@ title: "Fighting back"
 type: progress
 status: draft, 1 passage for me to write
 covers: Phase 6.4 (2 November 2026)
-images: [zombie-states.png]
+images: [shot-019-zombie.png, zombie-states.png]
 ---
 
 # Fighting back
@@ -12,7 +12,9 @@ The factory's zombies now hunt you, and you can shoot back. That closes Phase 6:
 
 [TO WRITE: the first fight against a zombie in the new engine.]
 
-*No screenshot yet, for the same reason as last time: the textures are free assets whose licences I still have to find.*
+![A zombie walking toward the player, who holds the handgun](../images/shot-019-zombie.png)
+
+*A zombie closing in, at the end of Phase 6. The health and ammunition still live in the debug overlay, top left.*
 
 ## Two weapons
 

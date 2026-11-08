@@ -3,7 +3,7 @@ title: "Settings, and smoother edges"
 type: progress
 status: draft, 1 passage for me to write
 covers: engine settings and antialiasing (4 November 2026)
-images: []
+images: [shot-025-antialiasing.png]
 ---
 
 # Settings, and smoother edges
@@ -12,7 +12,9 @@ Until now, every setting of the engine lived in the demo's own file. That worked
 
 [TO WRITE: which of these settings I change first in a game, and what I set them to.]
 
-*Still no screenshot, for the same licence reason as before.*
+![The top edge of the handgun three times: jagged, smoothed by FXAA, smoothed by MSAA](../images/shot-025-antialiasing.png)
+
+*The edge of the handgun with antialiasing off, FXAA and MSAA 8x, enlarged 2.5 times without smoothing.*
 
 ## One file for the engine
 

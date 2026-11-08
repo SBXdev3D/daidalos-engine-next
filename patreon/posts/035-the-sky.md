@@ -3,7 +3,7 @@ title: "The sky is back"
 type: progress
 status: draft, 1 passage for me to write
 covers: Phase 9.6, the sky (8 November 2026)
-images: [the open room, raster and path traced, once screenshots can be published]
+images: [shot-035-sky.png, shot-035-path-traced.png]
 ---
 
 # The sky is back
@@ -22,9 +22,17 @@ There was one trap. The old engine measured "front" the other way round from the
 
 The sky is drawn last, behind everything, only on the pixels that nothing else covered. Indoors, that's none, and it costs almost nothing.
 
+![The open hall twice: a black opening above on the left, a cloudy night sky with the moon on the right](../images/shot-035-sky.png)
+
+*The open hall, before and after this step, from the same spot.*
+
 ## Rays find it too
 
 This is the part that matters for what comes next. Since step 4, the path tracer follows light as it bounces, and some rays leave the level through the opening. Until now they found a plain color. Now they find the sky, through the very same lookup as the screen. So the sky lights the room in the reference image, and the steps to come, bounced light and reflections, will see the same sky.
+
+![The open hall in the renderer and in the path tracer, where it is much darker, with the sky in both](../images/shot-035-path-traced.png)
+
+*The same view in the renderer and in the path tracer. The sky is in both; the path-traced factory is still very dark, as the last two posts said.*
 
 The level-loading script reads the sky's name from the original level and copies its six images, so nothing was placed by hand.
 

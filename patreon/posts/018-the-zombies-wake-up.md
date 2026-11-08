@@ -3,7 +3,7 @@ title: "The zombies wake up"
 type: progress
 status: draft, 1 passage for me to write
 covers: Phase 6.3 (2 November 2026)
-images: [skinning.png]
+images: [shot-018-zombie.png, shot-018-fan.png, skinning.png]
 ---
 
 # The zombies wake up
@@ -12,7 +12,13 @@ The zombies of the old factory are back, and they move. They wait, turn to face 
 
 [TO WRITE: what it was like to see the old zombie move in the new engine.]
 
-*No screenshot yet: the zombie's texture and the walls are free assets, and I still have to find their licences before I show them on a paid platform.*
+![A zombie standing in a room of the factory, facing the camera](../images/shot-018-zombie.png)
+
+*A zombie of the old demo in the new engine, at the end of step 6.3.*
+
+![A ventilation fan turning behind a grille](../images/shot-018-fan.png)
+
+*One of the fans, turning again behind its grille.*
 
 ## Skeletons and skins
 
@@ -49,7 +55,6 @@ The tests check the clips' math on the processor, and check on a real graphics c
 ## What isn't done
 
 - **The zombies don't walk anywhere.** They only turn and strike. Hunting the player, taking damage and dying come with the weapons, in the next step.
-- **No screenshots** until the licences of the free textures are found.
 - **Every joint is computed every frame**, even for a zombie behind three walls. That's fine for the four zombies of the level, and culling will fix it in a later phase.
 - **The Linux build is unchecked.** The automated build machines are paused, so this phase was only tested on Windows.
 

@@ -3,7 +3,7 @@ title: "Corners and creases"
 type: progress
 status: draft, 1 passage for me to write
 covers: Phase 7.3 (3 November 2026)
-images: []
+images: [shot-023-ambient-occlusion.png]
 ---
 
 # Corners and creases
@@ -12,7 +12,9 @@ This part of Phase 7 is less spectacular than lamps and shadows, but it changes 
 
 [TO WRITE: what I noticed first when walking through the factory with these changes.]
 
-*Still no screenshot, for the same licence reason as before.*
+![The same view of the lockers twice, the right one darker where the lockers meet the floor](../images/shot-023-ambient-occlusion.png)
+
+*The same spot with ambient occlusion off and on (`renderer.ambient_occlusion`), at the end of step 7.3. Look at the foot of the lockers.*
 
 ## Light from above
 

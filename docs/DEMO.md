@@ -102,4 +102,4 @@ Some legacy content is left out:
 - `test.wav` and `test2.wav`, which are leftover tests.
 - `enter_the_maze.wav`, the level's ambient track, which is committed as a 3.4 MB OGG file instead.
 
-The site the free assets came from is not recorded yet, and Patreon screenshots need it for attribution.
+The site the free assets came from is not recorded yet. The author confirmed on 8 November 2026 that the textures are free to use and that screenshots showing them can be published on Patreon.

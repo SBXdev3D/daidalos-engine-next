@@ -3,7 +3,7 @@ title: "What rays see"
 type: progress
 status: draft, 1 passage for me to write
 covers: Phase 9.3, acceleration structures (7 November 2026)
-images: [the debug view and the lit view from the same spot, once screenshots can be published]
+images: [shot-032-ray-view.png]
 ---
 
 # What rays see
@@ -29,6 +29,10 @@ I planned to rebuild those trees from scratch every frame. Measured, rebuilding 
 ## Seeing it
 
 To check all this, the engine has a new debug view: one ray per pixel from the camera, each object in its own color, shaded by the angle of the face it hits. Side by side with the normal view, walls, bars, lamps and the gun are in the same places, and the fan, an animated mesh, turns behind its grille.
+
+![A fan behind a grille, lit on the left and in flat colors on the right](../images/shot-032-ray-view.png)
+
+*The same spot in the lit view and in the ray debug view, at the end of step 3. The fan turned a little between the two runs.*
 
 ## The numbers
 

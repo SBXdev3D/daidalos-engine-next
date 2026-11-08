@@ -3,7 +3,7 @@ title: "Press Escape"
 type: progress
 status: draft, 1 passage for me to write
 covers: Phase 8.2, menus, pausing and settings (6 November 2026)
-images: []
+images: [shot-028-loading.png, shot-028-main-menu.png, shot-028-options.png]
 ---
 
 # Press Escape
@@ -12,7 +12,17 @@ Until now, the demo dropped you straight into the factory. Escape quit at once, 
 
 [TO WRITE: what menus and options meant for the original Daidalos, or how the old loading gear came to be.]
 
-*Still no screenshot, for the same licence reason as before.*
+![LOADING in the middle of a black screen, with a red gear in the bottom-right corner](../images/shot-028-loading.png)
+
+*The loading screen and the old gear.*
+
+![The main menu over the dark factory: DAIDALOS, New game, Options, Quit](../images/shot-028-main-menu.png)
+
+*The main menu, over the factory.*
+
+![The options screen with video, sound and controls settings](../images/shot-028-options.png)
+
+*The options. All three from the end of step 8.2, in a build without the developer tools.*
 
 ## The old gear turns again
 

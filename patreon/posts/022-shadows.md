@@ -3,7 +3,7 @@ title: "Light stops at the walls"
 type: progress
 status: draft, 1 passage for me to write
 covers: Phase 7.2 (3 November 2026)
-images: []
+images: [shot-022-flashlight-shadow.png]
 ---
 
 # Light stops at the walls
@@ -12,7 +12,9 @@ Last time the factory's lamps came back on, but their light went straight throug
 
 [TO WRITE: a moment where a shadow changed how the factory feels.]
 
-*Still no screenshot, for the same licence reason as before.*
+![The flashlight lights a zombie, whose shadow falls on the wall behind it, to the right](../images/shot-022-flashlight-shadow.png)
+
+*The flashlight, held in the left hand, throws the zombie's shadow to its right. End of step 7.2.*
 
 The old engine had these shadows too: its first lit render had a fan throwing a moving shadow on the room, the flashlight cast shadows, and the alarms swept red light through the bars, the pillars and the crates.
 
