@@ -149,7 +149,6 @@ cmake/                CMake helper functions
 scripts/              development scripts
 docs/                 conventions and decision records
 assets/               the demo's level, and sample assets that are downloaded and not committed
-patreon/              drafts of the development diary
 ```
 
 ## Licence
