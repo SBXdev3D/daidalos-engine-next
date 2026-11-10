@@ -270,6 +270,8 @@ Effects are created on the Renderer from a `ParticleEffectDesc`; `AssetLibrary::
 
 CI runs one job on pull requests (ADR-0014): the formatting check, then Linux Clang Debug with AddressSanitizer and UBSan, with all GPU tests on lavapipe under a virtual display. Pull requests that only change documentation skip it. Windows MSVC (Debug, Release, ASan, Profile) is built and tested locally.
 
+A tag `vX.Y.Z` runs the Release workflow (ADR-0038): it builds the `*-shipping` presets on Windows and Linux, packages each with CPack, and creates a draft GitHub release that is published by hand.
+
 ## Known gaps
 
 - No tool produces KTX2 files yet, although the loader reads them.
