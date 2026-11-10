@@ -13,6 +13,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -30,6 +31,9 @@ struct FrameTargets {
     rhi::TextureHandle occlusion;
     /// Index of the top-level acceleration structure the frame traces, for FrameData.
     std::uint32_t accelerationStructure = 0;
+    /// Where the frame samples each pixel, relative to its center, in pixels, y down: the jitter of
+    /// temporal antialiasing (ADR-0037). Motion vectors leave it out.
+    glm::vec2 jitter{0.0f};
 };
 
 /// A draw as rays see it (ADR-0033). Rigid draws use their mesh's bottom-level structure; skinned draws
@@ -46,18 +50,11 @@ struct TracedDraw {
     bool castsShadows = true;
 };
 
-/// What the mesh pass is created with.
-struct MeshPassSettings {
-    /// Samples per pixel of the targets of the pre-pass and the mesh pass.
-    std::uint32_t samples = 1;
-};
-
 /// Owns the meshes, the materials and the pipelines that draw them. It works on any target, so that
 /// tests can run it without a window. The Device must outlive it.
 class MeshPass {
 public:
-    static core::Result<MeshPass> Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat,
-                                         const MeshPassSettings& settings = {});
+    static core::Result<MeshPass> Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
 
     MeshPass(MeshPass&& other) noexcept;
     MeshPass& operator=(MeshPass&& other) = delete;
@@ -73,10 +70,9 @@ public:
 
     /// Normals of the pre-pass: world normals, times 0.5 plus 0.5.
     static constexpr rhi::Format kNormalFormat = rhi::Format::Rgba8Unorm;
-
-    /// Rebuilds the pipelines of the pre-pass and the mesh pass for targets with this many samples per
-    /// pixel. On failure the current pipelines stay in use.
-    [[nodiscard]] core::Result<void> SetSamples(std::uint32_t samples);
+    /// Motion vectors of the pre-pass, its second target: where each pixel's surface was in the previous
+    /// frame minus where it is, in texture coordinates (ADR-0037).
+    static constexpr rhi::Format kMotionFormat = rhi::Format::Rg16Float;
 
     /// Replaces the shaders of the mesh pass. The pre-pass uses the same vertex shader, so that both
     /// compute the same depth. On failure the current pipelines stay in use.
@@ -105,15 +101,21 @@ public:
     [[nodiscard]] rhi::BufferHandle SkinnedVertices() const {
         return m_skinningJobs.empty() ? rhi::BufferHandle{} : m_skinned;
     }
+    /// Where the skinned vertices were in the previous frame, which the pre-pass reads for motion vectors.
+    /// Null when the frame has no skinned draw.
+    [[nodiscard]] rhi::BufferHandle PreviousSkinnedPositions() const {
+        return m_skinningJobs.empty() ? rhi::BufferHandle{} : m_previousSkinned;
+    }
     /// The prepared frame's draws, in the order of its instances: a ray's custom index is an instance.
     [[nodiscard]] std::span<const TracedDraw> TracedDraws() const { return m_traced; }
     /// The storage index of the prepared frame's instances.
     [[nodiscard]] std::uint32_t InstanceDataIndex() const;
-    /// The view and projection of the prepared frame.
+    /// The view and projection of the prepared frame, without jitter.
     [[nodiscard]] const glm::mat4& ViewProjection() const { return m_viewProjection; }
     /// The storage index of the material table.
     [[nodiscard]] std::uint32_t MaterialDataIndex() const { return m_device->StorageIndex(m_materialTable); }
-    /// Writes depth and normals, inside a rendering scope with a kNormalFormat target and a cleared depth.
+    /// Writes depth, normals and motion vectors, inside a rendering scope with a kNormalFormat target, a
+    /// kMotionFormat target and a cleared depth. Skinned draws read PreviousSkinnedPositions.
     void RecordPrepass(rhi::CommandList& commands);
     /// Shades the prepared frame inside a rendering scope whose depth holds the pre-pass's: each pixel is
     /// shaded once, where its depth equals the pre-pass's. Then draws the sky where nothing was drawn, if
@@ -170,7 +172,7 @@ private:
         std::uint64_t clusterLightCapacity = 0;
     };
 
-    MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat, const MeshPassSettings& settings);
+    MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
 
     [[nodiscard]] core::Result<void> CreateClusterBuffers();
     /// The pipelines of the pre-pass and the mesh pass, one-sided and double-sided.
@@ -196,7 +198,6 @@ private:
     rhi::Format m_colorFormat;
     rhi::Format m_depthFormat;
     Pipelines m_pipelines;
-    std::uint32_t m_samples;
     /// The shaders of the mesh pass, to rebuild its pipelines.
     std::vector<std::uint32_t> m_vertexShader;
     std::vector<std::uint32_t> m_fragmentShader;
@@ -238,11 +239,17 @@ private:
     std::vector<SortedDraw> m_sorted;
     /// The skinned vertices of the frame's skinned draws, in world space, written by the skinning pass.
     rhi::BufferHandle m_skinned;
+    /// Their positions in the previous frame, skinned with the previous joints: three floats each.
+    rhi::BufferHandle m_previousSkinned;
+    /// Joints of the prepared frame; the previous joints follow them in the frame slot's buffer.
+    std::uint32_t m_jointCount = 0;
     std::uint64_t m_skinnedCapacity = 0;
     rhi::PipelineHandle m_skinningPipeline;
     std::vector<SkinningJob> m_skinningJobs;
     std::vector<TracedDraw> m_traced;
     glm::mat4 m_viewProjection{1.0f};
+    /// Of the last frame prepared, for its successor's motion vectors.
+    std::optional<glm::mat4> m_previousViewProjection;
     bool m_hasSky = false;
 };
 

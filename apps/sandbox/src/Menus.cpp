@@ -199,9 +199,9 @@ MenuChoice DrawOptions(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud
     section("VIDEO");
     toggle("Fullscreen", "window.fullscreen");
     toggle("Vertical sync", "renderer.vsync");
-    constexpr std::array<std::string_view, 5> kModes{"off", "fxaa", "msaa2", "msaa4", "msaa8"};
-    constexpr std::array<std::string_view, 5> kModeNames{"Off", "FXAA", "MSAA 2x", "MSAA 4x", "MSAA 8x"};
-    const std::string mode = SettingOr<std::string>(app, "renderer.antialiasing", "fxaa");
+    constexpr std::array<std::string_view, 2> kModes{"off", "taa"};
+    constexpr std::array<std::string_view, 2> kModeNames{"Off", "TAA"};
+    const std::string mode = SettingOr<std::string>(app, "renderer.antialiasing", "taa");
     std::size_t modeIndex = static_cast<std::size_t>(std::find(kModes.begin(), kModes.end(), mode) - kModes.begin());
     modeIndex = modeIndex < kModes.size() ? modeIndex : 1;
     if (ui.Choice("Antialiasing", row(), modeIndex, kModeNames)) {

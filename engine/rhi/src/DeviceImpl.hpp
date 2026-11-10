@@ -67,7 +67,6 @@ struct TextureData {
     std::uint32_t layers = 1;
     Format format = Format::Undefined;
     TextureUsage usage = TextureUsage::None;
-    std::uint32_t samples = 1;
     AccessState access;
     std::uint32_t bindlessIndex = 0;
     std::uint32_t storageIndex = 0;

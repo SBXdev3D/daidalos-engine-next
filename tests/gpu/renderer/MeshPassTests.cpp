@@ -6,8 +6,10 @@
 #include <daidalos/resources/ImageData.hpp>
 
 #include <glm/ext/matrix_transform.hpp>
+#include <glm/gtc/packing.hpp>
 
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -22,6 +24,7 @@
 #include "RayTracingScene.hpp"
 #include "RenderGraph.hpp"
 #include "ShaderCompiler.hpp"
+#include "TemporalResolvePass.hpp"
 
 using namespace daidalos;
 using gpu_tests::GpuTest;
@@ -78,11 +81,11 @@ protected:
         ASSERT_TRUE(scene.has_value()) << core::Format(scene.error());
         m_scene.emplace(std::move(*scene));
 
-        const core::Result<rhi::TextureHandle> color =
-            Device().CreateTexture({.extent = kExtent,
-                                    .format = kColorFormat,
-                                    .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::TransferSrc,
-                                    .name = "Color"});
+        const core::Result<rhi::TextureHandle> color = Device().CreateTexture(
+            {.extent = kExtent,
+             .format = kColorFormat,
+             .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::TransferSrc | rhi::TextureUsage::Sampled,
+             .name = "Color"});
         ASSERT_TRUE(color.has_value());
         m_color = *color;
         const core::Result<rhi::TextureHandle> depth =
@@ -99,6 +102,20 @@ protected:
                                     .name = "Normals"});
         ASSERT_TRUE(normals.has_value());
         m_normals = *normals;
+        const core::Result<rhi::TextureHandle> motion = Device().CreateTexture(
+            {.extent = kExtent,
+             .format = MeshPass::kMotionFormat,
+             .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::TransferSrc | rhi::TextureUsage::Sampled,
+             .name = "Motion"});
+        ASSERT_TRUE(motion.has_value());
+        m_motion = *motion;
+        const core::Result<rhi::BufferHandle> motionReadback =
+            Device().CreateBuffer({.size = std::uint64_t{kExtent.width} * kExtent.height * 4,
+                                   .usage = rhi::BufferUsage::TransferDst,
+                                   .memory = rhi::MemoryLocation::GpuToCpu,
+                                   .name = "Motion readback"});
+        ASSERT_TRUE(motionReadback.has_value());
+        m_motionReadback = *motionReadback;
         const core::Result<rhi::BufferHandle> readback =
             Device().CreateBuffer({.size = std::uint64_t{kExtent.width} * kExtent.height * 4,
                                    .usage = rhi::BufferUsage::TransferDst,
@@ -115,7 +132,9 @@ protected:
             Device().DestroyTexture(m_color);
             Device().DestroyTexture(m_depth);
             Device().DestroyTexture(m_normals);
+            Device().DestroyTexture(m_motion);
             Device().DestroyBuffer(m_readback);
+            Device().DestroyBuffer(m_motionReadback);
         }
         GpuTest::TearDown();
     }
@@ -136,7 +155,8 @@ protected:
         return material.value_or(MaterialHandle{});
     }
 
-    void Render(const SceneView& view) {
+    // Renders the view, each pixel sampled at jitter from its center (in pixels).
+    void Render(const SceneView& view, glm::vec2 jitter = glm::vec2(0.0f)) {
         ASSERT_TRUE(
             Device()
                 .Submit([&](rhi::CommandList& commands) {
@@ -144,7 +164,9 @@ protected:
                     const core::Result<std::uint32_t> structure = m_scene->Reserve(0, view.draws.size());
                     ASSERT_TRUE(structure.has_value());
                     EXPECT_TRUE(
-                        m_pass->Prepare(view, {.extent = kExtent, .accelerationStructure = *structure}).has_value());
+                        m_pass
+                            ->Prepare(view, {.extent = kExtent, .accelerationStructure = *structure, .jitter = jitter})
+                            .has_value());
                     renderer::RenderGraph graph;
                     m_pass->AddSkinning(graph);
                     rhi::AccelerationStructureHandle traced;
@@ -154,13 +176,15 @@ protected:
                         traced = m_scene->Structure();
                     }
                     const rhi::BufferUse skinned{m_pass->SkinnedVertices(), rhi::Access::VertexInputRead};
-                    graph.AddPass({.name = "Prepass",
-                                   .rendering = rhi::RenderingDesc{.colorTarget = m_normals,
-                                                                   .clearColor = glm::vec4(0.0f),
-                                                                   .depthTarget = m_depth,
-                                                                   .clearDepth = 0.0f},
-                                   .buffers = {skinned}},
-                                  [&](rhi::CommandList& list) { m_pass->RecordPrepass(list); });
+                    graph.AddPass(
+                        {.name = "Prepass",
+                         .rendering = rhi::RenderingDesc{.colorTarget = m_normals,
+                                                         .clearColor = glm::vec4(0.0f),
+                                                         .moreColorTargets = {{m_motion, glm::vec4(0.0f)}},
+                                                         .depthTarget = m_depth,
+                                                         .clearDepth = 0.0f},
+                         .buffers = {skinned, {m_pass->PreviousSkinnedPositions(), rhi::Access::VertexShaderRead}}},
+                        [&](rhi::CommandList& list) { m_pass->RecordPrepass(list); });
                     graph.AddPass({.name = "Meshes",
                                    .rendering = rhi::RenderingDesc{.colorTarget = m_color,
                                                                    .clearColor = kBackground,
@@ -171,8 +195,20 @@ protected:
                     graph.Execute(commands);
                     commands.Transition(m_color, rhi::TextureState::TransferSrc);
                     commands.CopyTextureToBuffer(m_color, m_readback);
+                    commands.Transition(m_motion, rhi::TextureState::TransferSrc);
+                    commands.CopyTextureToBuffer(m_motion, m_motionReadback);
                 })
                 .has_value());
+    }
+
+    // The motion vector of a pixel, counted from the top-left corner: where its surface was in the previous
+    // frame minus where it is, in pixels.
+    [[nodiscard]] glm::vec2 Motion(std::uint32_t x, std::uint32_t y) {
+        std::array<std::uint16_t, 2> halves{};
+        const std::size_t offset = (std::size_t{y} * kExtent.width + x) * sizeof(halves);
+        std::memcpy(halves.data(), Device().Mapped(m_motionReadback).data() + offset, sizeof(halves));
+        return glm::vec2(glm::unpackHalf1x16(halves[0]) * static_cast<float>(kExtent.width),
+                         glm::unpackHalf1x16(halves[1]) * static_cast<float>(kExtent.height));
     }
 
     // Red, green and blue of a pixel, counted from the top-left corner.
@@ -190,7 +226,9 @@ protected:
     rhi::TextureHandle m_color;
     rhi::TextureHandle m_depth;
     rhi::TextureHandle m_normals;
+    rhi::TextureHandle m_motion;
     rhi::BufferHandle m_readback;
+    rhi::BufferHandle m_motionReadback;
 };
 
 } // namespace
@@ -583,12 +621,20 @@ protected:
         core::Result<rhi::TextureHandle> texture = renderer::CreateTexture(Device(), image, "White");
         ASSERT_TRUE(texture.has_value());
         m_white = *texture;
+        const core::Result<rhi::TextureHandle> reactive =
+            Device().CreateTexture({.extent = kExtent,
+                                    .format = renderer::ParticlePass::kReactiveFormat,
+                                    .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::TransferSrc,
+                                    .name = "Reactive"});
+        ASSERT_TRUE(reactive.has_value());
+        m_reactive = *reactive;
     }
 
     void TearDown() override {
         if (m_particles.has_value()) {
             m_particles.reset();
             Device().DestroyTexture(m_white);
+            Device().DestroyTexture(m_reactive);
         }
         MeshPassTest::TearDown();
     }
@@ -617,8 +663,9 @@ protected:
                     EXPECT_TRUE(
                         m_particles->AddSimulation(graph, spawns, step, m_pass->FrameDataIndex(), m_depth, m_normals)
                             .has_value());
-                    m_particles->AddDraw(graph, m_pass->FrameDataIndex(), m_depth, m_color, glm::vec3(1, 0, 0),
-                                         glm::vec3(0, 1, 0));
+                    m_particles->AddDraw(graph, m_pass->FrameDataIndex(), m_depth, m_color, m_reactive,
+                                         glm::vec3(1, 0, 0), glm::vec3(0, 1, 0));
+
                     graph.Execute(commands);
                     commands.Transition(m_color, rhi::TextureState::TransferSrc);
                     commands.CopyTextureToBuffer(m_color, m_readback);
@@ -631,6 +678,7 @@ protected:
 
     std::optional<renderer::ParticlePass> m_particles;
     rhi::TextureHandle m_white;
+    rhi::TextureHandle m_reactive;
 };
 
 } // namespace
@@ -640,6 +688,23 @@ TEST_F(ParticleTest, SpawnedParticleIsDrawnWhereItAppears) {
     RenderWithParticles({TestCamera()}, std::span(&spawn, 1), kPastFadeIn);
     EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0));
     EXPECT_TRUE(IsBackground(4, 4));
+}
+
+TEST_F(ParticleTest, ParticlesMarkWhatTheyCoverAsReactive) {
+    const renderer::ParticleSpawn spawn{.effect = Effect({0.0f, 1.0f, 0.0f}), .count = 1};
+    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), kPastFadeIn);
+    ASSERT_TRUE(Device()
+                    .Submit([&](rhi::CommandList& commands) {
+                        commands.Transition(m_reactive, rhi::TextureState::TransferSrc);
+                        commands.CopyTextureToBuffer(m_reactive, m_motionReadback);
+                    })
+                    .has_value());
+    const auto reactive = [&](std::uint32_t x, std::uint32_t y) {
+        return static_cast<int>(reinterpret_cast<const std::uint8_t*>(
+            Device().Mapped(m_motionReadback).data())[std::size_t{y} * kExtent.width + x]);
+    };
+    EXPECT_EQ(reactive(32, 32), 255) << "an opaque particle";
+    EXPECT_EQ(reactive(4, 4), 0) << "no particle";
 }
 
 TEST_F(ParticleTest, ParticleDisappearsAtTheEndOfItsLife) {
@@ -837,4 +902,210 @@ TEST_F(MeshPassTest, JointBufferGrowsWithTheNumberOfJoints) {
     view.jointMatrices.back() = glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     Render(view);
     EXPECT_FALSE(IsBackground(44, 32));
+}
+
+namespace {
+
+// How far, in pixels, half a meter across moves on the screen at the test camera's distance of 5 m: half
+// the view is 5 * tan(30 degrees) meters wide, and 32 pixels.
+const float kHalfMeterInPixels = 0.5f / (5.0f * std::tan(glm::radians(30.0f))) * 32.0f;
+
+} // namespace
+
+TEST_F(MeshPassTest, AFirstFrameHasNoMotion) {
+    const MeshHandle mesh = Mesh(MakeQuad(-10.0f, 10.0f, -10.0f, 10.0f, 0.0f));
+    Render({TestCamera(), {{mesh, glm::mat4(1.0f), Material({1.0f, 1.0f, 1.0f})}}});
+    EXPECT_EQ(Motion(32, 32), glm::vec2(0.0f));
+}
+
+TEST_F(MeshPassTest, AMovingCameraMovesWhatItSees) {
+    const MeshHandle mesh = Mesh(MakeQuad(-10.0f, 10.0f, -10.0f, 10.0f, 0.0f));
+    SceneView view{TestCamera(), {{mesh, glm::mat4(1.0f), Material({1.0f, 1.0f, 1.0f})}}};
+    Render(view);
+    // Half a meter to the right: the wall was further right on the screen.
+    view.camera->view = glm::translate(glm::mat4(1.0f), glm::vec3(-0.5f, 0.0f, -5.0f));
+    Render(view);
+    for (const std::uint32_t x : {10U, 32U, 50U}) {
+        EXPECT_NEAR(Motion(x, 20).x, kHalfMeterInPixels, 0.05f);
+        EXPECT_NEAR(Motion(x, 20).y, 0.0f, 0.05f);
+    }
+
+    view.cut = true;
+    Render(view);
+    EXPECT_EQ(Motion(32, 32), glm::vec2(0.0f)) << "nothing moves across a cut";
+}
+
+TEST_F(MeshPassTest, AMovedDrawGivesWhereItWas) {
+    const MeshHandle mesh = Mesh(MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f));
+    renderer::DrawItem draw{mesh, glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, 0.0f, 0.0f)),
+                            Material({1.0f, 1.0f, 1.0f})};
+    draw.previousWorld = glm::mat4(1.0f);
+    Render({TestCamera(), {draw}});
+    // Half a meter right of the center: it came from the left.
+    EXPECT_NEAR(Motion(37, 32).x, -kHalfMeterInPixels, 0.05f);
+    EXPECT_NEAR(Motion(37, 32).y, 0.0f, 0.05f);
+    EXPECT_EQ(Motion(2, 32), glm::vec2(0.0f)) << "where nothing is drawn";
+
+    draw.previousWorld.reset();
+    Render({TestCamera(), {draw}});
+    EXPECT_EQ(Motion(37, 32), glm::vec2(0.0f)) << "a draw without a previous matrix stood still";
+}
+
+TEST_F(MeshPassTest, ASkinnedDrawMovesWithItsPreviousJoints) {
+    MeshData data = MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f);
+    data.skin.assign(data.vertices.size(), resources::SkinWeights{});
+    const MeshHandle mesh = Mesh(data);
+    SceneView view{TestCamera(), {{mesh, glm::mat4(1.0f), Material({1.0f, 1.0f, 1.0f}), 0}}};
+    view.jointMatrices = {glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, 0.0f, 0.0f))};
+    view.previousJointMatrices = {glm::mat4(1.0f)};
+    Render(view);
+    EXPECT_NEAR(Motion(37, 32).x, -kHalfMeterInPixels, 0.05f);
+    EXPECT_NEAR(Motion(37, 32).y, 0.0f, 0.05f);
+
+    view.previousJointMatrices.clear();
+    Render(view);
+    EXPECT_EQ(Motion(37, 32), glm::vec2(0.0f)) << "joints without previous matrices stood still";
+}
+
+namespace {
+
+// The mesh pass's frames, resolved by temporal antialiasing (ADR-0037).
+class TemporalTest : public MeshPassTest {
+protected:
+    void SetUp() override {
+        MeshPassTest::SetUp();
+        if (IsSkipped() || HasFatalFailure()) {
+            return;
+        }
+        core::Result<renderer::TemporalResolvePass> resolve = renderer::TemporalResolvePass::Create(Device());
+        ASSERT_TRUE(resolve.has_value()) << core::Format(resolve.error());
+        m_resolve.emplace(std::move(*resolve));
+        ASSERT_TRUE(m_resolve->Resize(kExtent).has_value());
+        const core::Result<rhi::TextureHandle> reactive =
+            Device().CreateTexture({.extent = kExtent,
+                                    .format = renderer::ParticlePass::kReactiveFormat,
+                                    .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
+                                    .name = "Reactive"});
+        ASSERT_TRUE(reactive.has_value());
+        m_reactive = *reactive;
+        const core::Result<rhi::BufferHandle> readback =
+            Device().CreateBuffer({.size = std::uint64_t{kExtent.width} * kExtent.height * sizeof(glm::vec4),
+                                   .usage = rhi::BufferUsage::TransferDst,
+                                   .memory = rhi::MemoryLocation::GpuToCpu,
+                                   .name = "Resolved readback"});
+        ASSERT_TRUE(readback.has_value());
+        m_resolvedReadback = *readback;
+    }
+
+    void TearDown() override {
+        if (m_resolve.has_value()) {
+            m_resolve.reset();
+            Device().DestroyTexture(m_reactive);
+            Device().DestroyBuffer(m_resolvedReadback);
+        }
+        MeshPassTest::TearDown();
+    }
+
+    // Renders and resolves frames of the view, each with the next jitter.
+    void Resolve(const SceneView& view, int frames = 1) {
+        for (int frame = 0; frame < frames; ++frame) {
+            Render(view, renderer::Jitter(m_frame++));
+            ASSERT_TRUE(Device()
+                            .Submit([&](rhi::CommandList& commands) {
+                                renderer::RenderGraph graph;
+                                // No particles: the reactive mask is empty.
+                                graph.AddPass({.name = "Reactive",
+                                               .rendering = rhi::RenderingDesc{.colorTarget = m_reactive,
+                                                                               .clearColor = glm::vec4(0.0f)}},
+                                              [](rhi::CommandList& /*list*/) {});
+                                m_resolve->AddTo(graph, {.frameBuffer = m_pass->FrameDataIndex(),
+                                                         .color = m_color,
+                                                         .depth = m_depth,
+                                                         .motion = m_motion,
+                                                         .reactive = m_reactive});
+                                graph.Execute(commands);
+                                commands.Transition(m_resolve->Output(), rhi::TextureState::TransferSrc);
+                                commands.CopyTextureToBuffer(m_resolve->Output(), m_resolvedReadback);
+                            })
+                            .has_value());
+        }
+    }
+
+    // The red channel of the last resolved frame, from 0 to 1.
+    [[nodiscard]] float Resolved(std::uint32_t x, std::uint32_t y) {
+        glm::vec4 pixel;
+        std::memcpy(&pixel,
+                    Device().Mapped(m_resolvedReadback).data() + (std::size_t{y} * kExtent.width + x) * sizeof(pixel),
+                    sizeof(pixel));
+        return pixel.r;
+    }
+
+    // The red channel of the last frame before the resolve, from 0 to 1.
+    [[nodiscard]] float Current(std::uint32_t x, std::uint32_t y) { return static_cast<float>(Pixel(x, y).r) / 255.0f; }
+
+    // A white wall left of a vertical edge 0.1 pixels right of the center of column 32: 5 of the 8 jitter
+    // positions of that column's pixels fall on the wall.
+    SceneView Edge() {
+        const float halfWidth = 5.0f * std::tan(glm::radians(30.0f));
+        const float edge = ((32.6f / 32.0f) - 1.0f) * halfWidth;
+        return {TestCamera(), {{Mesh(MakeQuad(-10.0f, edge, -10.0f, 10.0f, 0.0f)), glm::mat4(1.0f), m_white}}};
+    }
+
+    std::optional<renderer::TemporalResolvePass> m_resolve;
+    rhi::TextureHandle m_reactive;
+    rhi::BufferHandle m_resolvedReadback;
+    std::uint64_t m_frame = 0;
+    MaterialHandle m_white;
+};
+
+} // namespace
+
+TEST_F(TemporalTest, AFirstFrameIsResolvedAlone) {
+    m_white = Material({1.0f, 1.0f, 1.0f});
+    Resolve(Edge());
+    for (const std::uint32_t x : {20U, 32U, 40U}) {
+        EXPECT_NEAR(Resolved(x, 32), Current(x, 32), 0.003f) << x;
+    }
+}
+
+TEST_F(TemporalTest, AStillEdgeConvergesToItsCoverage) {
+    m_white = Material({1.0f, 1.0f, 1.0f});
+    const SceneView view = Edge();
+    Resolve(view, 32);
+    const float wall = Resolved(20, 32);
+    ASSERT_GT(wall, 0.2f);
+    EXPECT_NEAR(Resolved(31, 32), wall, 0.02f * wall);
+    // The resolve averages after a reversible tone map, x / (1 + x), as the screen will show the colors: the
+    // edge covers 5/8 of the wall there.
+    const auto mapped = [](float value) { return value / (1.0f + value); };
+    EXPECT_NEAR(mapped(Resolved(32, 32)) / mapped(wall), 5.0f / 8.0f, 0.1f)
+        << "the edge's pixels blend the wall and the background";
+    EXPECT_NEAR(Resolved(33, 32), 0.0f, 0.01f);
+
+    // A reset keeps none of the history: this jitter falls on the wall.
+    m_resolve->Reset();
+    m_frame = 0;
+    Resolve(view);
+    EXPECT_NEAR(Resolved(32, 32), wall, 0.02f * wall);
+}
+
+TEST_F(TemporalTest, AMovedObjectLeavesNoTrail) {
+    m_white = Material({1.0f, 1.0f, 1.0f});
+    const MeshHandle background = Mesh(MakeQuad(-10.0f, 10.0f, -10.0f, 10.0f, -1.0f));
+    const MeshHandle square = Mesh(MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f));
+    const glm::mat4 left = glm::translate(glm::mat4(1.0f), glm::vec3(-1.5f, 0.0f, 0.0f));
+    const glm::mat4 right = glm::translate(glm::mat4(1.0f), glm::vec3(1.5f, 0.0f, 0.0f));
+    SceneView view{TestCamera(),
+                   {{background, glm::mat4(1.0f), Material({0.2f, 0.2f, 0.2f})}, {square, left, m_white}}};
+    Resolve(view, 16);
+    const float square16 = Resolved(15, 32);
+    const float background16 = Resolved(48, 32);
+    ASSERT_GT(square16, background16 * 2.0f) << "the square stands out";
+
+    // It jumps across the screen in one frame, and its motion vectors say so.
+    view.draws[1].world = right;
+    view.draws[1].previousWorld = left;
+    Resolve(view);
+    EXPECT_NEAR(Resolved(15, 32), background16, 0.02f) << "where it was, only the background";
+    EXPECT_NEAR(Resolved(48, 32), square16, 0.02f) << "it carried its history along";
 }

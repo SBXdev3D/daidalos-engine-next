@@ -426,81 +426,67 @@ TEST_F(GpuTest, IndirectDrawUsesTheArgumentsTheGpuWrote) {
     }
 }
 
-TEST_F(GpuTest, MultisampledTargetsResolveToTheAverageColorAndTheFirstSamplesDepth) {
+TEST_F(GpuTest, ARenderingWritesSeveralColorTargets) {
     constexpr rhi::Extent kExtent{8, 8};
-    const std::uint32_t samples = std::min(4U, Device().Info().maxSamples);
-    if (samples < 2) {
-        GTEST_SKIP() << "The device has no multisampling";
-    }
-    const auto texture = [&](rhi::Format format, rhi::TextureUsage usage, std::uint32_t count, const char* name) {
+    const auto texture = [&](const char* name) {
         return Device()
-            .CreateTexture({.extent = kExtent, .format = format, .usage = usage, .samples = count, .name = name})
+            .CreateTexture({.extent = kExtent,
+                            .format = rhi::Format::Rgba8Unorm,
+                            .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::TransferSrc,
+                            .name = name})
             .value_or(rhi::TextureHandle{});
     };
-    const rhi::TextureHandle color = texture(rhi::Format::Rgba8Unorm, rhi::TextureUsage::ColorTarget, samples, "Color");
-    const rhi::TextureHandle depth = texture(rhi::Format::D32Float, rhi::TextureUsage::DepthTarget, samples, "Depth");
-    const rhi::TextureHandle resolved = texture(
-        rhi::Format::Rgba8Unorm, rhi::TextureUsage::ColorTarget | rhi::TextureUsage::TransferSrc, 1, "Resolved");
-    const rhi::TextureHandle resolvedDepth = texture(
-        rhi::Format::D32Float, rhi::TextureUsage::DepthTarget | rhi::TextureUsage::TransferSrc, 1, "Resolved depth");
-    const core::Result<rhi::BufferHandle> readback = Device().CreateBuffer(
-        {.size = 8 * 8 * 4, .usage = rhi::BufferUsage::TransferDst, .memory = rhi::MemoryLocation::GpuToCpu});
-    const core::Result<rhi::BufferHandle> depthReadback = Device().CreateBuffer(
-        {.size = 8 * 8 * 4, .usage = rhi::BufferUsage::TransferDst, .memory = rhi::MemoryLocation::GpuToCpu});
+    const std::array<rhi::TextureHandle, 2> targets{texture("First"), texture("Second")};
+    const auto readback = [&] {
+        return Device()
+            .CreateBuffer(
+                {.size = 8 * 8 * 4, .usage = rhi::BufferUsage::TransferDst, .memory = rhi::MemoryLocation::GpuToCpu})
+            .value_or(rhi::BufferHandle{});
+    };
+    const std::array<rhi::BufferHandle, 2> readbacks{readback(), readback()};
     const core::Result<rhi::PipelineHandle> triangle =
         Device().CreatePipeline({.vertexShader = rhi::ToSpirv(kHalfTriangleTestVsSpirv),
                                  .fragmentShader = rhi::ToSpirv(kHalfTriangleTestPsSpirv),
                                  .colorFormat = rhi::Format::Rgba8Unorm,
-                                 .depthFormat = rhi::Format::D32Float,
+                                 .moreColorFormats = {rhi::Format::Rgba8Unorm},
                                  .cull = rhi::CullMode::None,
-                                 .samples = samples,
                                  .name = "Half triangle"});
-    ASSERT_TRUE(color && depth && resolved && resolvedDepth && readback && depthReadback && triangle);
+    ASSERT_TRUE(targets[0] && targets[1] && readbacks[0] && readbacks[1] && triangle);
 
     ASSERT_TRUE(Device()
                     .Submit([&](rhi::CommandList& commands) {
-                        for (const rhi::TextureHandle target : {color, resolved}) {
+                        for (const rhi::TextureHandle target : targets) {
                             commands.Discard(target, rhi::TextureState::ColorTarget);
                         }
-                        commands.Discard(depth, rhi::TextureState::DepthTarget);
-                        const rhi::TextureUse depthResolve{resolvedDepth, rhi::Access::DepthResolve, true};
-                        commands.Use({&depthResolve, 1}, {});
-                        commands.BeginRendering({.colorTarget = color,
+                        commands.BeginRendering({.colorTarget = targets[0],
                                                  .clearColor = glm::vec4(0.0f),
-                                                 .depthTarget = depth,
-                                                 .clearDepth = 0.0f,
-                                                 .colorResolve = resolved,
-                                                 .depthResolve = resolvedDepth});
+                                                 .moreColorTargets = {{targets[1], glm::vec4(1.0f)}}});
                         commands.BindPipeline(*triangle);
                         commands.Draw(3);
                         commands.EndRendering();
-                        commands.Transition(resolved, rhi::TextureState::TransferSrc);
-                        commands.CopyTextureToBuffer(resolved, *readback);
-                        commands.Transition(resolvedDepth, rhi::TextureState::TransferSrc);
-                        commands.CopyTextureToBuffer(resolvedDepth, *depthReadback);
+                        for (std::size_t index = 0; index < targets.size(); ++index) {
+                            commands.Transition(targets[index], rhi::TextureState::TransferSrc);
+                            commands.CopyTextureToBuffer(targets[index], readbacks[index]);
+                        }
                     })
                     .has_value());
 
-    // Rows go down: below the diagonal, white; above, black; on it, half the samples of each.
-    const auto* pixels = reinterpret_cast<const std::uint8_t*>(Device().Mapped(*readback).data());
-    const auto red = [&](int x, int y) { return pixels[(y * 8 + x) * 4]; };
-    EXPECT_EQ(red(6, 1), 0);
-    EXPECT_EQ(red(1, 6), 255);
-    int between = 0;
-    for (int i = 0; i < 8; ++i) {
-        between += (red(i, i) > 0 && red(i, i) < 255) ? 1 : 0;
-    }
-    EXPECT_GT(between, 0) << "pixels on the edge average their samples";
-    float depthInside = 0.0f;
-    std::memcpy(&depthInside, Device().Mapped(*depthReadback).data() + (6 * 8 + 1) * 4, sizeof(float));
-    EXPECT_EQ(depthInside, 1.0f);
+    // Rows go down: below the diagonal, the triangle; above it, each target's clear color.
+    const auto red = [&](std::size_t target, int x, int y) {
+        return reinterpret_cast<const std::uint8_t*>(Device().Mapped(readbacks[target]).data())[(y * 8 + x) * 4];
+    };
+    EXPECT_EQ(red(0, 1, 6), 255);
+    EXPECT_NEAR(red(1, 1, 6), 64, 1);
+    EXPECT_EQ(red(0, 6, 1), 0);
+    EXPECT_EQ(red(1, 6, 1), 255);
 
     Device().DestroyPipeline(*triangle);
-    for (const rhi::TextureHandle target : {color, depth, resolved, resolvedDepth}) {
+    for (const rhi::TextureHandle target : targets) {
         Device().DestroyTexture(target);
     }
-    Device().DestroyBuffer(*readback);
-    Device().DestroyBuffer(*depthReadback);
+    for (const rhi::BufferHandle buffer : readbacks) {
+        Device().DestroyBuffer(buffer);
+    }
 }
 
 namespace {

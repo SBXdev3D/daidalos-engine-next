@@ -1,6 +1,7 @@
 # ADR-0026: The engine's settings file, and antialiasing
 
-- **Status:** Accepted, amended by ADR-0035 (the shadow settings are gone) and ADR-0028 (step 9.7 replaces the antialiasing)
+- **Status:** Accepted, amended by ADR-0035 (the shadow settings are gone); its antialiasing, FXAA and MSAA, is superseded by ADR-0037
+
 - **Date:** 2026-11-04
 
 ## Context

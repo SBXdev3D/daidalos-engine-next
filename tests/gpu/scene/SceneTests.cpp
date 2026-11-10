@@ -11,6 +11,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 using namespace daidalos;
 
@@ -129,6 +130,27 @@ TEST_F(ApplicationScene, SystemsRunAndTheCurrentSceneIsDrawn) {
     RUN_OR_SKIP(handler);
     EXPECT_TRUE(result.has_value());
     EXPECT_EQ(frameRuns, 4);
+}
+
+TEST_F(ApplicationScene, AScenesFirstViewAndATeleportCutTheView) {
+    FunctionHandler handler;
+    std::vector<bool> cuts;
+    handler.start = [&cuts](app::Application& app) -> core::Result<void> {
+        scene::Scene scene(app.Renderer(), DAI_TEST_ASSET_DIR);
+        renderer::SceneView view;
+        for (int frame = 0; frame < 4; ++frame) {
+            if (frame == 2) {
+                scene.CutView();
+            }
+            scene.Extract(view);
+            cuts.push_back(view.cut);
+        }
+        app.RequestQuit();
+        return {};
+    };
+    RUN_OR_SKIP(handler);
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(cuts, (std::vector<bool>{true, false, true, false}));
 }
 
 TEST_F(ApplicationScene, PausedSceneRunsNoSystems) {

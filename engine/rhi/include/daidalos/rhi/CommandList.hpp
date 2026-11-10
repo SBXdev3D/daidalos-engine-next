@@ -14,6 +14,7 @@
 #include <span>
 #include <string_view>
 #include <type_traits>
+#include <vector>
 
 namespace daidalos::rhi {
 
@@ -21,20 +22,25 @@ namespace detail {
 struct CommandRecording;
 } // namespace detail
 
+/// A color target after the first one of a rendering.
+struct ColorTarget {
+    TextureHandle texture;
+    /// Clears it. Without it, the previous content is kept.
+    std::optional<glm::vec4> clear;
+};
+
 struct RenderingDesc {
     /// Null to render depth only.
     TextureHandle colorTarget;
     /// Clears the color target. Without it, the previous content is kept.
     std::optional<glm::vec4> clearColor;
+    /// Further color targets, the fragment shader's outputs 1 and up, of the same size as the first. At
+    /// most kMaxColorTargets in all.
+    std::vector<ColorTarget> moreColorTargets;
     /// Null to render without depth.
     TextureHandle depthTarget;
     /// Clears the depth target. Reverse-Z clears to 0, the far plane.
     std::optional<float> clearDepth;
-    /// With multisampled targets: single-sample textures of the same size and format, used as ColorTarget
-    /// and as DepthResolve (Access), that receive the average color and the first sample's depth when the
-    /// rendering ends. Null to keep the samples only.
-    TextureHandle colorResolve;
-    TextureHandle depthResolve;
 };
 
 /// The next use of a texture. Discard drops its content: for a texture about to be overwritten.

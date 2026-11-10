@@ -21,6 +21,8 @@ namespace daidalos::scene {
 /// ecs::PropagateTransforms. The view goes through the given camera entity if it is alive and has a
 /// Camera. Otherwise, the camera with the lowest entity index is used.
 /// The vectors of the view are reused, so that a view kept between frames does not reallocate.
+/// Each drawn entity and joint keeps its matrix in a DrawnTransform, which the next extraction gives as
+/// the previous one; an entity drawn for the first time has no motion.
 void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity activeCamera = {});
 
 /// Adds the particles that each enabled ParticleEmitter emits over delta seconds, at its world transform.

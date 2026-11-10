@@ -25,15 +25,34 @@ struct VertexOutput {
     [[vk::location(1)]] float2 uv : TEXCOORD;
     [[vk::location(2)]] float3 worldPosition : POSITION;
     [[vk::location(3)]] float4 worldTangent : TANGENT;
+    // Without jitter, now and in the previous frame, for motion vectors (ADR-0037).
+    [[vk::location(4)]] float4 currentClip : CURRENT;
+    [[vk::location(5)]] float4 previousClip : PREVIOUS;
 };
 
-VertexOutput VSMain(VertexInput input) {
-    const float4x4 viewProjection = g_frames[g_push.frameBuffer][0].viewProjection;
-    const float4x4 world = g_instances[g_push.instanceBuffer][g_push.instanceIndex].world;
+// Where a vertex was in the previous frame: skinned with the previous joints, or placed by the draw's
+// previous matrix.
+float3 PreviousPosition(InstanceData instance, float3 position, uint vertexId) {
+    if (instance.previousPositions == kNoTexture) {
+        return mul(instance.previousWorld, float4(position, 1.0)).xyz;
+    }
+    const uint first = (instance.firstVertex + vertexId) * 3;
+    const StructuredBuffer<float> previous = g_vertexFloats[instance.previousPositions];
+    return float3(previous[first], previous[first + 1], previous[first + 2]);
+}
+
+// Skinned draws are bound at their first vertex, so the vertex index counts from the draw's first.
+VertexOutput VSMain(VertexInput input, uint vertexId : SV_VulkanVertexID) {
+    const FrameData frame = g_frames[g_push.frameBuffer][0];
+    const InstanceData instance = g_instances[g_push.instanceBuffer][g_push.instanceIndex];
+    const float4x4 world = instance.world;
 
     VertexOutput output;
     const float4 worldPosition = mul(world, float4(input.position, 1.0));
-    output.clipPosition = mul(viewProjection, worldPosition);
+    output.clipPosition = mul(frame.viewProjection, worldPosition);
+    output.currentClip = mul(frame.unjitteredViewProjection, worldPosition);
+    output.previousClip =
+        mul(frame.previousViewProjection, float4(PreviousPosition(instance, input.position, vertexId), 1.0));
     output.worldNormal = TransformNormal(world, input.normal);
     // A tangent lies in the surface, so it follows the matrix itself.
     output.worldTangent = float4(mul((float3x3)world, input.tangent.xyz), input.tangent.w);

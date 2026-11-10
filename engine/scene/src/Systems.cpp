@@ -13,6 +13,8 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <utility>
+#include <vector>
 
 namespace daidalos::scene {
 
@@ -35,6 +37,35 @@ void ExtractLights(ecs::World& world, renderer::SceneView& view) {
         });
 }
 
+/// The matrices of the entities drawn this frame, kept once the extraction is done: an entity can be
+/// read several times in one extraction, as a joint of two skins, and must give the same previous matrix.
+class DrawnTransforms {
+public:
+    explicit DrawnTransforms(ecs::World& world) : m_world(&world) {}
+
+    /// The matrix the entity had when the last view was extracted, or this one if it was not drawn.
+    glm::mat4 Previous(ecs::Entity entity, const glm::mat4& current) {
+        m_drawn.emplace_back(entity, current);
+        const DrawnTransform* drawn = m_world->TryGet<DrawnTransform>(entity);
+        return drawn != nullptr ? drawn->matrix : current;
+    }
+
+    /// Keeps the matrices of this extraction for the next one.
+    void Keep() {
+        for (const auto& [entity, matrix] : m_drawn) {
+            if (DrawnTransform* drawn = m_world->TryGet<DrawnTransform>(entity); drawn != nullptr) {
+                drawn->matrix = matrix;
+            } else {
+                m_world->Add<DrawnTransform>(entity, matrix);
+            }
+        }
+    }
+
+private:
+    ecs::World* m_world;
+    std::vector<std::pair<ecs::Entity, glm::mat4>> m_drawn;
+};
+
 } // namespace
 
 void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity activeCamera) {
@@ -42,7 +73,9 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
     view.camera.reset();
     view.draws.clear();
     view.jointMatrices.clear();
+    view.previousJointMatrices.clear();
     view.lights.clear();
+    DrawnTransforms drawn(world);
 
     bool chosen = false;
     std::uint32_t cameraIndex = std::numeric_limits<std::uint32_t>::max();
@@ -57,29 +90,39 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
 
     view.draws.reserve(world.Count<MeshRenderer>());
     world.Each<ecs::WorldTransform, MeshRenderer>(
-        [&](ecs::Entity /*entity*/, const ecs::WorldTransform& transform, const MeshRenderer& component) {
+        [&](ecs::Entity entity, const ecs::WorldTransform& transform, const MeshRenderer& component) {
             view.draws.push_back({.mesh = component.mesh,
                                   .world = transform.matrix,
                                   .material = component.material,
-                                  .castsShadows = component.castsShadows});
+                                  .castsShadows = component.castsShadows,
+                                  .previousWorld = drawn.Previous(entity, transform.matrix)});
         });
 
     world.Each<ecs::WorldTransform, SkinnedMeshRenderer>(
-        [&](ecs::Entity /*entity*/, const ecs::WorldTransform& transform, const SkinnedMeshRenderer& component) {
+        [&](ecs::Entity entity, const ecs::WorldTransform& transform, const SkinnedMeshRenderer& component) {
             const auto firstJoint = static_cast<std::uint32_t>(view.jointMatrices.size());
+            const glm::mat4 previousWorld = drawn.Previous(entity, transform.matrix);
             const std::vector<glm::mat4>* inverseBind = component.inverseBindMatrices.get();
             for (std::size_t index = 0; index < component.joints.size(); ++index) {
                 const ecs::WorldTransform* joint = world.TryGet<ecs::WorldTransform>(component.joints[index]);
                 const glm::mat4 bind =
                     (inverseBind != nullptr && index < inverseBind->size()) ? (*inverseBind)[index] : glm::mat4(1.0f);
-                view.jointMatrices.push_back((joint != nullptr ? joint->matrix : transform.matrix) * bind);
+                if (joint != nullptr) {
+                    view.jointMatrices.push_back(joint->matrix * bind);
+                    view.previousJointMatrices.push_back(drawn.Previous(component.joints[index], joint->matrix) * bind);
+                } else {
+                    view.jointMatrices.push_back(transform.matrix * bind);
+                    view.previousJointMatrices.push_back(previousWorld * bind);
+                }
             }
             view.draws.push_back({.mesh = component.mesh,
                                   .world = transform.matrix,
                                   .material = component.material,
                                   .firstJoint = component.joints.empty() ? renderer::kNoJoints : firstJoint,
-                                  .castsShadows = component.castsShadows});
+                                  .castsShadows = component.castsShadows,
+                                  .previousWorld = previousWorld});
         });
+    drawn.Keep();
     ExtractLights(world, view);
 }
 

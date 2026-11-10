@@ -3,13 +3,11 @@
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
 // Brings the HDR image into the display's range (ADR-0022), drawn as one triangle over the screen. The
-// target is an sRGB image, which encodes the linear result; or, before FXAA, an image that keeps the
-// encoded colors and their luma in alpha (ADR-0026).
+// target is an sRGB image, which encodes the linear result.
 
 struct TonemapPushConstants {
     uint hdrTexture;
     float exposure;
-    uint encode; // 1 to write sRGB-encoded colors and their luma.
 };
 
 [[vk::push_constant]] TonemapPushConstants g_push;
@@ -40,16 +38,8 @@ float3 PbrNeutral(float3 color) {
     return lerp(color, float3(newPeak, newPeak, newPeak), g);
 }
 
-float3 LinearToSrgb(float3 color) {
-    return select(color <= 0.0031308, color * 12.92, 1.055 * pow(color, 1.0 / 2.4) - 0.055);
-}
-
 float4 PSMain(float4 position : SV_Position) : SV_Target {
     const float3 hdr = g_textures[g_push.hdrTexture].Load(int3(int2(position.xy), 0)).rgb;
     const float3 color = PbrNeutral(max(hdr, 0.0) * g_push.exposure);
-    if (g_push.encode != 0) {
-        const float3 encoded = LinearToSrgb(saturate(color));
-        return float4(encoded, dot(encoded, float3(0.299, 0.587, 0.114)));
-    }
     return float4(color, 1.0);
 }

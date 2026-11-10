@@ -29,7 +29,7 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0023](0023-shadows.md) | Spot-light shadows: four per frame in one atlas, nearest first | Superseded by 0035 |
 | [0024](0024-prepass-and-ambient-occlusion.md) | Depth pre-pass, half-resolution SSAO, ambient light from above and below | Accepted |
 | [0025](0025-gpu-particles.md) | Particles emitted, simulated, sorted and drawn on the GPU | Accepted |
-| [0026](0026-engine-settings-and-antialiasing.md) | The engine's settings file, daidalos.cfg; shadows, view and antialiasing settings; FXAA and MSAA | Accepted |
+| [0026](0026-engine-settings-and-antialiasing.md) | The engine's settings file, daidalos.cfg; shadows, view and antialiasing settings; FXAA and MSAA | Accepted, antialiasing superseded by 0037 |
 | [0027](0027-game-interface.md) | The game's interface: an immediate-mode canvas, distance field fonts, drawn after antialiasing | Accepted |
 | [0028](0028-ray-traced-rendering.md) | Ray-traced rendering: mandatory hardware ray tracing, Vulkan 1.4, Slang, own denoiser, no raster fallback | Accepted |
 | [0029](0029-menus-pause-and-player-settings.md) | Menus: immediate-mode widgets, scenes that pause, the player's settings in user.cfg | Accepted |
@@ -40,3 +40,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0034](0034-reference-path-tracer.md) | A reference path tracer, one BSDF in a Slang module, storage images | Accepted |
 | [0035](0035-ray-traced-shadows.md) | Ray-traced shadows for every light, FLIP in the tests | Accepted |
 | [0036](0036-sky.md) | A cube-texture sky, where nothing is drawn and for rays that leave the scene | Accepted |
+| [0037](0037-temporal-antialiasing.md) | Motion vectors, jitter and temporal antialiasing, replacing FXAA and MSAA | Accepted |

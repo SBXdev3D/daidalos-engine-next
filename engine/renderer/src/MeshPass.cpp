@@ -48,6 +48,8 @@ struct SkinningPushConstants {
     std::uint32_t target;
     std::uint32_t firstVertex;
     std::uint32_t vertexCount;
+    std::uint32_t previousJoints;
+    std::uint32_t previousTarget;
 };
 constexpr std::uint32_t kSkinningGroupSize = 64;
 
@@ -75,8 +77,12 @@ struct FrameData {
     float farPlane;
     std::uint32_t accelerationStructure;
     std::uint32_t padding;
+    glm::mat4 unjitteredViewProjection;
+    glm::mat4 previousViewProjection;
+    glm::vec2 jitter;
+    glm::vec2 padding1;
 };
-static_assert(sizeof(FrameData) == 256);
+static_assert(sizeof(FrameData) == 400);
 
 struct LightData {
     glm::vec3 position;
@@ -111,9 +117,12 @@ struct InstanceData {
     std::uint32_t firstVertex;
     std::uint32_t indexBuffer;
     std::uint32_t material;
+    glm::mat4 previousWorld;
+    std::uint32_t previousPositions;
+    std::array<std::uint32_t, 3> padding;
 };
 static_assert(sizeof(resources::Vertex) == 12 * sizeof(float), "Matches kVertexFloats in MeshTypes.slangh");
-static_assert(sizeof(InstanceData) == 80);
+static_assert(sizeof(InstanceData) == 160);
 static_assert(sizeof(resources::SkinWeights) == 24, "Matches SkinVertex in MeshTypes.slangh");
 
 struct GpuMaterial {
@@ -141,21 +150,19 @@ constexpr std::uint64_t kInitialLightCapacity = 64;
 
 } // namespace
 
-MeshPass::MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat,
-                   const MeshPassSettings& settings)
-    : m_device(&device), m_colorFormat(colorFormat), m_depthFormat(depthFormat),
-      m_samples(std::max(settings.samples, 1U)) {}
+MeshPass::MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat)
+    : m_device(&device), m_colorFormat(colorFormat), m_depthFormat(depthFormat) {}
 
 MeshPass::MeshPass(MeshPass&& other) noexcept
     : m_device(other.m_device), m_colorFormat(other.m_colorFormat), m_depthFormat(other.m_depthFormat),
-      m_pipelines(std::exchange(other.m_pipelines, {})), m_samples(other.m_samples),
-      m_vertexShader(std::move(other.m_vertexShader)), m_fragmentShader(std::move(other.m_fragmentShader)),
-      m_meshes(std::exchange(other.m_meshes, {})), m_materials(std::exchange(other.m_materials, {})),
-      m_materialTable(std::exchange(other.m_materialTable, {})),
+      m_pipelines(std::exchange(other.m_pipelines, {})), m_vertexShader(std::move(other.m_vertexShader)),
+      m_fragmentShader(std::move(other.m_fragmentShader)), m_meshes(std::exchange(other.m_meshes, {})),
+      m_materials(std::exchange(other.m_materials, {})), m_materialTable(std::exchange(other.m_materialTable, {})),
       m_materialCapacity(std::exchange(other.m_materialCapacity, 0)),
       m_defaultMaterial(std::exchange(other.m_defaultMaterial, {})),
       m_frameSlots(std::exchange(other.m_frameSlots, {})), m_nextFrameSlot(other.m_nextFrameSlot),
-      m_skinned(std::exchange(other.m_skinned, {})), m_skinnedCapacity(std::exchange(other.m_skinnedCapacity, 0)),
+      m_skinned(std::exchange(other.m_skinned, {})), m_previousSkinned(std::exchange(other.m_previousSkinned, {})),
+      m_skinnedCapacity(std::exchange(other.m_skinnedCapacity, 0)),
       m_skinningPipeline(std::exchange(other.m_skinningPipeline, {})) {}
 
 MeshPass::~MeshPass() {
@@ -168,6 +175,7 @@ MeshPass::~MeshPass() {
     });
     m_device->DestroyBuffer(m_materialTable);
     m_device->DestroyBuffer(m_skinned);
+    m_device->DestroyBuffer(m_previousSkinned);
     m_device->DestroyPipeline(m_skinningPipeline);
     for (const FrameSlot& slot : m_frameSlots) {
         m_device->DestroyBuffer(slot.frame);
@@ -179,9 +187,8 @@ MeshPass::~MeshPass() {
     }
 }
 
-core::Result<MeshPass> MeshPass::Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat,
-                                        const MeshPassSettings& settings) {
-    MeshPass pass(device, colorFormat, depthFormat, settings);
+core::Result<MeshPass> MeshPass::Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat) {
+    MeshPass pass(device, colorFormat, depthFormat);
     DAI_TRY(pass.ReplaceShaders(rhi::ToSpirv(kMeshVsSpirv), rhi::ToSpirv(kMeshPsSpirv)));
     DAI_TRY(pass.CreateClusterBuffers());
     DAI_TRY_ASSIGN(pass.m_skinningPipeline,
@@ -215,11 +222,11 @@ core::Result<rhi::PipelineHandle> MeshPass::BuildPipeline(std::span<const std::u
                              {2, rhi::Format::Rg32Float, static_cast<std::uint32_t>(offsetof(Vertex, uv))},
                              {3, rhi::Format::Rgba32Float, static_cast<std::uint32_t>(offsetof(Vertex, tangent))}},
         .colorFormat = prepass ? kNormalFormat : m_colorFormat,
+        .moreColorFormats = prepass ? std::vector{kMotionFormat} : std::vector<rhi::Format>{},
         .depthFormat = m_depthFormat,
         // The mesh pass keeps the pre-pass's depth: equal depths pass the reverse-Z test.
         .depthWrite = prepass,
         .cull = cull,
-        .samples = m_samples,
         .name = prepass ? "Depth and normal pre-pass" : "Mesh",
     });
 }
@@ -255,7 +262,6 @@ core::Result<void> MeshPass::ReplaceShaders(std::span<const std::uint32_t> verte
                                                                     .depthFormat = m_depthFormat,
                                                                     .depthWrite = false,
                                                                     .cull = rhi::CullMode::None,
-                                                                    .samples = m_samples,
                                                                     .name = "Sky"}));
                 return {};
             });
@@ -268,21 +274,6 @@ core::Result<void> MeshPass::ReplaceShaders(std::span<const std::uint32_t> verte
     m_vertexShader.assign(vertexShader.begin(), vertexShader.end());
     m_fragmentShader.assign(fragmentShader.begin(), fragmentShader.end());
     return {};
-}
-
-core::Result<void> MeshPass::SetSamples(std::uint32_t samples) {
-    if (samples == m_samples) {
-        return {};
-    }
-    const std::uint32_t previous = std::exchange(m_samples, samples);
-    // Copies: ReplaceShaders keeps what it is given.
-    const std::vector<std::uint32_t> vertexShader = m_vertexShader;
-    const std::vector<std::uint32_t> fragmentShader = m_fragmentShader;
-    core::Result<void> rebuilt = ReplaceShaders(vertexShader, fragmentShader);
-    if (!rebuilt) {
-        m_samples = previous;
-    }
-    return rebuilt;
 }
 
 core::Result<MeshHandle> MeshPass::CreateMesh(const resources::MeshData& data, const std::string& name) {
@@ -452,7 +443,8 @@ core::Result<void> MeshPass::PrepareFrameSlot(FrameSlot& slot, const SceneView& 
     DAI_TRY(reserve(slot.frame, frameCapacity, 1, 1, sizeof(FrameData), "Frame data"));
     DAI_TRY(reserve(slot.instances, slot.instanceCapacity, view.draws.size(), kInitialInstanceCapacity,
                     sizeof(InstanceData), "Instances"));
-    DAI_TRY(reserve(slot.joints, slot.jointCapacity, view.jointMatrices.size(), kInitialJointCapacity,
+    // The joints, then the same joints in the previous frame.
+    DAI_TRY(reserve(slot.joints, slot.jointCapacity, view.jointMatrices.size() * 2, kInitialJointCapacity,
                     sizeof(glm::mat4), "Joints"));
     DAI_TRY(reserve(slot.lights, slot.lightCapacity, view.lights.size(), kInitialLightCapacity, sizeof(LightData),
                     "Lights"));
@@ -484,12 +476,22 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     DAI_TRY(PrepareFrameSlot(slot, view));
 
     const glm::vec3 cameraPosition = glm::inverse(camera.view)[3];
-    const glm::mat4 viewProjection =
-        math::PerspectiveReverseZ(verticalFov, aspect, camera.nearPlane, farPlane) * camera.view;
+    const glm::mat4 projection = math::PerspectiveReverseZ(verticalFov, aspect, camera.nearPlane, farPlane);
+    const glm::mat4 viewProjection = projection * camera.view;
+    // The jitter moves the image in clip space, where y goes up and the screen is 2 wide.
+    const glm::vec2 extent(static_cast<float>(std::max(targets.extent.width, 1U)),
+                           static_cast<float>(std::max(targets.extent.height, 1U)));
+    const glm::vec2 jitter = targets.jitter / extent;
+    const glm::mat4 jittered =
+        glm::translate(glm::mat4(1.0f), glm::vec3(-2.0f * jitter.x, 2.0f * jitter.y, 0.0f)) * viewProjection;
+    // The first frame, and the first after a cut, did not move.
+    const glm::mat4 previousViewProjection =
+        m_previousViewProjection.has_value() && !view.cut ? *m_previousViewProjection : viewProjection;
+    m_previousViewProjection = viewProjection;
     m_viewProjection = viewProjection;
     m_hasSky = static_cast<bool>(view.atmosphere.sky);
-    const FrameData frame{viewProjection,
-                          glm::inverse(viewProjection),
+    const FrameData frame{jittered,
+                          glm::inverse(jittered),
                           cameraPosition,
                           view.atmosphere.fogDensity,
                           view.atmosphere.fogColor,
@@ -511,7 +513,11 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                           m_device->StorageIndex(slot.clusterLights),
                           farPlane,
                           targets.accelerationStructure,
-                          0};
+                          0,
+                          viewProjection,
+                          previousViewProjection,
+                          jitter,
+                          glm::vec2(0.0f)};
     std::memcpy(m_device->Mapped(slot.clusters).data(), m_clusters.ranges.data(),
                 m_clusters.ranges.size() * sizeof(glm::uvec2));
     if (!m_clusters.lightIndices.empty()) {
@@ -525,9 +531,14 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         lights[index] = ToGpu(view.lights[index]);
     }
     if (!view.jointMatrices.empty()) {
-        std::memcpy(m_device->Mapped(slot.joints).data(), view.jointMatrices.data(),
-                    view.jointMatrices.size() * sizeof(glm::mat4));
+        // Without previous joints, they stood still.
+        const bool moved = view.previousJointMatrices.size() == view.jointMatrices.size();
+        const std::size_t bytes = view.jointMatrices.size() * sizeof(glm::mat4);
+        std::byte* joints = m_device->Mapped(slot.joints).data();
+        std::memcpy(joints, view.jointMatrices.data(), bytes);
+        std::memcpy(joints + bytes, moved ? view.previousJointMatrices.data() : view.jointMatrices.data(), bytes);
     }
+    m_jointCount = static_cast<std::uint32_t>(view.jointMatrices.size());
 
     // Sorted, so that the pipeline and the buffers change as rarely as possible. Instance i is the i-th
     // sorted draw, for the pre-pass, the meshes and rays alike.
@@ -572,8 +583,13 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                                                .usage = rhi::BufferUsage::Vertex | rhi::BufferUsage::Storage |
                                                         rhi::BufferUsage::AccelerationStructureInput,
                                                .name = "Skinned vertices"}));
+        DAI_TRY_ASSIGN(rhi::BufferHandle previous, m_device->CreateBuffer({.size = capacity * sizeof(glm::vec3),
+                                                                           .usage = rhi::BufferUsage::Storage,
+                                                                           .name = "Previous skinned positions"}));
         m_device->DestroyBuffer(m_skinned);
+        m_device->DestroyBuffer(m_previousSkinned);
         m_skinned = created;
+        m_previousSkinned = previous;
         m_skinnedCapacity = capacity;
     }
 
@@ -585,11 +601,16 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         const Mesh& mesh = m_meshes.Get(draw.mesh);
         const Material& material = m_materials.Get(sorted.material);
         const bool skinned = sorted.firstSkinnedVertex != kNotSkinned;
-        // Skinned vertices are in world space already.
+        // Skinned vertices are in world space already, and so are their previous positions.
         const glm::mat4 world = skinned ? glm::mat4(1.0f) : draw.world;
-        instances[index] = {world, m_device->StorageIndex(skinned ? m_skinned : mesh.vertices),
-                            skinned ? sorted.firstSkinnedVertex : 0, m_device->StorageIndex(mesh.indices),
-                            sorted.material.Index()};
+        instances[index] = {.world = world,
+                            .vertexBuffer = m_device->StorageIndex(skinned ? m_skinned : mesh.vertices),
+                            .firstVertex = skinned ? sorted.firstSkinnedVertex : 0,
+                            .indexBuffer = m_device->StorageIndex(mesh.indices),
+                            .material = sorted.material.Index(),
+                            .previousWorld = skinned ? world : draw.previousWorld.value_or(world),
+                            .previousPositions = skinned ? m_device->StorageIndex(m_previousSkinned) : kNoTexture,
+                            .padding = {}};
         TracedDraw& traced = m_traced.emplace_back();
         traced.world = world;
         traced.opaque = !material.alphaTested;
@@ -627,7 +648,9 @@ void MeshPass::AddSkinning(RenderGraph& graph) {
     if (m_prepared == nullptr || m_skinningJobs.empty()) {
         return;
     }
-    PassDesc desc{.name = "Skinning", .buffers = {{m_skinned, rhi::Access::ComputeShaderWrite}}};
+    PassDesc desc{.name = "Skinning",
+                  .buffers = {{m_skinned, rhi::Access::ComputeShaderWrite},
+                              {m_previousSkinned, rhi::Access::ComputeShaderWrite}}};
     for (const SortedDraw& sorted : m_sorted) {
         if (sorted.firstSkinnedVertex != kNotSkinned) {
             const Mesh& mesh = m_meshes.Get(sorted.mesh);
@@ -640,10 +663,11 @@ void MeshPass::AddSkinning(RenderGraph& graph) {
         commands.BindPipeline(m_skinningPipeline);
         const std::uint32_t joints = m_device->StorageIndex(m_prepared->joints);
         const std::uint32_t target = m_device->StorageIndex(m_skinned);
+        const std::uint32_t previousTarget = m_device->StorageIndex(m_previousSkinned);
         // The draws write separate vertices: no dispatch waits for another.
         for (const SkinningJob& job : m_skinningJobs) {
             commands.Push(SkinningPushConstants{job.source, job.skin, joints, job.firstJoint, target, job.firstVertex,
-                                                job.vertexCount});
+                                                job.vertexCount, m_jointCount, previousTarget});
             commands.Dispatch((job.vertexCount + kSkinningGroupSize - 1) / kSkinningGroupSize);
         }
     });
