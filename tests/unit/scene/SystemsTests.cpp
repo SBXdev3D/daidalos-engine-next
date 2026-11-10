@@ -277,3 +277,54 @@ TEST(EmitParticles, SpawnsTurnWithTheirEntity) {
     EXPECT_NEAR(glm::distance(spawns[0].rotation * glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)), 0.0f,
                 1e-5f);
 }
+
+TEST(ExtractScene, AMeshDrawnForTheFirstTimeHasNotMoved) {
+    ecs::World world;
+    world.Add<MeshRenderer>(AddAt(world, {1.0f, 0.0f, 0.0f}), MeshHandle(3, 1));
+    ecs::PropagateTransforms(world);
+    SceneView view;
+    scene::ExtractScene(world, view);
+    ASSERT_EQ(view.draws.size(), 1U);
+    ASSERT_TRUE(view.draws[0].previousWorld.has_value());
+    EXPECT_EQ(*view.draws[0].previousWorld, view.draws[0].world);
+}
+
+TEST(ExtractScene, AMovedMeshGivesWhereItWasInTheLastView) {
+    ecs::World world;
+    const ecs::Entity entity = AddAt(world, {1.0f, 0.0f, 0.0f});
+    world.Add<MeshRenderer>(entity, MeshHandle(3, 1));
+    ecs::PropagateTransforms(world);
+    SceneView view;
+    scene::ExtractScene(world, view);
+
+    world.Get<ecs::LocalTransform>(entity).translation = {4.0f, 0.0f, 0.0f};
+    ecs::PropagateTransforms(world);
+    scene::ExtractScene(world, view);
+    ASSERT_EQ(view.draws.size(), 1U);
+    EXPECT_EQ(glm::vec3(view.draws[0].world[3]), glm::vec3(4.0f, 0.0f, 0.0f));
+    EXPECT_EQ(glm::vec3((*view.draws[0].previousWorld)[3]), glm::vec3(1.0f, 0.0f, 0.0f));
+
+    scene::ExtractScene(world, view);
+    EXPECT_EQ(*view.draws[0].previousWorld, view.draws[0].world) << "it stood still since";
+}
+
+TEST(ExtractScene, AJointSharedByTwoSkinsGivesBothTheSamePreviousMatrix) {
+    ecs::World world;
+    const ecs::Entity hip = AddAt(world, {1.0f, 0.0f, 0.0f});
+    for (int body = 0; body < 2; ++body) {
+        world.Add<scene::SkinnedMeshRenderer>(AddAt(world, {0.0f, 0.0f, 0.0f}), MeshHandle(3, 1),
+                                              renderer::MaterialHandle{}, std::vector<ecs::Entity>{hip}, nullptr);
+    }
+    ecs::PropagateTransforms(world);
+    SceneView view;
+    scene::ExtractScene(world, view);
+
+    world.Get<ecs::LocalTransform>(hip).translation = {2.0f, 0.0f, 0.0f};
+    ecs::PropagateTransforms(world);
+    scene::ExtractScene(world, view);
+    ASSERT_EQ(view.previousJointMatrices.size(), 2U);
+    for (const glm::mat4& previous : view.previousJointMatrices) {
+        EXPECT_EQ(glm::vec3(previous[3]), glm::vec3(1.0f, 0.0f, 0.0f));
+    }
+    EXPECT_EQ(glm::vec3(view.jointMatrices[1][3]), glm::vec3(2.0f, 0.0f, 0.0f));
+}

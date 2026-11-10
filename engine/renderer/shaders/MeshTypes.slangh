@@ -73,7 +73,14 @@ struct InstanceData {
     uint firstVertex;  // Of the draw, in vertexBuffer.
     uint indexBuffer;  // Storage index of the 32-bit indices.
     uint material;
+    float4x4 previousWorld; // Where the draw was in the previous frame (ADR-0037).
+    // A skinned draw's positions in the previous frame, three floats per vertex from firstVertex, in
+    // world space; kNoTexture for a rigid draw.
+    uint previousPositions;
+    uint padding0; // Not a uint3, which would be aligned to 16 bytes.
+    uint2 padding;
 };
+
 
 // Floats per vertex: position, normal, tangent and uv, as resources::Vertex.
 static const uint kVertexFloats = 12;

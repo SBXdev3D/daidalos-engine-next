@@ -94,6 +94,11 @@ public:
     [[nodiscard]] rhi::BufferHandle SkinnedVertices() const {
         return m_skinningJobs.empty() ? rhi::BufferHandle{} : m_skinned;
     }
+    /// Where the skinned vertices were in the previous frame, which the pre-pass reads for motion vectors.
+    /// Null when the frame has no skinned draw.
+    [[nodiscard]] rhi::BufferHandle PreviousSkinnedPositions() const {
+        return m_skinningJobs.empty() ? rhi::BufferHandle{} : m_previousSkinned;
+    }
     /// The prepared frame's draws, in the order of its instances: a ray's custom index is an instance.
     [[nodiscard]] std::span<const TracedDraw> TracedDraws() const { return m_traced; }
     /// The storage index of the prepared frame's instances.
@@ -226,6 +231,10 @@ private:
     std::vector<SortedDraw> m_sorted;
     /// The skinned vertices of the frame's skinned draws, in world space, written by the skinning pass.
     rhi::BufferHandle m_skinned;
+    /// Their positions in the previous frame, skinned with the previous joints: three floats each.
+    rhi::BufferHandle m_previousSkinned;
+    /// Joints of the prepared frame; the previous joints follow them in the frame slot's buffer.
+    std::uint32_t m_jointCount = 0;
     std::uint64_t m_skinnedCapacity = 0;
     rhi::PipelineHandle m_skinningPipeline;
     std::vector<SkinningJob> m_skinningJobs;

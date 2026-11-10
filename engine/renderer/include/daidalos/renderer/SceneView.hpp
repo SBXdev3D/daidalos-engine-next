@@ -47,6 +47,9 @@ struct DrawItem {
     std::uint32_t firstJoint = kNoJoints;
     /// Stops the rays of shadows (ADR-0035). The first-person weapons do not.
     bool castsShadows = true;
+    /// Where the draw was in the previous frame drawn, for motion vectors (ADR-0037). Without one, it
+    /// stood still.
+    std::optional<glm::mat4> previousWorld;
 };
 
 /// Light that reaches every surface, distance fog, and the sky: surfaces fade into the fog color, and
@@ -96,6 +99,9 @@ struct SceneView {
     std::vector<DrawItem> draws;
     /// For each joint of the skinned draws: its world matrix times its inverse bind matrix.
     std::vector<glm::mat4> jointMatrices;
+    /// The same in the previous frame drawn, for motion vectors: as many as jointMatrices, or none when
+    /// the joints stood still.
+    std::vector<glm::mat4> previousJointMatrices;
     Atmosphere atmosphere;
     std::vector<Light> lights;
     /// New particles of the frame (ADR-0025).

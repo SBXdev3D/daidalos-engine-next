@@ -49,6 +49,13 @@ struct SkinnedMeshRenderer {
     bool castsShadows = true;
 };
 
+/// ECS component: the world matrix of a drawn entity, or of a joint, when the last view was extracted.
+/// ExtractScene adds and updates it, and gives it to the renderer as the previous matrix, from which
+/// motion vectors come (ADR-0037).
+struct DrawnTransform {
+    glm::mat4 matrix{1.0f};
+};
+
 /// ECS component: the name of the model node an entity comes from, for the code that builds on a level.
 struct NodeName {
     std::string value;
