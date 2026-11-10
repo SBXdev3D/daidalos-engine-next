@@ -60,27 +60,22 @@ renderer::DebugView DebugViewMode(const core::CVar<std::string>& cvar) {
     return renderer::DebugView::Off;
 }
 
-/// The mode named by renderer.antialiasing; an unknown name keeps the default, with a warning once.
+/// The mode named by renderer.antialiasing; any other name, such as the fxaa and msaa modes that TAA
+/// replaced (ADR-0037), gives TAA, with a warning once.
 renderer::Antialiasing AntialiasingMode(const core::CVar<std::string>& cvar) {
     const std::string& name = cvar.Get();
-    constexpr std::array<std::pair<std::string_view, renderer::Antialiasing>, 5> kModes{{
-        {"off", renderer::Antialiasing::Off},
-        {"fxaa", renderer::Antialiasing::Fxaa},
-        {"msaa2", renderer::Antialiasing::Msaa2},
-        {"msaa4", renderer::Antialiasing::Msaa4},
-        {"msaa8", renderer::Antialiasing::Msaa8},
-    }};
-    for (const auto& [modeName, mode] : kModes) {
-        if (name == modeName) {
-            return mode;
-        }
+    if (name == "off") {
+        return renderer::Antialiasing::Off;
+    }
+    if (name == "taa") {
+        return renderer::Antialiasing::Taa;
     }
     static std::string reported;
     if (reported != name) {
         reported = name;
-        DAI_LOG_WARNING(kModule, "Unknown antialiasing '{}': use off, fxaa, msaa2, msaa4 or msaa8", name);
+        DAI_LOG_WARNING(kModule, "Unknown antialiasing '{}', using taa: use off or taa", name);
     }
-    return renderer::Antialiasing::Fxaa;
+    return renderer::Antialiasing::Taa;
 }
 
 core::Result<std::uint32_t> WindowDimension(const core::CVar<std::int64_t>& cvar) {
@@ -232,8 +227,8 @@ core::Result<void> Application::LoadConfiguration() {
             "view.fov", 90.0, "Degrees across the view, from 30 to 150, for cameras without their own");
         m_viewDistance =
             m_cvars.Register<double>("view.distance", 150.0, "Meters to the far plane: farther, nothing is drawn");
-        m_antialiasing = m_cvars.Register<std::string>("renderer.antialiasing", "fxaa",
-                                                       "Smoothing of edges: off, fxaa, msaa2, msaa4 or msaa8");
+        m_antialiasing =
+            m_cvars.Register<std::string>("renderer.antialiasing", "taa", "Smoothing of edges: off or taa");
         m_validation = m_cvars.Register<bool>("renderer.validation", kValidationByDefault,
                                               "Enable the Vulkan validation layers, read at startup");
         m_debugView = m_cvars.Register<std::string>("renderer.debug_view", "off",

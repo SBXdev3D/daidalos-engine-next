@@ -43,8 +43,6 @@ struct DeviceInfo {
     bool validationEnabled = false;
     /// The anisotropy the linear samplers use: 1 when it is off or unsupported.
     float anisotropy = 1.0f;
-    /// The most samples per pixel that color and depth targets both support, up to 8.
-    std::uint32_t maxSamples = 1;
 };
 
 /// One frame being recorded.

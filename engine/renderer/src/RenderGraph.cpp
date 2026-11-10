@@ -69,8 +69,9 @@ std::vector<PlannedPass> RenderGraph::Plan() const {
                        {rendering.colorTarget, rhi::Access::ColorTarget, rendering.clearColor.has_value()});
             AddTexture(step.textures,
                        {rendering.depthTarget, rhi::Access::DepthTarget, rendering.clearDepth.has_value()});
-            AddTexture(step.textures, {rendering.colorResolve, rhi::Access::ColorTarget, true});
-            AddTexture(step.textures, {rendering.depthResolve, rhi::Access::DepthResolve, true});
+            for (const rhi::ColorTarget& target : rendering.moreColorTargets) {
+                AddTexture(step.textures, {target.texture, rhi::Access::ColorTarget, target.clear.has_value()});
+            }
         }
         for (const rhi::TextureUse& use : desc.textures) {
             AddTexture(step.textures, use);

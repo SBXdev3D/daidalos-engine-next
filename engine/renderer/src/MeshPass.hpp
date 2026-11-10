@@ -46,18 +46,11 @@ struct TracedDraw {
     bool castsShadows = true;
 };
 
-/// What the mesh pass is created with.
-struct MeshPassSettings {
-    /// Samples per pixel of the targets of the pre-pass and the mesh pass.
-    std::uint32_t samples = 1;
-};
-
 /// Owns the meshes, the materials and the pipelines that draw them. It works on any target, so that
 /// tests can run it without a window. The Device must outlive it.
 class MeshPass {
 public:
-    static core::Result<MeshPass> Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat,
-                                         const MeshPassSettings& settings = {});
+    static core::Result<MeshPass> Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
 
     MeshPass(MeshPass&& other) noexcept;
     MeshPass& operator=(MeshPass&& other) = delete;
@@ -73,10 +66,6 @@ public:
 
     /// Normals of the pre-pass: world normals, times 0.5 plus 0.5.
     static constexpr rhi::Format kNormalFormat = rhi::Format::Rgba8Unorm;
-
-    /// Rebuilds the pipelines of the pre-pass and the mesh pass for targets with this many samples per
-    /// pixel. On failure the current pipelines stay in use.
-    [[nodiscard]] core::Result<void> SetSamples(std::uint32_t samples);
 
     /// Replaces the shaders of the mesh pass. The pre-pass uses the same vertex shader, so that both
     /// compute the same depth. On failure the current pipelines stay in use.
@@ -170,7 +159,7 @@ private:
         std::uint64_t clusterLightCapacity = 0;
     };
 
-    MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat, const MeshPassSettings& settings);
+    MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
 
     [[nodiscard]] core::Result<void> CreateClusterBuffers();
     /// The pipelines of the pre-pass and the mesh pass, one-sided and double-sided.
@@ -196,7 +185,6 @@ private:
     rhi::Format m_colorFormat;
     rhi::Format m_depthFormat;
     Pipelines m_pipelines;
-    std::uint32_t m_samples;
     /// The shaders of the mesh pass, to rebuild its pipelines.
     std::vector<std::uint32_t> m_vertexShader;
     std::vector<std::uint32_t> m_fragmentShader;

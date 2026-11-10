@@ -20,16 +20,12 @@
 
 namespace daidalos::renderer {
 
-/// How the edges of what is drawn are smoothed (ADR-0026).
+/// How the edges of what is drawn are smoothed (ADR-0037).
 enum class Antialiasing {
     Off,
-    /// Fast approximate antialiasing, a pass over the final image.
-    Fxaa,
-    /// Multisampling, with 2, 4 or 8 samples per pixel: geometry edges only, at a higher cost. Devices
-    /// that support fewer samples use their most.
-    Msaa2,
-    Msaa4,
-    Msaa8,
+    /// Temporal antialiasing: the camera moves by a fraction of a pixel each frame, and each frame is
+    /// blended with the earlier ones, reprojected with motion vectors.
+    Taa,
 };
 
 /// What the frame shows instead of the lit scene, to check the renderer.
@@ -59,7 +55,7 @@ struct RendererConfig {
     float fieldOfView = glm::radians(90.0f);
     /// Meters: farther, nothing is drawn or lit.
     float viewDistance = 150.0f;
-    Antialiasing antialiasing = Antialiasing::Fxaa;
+    Antialiasing antialiasing = Antialiasing::Taa;
     DebugView debugView = DebugView::Off;
     /// The path tracer's settings: surfaces a path meets at most (1 is direct light only), paths per pixel
     /// after which the image stops changing, and the radiance a path that leaves the scene sees.

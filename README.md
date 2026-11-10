@@ -99,7 +99,7 @@ In development builds, editing a file in `engine/renderer/shaders/` reloads it w
 Settings are configuration variables (cvars). Every application reads the engine's settings from `daidalos.cfg` next to its executable, then a file of its own, such as the sandbox's `sandbox.cfg`. The build copies both, commented, from `config/daidalos.cfg` and `apps/sandbox/sandbox.cfg` the first time, and leaves them alone afterwards. The command line overrides them with `+name value`:
 
 ```bash
-sandbox.exe +window.fullscreen true +renderer.antialiasing msaa4
+sandbox.exe +window.fullscreen true +renderer.antialiasing off
 ```
 
 | Cvar | Default | Meaning |
@@ -111,7 +111,7 @@ sandbox.exe +window.fullscreen true +renderer.antialiasing msaa4
 | `renderer.anisotropy` | 16 | Anisotropic filtering of textures, from 1 to 16, read at startup |
 | `renderer.normal_strength` | 1 | Relief of normal maps: 0 flattens them |
 | `renderer.ambient_occlusion` | true | Darken the ambient light in creases and corners |
-| `renderer.antialiasing` | `fxaa` | `off`, `fxaa`, `msaa2`, `msaa4` or `msaa8` |
+| `renderer.antialiasing` | `taa` | `taa` or `off` |
 | `renderer.validation` | true in Debug | Enable the Vulkan validation layers, if installed |
 | `view.fov` | 90 | Degrees across the screen, from 30 to 150 |
 | `view.distance` | 150 | Meters: nothing farther is drawn or lit |

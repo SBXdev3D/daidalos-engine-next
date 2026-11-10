@@ -1,7 +1,6 @@
 dai_add_test(NAME daidalos_renderer_gpu_tests
     SOURCES
         ../GpuFixture.hpp
-        FxaaPassTests.cpp
         MeshPassTests.cpp
         PathTracerTests.cpp
         RendererTests.cpp

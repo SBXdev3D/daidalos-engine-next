@@ -240,17 +240,16 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
 
     const bool sampled = HasFlag(desc.usage, TextureUsage::Sampled);
     const bool storage = HasFlag(desc.usage, TextureUsage::Storage);
-    DAI_ASSERT(!storage || (desc.format == Format::Rgba32Float && desc.samples == 1),
-               "A storage texture is Rgba32Float, with one sample");
+    DAI_ASSERT(!storage || desc.format == Format::Rgba32Float, "A storage texture is Rgba32Float");
     if (storage && m_impl->freeStorageImageIndices.empty()) {
         return core::MakeError(
             core::ErrorCode::OutOfMemory, kModule,
             std::format("Texture '{}': all {} storage image slots are in use", desc.name, kMaxStorageImages));
     }
     DAI_ASSERT(!desc.cube ||
-                   (desc.extent.width == desc.extent.height && desc.samples == 1 && !storage &&
+                   (desc.extent.width == desc.extent.height && !storage &&
                     !HasFlag(desc.usage, TextureUsage::ColorTarget) && !HasFlag(desc.usage, TextureUsage::DepthTarget)),
-               "A cube has square faces, one sample, and is only sampled and copied to");
+               "A cube has square faces, and is only sampled and copied to");
     std::vector<std::uint32_t>& freeSampledIndices = desc.cube ? m_impl->freeCubeIndices : m_impl->freeBindlessIndices;
     if (sampled && freeSampledIndices.empty()) {
         return core::MakeError(
@@ -258,9 +257,6 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
             std::format("Texture '{}': all {} bindless slots are in use", desc.name, kMaxBindlessTextures));
     }
 
-    DAI_ASSERT(desc.samples == 1 || (std::has_single_bit(desc.samples) && desc.samples <= Info().maxSamples &&
-                                     !sampled && desc.mipLevels == 1),
-               "A multisampled texture has a supported sample count, one mip level, and is not sampled");
     const VkImageCreateInfo imageInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .flags = desc.cube ? VkImageCreateFlags{VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT} : VkImageCreateFlags{0},
@@ -269,7 +265,7 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
         .extent = {desc.extent.width, desc.extent.height, 1},
         .mipLevels = desc.mipLevels,
         .arrayLayers = desc.cube ? 6U : 1U,
-        .samples = static_cast<VkSampleCountFlagBits>(desc.samples),
+        .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
         .usage = ToVulkanUsage(desc.usage),
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
@@ -283,7 +279,6 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
     data.layers = imageInfo.arrayLayers;
     data.format = desc.format;
     data.usage = desc.usage;
-    data.samples = desc.samples;
     if (const VkResult result =
             vmaCreateImage(m_impl->allocator, &imageInfo, &allocationInfo, &data.image, &data.allocation, nullptr);
         result != VK_SUCCESS) {
@@ -481,7 +476,7 @@ core::Result<PipelineHandle> Device::CreatePipeline(const GraphicsPipelineDesc& 
     };
     const VkPipelineMultisampleStateCreateInfo multisample{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .rasterizationSamples = static_cast<VkSampleCountFlagBits>(std::max(desc.samples, 1U)),
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
     };
     const bool hasDepth = desc.depthFormat != Format::Undefined;
     const VkPipelineDepthStencilStateCreateInfo depthStencil{
@@ -490,7 +485,11 @@ core::Result<PipelineHandle> Device::CreatePipeline(const GraphicsPipelineDesc& 
         .depthWriteEnable = (hasDepth && desc.depthWrite) ? VK_TRUE : VK_FALSE,
         .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
     };
-    const VkPipelineColorBlendAttachmentState blendAttachment{
+    const bool hasColor = desc.colorFormat != Format::Undefined;
+    DAI_ASSERT(hasColor || desc.moreColorFormats.empty(), "Further color targets need a first one");
+    DAI_ASSERT(desc.moreColorFormats.size() < kMaxColorTargets, "Too many color targets");
+    const auto colorCount = hasColor ? static_cast<std::uint32_t>(desc.moreColorFormats.size() + 1) : 0U;
+    VkPipelineColorBlendAttachmentState blendAttachment{
         .blendEnable = (desc.blend != BlendMode::Opaque) ? VK_TRUE : VK_FALSE,
         .srcColorBlendFactor =
             (desc.blend == BlendMode::Premultiplied) ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_SRC_ALPHA,
@@ -502,10 +501,12 @@ core::Result<PipelineHandle> Device::CreatePipeline(const GraphicsPipelineDesc& 
         .colorWriteMask =
             VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
     };
+    std::array<VkPipelineColorBlendAttachmentState, kMaxColorTargets> blendAttachments{};
+    blendAttachments.fill(blendAttachment);
     const VkPipelineColorBlendStateCreateInfo blend{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .attachmentCount = (desc.colorFormat != Format::Undefined) ? 1U : 0U,
-        .pAttachments = &blendAttachment,
+        .attachmentCount = colorCount,
+        .pAttachments = blendAttachments.data(),
     };
     const std::array<VkDynamicState, 2> dynamicStates{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
     const VkPipelineDynamicStateCreateInfo dynamicState{
@@ -513,11 +514,15 @@ core::Result<PipelineHandle> Device::CreatePipeline(const GraphicsPipelineDesc& 
         .dynamicStateCount = static_cast<std::uint32_t>(dynamicStates.size()),
         .pDynamicStates = dynamicStates.data(),
     };
-    const VkFormat colorFormat = ToVulkan(desc.colorFormat);
+    std::array<VkFormat, kMaxColorTargets> colorFormats{};
+    colorFormats[0] = ToVulkan(desc.colorFormat);
+    for (std::size_t index = 0; index < desc.moreColorFormats.size(); ++index) {
+        colorFormats[index + 1] = ToVulkan(desc.moreColorFormats[index]);
+    }
     const VkPipelineRenderingCreateInfo rendering{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-        .colorAttachmentCount = (desc.colorFormat != Format::Undefined) ? 1U : 0U,
-        .pColorAttachmentFormats = &colorFormat,
+        .colorAttachmentCount = colorCount,
+        .pColorAttachmentFormats = colorFormats.data(),
         .depthAttachmentFormat = ToVulkan(desc.depthFormat),
     };
     const VkGraphicsPipelineCreateInfo pipelineInfo{

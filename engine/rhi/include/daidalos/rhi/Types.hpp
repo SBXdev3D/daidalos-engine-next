@@ -128,9 +128,6 @@ struct TextureDesc {
     Format format = Format::Undefined;
     TextureUsage usage = TextureUsage::None;
     std::uint32_t mipLevels = 1;
-    /// Samples per pixel: 1, or up to DeviceInfo::maxSamples for a multisampled target, which shaders
-    /// cannot sample and which has one mip level. Rendering resolves it into a single-sample texture.
-    std::uint32_t samples = 1;
     /// Six square faces, sampled by direction: +X, -X, +Y, -Y, +Z, -Z, in that order, each with its mip
     /// levels. Shaders find a sampled cube in g_cubeTextures, by BindlessIndex.
     bool cube = false;
@@ -138,8 +135,8 @@ struct TextureDesc {
 };
 
 /// How the GPU uses a texture or a buffer, from which the RHI derives barriers (CommandList::Use,
-/// ADR-0032). Reads combine; ColorTarget, DepthTarget, DepthResolve, ComputeShaderWrite, TransferWrite
-/// and AccelerationStructureWrite write.
+/// ADR-0032). Reads combine; ColorTarget, DepthTarget, ComputeShaderWrite, TransferWrite and
+/// AccelerationStructureWrite write.
 enum class Access : std::uint32_t {
     None = 0,
     /// Rendered to, blending included.
@@ -156,9 +153,6 @@ enum class Access : std::uint32_t {
     TransferRead = 1U << 7U,
     TransferWrite = 1U << 8U,
     Present = 1U << 9U,
-    /// Receives the resolve of a multisampled depth target, which Vulkan performs at the color output
-    /// stage, not with the depth tests.
-    DepthResolve = 1U << 10U,
     /// An acceleration structure being built, and its scratch memory.
     AccelerationStructureWrite = 1U << 11U,
     /// Read by an acceleration structure build: its input buffers, or the bottom-level structures of a
@@ -178,8 +172,8 @@ enum class Access : std::uint32_t {
 }
 /// True if the access writes.
 [[nodiscard]] constexpr bool Writes(Access access) {
-    return HasFlag(access, Access::ColorTarget | Access::DepthTarget | Access::DepthResolve |
-                               Access::ComputeShaderWrite | Access::TransferWrite | Access::AccelerationStructureWrite);
+    return HasFlag(access, Access::ColorTarget | Access::DepthTarget | Access::ComputeShaderWrite |
+                               Access::TransferWrite | Access::AccelerationStructureWrite);
 }
 
 /// What the GPU last did with a resource: the last write, and the reads since then, which the write
@@ -223,6 +217,9 @@ enum class TextureState {
 /// The access of a texture in a state. ShaderRead is a read by any shader stage.
 [[nodiscard]] Access AccessOf(TextureState state);
 
+/// Color targets a rendering and a pipeline can have.
+inline constexpr std::uint32_t kMaxColorTargets = 4;
+
 enum class IndexType { Uint16, Uint32 };
 enum class CullMode { None, Front, Back };
 /// Alpha blends color times alpha over the target. Premultiplied adds the color as given and keeps
@@ -258,8 +255,11 @@ struct GraphicsPipelineDesc {
     std::span<const std::uint32_t> fragmentShader;
     std::uint32_t vertexStride = 0;
     std::vector<VertexAttribute> vertexAttributes;
-    /// Undefined for a pipeline that only writes depth, such as a shadow map's.
+    /// Undefined for a pipeline that only writes depth.
     Format colorFormat = Format::Undefined;
+    /// The formats of further color targets, written by the fragment shader's outputs 1 and up, and
+    /// blended like the first. At most kMaxColorTargets in all.
+    std::vector<Format> moreColorFormats;
     /// Undefined when the pipeline renders without a depth target.
     Format depthFormat = Format::Undefined;
     /// Added to the depth written, in units of the smallest depth step, and per unit of slope. Reverse-Z:
@@ -271,8 +271,6 @@ struct GraphicsPipelineDesc {
     bool depthWrite = true;
     CullMode cull = CullMode::Back;
     BlendMode blend = BlendMode::Opaque;
-    /// Samples per pixel of the targets it draws into.
-    std::uint32_t samples = 1;
     std::string name;
 };
 

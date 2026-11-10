@@ -18,7 +18,8 @@ using rhi::Access;
 
 const rhi::TextureHandle kColor{1, 1};
 const rhi::TextureHandle kDepth{2, 1};
-const rhi::TextureHandle kResolve{3, 1};
+const rhi::TextureHandle kSecondColor{3, 1};
+const rhi::TextureHandle kThirdColor{4, 1};
 const rhi::BufferHandle kBuffer{1, 1};
 
 void Nothing(rhi::CommandList& /*commands*/) {}
@@ -47,18 +48,21 @@ TEST(RenderGraph, RenderingTargetsAreDeclaredAsWritten) {
     EXPECT_EQ(Find(planned[0], kDepth)->access, Access::DepthTarget);
 }
 
-TEST(RenderGraph, ClearedAndResolvedTargetsLoseTheirContent) {
+TEST(RenderGraph, ClearedTargetsLoseTheirContent) {
     RenderGraph graph;
     graph.AddPass({.name = "Prepass",
                    .rendering = rhi::RenderingDesc{.colorTarget = kColor,
                                                    .clearColor = glm::vec4(0.0f),
-                                                   .depthTarget = kDepth,
-                                                   .colorResolve = kResolve}},
+                                                   .moreColorTargets = {{kSecondColor, glm::vec4(0.0f)}, {kThirdColor}},
+                                                   .depthTarget = kDepth}},
                   Nothing);
     const PlannedPass pass = graph.Plan().front();
     EXPECT_TRUE(Find(pass, kColor)->discard);
-    EXPECT_FALSE(Find(pass, kDepth)->discard); // Loaded: no clear.
-    EXPECT_TRUE(Find(pass, kResolve)->discard);
+    ASSERT_NE(Find(pass, kSecondColor), nullptr);
+    EXPECT_EQ(Find(pass, kSecondColor)->access, Access::ColorTarget);
+    EXPECT_TRUE(Find(pass, kSecondColor)->discard);
+    EXPECT_FALSE(Find(pass, kThirdColor)->discard); // Loaded: no clear.
+    EXPECT_FALSE(Find(pass, kDepth)->discard);
 }
 
 TEST(RenderGraph, UsesOfOneResourceInAPassAreMerged) {

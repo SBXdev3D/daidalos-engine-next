@@ -312,7 +312,7 @@ TEST_F(ApplicationTest, ChangedSettingsAreSavedWithTheEarlierOnesButNotTheComman
     m_handler.quitAfterFrames = 1;
     m_handler.onUpdate = [](Application& app, const core::FrameTime& /*time*/) {
         EXPECT_TRUE(app.ChangeSetting("input.mouse_sensitivity", "0.004").has_value());
-        EXPECT_TRUE(app.ChangeSetting("renderer.antialiasing", "msaa4").has_value());
+        EXPECT_TRUE(app.ChangeSetting("renderer.antialiasing", "off").has_value());
         const core::Result<void> unknown = app.ChangeSetting("input.unknown", "1");
         ASSERT_FALSE(unknown.has_value());
         EXPECT_EQ(unknown.error().code, core::ErrorCode::NotFound);
@@ -336,7 +336,8 @@ TEST_F(ApplicationTest, ChangedSettingsAreSavedWithTheEarlierOnesButNotTheComman
     EXPECT_EQ((*lines)[0].name, "input.mouse_sensitivity");
     EXPECT_EQ((*lines)[0].value, "0.004");
     EXPECT_EQ((*lines)[1].name, "renderer.antialiasing");
-    EXPECT_EQ((*lines)[1].value, "msaa4");
+    EXPECT_EQ((*lines)[1].value, "off");
+
     EXPECT_EQ((*lines)[2].name, "view.fov");
     EXPECT_EQ((*lines)[2].value, "75");
 }

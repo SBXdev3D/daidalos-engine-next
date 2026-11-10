@@ -20,7 +20,6 @@
 #include <utility>
 
 #include "AmbientOcclusionPass.hpp"
-#include "FxaaPass.hpp"
 #include "MeshPass.hpp"
 #include "ParticlePass.hpp"
 #include "PathTracerPass.hpp"
@@ -37,12 +36,10 @@ constexpr std::string_view kModule = "renderer";
 constexpr rhi::Format kDepthFormat = rhi::Format::D32Float;
 /// Lighting is computed in HDR, then tonemapped into the swapchain (ADR-0022).
 constexpr rhi::Format kHdrFormat = rhi::Format::Rgba16Float;
-/// The passes timed on the GPU, in order: each ends at a timestamp, after the one at the start.
 // Matches TonemapPushConstants in shaders/Tonemap.slang.
 struct TonemapPushConstants {
     std::uint32_t hdrTexture;
     float exposure;
-    std::uint32_t encode;
 };
 
 } // namespace
@@ -64,36 +61,12 @@ struct Renderer::Impl {
         meshPass.reset();
         ambientOcclusionPass.reset();
         particlePass.reset();
-        fxaaPass.reset();
         uiPass.reset();
         device.DestroyPipeline(tonemap);
-        device.DestroyPipeline(tonemapEncoded);
-        device.DestroyTexture(tonemapped);
         device.DestroyTexture(depth);
         device.DestroyTexture(normals);
         device.DestroyTexture(hdr);
-        DestroyMultisampledTargets();
     }
-
-    void DestroyMultisampledTargets() {
-        device.DestroyTexture(multisampledDepth);
-        device.DestroyTexture(multisampledNormals);
-        device.DestroyTexture(multisampledHdr);
-        multisampledDepth = {};
-        multisampledNormals = {};
-        multisampledHdr = {};
-    }
-
-    /// Samples per pixel of the antialiasing mode, as many as the device supports.
-    [[nodiscard]] std::uint32_t SamplesOf(Antialiasing mode) const {
-        const std::uint32_t wanted = mode == Antialiasing::Msaa2   ? 2
-                                     : mode == Antialiasing::Msaa4 ? 4
-                                     : mode == Antialiasing::Msaa8 ? 8
-                                                                   : 1;
-        return std::min(wanted, device.Info().maxSamples);
-    }
-    /// Follows a change of antialiasing to or from multisampling, between two frames.
-    core::Result<void> ApplySamples();
 
     /// The targets follow the size of the back buffer.
     core::Result<void> ResizeTargets(rhi::Extent extent);
@@ -107,12 +80,11 @@ struct Renderer::Impl {
     std::optional<MeshPass> meshPass;
     std::optional<AmbientOcclusionPass> ambientOcclusionPass;
     std::optional<ParticlePass> particlePass;
-    std::optional<FxaaPass> fxaaPass;
     std::optional<UiPass> uiPass;
     /// Bursts and emissions of the last view drawn, for FrameStats.
     std::uint32_t particleSpawns = 0;
     bool ambientOcclusion = true;
-    Antialiasing antialiasing = Antialiasing::Fxaa;
+    Antialiasing antialiasing = Antialiasing::Taa;
     DebugView debugView = DebugView::Off;
     std::optional<RayTracingScene> rayTracing;
     std::optional<PathTracerPass> pathTracer;
@@ -121,16 +93,7 @@ struct Renderer::Impl {
     glm::mat4 pathViewProjection{0.0f};
     PathTracerSettings pathAveraged;
     bool pathShown = false;
-    /// Samples per pixel of the pre-pass and the mesh pass. With more than one, they draw into the
-    /// multisampled targets, which resolve into depth, normals and hdr.
-    std::uint32_t samples = 1;
-    rhi::TextureHandle multisampledDepth;
-    rhi::TextureHandle multisampledNormals;
-    rhi::TextureHandle multisampledHdr;
     rhi::PipelineHandle tonemap;
-    /// Tonemaps for FXAA, into tonemapped.
-    rhi::PipelineHandle tonemapEncoded;
-    rhi::TextureHandle tonemapped;
     rhi::TextureHandle hdr;
     rhi::TextureHandle depth;
     /// World normals of the pre-pass.
@@ -149,51 +112,16 @@ struct Renderer::Impl {
 #endif
 };
 
-core::Result<void> Renderer::Impl::ApplySamples() {
-    const std::uint32_t wanted = SamplesOf(antialiasing);
-    if (wanted == samples) {
-        return {};
-    }
-    // Between two frames: those in flight still use the old pipelines and targets.
-    DAI_TRY(device.WaitIdle());
-    DAI_TRY(meshPass->SetSamples(wanted));
-    samples = wanted;
-    targetExtent = {};
-    DAI_LOG_INFO(kModule, "Multisampling with {} samples per pixel", samples);
-    return {};
-}
-
 core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
     if (depth && hdr && targetExtent == extent) {
         return {};
     }
-    DestroyMultisampledTargets();
-    if (samples > 1) {
-        const auto multisampled = [&](rhi::Format format, rhi::TextureUsage usage, const char* name,
-                                      rhi::TextureHandle& texture) -> core::Result<void> {
-            DAI_TRY_ASSIGN(texture,
-                           device.CreateTexture(
-                               {.extent = extent, .format = format, .usage = usage, .samples = samples, .name = name}));
-            return {};
-        };
-        DAI_TRY(multisampled(kDepthFormat, rhi::TextureUsage::DepthTarget, "Multisampled depth", multisampledDepth));
-        DAI_TRY(multisampled(MeshPass::kNormalFormat, rhi::TextureUsage::ColorTarget, "Multisampled normals",
-                             multisampledNormals));
-        DAI_TRY(multisampled(kHdrFormat, rhi::TextureUsage::ColorTarget, "Multisampled HDR color", multisampledHdr));
-    }
     device.DestroyTexture(depth);
     device.DestroyTexture(normals);
     device.DestroyTexture(hdr);
-    device.DestroyTexture(tonemapped);
     depth = {};
     normals = {};
     hdr = {};
-    tonemapped = {};
-    DAI_TRY_ASSIGN(tonemapped,
-                   device.CreateTexture({.extent = extent,
-                                         .format = FxaaPass::kSourceFormat,
-                                         .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
-                                         .name = "Tonemapped"}));
     DAI_TRY_ASSIGN(normals, device.CreateTexture({.extent = extent,
                                                   .format = MeshPass::kNormalFormat,
                                                   .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
@@ -280,21 +208,10 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
                                       .cull = rhi::CullMode::None,
                                       .name = "Tonemap",
                                   }));
-    DAI_TRY_ASSIGN(impl->tonemapEncoded, impl->device.CreatePipeline({
-                                             .vertexShader = rhi::ToSpirv(kTonemapVsSpirv),
-                                             .fragmentShader = rhi::ToSpirv(kTonemapPsSpirv),
-                                             .colorFormat = FxaaPass::kSourceFormat,
-                                             .cull = rhi::CullMode::None,
-                                             .name = "Tonemap for FXAA",
-                                         }));
-    DAI_TRY_ASSIGN(FxaaPass fxaaPass, FxaaPass::Create(impl->device, impl->swapchain.ColorFormat()));
-    impl->fxaaPass.emplace(std::move(fxaaPass));
     DAI_TRY_ASSIGN(UiPass uiPass, UiPass::Create(impl->device, impl->swapchain.ColorFormat()));
     impl->uiPass.emplace(std::move(uiPass));
     impl->antialiasing = config.antialiasing;
-    impl->samples = impl->SamplesOf(config.antialiasing);
-    DAI_TRY_ASSIGN(MeshPass meshPass,
-                   MeshPass::Create(impl->device, kHdrFormat, kDepthFormat, {.samples = impl->samples}));
+    DAI_TRY_ASSIGN(MeshPass meshPass, MeshPass::Create(impl->device, kHdrFormat, kDepthFormat));
     impl->meshPass.emplace(std::move(meshPass));
     DAI_TRY_ASSIGN(RayTracingScene rayTracing, RayTracingScene::Create(impl->device, kHdrFormat));
     impl->rayTracing.emplace(std::move(rayTracing));
@@ -413,7 +330,6 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     Impl& impl = *m_impl;
 
     impl.ReloadShaders();
-    DAI_TRY(impl.ApplySamples());
 
     const platform::Extent size = impl.window->PixelSize();
     impl.swapchain.Configure({{size.width, size.height}, impl.vsync});
@@ -427,7 +343,6 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
 
     // A failure from here on still ends the frame: the acquired image must be presented.
     core::Result<void> status = impl.ResizeTargets(frame.extent);
-    const bool multisampled = impl.samples > 1;
     RenderGraph& graph = impl.graph;
     const rhi::TextureHandle occlusion =
         impl.ambientOcclusion ? impl.ambientOcclusionPass->Output() : rhi::TextureHandle{};
@@ -449,17 +364,13 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         impl.rayTracing->AddBuild(graph);
     }
     if (status) {
-        // With multisampling, the samples resolve into the targets that later passes read.
-        graph.AddPass(
-            {.name = "Prepass",
-             .rendering = rhi::RenderingDesc{.colorTarget = multisampled ? impl.multisampledNormals : impl.normals,
-                                             .clearColor = glm::vec4(0.5f, 1.0f, 0.5f, 1.0f),
-                                             .depthTarget = multisampled ? impl.multisampledDepth : impl.depth,
-                                             .clearDepth = 0.0f,
-                                             .colorResolve = multisampled ? impl.normals : rhi::TextureHandle{},
-                                             .depthResolve = multisampled ? impl.depth : rhi::TextureHandle{}},
-             .buffers = {skinnedVertices}},
-            [&impl](rhi::CommandList& commands) { impl.meshPass->RecordPrepass(commands); });
+        graph.AddPass({.name = "Prepass",
+                       .rendering = rhi::RenderingDesc{.colorTarget = impl.normals,
+                                                       .clearColor = glm::vec4(0.5f, 1.0f, 0.5f, 1.0f),
+                                                       .depthTarget = impl.depth,
+                                                       .clearDepth = 0.0f},
+                       .buffers = {skinnedVertices}},
+                      [&impl](rhi::CommandList& commands) { impl.meshPass->RecordPrepass(commands); });
     }
     if (hasFrame && impl.ambientOcclusion) {
         impl.ambientOcclusionPass->AddTo(graph, impl.meshPass->FrameDataIndex(), impl.depth, impl.normals);
@@ -469,18 +380,16 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                                   impl.meshPass->FrameDataIndex(), impl.depth, impl.normals);
     }
     if (status) {
-        graph.AddPass(
-            {.name = "Meshes",
-             .rendering = rhi::RenderingDesc{.colorTarget = multisampled ? impl.multisampledHdr : impl.hdr,
-                                             .clearColor = glm::vec4(view.atmosphere.fogColor, 1.0f),
-                                             .depthTarget = multisampled ? impl.multisampledDepth : impl.depth,
-                                             .colorResolve = multisampled ? impl.hdr : rhi::TextureHandle{}},
-             .textures = {{occlusion, rhi::Access::FragmentShaderRead}},
-             // Shadow rays: the frame's structure, and the vertices of the skinned draws they test for alpha.
-             .buffers = {skinnedVertices, {skinnedVertices.buffer, rhi::Access::FragmentShaderRead}},
-             .structures = {{hasFrame ? impl.rayTracing->Structure() : rhi::AccelerationStructureHandle{},
-                             rhi::Access::RayQueryRead}}},
-            [&impl](rhi::CommandList& commands) { impl.meshPass->Record(commands); });
+        graph.AddPass({.name = "Meshes",
+                       .rendering = rhi::RenderingDesc{.colorTarget = impl.hdr,
+                                                       .clearColor = glm::vec4(view.atmosphere.fogColor, 1.0f),
+                                                       .depthTarget = impl.depth},
+                       .textures = {{occlusion, rhi::Access::FragmentShaderRead}},
+                       // Shadow rays: the frame's structure, and the vertices of the skinned draws they test for alpha.
+                       .buffers = {skinnedVertices, {skinnedVertices.buffer, rhi::Access::FragmentShaderRead}},
+                       .structures = {{hasFrame ? impl.rayTracing->Structure() : rhi::AccelerationStructureHandle{},
+                                       rhi::Access::RayQueryRead}}},
+                      [&impl](rhi::CommandList& commands) { impl.meshPass->Record(commands); });
     }
     if (status && hasFrame) {
         const glm::mat4 cameraWorld = glm::inverse(view.camera->view);
@@ -517,28 +426,16 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     }
     impl.pathShown = path;
 
-    // With FXAA, tonemapping goes to an image that the antialiasing reads, and FXAA to the back buffer.
-    const bool fxaa = impl.antialiasing == Antialiasing::Fxaa;
     if (status) {
-        const rhi::TextureHandle tonemapTarget = fxaa ? impl.tonemapped : frame.backBuffer;
         const rhi::TextureHandle source = path ? impl.pathTracer->Output() : impl.hdr;
-        graph.AddPass(
-            {.name = "Tonemap",
-             .rendering = rhi::RenderingDesc{.colorTarget = tonemapTarget},
-             .textures = {{tonemapTarget, rhi::Access::ColorTarget, true}, {source, rhi::Access::FragmentShaderRead}}},
-            [&impl, fxaa, source](rhi::CommandList& commands) {
-                commands.BindPipeline(fxaa ? impl.tonemapEncoded : impl.tonemap);
-                commands.Push(TonemapPushConstants{impl.device.BindlessIndex(source), impl.exposure, fxaa ? 1U : 0U});
-                commands.Draw(3);
-            });
-    }
-    if (status && fxaa) {
-        graph.AddPass({.name = "Antialiasing",
+        graph.AddPass({.name = "Tonemap",
                        .rendering = rhi::RenderingDesc{.colorTarget = frame.backBuffer},
                        .textures = {{frame.backBuffer, rhi::Access::ColorTarget, true},
-                                    {impl.tonemapped, rhi::Access::FragmentShaderRead}}},
-                      [&impl, &frame](rhi::CommandList& commands) {
-                          impl.fxaaPass->Record(commands, impl.tonemapped, frame.extent);
+                                    {source, rhi::Access::FragmentShaderRead}}},
+                      [&impl, source](rhi::CommandList& commands) {
+                          commands.BindPipeline(impl.tonemap);
+                          commands.Push(TonemapPushConstants{impl.device.BindlessIndex(source), impl.exposure});
+                          commands.Draw(3);
                       });
     }
 

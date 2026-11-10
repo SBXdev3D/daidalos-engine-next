@@ -141,17 +141,14 @@ constexpr std::uint64_t kInitialLightCapacity = 64;
 
 } // namespace
 
-MeshPass::MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat,
-                   const MeshPassSettings& settings)
-    : m_device(&device), m_colorFormat(colorFormat), m_depthFormat(depthFormat),
-      m_samples(std::max(settings.samples, 1U)) {}
+MeshPass::MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat)
+    : m_device(&device), m_colorFormat(colorFormat), m_depthFormat(depthFormat) {}
 
 MeshPass::MeshPass(MeshPass&& other) noexcept
     : m_device(other.m_device), m_colorFormat(other.m_colorFormat), m_depthFormat(other.m_depthFormat),
-      m_pipelines(std::exchange(other.m_pipelines, {})), m_samples(other.m_samples),
-      m_vertexShader(std::move(other.m_vertexShader)), m_fragmentShader(std::move(other.m_fragmentShader)),
-      m_meshes(std::exchange(other.m_meshes, {})), m_materials(std::exchange(other.m_materials, {})),
-      m_materialTable(std::exchange(other.m_materialTable, {})),
+      m_pipelines(std::exchange(other.m_pipelines, {})), m_vertexShader(std::move(other.m_vertexShader)),
+      m_fragmentShader(std::move(other.m_fragmentShader)), m_meshes(std::exchange(other.m_meshes, {})),
+      m_materials(std::exchange(other.m_materials, {})), m_materialTable(std::exchange(other.m_materialTable, {})),
       m_materialCapacity(std::exchange(other.m_materialCapacity, 0)),
       m_defaultMaterial(std::exchange(other.m_defaultMaterial, {})),
       m_frameSlots(std::exchange(other.m_frameSlots, {})), m_nextFrameSlot(other.m_nextFrameSlot),
@@ -179,9 +176,8 @@ MeshPass::~MeshPass() {
     }
 }
 
-core::Result<MeshPass> MeshPass::Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat,
-                                        const MeshPassSettings& settings) {
-    MeshPass pass(device, colorFormat, depthFormat, settings);
+core::Result<MeshPass> MeshPass::Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat) {
+    MeshPass pass(device, colorFormat, depthFormat);
     DAI_TRY(pass.ReplaceShaders(rhi::ToSpirv(kMeshVsSpirv), rhi::ToSpirv(kMeshPsSpirv)));
     DAI_TRY(pass.CreateClusterBuffers());
     DAI_TRY_ASSIGN(pass.m_skinningPipeline,
@@ -219,7 +215,6 @@ core::Result<rhi::PipelineHandle> MeshPass::BuildPipeline(std::span<const std::u
         // The mesh pass keeps the pre-pass's depth: equal depths pass the reverse-Z test.
         .depthWrite = prepass,
         .cull = cull,
-        .samples = m_samples,
         .name = prepass ? "Depth and normal pre-pass" : "Mesh",
     });
 }
@@ -255,7 +250,6 @@ core::Result<void> MeshPass::ReplaceShaders(std::span<const std::uint32_t> verte
                                                                     .depthFormat = m_depthFormat,
                                                                     .depthWrite = false,
                                                                     .cull = rhi::CullMode::None,
-                                                                    .samples = m_samples,
                                                                     .name = "Sky"}));
                 return {};
             });
@@ -268,21 +262,6 @@ core::Result<void> MeshPass::ReplaceShaders(std::span<const std::uint32_t> verte
     m_vertexShader.assign(vertexShader.begin(), vertexShader.end());
     m_fragmentShader.assign(fragmentShader.begin(), fragmentShader.end());
     return {};
-}
-
-core::Result<void> MeshPass::SetSamples(std::uint32_t samples) {
-    if (samples == m_samples) {
-        return {};
-    }
-    const std::uint32_t previous = std::exchange(m_samples, samples);
-    // Copies: ReplaceShaders keeps what it is given.
-    const std::vector<std::uint32_t> vertexShader = m_vertexShader;
-    const std::vector<std::uint32_t> fragmentShader = m_fragmentShader;
-    core::Result<void> rebuilt = ReplaceShaders(vertexShader, fragmentShader);
-    if (!rebuilt) {
-        m_samples = previous;
-    }
-    return rebuilt;
 }
 
 core::Result<MeshHandle> MeshPass::CreateMesh(const resources::MeshData& data, const std::string& name) {
