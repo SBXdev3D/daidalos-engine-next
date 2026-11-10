@@ -11,6 +11,8 @@
 
 #include <glm/matrix.hpp>
 #include <glm/vec4.hpp>
+#include <shaders/MotionDebug.ps.spv.h>
+#include <shaders/MotionDebug.vs.spv.h>
 #include <shaders/Tonemap.ps.spv.h>
 #include <shaders/Tonemap.vs.spv.h>
 
@@ -42,6 +44,13 @@ struct TonemapPushConstants {
     float exposure;
 };
 
+// Matches MotionDebugPushConstants in shaders/MotionDebug.slang.
+struct MotionDebugPushConstants {
+    std::uint32_t motionTexture;
+    std::uint32_t padding;
+    glm::vec2 extent;
+};
+
 } // namespace
 
 struct Renderer::Impl {
@@ -63,6 +72,8 @@ struct Renderer::Impl {
         particlePass.reset();
         uiPass.reset();
         device.DestroyPipeline(tonemap);
+        device.DestroyPipeline(motionDebug);
+        device.DestroyTexture(motion);
         device.DestroyTexture(depth);
         device.DestroyTexture(normals);
         device.DestroyTexture(hdr);
@@ -94,10 +105,13 @@ struct Renderer::Impl {
     PathTracerSettings pathAveraged;
     bool pathShown = false;
     rhi::PipelineHandle tonemap;
+    rhi::PipelineHandle motionDebug;
     rhi::TextureHandle hdr;
     rhi::TextureHandle depth;
     /// World normals of the pre-pass.
     rhi::TextureHandle normals;
+    /// Motion vectors of the pre-pass (ADR-0037).
+    rhi::TextureHandle motion;
     rhi::Extent targetExtent;
     bool vsync;
     float exposure = 1.0f;
@@ -118,10 +132,16 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
     }
     device.DestroyTexture(depth);
     device.DestroyTexture(normals);
+    device.DestroyTexture(motion);
     device.DestroyTexture(hdr);
     depth = {};
     normals = {};
+    motion = {};
     hdr = {};
+    DAI_TRY_ASSIGN(motion, device.CreateTexture({.extent = extent,
+                                                 .format = MeshPass::kMotionFormat,
+                                                 .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
+                                                 .name = "Motion"}));
     DAI_TRY_ASSIGN(normals, device.CreateTexture({.extent = extent,
                                                   .format = MeshPass::kNormalFormat,
                                                   .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
@@ -208,6 +228,13 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
                                       .cull = rhi::CullMode::None,
                                       .name = "Tonemap",
                                   }));
+    DAI_TRY_ASSIGN(impl->motionDebug, impl->device.CreatePipeline({
+                                          .vertexShader = rhi::ToSpirv(kMotionDebugVsSpirv),
+                                          .fragmentShader = rhi::ToSpirv(kMotionDebugPsSpirv),
+                                          .colorFormat = kHdrFormat,
+                                          .cull = rhi::CullMode::None,
+                                          .name = "Motion debug view",
+                                      }));
     DAI_TRY_ASSIGN(UiPass uiPass, UiPass::Create(impl->device, impl->swapchain.ColorFormat()));
     impl->uiPass.emplace(std::move(uiPass));
     impl->antialiasing = config.antialiasing;
@@ -364,13 +391,16 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         impl.rayTracing->AddBuild(graph);
     }
     if (status) {
-        graph.AddPass({.name = "Prepass",
-                       .rendering = rhi::RenderingDesc{.colorTarget = impl.normals,
-                                                       .clearColor = glm::vec4(0.5f, 1.0f, 0.5f, 1.0f),
-                                                       .depthTarget = impl.depth,
-                                                       .clearDepth = 0.0f},
-                       .buffers = {skinnedVertices}},
-                      [&impl](rhi::CommandList& commands) { impl.meshPass->RecordPrepass(commands); });
+        // Where nothing is drawn, nothing moved: the sky's motion comes from the camera alone.
+        graph.AddPass(
+            {.name = "Prepass",
+             .rendering = rhi::RenderingDesc{.colorTarget = impl.normals,
+                                             .clearColor = glm::vec4(0.5f, 1.0f, 0.5f, 1.0f),
+                                             .moreColorTargets = {{impl.motion, glm::vec4(0.0f)}},
+                                             .depthTarget = impl.depth,
+                                             .clearDepth = 0.0f},
+             .buffers = {skinnedVertices, {impl.meshPass->PreviousSkinnedPositions(), rhi::Access::VertexShaderRead}}},
+            [&impl](rhi::CommandList& commands) { impl.meshPass->RecordPrepass(commands); });
     }
     if (hasFrame && impl.ambientOcclusion) {
         impl.ambientOcclusionPass->AddTo(graph, impl.meshPass->FrameDataIndex(), impl.depth, impl.normals);
@@ -395,6 +425,19 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         const glm::mat4 cameraWorld = glm::inverse(view.camera->view);
         impl.particlePass->AddDraw(graph, impl.meshPass->FrameDataIndex(), impl.depth, impl.hdr,
                                    glm::vec3(cameraWorld[0]), glm::vec3(cameraWorld[1]));
+    }
+    if (status && hasFrame && impl.debugView == DebugView::Motion) {
+        graph.AddPass(
+            {.name = "Motion debug view",
+             .rendering = rhi::RenderingDesc{.colorTarget = impl.hdr},
+             .textures = {{impl.hdr, rhi::Access::ColorTarget, true}, {impl.motion, rhi::Access::FragmentShaderRead}}},
+            [&impl, &frame](rhi::CommandList& commands) {
+                commands.BindPipeline(impl.motionDebug);
+                commands.Push(MotionDebugPushConstants{
+                    impl.device.BindlessIndex(impl.motion), 0,
+                    glm::vec2(static_cast<float>(frame.extent.width), static_cast<float>(frame.extent.height))});
+                commands.Draw(3);
+            });
     }
     if (status && hasFrame && impl.debugView == DebugView::Rays) {
         impl.rayTracing->AddDebugView(graph, impl.hdr, impl.meshPass->FrameDataIndex(),

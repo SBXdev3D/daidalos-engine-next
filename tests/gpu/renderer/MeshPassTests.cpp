@@ -6,8 +6,10 @@
 #include <daidalos/resources/ImageData.hpp>
 
 #include <glm/ext/matrix_transform.hpp>
+#include <glm/gtc/packing.hpp>
 
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -99,6 +101,20 @@ protected:
                                     .name = "Normals"});
         ASSERT_TRUE(normals.has_value());
         m_normals = *normals;
+        const core::Result<rhi::TextureHandle> motion =
+            Device().CreateTexture({.extent = kExtent,
+                                    .format = MeshPass::kMotionFormat,
+                                    .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::TransferSrc,
+                                    .name = "Motion"});
+        ASSERT_TRUE(motion.has_value());
+        m_motion = *motion;
+        const core::Result<rhi::BufferHandle> motionReadback =
+            Device().CreateBuffer({.size = std::uint64_t{kExtent.width} * kExtent.height * 4,
+                                   .usage = rhi::BufferUsage::TransferDst,
+                                   .memory = rhi::MemoryLocation::GpuToCpu,
+                                   .name = "Motion readback"});
+        ASSERT_TRUE(motionReadback.has_value());
+        m_motionReadback = *motionReadback;
         const core::Result<rhi::BufferHandle> readback =
             Device().CreateBuffer({.size = std::uint64_t{kExtent.width} * kExtent.height * 4,
                                    .usage = rhi::BufferUsage::TransferDst,
@@ -115,7 +131,9 @@ protected:
             Device().DestroyTexture(m_color);
             Device().DestroyTexture(m_depth);
             Device().DestroyTexture(m_normals);
+            Device().DestroyTexture(m_motion);
             Device().DestroyBuffer(m_readback);
+            Device().DestroyBuffer(m_motionReadback);
         }
         GpuTest::TearDown();
     }
@@ -154,13 +172,15 @@ protected:
                         traced = m_scene->Structure();
                     }
                     const rhi::BufferUse skinned{m_pass->SkinnedVertices(), rhi::Access::VertexInputRead};
-                    graph.AddPass({.name = "Prepass",
-                                   .rendering = rhi::RenderingDesc{.colorTarget = m_normals,
-                                                                   .clearColor = glm::vec4(0.0f),
-                                                                   .depthTarget = m_depth,
-                                                                   .clearDepth = 0.0f},
-                                   .buffers = {skinned}},
-                                  [&](rhi::CommandList& list) { m_pass->RecordPrepass(list); });
+                    graph.AddPass(
+                        {.name = "Prepass",
+                         .rendering = rhi::RenderingDesc{.colorTarget = m_normals,
+                                                         .clearColor = glm::vec4(0.0f),
+                                                         .moreColorTargets = {{m_motion, glm::vec4(0.0f)}},
+                                                         .depthTarget = m_depth,
+                                                         .clearDepth = 0.0f},
+                         .buffers = {skinned, {m_pass->PreviousSkinnedPositions(), rhi::Access::VertexShaderRead}}},
+                        [&](rhi::CommandList& list) { m_pass->RecordPrepass(list); });
                     graph.AddPass({.name = "Meshes",
                                    .rendering = rhi::RenderingDesc{.colorTarget = m_color,
                                                                    .clearColor = kBackground,
@@ -171,8 +191,20 @@ protected:
                     graph.Execute(commands);
                     commands.Transition(m_color, rhi::TextureState::TransferSrc);
                     commands.CopyTextureToBuffer(m_color, m_readback);
+                    commands.Transition(m_motion, rhi::TextureState::TransferSrc);
+                    commands.CopyTextureToBuffer(m_motion, m_motionReadback);
                 })
                 .has_value());
+    }
+
+    // The motion vector of a pixel, counted from the top-left corner: where its surface was in the previous
+    // frame minus where it is, in pixels.
+    [[nodiscard]] glm::vec2 Motion(std::uint32_t x, std::uint32_t y) {
+        std::array<std::uint16_t, 2> halves{};
+        const std::size_t offset = (std::size_t{y} * kExtent.width + x) * sizeof(halves);
+        std::memcpy(halves.data(), Device().Mapped(m_motionReadback).data() + offset, sizeof(halves));
+        return glm::vec2(glm::unpackHalf1x16(halves[0]) * static_cast<float>(kExtent.width),
+                         glm::unpackHalf1x16(halves[1]) * static_cast<float>(kExtent.height));
     }
 
     // Red, green and blue of a pixel, counted from the top-left corner.
@@ -190,7 +222,9 @@ protected:
     rhi::TextureHandle m_color;
     rhi::TextureHandle m_depth;
     rhi::TextureHandle m_normals;
+    rhi::TextureHandle m_motion;
     rhi::BufferHandle m_readback;
+    rhi::BufferHandle m_motionReadback;
 };
 
 } // namespace
@@ -837,4 +871,67 @@ TEST_F(MeshPassTest, JointBufferGrowsWithTheNumberOfJoints) {
     view.jointMatrices.back() = glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     Render(view);
     EXPECT_FALSE(IsBackground(44, 32));
+}
+
+namespace {
+
+// How far, in pixels, half a meter across moves on the screen at the test camera's distance of 5 m: half
+// the view is 5 * tan(30 degrees) meters wide, and 32 pixels.
+const float kHalfMeterInPixels = 0.5f / (5.0f * std::tan(glm::radians(30.0f))) * 32.0f;
+
+} // namespace
+
+TEST_F(MeshPassTest, AFirstFrameHasNoMotion) {
+    const MeshHandle mesh = Mesh(MakeQuad(-10.0f, 10.0f, -10.0f, 10.0f, 0.0f));
+    Render({TestCamera(), {{mesh, glm::mat4(1.0f), Material({1.0f, 1.0f, 1.0f})}}});
+    EXPECT_EQ(Motion(32, 32), glm::vec2(0.0f));
+}
+
+TEST_F(MeshPassTest, AMovingCameraMovesWhatItSees) {
+    const MeshHandle mesh = Mesh(MakeQuad(-10.0f, 10.0f, -10.0f, 10.0f, 0.0f));
+    SceneView view{TestCamera(), {{mesh, glm::mat4(1.0f), Material({1.0f, 1.0f, 1.0f})}}};
+    Render(view);
+    // Half a meter to the right: the wall was further right on the screen.
+    view.camera->view = glm::translate(glm::mat4(1.0f), glm::vec3(-0.5f, 0.0f, -5.0f));
+    Render(view);
+    for (const std::uint32_t x : {10U, 32U, 50U}) {
+        EXPECT_NEAR(Motion(x, 20).x, kHalfMeterInPixels, 0.05f);
+        EXPECT_NEAR(Motion(x, 20).y, 0.0f, 0.05f);
+    }
+
+    view.cut = true;
+    Render(view);
+    EXPECT_EQ(Motion(32, 32), glm::vec2(0.0f)) << "nothing moves across a cut";
+}
+
+TEST_F(MeshPassTest, AMovedDrawGivesWhereItWas) {
+    const MeshHandle mesh = Mesh(MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f));
+    renderer::DrawItem draw{mesh, glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, 0.0f, 0.0f)),
+                            Material({1.0f, 1.0f, 1.0f})};
+    draw.previousWorld = glm::mat4(1.0f);
+    Render({TestCamera(), {draw}});
+    // Half a meter right of the center: it came from the left.
+    EXPECT_NEAR(Motion(37, 32).x, -kHalfMeterInPixels, 0.05f);
+    EXPECT_NEAR(Motion(37, 32).y, 0.0f, 0.05f);
+    EXPECT_EQ(Motion(2, 32), glm::vec2(0.0f)) << "where nothing is drawn";
+
+    draw.previousWorld.reset();
+    Render({TestCamera(), {draw}});
+    EXPECT_EQ(Motion(37, 32), glm::vec2(0.0f)) << "a draw without a previous matrix stood still";
+}
+
+TEST_F(MeshPassTest, ASkinnedDrawMovesWithItsPreviousJoints) {
+    MeshData data = MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f);
+    data.skin.assign(data.vertices.size(), resources::SkinWeights{});
+    const MeshHandle mesh = Mesh(data);
+    SceneView view{TestCamera(), {{mesh, glm::mat4(1.0f), Material({1.0f, 1.0f, 1.0f}), 0}}};
+    view.jointMatrices = {glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, 0.0f, 0.0f))};
+    view.previousJointMatrices = {glm::mat4(1.0f)};
+    Render(view);
+    EXPECT_NEAR(Motion(37, 32).x, -kHalfMeterInPixels, 0.05f);
+    EXPECT_NEAR(Motion(37, 32).y, 0.0f, 0.05f);
+
+    view.previousJointMatrices.clear();
+    Render(view);
+    EXPECT_EQ(Motion(37, 32), glm::vec2(0.0f)) << "joints without previous matrices stood still";
 }

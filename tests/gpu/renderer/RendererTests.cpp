@@ -133,6 +133,22 @@ TEST_F(RendererTest, SwitchesAntialiasingWhileRunning) {
     EXPECT_EQ(target->Device().ValidationErrorCount(), 0U);
 }
 
+TEST_F(RendererTest, ShowsEachDebugView) {
+    std::optional<renderer::Renderer> target = CreateRenderer();
+    if (!target.has_value()) {
+        GTEST_SKIP();
+    }
+    const core::Result<renderer::MeshHandle> mesh = target->CreateMesh(renderer::MakeCube(), "Cube");
+    ASSERT_TRUE(mesh.has_value());
+    const renderer::SceneView view = TestView(*mesh);
+    using renderer::DebugView;
+    for (const DebugView debugView : {DebugView::Rays, DebugView::Path, DebugView::Motion, DebugView::Off}) {
+        target->SetDebugView(debugView);
+        RenderFrames(*target, view, 3);
+    }
+    EXPECT_EQ(target->Device().ValidationErrorCount(), 0U);
+}
+
 TEST_F(RendererTest, DestroyedMeshIsSafeWhileFramesAreInFlight) {
     std::optional<renderer::Renderer> target = CreateRenderer();
     if (!target.has_value()) {

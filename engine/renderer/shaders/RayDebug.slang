@@ -15,7 +15,6 @@ struct RayDebugPushConstants {
 };
 
 [[vk::push_constant]] RayDebugPushConstants g_debug;
-[[vk::binding(2, 0)]] StructuredBuffer<float> g_vertexFloats[];
 [[vk::binding(2, 0)]] StructuredBuffer<uint> g_indices[];
 [[vk::binding(3, 0)]] RaytracingAccelerationStructure g_accelerationStructures[];
 

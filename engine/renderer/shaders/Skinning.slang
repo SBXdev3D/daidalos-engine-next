@@ -22,7 +22,6 @@ struct SkinningPushConstants {
 };
 
 [[vk::push_constant]] SkinningPushConstants g_skinning;
-[[vk::binding(2, 0)]] StructuredBuffer<float> g_vertexFloats[];
 [[vk::binding(2, 0)]] RWStructuredBuffer<float> g_skinnedFloats[];
 
 // The joints of a vertex, blended by their weights (ADR-0020), from the frame's joints or, after

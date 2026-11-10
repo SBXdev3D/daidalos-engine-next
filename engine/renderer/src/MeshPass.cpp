@@ -77,8 +77,12 @@ struct FrameData {
     float farPlane;
     std::uint32_t accelerationStructure;
     std::uint32_t padding;
+    glm::mat4 unjitteredViewProjection;
+    glm::mat4 previousViewProjection;
+    glm::vec2 jitter;
+    glm::vec2 padding1;
 };
-static_assert(sizeof(FrameData) == 256);
+static_assert(sizeof(FrameData) == 400);
 
 struct LightData {
     glm::vec3 position;
@@ -218,6 +222,7 @@ core::Result<rhi::PipelineHandle> MeshPass::BuildPipeline(std::span<const std::u
                              {2, rhi::Format::Rg32Float, static_cast<std::uint32_t>(offsetof(Vertex, uv))},
                              {3, rhi::Format::Rgba32Float, static_cast<std::uint32_t>(offsetof(Vertex, tangent))}},
         .colorFormat = prepass ? kNormalFormat : m_colorFormat,
+        .moreColorFormats = prepass ? std::vector{kMotionFormat} : std::vector<rhi::Format>{},
         .depthFormat = m_depthFormat,
         // The mesh pass keeps the pre-pass's depth: equal depths pass the reverse-Z test.
         .depthWrite = prepass,
@@ -473,6 +478,10 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     const glm::vec3 cameraPosition = glm::inverse(camera.view)[3];
     const glm::mat4 viewProjection =
         math::PerspectiveReverseZ(verticalFov, aspect, camera.nearPlane, farPlane) * camera.view;
+    // The first frame, and the first after a cut, did not move.
+    const glm::mat4 previousViewProjection =
+        m_previousViewProjection.has_value() && !view.cut ? *m_previousViewProjection : viewProjection;
+    m_previousViewProjection = viewProjection;
     m_viewProjection = viewProjection;
     m_hasSky = static_cast<bool>(view.atmosphere.sky);
     const FrameData frame{viewProjection,
@@ -498,7 +507,11 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                           m_device->StorageIndex(slot.clusterLights),
                           farPlane,
                           targets.accelerationStructure,
-                          0};
+                          0,
+                          viewProjection,
+                          previousViewProjection,
+                          glm::vec2(0.0f),
+                          glm::vec2(0.0f)};
     std::memcpy(m_device->Mapped(slot.clusters).data(), m_clusters.ranges.data(),
                 m_clusters.ranges.size() * sizeof(glm::uvec2));
     if (!m_clusters.lightIndices.empty()) {

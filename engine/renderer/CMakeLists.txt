@@ -42,6 +42,7 @@ dai_add_module(NAME renderer
 dai_add_shaders(TARGET daidalos_renderer
     SOURCES shaders/Mesh.slang shaders/Prepass.slang shaders/Ssao.slang shaders/SsaoBlur.slang
         shaders/Tonemap.slang shaders/ParticleDraw.slang shaders/Ui.slang shaders/RayDebug.slang shaders/Sky.slang
+        shaders/MotionDebug.slang
     COMPUTE shaders/PathTracer.slang shaders/Skinning.slang shaders/ParticleEmit.slang shaders/ParticleSimulate.slang
         shaders/ParticleFinish.slang shaders/ParticleSort.slang
     INCLUDES shaders/Bsdf.slang shaders/RayQueries.slangh shaders/AmbientOcclusion.slangh shaders/MeshCommon.slangh shaders/MeshTypes.slangh shaders/Particles.slangh)

@@ -13,6 +13,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -66,6 +67,9 @@ public:
 
     /// Normals of the pre-pass: world normals, times 0.5 plus 0.5.
     static constexpr rhi::Format kNormalFormat = rhi::Format::Rgba8Unorm;
+    /// Motion vectors of the pre-pass, its second target: where each pixel's surface was in the previous
+    /// frame minus where it is, in texture coordinates (ADR-0037).
+    static constexpr rhi::Format kMotionFormat = rhi::Format::Rg16Float;
 
     /// Replaces the shaders of the mesh pass. The pre-pass uses the same vertex shader, so that both
     /// compute the same depth. On failure the current pipelines stay in use.
@@ -107,7 +111,8 @@ public:
     [[nodiscard]] const glm::mat4& ViewProjection() const { return m_viewProjection; }
     /// The storage index of the material table.
     [[nodiscard]] std::uint32_t MaterialDataIndex() const { return m_device->StorageIndex(m_materialTable); }
-    /// Writes depth and normals, inside a rendering scope with a kNormalFormat target and a cleared depth.
+    /// Writes depth, normals and motion vectors, inside a rendering scope with a kNormalFormat target, a
+    /// kMotionFormat target and a cleared depth. Skinned draws read PreviousSkinnedPositions.
     void RecordPrepass(rhi::CommandList& commands);
     /// Shades the prepared frame inside a rendering scope whose depth holds the pre-pass's: each pixel is
     /// shaded once, where its depth equals the pre-pass's. Then draws the sky where nothing was drawn, if
@@ -240,6 +245,8 @@ private:
     std::vector<SkinningJob> m_skinningJobs;
     std::vector<TracedDraw> m_traced;
     glm::mat4 m_viewProjection{1.0f};
+    /// Of the last frame prepared, for its successor's motion vectors.
+    std::optional<glm::mat4> m_previousViewProjection;
     bool m_hasSky = false;
 };
 

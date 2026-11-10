@@ -40,7 +40,18 @@ struct FrameData {
     float farPlane;          // Nothing is drawn beyond it: the view distance.
     uint accelerationStructure; // The frame's top-level structure in g_accelerationStructures.
     uint padding;
+    // Without the jitter of temporal antialiasing (ADR-0037): motion vectors compare these two.
+    float4x4 unjitteredViewProjection;
+    float4x4 previousViewProjection;
+    float2 jitter; // In texture coordinates, added to where each pixel samples the scene.
+    float2 padding1;
 };
+
+// Where a point of clip space is on the screen, in texture coordinates: y goes down (CONVENTIONS.md,
+// section 5).
+float2 ClipToUv(float4 clip) {
+    return clip.xy / clip.w * float2(0.5, -0.5) + 0.5;
+}
 
 // Meters in front of the camera, from a reverse-Z depth: 1 at the near plane, 0 at the far plane.
 float LinearDepth(FrameData frame, float depth) {
@@ -133,6 +144,8 @@ struct MaterialData {
 [[vk::binding(2, 0)]] StructuredBuffer<LightData> g_lights[];
 [[vk::binding(2, 0)]] StructuredBuffer<uint2> g_clusters[];
 [[vk::binding(2, 0)]] StructuredBuffer<uint> g_clusterLights[];
+// Vertices read as floats, kVertexFloats each, and the previous positions of skinned vertices.
+[[vk::binding(2, 0)]] StructuredBuffer<float> g_vertexFloats[];
 
 // Matches rhi::SamplerIndex.
 static const uint kSamplerLinearClamp = 0;

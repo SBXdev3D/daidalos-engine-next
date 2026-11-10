@@ -155,6 +155,7 @@ protected:
             created(kDepthFormat, rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled, "Depth");
         const rhi::TextureHandle normals =
             created(MeshPass::kNormalFormat, rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled, "Normals");
+        const rhi::TextureHandle motion = created(MeshPass::kMotionFormat, rhi::TextureUsage::ColorTarget, "Motion");
         EXPECT_TRUE(
             Device()
                 .Submit([&](rhi::CommandList& commands) {
@@ -169,8 +170,10 @@ protected:
                     graph.AddPass({.name = "Prepass",
                                    .rendering = rhi::RenderingDesc{.colorTarget = normals,
                                                                    .clearColor = glm::vec4(0.0f),
+                                                                   .moreColorTargets = {{motion, glm::vec4(0.0f)}},
                                                                    .depthTarget = depth,
                                                                    .clearDepth = 0.0f}},
+
                                   [&](rhi::CommandList& list) { m_pass->RecordPrepass(list); });
                     graph.AddPass({.name = "Meshes",
                                    .rendering = rhi::RenderingDesc{.colorTarget = color,
@@ -185,6 +188,7 @@ protected:
         Device().DestroyTexture(color);
         Device().DestroyTexture(depth);
         Device().DestroyTexture(normals);
+        Device().DestroyTexture(motion);
         return image;
     }
 

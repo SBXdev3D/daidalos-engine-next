@@ -35,6 +35,8 @@ enum class DebugView {
     Rays,
     /// The reference path tracer (ADR-0034), which averages a path per pixel per frame while the view stays.
     Path,
+    /// The motion vectors of the pre-pass, in color (ADR-0037): grey where nothing moved.
+    Motion,
 };
 
 struct RendererConfig {

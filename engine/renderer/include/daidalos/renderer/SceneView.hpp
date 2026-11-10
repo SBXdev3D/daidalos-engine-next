@@ -108,6 +108,9 @@ struct SceneView {
     std::vector<ParticleSpawn> particleSpawns;
     /// Seconds since the previous frame, by which particles move.
     float timeStep = 0.0f;
+    /// The view does not follow from the previous one, after a teleport or a change of scene: nothing
+    /// is reprojected from earlier frames (ADR-0037).
+    bool cut = false;
 };
 
 } // namespace daidalos::renderer
