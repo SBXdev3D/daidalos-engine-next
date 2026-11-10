@@ -41,3 +41,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0035](0035-ray-traced-shadows.md) | Ray-traced shadows for every light, FLIP in the tests | Accepted |
 | [0036](0036-sky.md) | A cube-texture sky, where nothing is drawn and for rays that leave the scene | Accepted |
 | [0037](0037-temporal-antialiasing.md) | Motion vectors, jitter and temporal antialiasing, replacing FXAA and MSAA | Accepted |
+| [0038](0038-releases.md) | Releases: a tag builds Windows and Linux archives into a draft GitHub release | Accepted |

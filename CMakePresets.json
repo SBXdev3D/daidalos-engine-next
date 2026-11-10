@@ -35,6 +35,12 @@
       "cacheVariables": { "DAI_ENABLE_PROFILER": "ON", "VCPKG_MANIFEST_FEATURES": "profiler" }
     },
     {
+      "name": "windows-msvc-shipping",
+      "displayName": "Windows MSVC Release for the release archive, without developer tools or tests",
+      "inherits": "windows-base",
+      "cacheVariables": { "DAI_ENABLE_DEV_TOOLS": "OFF", "DAI_BUILD_TESTS": "OFF" }
+    },
+    {
       "name": "linux-base",
       "hidden": true,
       "inherits": "base",
@@ -72,6 +78,12 @@
         "DAI_ENABLE_PROFILER": "ON",
         "VCPKG_MANIFEST_FEATURES": "profiler"
       }
+    },
+    {
+      "name": "linux-clang-shipping",
+      "displayName": "Linux Clang Release for the release archive, without developer tools or tests",
+      "inherits": "linux-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "DAI_ENABLE_DEV_TOOLS": "OFF", "DAI_BUILD_TESTS": "OFF" }
     }
   ],
   "buildPresets": [
@@ -79,10 +91,12 @@
     { "name": "windows-msvc-release", "configurePreset": "windows-msvc", "configuration": "Release" },
     { "name": "windows-msvc-asan", "configurePreset": "windows-msvc-asan", "configuration": "Debug" },
     { "name": "windows-msvc-profile", "configurePreset": "windows-msvc-profile", "configuration": "RelWithDebInfo" },
+    { "name": "windows-msvc-shipping", "configurePreset": "windows-msvc-shipping", "configuration": "Release" },
     { "name": "linux-clang-debug", "configurePreset": "linux-clang-debug" },
     { "name": "linux-clang-release", "configurePreset": "linux-clang-release" },
     { "name": "linux-clang-asan", "configurePreset": "linux-clang-asan" },
-    { "name": "linux-clang-profile", "configurePreset": "linux-clang-profile" }
+    { "name": "linux-clang-profile", "configurePreset": "linux-clang-profile" },
+    { "name": "linux-clang-shipping", "configurePreset": "linux-clang-shipping" }
   ],
   "testPresets": [
     {
@@ -104,5 +118,18 @@
       "environment": { "LSAN_OPTIONS": "suppressions=${sourceDir}/tests/lsan.supp:print_suppressions=0" }
     },
     { "name": "linux-clang-profile", "inherits": "test-base", "configurePreset": "linux-clang-profile" }
+  ],
+  "packagePresets": [
+    {
+      "name": "windows-msvc-shipping",
+      "configurePreset": "windows-msvc-shipping",
+      "configurations": ["Release"],
+      "packageDirectory": "${sourceDir}/build/packages"
+    },
+    {
+      "name": "linux-clang-shipping",
+      "configurePreset": "linux-clang-shipping",
+      "packageDirectory": "${sourceDir}/build/packages"
+    }
   ]
 }

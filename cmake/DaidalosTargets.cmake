@@ -44,6 +44,7 @@ endfunction()
 #
 # The engine's settings file, config/daidalos.cfg, goes next to the executable, and so do the CONFIG
 # files of the game. Each is copied once and left alone after that: it is the player's.
+# The executable and the same files are installed at the root of the release archive (ADR-0038).
 function(dai_add_app)
     cmake_parse_arguments(PARSE_ARGV 0 ARG "" "NAME" "SOURCES;DEPS;CONFIG")
 
@@ -52,6 +53,7 @@ function(dai_add_app)
     target_compile_definitions(${ARG_NAME} PRIVATE DAI_VERSION="${PROJECT_VERSION}")
     set_target_properties(${ARG_NAME} PROPERTIES FOLDER "apps")
     dai_configure_target(${ARG_NAME})
+    install(TARGETS ${ARG_NAME} RUNTIME DESTINATION .)
     foreach(config IN ITEMS "${PROJECT_SOURCE_DIR}/config/daidalos.cfg" ${ARG_CONFIG})
         cmake_path(ABSOLUTE_PATH config BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         cmake_path(GET config FILENAME config_name)
@@ -59,6 +61,7 @@ function(dai_add_app)
             COMMAND "${CMAKE_COMMAND}" -DSOURCE=${config} -DDESTINATION=$<TARGET_FILE_DIR:${ARG_NAME}>/${config_name}
                 -P "${PROJECT_SOURCE_DIR}/cmake/CopyIfMissing.cmake"
             VERBATIM)
+        install(FILES "${config}" DESTINATION .)
     endforeach()
 endfunction()
 

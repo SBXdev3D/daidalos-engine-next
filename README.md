@@ -129,6 +129,25 @@ The sandbox adds its own:
 | `sandbox.flashlight` | false | Start with the flashlight on |
 | `sandbox.start` | | Where the player's eyes start: `x y z yaw pitch`, in meters and degrees |
 
+## Releasing
+
+A release is a pair of archives, Windows and Linux, built with the `*-shipping` presets: Release, without the developer tools or the tests ([ADR-0038](docs/adr/0038-releases.md)). To build one locally:
+
+```bash
+cmake --preset windows-msvc-shipping            # or linux-clang-shipping
+cmake --build --preset windows-msvc-shipping
+cpack --preset windows-msvc-shipping            # build/packages/daidalos-engine-next-<version>-windows-x64.zip
+```
+
+To release:
+
+1. Set the new version in `project(VERSION)` in `CMakeLists.txt` and in `version-string` in `vcpkg.json`, and merge it into `main`.
+2. Tag the merge and push the tag: `git tag v0.2.0 && git push origin v0.2.0`.
+3. The Release workflow checks that the tag matches both files, builds the two archives, and creates a **draft** release with them, their checksums and notes generated from the merged pull requests.
+4. Review the draft on GitHub, then publish it.
+
+Starting the Release workflow by hand (Actions > Release > Run workflow) builds the archives as workflow artifacts without creating a release.
+
 ## Formatting
 
 ```bash

@@ -61,3 +61,5 @@ endif()
 if(DAI_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
+
+include(DaidalosPackaging)

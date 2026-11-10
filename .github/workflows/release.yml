@@ -1,0 +1,134 @@
+name: Release
+
+# Builds the release archives for Windows and Linux with the shipping presets (ADR-0038). A tag vX.Y.Z
+# creates a draft GitHub release with them, which is reviewed and published by hand. Started by hand, the
+# workflow only builds the archives and keeps them as workflow artifacts: a dry run.
+# Tests are not run here: pull request CI ran them on the commit being tagged.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Check the version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # CMakeLists.txt and vcpkg.json must agree, and a tag must name that version.
+      - name: Compare CMakeLists.txt, vcpkg.json and the tag
+        id: read
+        shell: bash
+        run: |
+          cmake_version=$(sed -n '/^project(/,/)/s/^[[:space:]]*VERSION[[:space:]]\+\([0-9.]\+\).*/\1/p' CMakeLists.txt)
+          vcpkg_version=$(jq -r '."version-string"' vcpkg.json)
+          echo "CMakeLists.txt: $cmake_version, vcpkg.json: $vcpkg_version"
+          if [ -z "$cmake_version" ] || [ "$cmake_version" != "$vcpkg_version" ]; then
+            echo "::error::CMakeLists.txt and vcpkg.json give different versions"
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$cmake_version" ]; then
+            echo "::error::The tag $GITHUB_REF_NAME does not match the version $cmake_version"
+            exit 1
+          fi
+          echo "version=$cmake_version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: ${{ matrix.name }}
+    needs: version
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-2022
+            preset: windows-msvc-shipping
+          - name: Linux x64
+            os: ubuntu-24.04
+            preset: linux-clang-shipping
+    env:
+      # vcpkg binary cache, persisted between runs with actions/cache.
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      # Ninja and the X11 and Wayland development packages that SDL3 is built against, as in ci.yml.
+      - name: Install build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev \
+            libxkbcommon-dev libwayland-dev libdecor-0-dev libegl1-mesa-dev libgl1-mesa-dev libdrm-dev libgbm-dev
+
+      - name: Use the runner's vcpkg
+        shell: bash
+        run: |
+          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
+          cmake -E make_directory "$VCPKG_DEFAULT_BINARY_CACHE"
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.vcpkg-cache
+          key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: vcpkg-${{ matrix.preset }}-
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Package
+        run: cpack --preset ${{ matrix.preset }}
+
+      - name: Keep the archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.preset }}
+          path: |
+            build/packages/*.zip
+            build/packages/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: Draft the release
+    needs: [version, build]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          path: packages
+          merge-multiple: true
+
+      - name: Compute checksums
+        working-directory: packages
+        run: sha256sum * > SHA256SUMS.txt
+
+      # A draft is visible to the repository's collaborators only, until it is published by hand.
+      - name: Create a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" packages/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --draft \
+            --generate-notes \
+            --title "Daidalos Engine Next ${{ needs.version.outputs.version }}"
