@@ -476,16 +476,22 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     DAI_TRY(PrepareFrameSlot(slot, view));
 
     const glm::vec3 cameraPosition = glm::inverse(camera.view)[3];
-    const glm::mat4 viewProjection =
-        math::PerspectiveReverseZ(verticalFov, aspect, camera.nearPlane, farPlane) * camera.view;
+    const glm::mat4 projection = math::PerspectiveReverseZ(verticalFov, aspect, camera.nearPlane, farPlane);
+    const glm::mat4 viewProjection = projection * camera.view;
+    // The jitter moves the image in clip space, where y goes up and the screen is 2 wide.
+    const glm::vec2 extent(static_cast<float>(std::max(targets.extent.width, 1U)),
+                           static_cast<float>(std::max(targets.extent.height, 1U)));
+    const glm::vec2 jitter = targets.jitter / extent;
+    const glm::mat4 jittered =
+        glm::translate(glm::mat4(1.0f), glm::vec3(-2.0f * jitter.x, 2.0f * jitter.y, 0.0f)) * viewProjection;
     // The first frame, and the first after a cut, did not move.
     const glm::mat4 previousViewProjection =
         m_previousViewProjection.has_value() && !view.cut ? *m_previousViewProjection : viewProjection;
     m_previousViewProjection = viewProjection;
     m_viewProjection = viewProjection;
     m_hasSky = static_cast<bool>(view.atmosphere.sky);
-    const FrameData frame{viewProjection,
-                          glm::inverse(viewProjection),
+    const FrameData frame{jittered,
+                          glm::inverse(jittered),
                           cameraPosition,
                           view.atmosphere.fogDensity,
                           view.atmosphere.fogColor,
@@ -510,7 +516,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                           0,
                           viewProjection,
                           previousViewProjection,
-                          glm::vec2(0.0f),
+                          jitter,
                           glm::vec2(0.0f)};
     std::memcpy(m_device->Mapped(slot.clusters).data(), m_clusters.ranges.data(),
                 m_clusters.ranges.size() * sizeof(glm::uvec2));

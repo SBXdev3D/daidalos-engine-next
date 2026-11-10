@@ -28,6 +28,7 @@
 #include "RayTracingScene.hpp"
 #include "RenderGraph.hpp"
 #include "ShaderCompiler.hpp"
+#include "TemporalResolvePass.hpp"
 #include "UiPass.hpp"
 
 namespace daidalos::renderer {
@@ -66,6 +67,7 @@ struct Renderer::Impl {
             DAI_LOG_ERROR(kModule, "Shutting down with a failed device: {}", core::Format(idle.error()));
         }
         pathTracer.reset();
+        temporalResolve.reset();
         rayTracing.reset();
         meshPass.reset();
         ambientOcclusionPass.reset();
@@ -74,6 +76,7 @@ struct Renderer::Impl {
         device.DestroyPipeline(tonemap);
         device.DestroyPipeline(motionDebug);
         device.DestroyTexture(motion);
+        device.DestroyTexture(reactive);
         device.DestroyTexture(depth);
         device.DestroyTexture(normals);
         device.DestroyTexture(hdr);
@@ -92,6 +95,11 @@ struct Renderer::Impl {
     std::optional<AmbientOcclusionPass> ambientOcclusionPass;
     std::optional<ParticlePass> particlePass;
     std::optional<UiPass> uiPass;
+    std::optional<TemporalResolvePass> temporalResolve;
+    /// Counts the frames, for the jitter of temporal antialiasing.
+    std::uint64_t frameNumber = 0;
+    /// The last frame went through the temporal resolve: its history can be reprojected.
+    bool resolved = false;
     /// Bursts and emissions of the last view drawn, for FrameStats.
     std::uint32_t particleSpawns = 0;
     bool ambientOcclusion = true;
@@ -112,6 +120,8 @@ struct Renderer::Impl {
     rhi::TextureHandle normals;
     /// Motion vectors of the pre-pass (ADR-0037).
     rhi::TextureHandle motion;
+    /// The particles' coverage, where temporal antialiasing trusts its history less.
+    rhi::TextureHandle reactive;
     rhi::Extent targetExtent;
     bool vsync;
     float exposure = 1.0f;
@@ -133,11 +143,18 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
     device.DestroyTexture(depth);
     device.DestroyTexture(normals);
     device.DestroyTexture(motion);
+    device.DestroyTexture(reactive);
     device.DestroyTexture(hdr);
     depth = {};
     normals = {};
     motion = {};
+    reactive = {};
     hdr = {};
+    DAI_TRY(temporalResolve->Resize(extent));
+    DAI_TRY_ASSIGN(reactive, device.CreateTexture({.extent = extent,
+                                                   .format = ParticlePass::kReactiveFormat,
+                                                   .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
+                                                   .name = "Reactive"}));
     DAI_TRY_ASSIGN(motion, device.CreateTexture({.extent = extent,
                                                  .format = MeshPass::kMotionFormat,
                                                  .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
@@ -252,6 +269,8 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     impl->ambientOcclusion = config.ambientOcclusion;
     DAI_TRY_ASSIGN(ParticlePass particlePass, ParticlePass::Create(impl->device, kHdrFormat));
     impl->particlePass.emplace(std::move(particlePass));
+    DAI_TRY_ASSIGN(TemporalResolvePass temporalResolve, TemporalResolvePass::Create(impl->device));
+    impl->temporalResolve.emplace(std::move(temporalResolve));
     impl->meshPass->SetNormalStrength(config.normalStrength);
     impl->meshPass->SetFieldOfView(config.fieldOfView);
     impl->meshPass->SetViewDistance(config.viewDistance);
@@ -370,13 +389,17 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
 
     // A failure from here on still ends the frame: the acquired image must be presented.
     core::Result<void> status = impl.ResizeTargets(frame.extent);
+    // Temporal antialiasing jitters the camera; the debug views show their own images unjittered.
+    const bool taa = impl.antialiasing == Antialiasing::Taa && impl.debugView == DebugView::Off;
     RenderGraph& graph = impl.graph;
     const rhi::TextureHandle occlusion =
         impl.ambientOcclusion ? impl.ambientOcclusionPass->Output() : rhi::TextureHandle{};
     if (status) {
         status = impl.rayTracing->Reserve(frame.slot, view.draws.size()).and_then([&](std::uint32_t structure) {
-            return impl.meshPass->Prepare(
-                view, {.extent = frame.extent, .occlusion = occlusion, .accelerationStructure = structure});
+            return impl.meshPass->Prepare(view, {.extent = frame.extent,
+                                                 .occlusion = occlusion,
+                                                 .accelerationStructure = structure,
+                                                 .jitter = taa ? Jitter(impl.frameNumber) : glm::vec2(0.0f)});
         });
         impl.particleSpawns = static_cast<std::uint32_t>(view.particleSpawns.size());
     }
@@ -423,9 +446,24 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     }
     if (status && hasFrame) {
         const glm::mat4 cameraWorld = glm::inverse(view.camera->view);
-        impl.particlePass->AddDraw(graph, impl.meshPass->FrameDataIndex(), impl.depth, impl.hdr,
+        impl.particlePass->AddDraw(graph, impl.meshPass->FrameDataIndex(), impl.depth, impl.hdr, impl.reactive,
                                    glm::vec3(cameraWorld[0]), glm::vec3(cameraWorld[1]));
     }
+    // After everything the frame draws in HDR. A frame that does not follow the last one resolved starts
+    // the history over.
+    const bool resolve = status && hasFrame && taa;
+    if (resolve) {
+        if (!impl.resolved || view.cut) {
+            impl.temporalResolve->Reset();
+        }
+        impl.temporalResolve->AddTo(graph, {.frameBuffer = impl.meshPass->FrameDataIndex(),
+                                            .color = impl.hdr,
+                                            .depth = impl.depth,
+                                            .motion = impl.motion,
+                                            .reactive = impl.reactive});
+        ++impl.frameNumber;
+    }
+    impl.resolved = resolve;
     if (status && hasFrame && impl.debugView == DebugView::Motion) {
         graph.AddPass(
             {.name = "Motion debug view",
@@ -470,7 +508,10 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     impl.pathShown = path;
 
     if (status) {
-        const rhi::TextureHandle source = path ? impl.pathTracer->Output() : impl.hdr;
+        const rhi::TextureHandle source = path      ? impl.pathTracer->Output()
+                                          : resolve ? impl.temporalResolve->Output()
+                                                    : impl.hdr;
+
         graph.AddPass({.name = "Tonemap",
                        .rendering = rhi::RenderingDesc{.colorTarget = frame.backBuffer},
                        .textures = {{frame.backBuffer, rhi::Access::ColorTarget, true},

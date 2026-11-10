@@ -826,6 +826,7 @@ void Teleport(scene::Scene& scene, ecs::Entity entity, const glm::vec3& eye) {
     player.previousFeet = player.feet;
     player.verticalSpeed = 0.0f;
     scene.Physics().SetCharacterPosition(player.character, player.feet);
+    scene.CutView();
 }
 
 core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& model, std::string_view levelPath) {

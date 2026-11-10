@@ -43,7 +43,7 @@ struct FrameData {
     // Without the jitter of temporal antialiasing (ADR-0037): motion vectors compare these two.
     float4x4 unjitteredViewProjection;
     float4x4 previousViewProjection;
-    float2 jitter; // In texture coordinates, added to where each pixel samples the scene.
+    float2 jitter; // Where each pixel samples the scene, relative to its center, in texture coordinates.
     float2 padding1;
 };
 

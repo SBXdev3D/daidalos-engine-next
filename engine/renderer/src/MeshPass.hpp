@@ -31,6 +31,9 @@ struct FrameTargets {
     rhi::TextureHandle occlusion;
     /// Index of the top-level acceleration structure the frame traces, for FrameData.
     std::uint32_t accelerationStructure = 0;
+    /// Where the frame samples each pixel, relative to its center, in pixels, y down: the jitter of
+    /// temporal antialiasing (ADR-0037). Motion vectors leave it out.
+    glm::vec2 jitter{0.0f};
 };
 
 /// A draw as rays see it (ADR-0033). Rigid draws use their mesh's bottom-level structure; skinned draws
@@ -107,7 +110,7 @@ public:
     [[nodiscard]] std::span<const TracedDraw> TracedDraws() const { return m_traced; }
     /// The storage index of the prepared frame's instances.
     [[nodiscard]] std::uint32_t InstanceDataIndex() const;
-    /// The view and projection of the prepared frame.
+    /// The view and projection of the prepared frame, without jitter.
     [[nodiscard]] const glm::mat4& ViewProjection() const { return m_viewProjection; }
     /// The storage index of the material table.
     [[nodiscard]] std::uint32_t MaterialDataIndex() const { return m_device->StorageIndex(m_materialTable); }

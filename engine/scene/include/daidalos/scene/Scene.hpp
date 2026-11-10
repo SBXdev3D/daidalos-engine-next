@@ -73,6 +73,9 @@ public:
     /// Computes the world transforms and fills the view. Sounds follow the same transforms, and the
     /// listener is the camera.
     void Extract(renderer::SceneView& view);
+    /// The next view does not follow from the last one, after a teleport: temporal antialiasing starts
+    /// over instead of smearing the jump (ADR-0037). A scene's first view is always one.
+    void CutView() { m_cut = true; }
 
 private:
     // In this order, so that entities are gone before the assets they refer to.
@@ -86,6 +89,7 @@ private:
     renderer::Atmosphere m_atmosphere;
     float m_fixedAlpha = 0.0f;
     bool m_paused = false;
+    bool m_cut = true;
     /// Seconds of the last frame, for the particles of the next view.
     float m_frameDelta = 0.0f;
     std::vector<renderer::ParticleSpawn> m_bursts;

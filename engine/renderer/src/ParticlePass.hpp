@@ -43,10 +43,14 @@ public:
                                                    float timeStep, std::uint32_t frameBuffer, rhi::TextureHandle depth,
                                                    rhi::TextureHandle normals);
 
-    /// Adds the pass that draws the particles over target, as "Particles". They read depth themselves, to
-    /// fade softly where they meet surfaces.
+    /// What the particles leave in their second target, the reactive mask of temporal antialiasing
+    /// (ADR-0037): how much they cover each pixel, where the history is not to be trusted.
+    static constexpr rhi::Format kReactiveFormat = rhi::Format::R8Unorm;
+
+    /// Adds the pass that draws the particles over target, as "Particles", and their coverage into
+    /// reactive, which it clears. They read depth themselves, to fade softly where they meet surfaces.
     void AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::TextureHandle depth, rhi::TextureHandle target,
-                 const glm::vec3& cameraRight, const glm::vec3& cameraUp);
+                 rhi::TextureHandle reactive, const glm::vec3& cameraRight, const glm::vec3& cameraUp);
 
     [[nodiscard]] std::size_t EffectCount() const { return m_effects.Size(); }
 

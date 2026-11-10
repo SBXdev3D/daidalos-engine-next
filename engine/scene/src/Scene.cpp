@@ -77,6 +77,7 @@ void Scene::Extract(renderer::SceneView& view) {
     ExtractScene(m_world, view, m_activeCamera);
     view.atmosphere = m_atmosphere;
     view.timeStep = m_frameDelta;
+    view.cut = std::exchange(m_cut, false);
     view.particleSpawns = std::move(m_bursts);
     m_bursts.clear();
     EmitParticles(m_world, m_frameDelta, view.particleSpawns);

@@ -49,7 +49,20 @@ VertexOutput VSMain(uint vertexId : SV_VulkanVertexID, uint instance : SV_Vulkan
     return output;
 }
 
-float4 PSMain(VertexOutput input) : SV_Target {
+struct ParticleOutput {
+    float4 color : SV_Target0;
+    // Its coverage, blended over the others' like the color: the reactive mask of temporal antialiasing.
+    float4 reactive : SV_Target1;
+};
+
+ParticleOutput Output(float4 color, float coverage) {
+    ParticleOutput output;
+    output.color = color;
+    output.reactive = float4(coverage, 0.0, 0.0, coverage);
+    return output;
+}
+
+ParticleOutput PSMain(VertexOutput input) {
     const FrameData frame = g_frames[g_particles.frameBuffer][0];
     const ParticleEffectData effect = g_particleEffects[g_particles.effects][input.effect];
     const float4 texel = g_textures[effect.texture].Sample(g_samplers[kSamplerLinearClamp], input.uv);
@@ -83,7 +96,7 @@ float4 PSMain(VertexOutput input) : SV_Target {
     const float visibility = exp(-frame.fogDensity * max(depth, 0.0));
     const bool additive = (effect.flags & kEffectAdditive) != 0;
     if (additive) {
-        return float4(color * alpha * visibility, 0.0);
+        return Output(float4(color * alpha * visibility, 0.0), alpha);
     }
-    return float4(lerp(frame.fogColor, color, visibility) * alpha, alpha);
+    return Output(float4(lerp(frame.fogColor, color, visibility) * alpha, alpha), alpha);
 }

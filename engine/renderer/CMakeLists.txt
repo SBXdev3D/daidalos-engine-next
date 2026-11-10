@@ -31,6 +31,8 @@ dai_add_module(NAME renderer
         src/Renderer.cpp
         src/ShaderCompiler.cpp
         src/ShaderCompiler.hpp
+        src/TemporalResolvePass.cpp
+        src/TemporalResolvePass.hpp
         src/UiPass.cpp
         src/UiPass.hpp
     PUBLIC_DEPS
@@ -43,7 +45,7 @@ dai_add_shaders(TARGET daidalos_renderer
     SOURCES shaders/Mesh.slang shaders/Prepass.slang shaders/Ssao.slang shaders/SsaoBlur.slang
         shaders/Tonemap.slang shaders/ParticleDraw.slang shaders/Ui.slang shaders/RayDebug.slang shaders/Sky.slang
         shaders/MotionDebug.slang
-    COMPUTE shaders/PathTracer.slang shaders/Skinning.slang shaders/ParticleEmit.slang shaders/ParticleSimulate.slang
+    COMPUTE shaders/PathTracer.slang shaders/Skinning.slang shaders/TemporalResolve.slang shaders/ParticleEmit.slang shaders/ParticleSimulate.slang
         shaders/ParticleFinish.slang shaders/ParticleSort.slang
     INCLUDES shaders/Bsdf.slang shaders/RayQueries.slangh shaders/AmbientOcclusion.slangh shaders/MeshCommon.slangh shaders/MeshTypes.slangh shaders/Particles.slangh)
 
