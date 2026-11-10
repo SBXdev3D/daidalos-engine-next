@@ -83,18 +83,19 @@ sequenceDiagram
     end
     A->>G: OnUpdate
     A->>S: Frame systems, then animators
-    A->>S: Extract: transforms, SceneView with joint matrices, particle spawns, sounds and listener
+    A->>S: Extract: transforms, SceneView with current and previous matrices, particle spawns, sounds and listener
     A->>G: OnRender
     A->>R: Render(SceneView, overlay)
     R->>R: Reload changed shaders
     R->>D: BeginFrame: send the pending uploads, read last timestamps
-    R->>D: Skinning, then the frame's acceleration structures
-    R->>D: Pre-pass: depth and normals
+    R->>D: Skinning, with the previous joints too, then the frame's acceleration structures
+    R->>D: Pre-pass, jittered: depth, normals and motion vectors
     R->>D: Ambient occlusion, at half resolution
     R->>D: Particles: emit, simulate, sort (compute)
     R->>D: Mesh pass into the HDR target, where depth is equal
-    R->>D: Particles drawn back to front, one indirect draw
-    R->>D: Tonemap into the back buffer, or through FXAA, then overlay
+    R->>D: Particles drawn back to front, one indirect draw, and their coverage as a reactive mask
+    R->>D: Temporal resolve: the frame blended with the reprojected history (compute)
+    R->>D: Tonemap into the back buffer, then interface and overlay
     R->>D: EndFrame: submit and present
 ```
 
@@ -185,7 +186,7 @@ flowchart LR
     H -->|"exposure,<br/>PBR Neutral"| S["Swapchain<br/>sRGB"]
 ```
 
-A light's color is what a white surface facing it reflects up close, and it fades linearly to zero at its range, as in the legacy engine. Normal maps follow glTF (green up, bitangent from the tangent's `w`), and meshes that lack tangents get MikkTSpace ones at load. Each frame, lights are assigned to 16×9×24 clusters of the view on the CPU, and a pixel shades only the lights of its cluster (ADR-0008). A pre-pass writes depth and normals first, so that the mesh pass shades each pixel once, and ambient occlusion darkens the ambient light in creases (ADR-0024). The ambient light itself comes more from above than from below. Every light casts shadows: for each light of its cluster that would light it, a pixel casts a ray towards the light against the frame's acceleration structure, and alpha-tested surfaces let light through their holes (ADR-0035). Where nothing is drawn, the mesh pass ends with the level's sky, a cube texture, behind everything (ADR-0036). Nothing beyond the view distance is drawn or lit: the projection has a far plane there, and the clusters end at it. Edges are smoothed by FXAA after tonemapping, or by multisampling the pre-pass and the mesh pass, which resolve into the targets the later passes read (ADR-0026). Draws can opt out, as the sandbox's weapons do. Each group of passes is timed with GPU timestamps, which `Renderer::GpuTimes` returns and the developer tools show.
+A light's color is what a white surface facing it reflects up close, and it fades linearly to zero at its range, as in the legacy engine. Normal maps follow glTF (green up, bitangent from the tangent's `w`), and meshes that lack tangents get MikkTSpace ones at load. Each frame, lights are assigned to 16×9×24 clusters of the view on the CPU, and a pixel shades only the lights of its cluster (ADR-0008). A pre-pass writes depth and normals first, so that the mesh pass shades each pixel once, and ambient occlusion darkens the ambient light in creases (ADR-0024). The ambient light itself comes more from above than from below. Every light casts shadows: for each light of its cluster that would light it, a pixel casts a ray towards the light against the frame's acceleration structure, and alpha-tested surfaces let light through their holes (ADR-0035). Where nothing is drawn, the mesh pass ends with the level's sky, a cube texture, behind everything (ADR-0036). Nothing beyond the view distance is drawn or lit: the projection has a far plane there, and the clusters end at it. Edges are smoothed by temporal antialiasing (ADR-0037): each frame moves the camera by a fraction of a pixel, the pre-pass writes where each pixel's surface was in the previous frame, from the previous matrices that `ExtractScene` keeps per entity, and a compute pass blends the frame with the history of the earlier ones, clipped towards the colors around each pixel. Particles mark what they cover, where the history counts less, and a teleport or a new scene starts the history over. Draws can opt out, as the sandbox's weapons do. Each group of passes is timed with GPU timestamps, which `Renderer::GpuTimes` returns and the developer tools show.
 
 `MeshPass` keeps one frame slot per frame in flight, so the CPU never writes data the GPU is still reading. Shaders are written in Slang, compiled to SPIR-V by `slangc` during the build and embedded in the binary. In development builds, the sources are watched and recompiled by the `slangc` executable (ADR-0031).
 
@@ -218,11 +219,11 @@ flowchart LR
     FD -->|"AssetLibrary::LoadFont"| F["ui::Font"]
     F --> C["ui::Canvas<br/>vertices, commands"]
     G["Game code<br/>FillRect, DrawImage, DrawText"] --> C
-    C --> U["UiPass<br/>after FXAA,<br/>before the overlay"]
+    C --> U["UiPass<br/>after tonemapping,<br/>before the overlay"]
     U --> S["Swapchain<br/>sRGB"]
 ```
 
-Fonts are baked into signed distance fields when they load, so text stays sharp at any size. The interface draws after tonemapping and antialiasing, so that FXAA does not blur text, and under the debug overlay.
+Fonts are baked into signed distance fields when they load, so text stays sharp at any size. The interface draws after tonemapping and antialiasing, so that the temporal history never holds text, and under the debug overlay.
 
 Menus use `ui::Context`, immediate mode too: buttons, toggles, sliders and choices draw themselves on the canvas and return whether the mouse or the keyboard used them, and the game keeps the values (ADR-0029). The context only remembers which widget has the focus, by its place in the frame. Behind a menu, `Scene::SetPaused` stops the scene's systems, physics, animations, particles and sounds, and the scene is still drawn as it was.
 
