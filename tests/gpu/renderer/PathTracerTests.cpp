@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "Denoiser.hpp"
+#include "GlobalIllumination.hpp"
 #include "GpuFixture.hpp"
 #include "MeshPass.hpp"
 #include "PathTracerPass.hpp"
@@ -51,10 +52,9 @@ renderer::CameraView LookAt(const glm::vec3& eye, const glm::vec3& target, float
     return {glm::lookAtRH(eye, target, glm::vec3(0.0f, 1.0f, 0.0f)), verticalFov, 0.1f};
 }
 
-// Light only from the frame's lights: no ambient light, no fog.
+// Light only from the frame's lights: no fog.
 renderer::Atmosphere Dark() {
-    return {
-        .fogColor = glm::vec3(0.0f), .fogDensity = 0.0f, .ambient = glm::vec3(0.0f), .ambientBelow = glm::vec3(0.0f)};
+    return {.fogColor = glm::vec3(0.0f), .fogDensity = 0.0f};
 }
 
 class PathTracerTest : public GpuTest {
@@ -142,9 +142,24 @@ protected:
         return Read(m_tracer->Output(), extent);
     }
 
+    struct RasterOptions {
+        std::uint32_t frames = 1;
+        bool denoise = false;
+        /// Indirect light from this global illumination, whose cache the frames fill (ADR-0040).
+        renderer::GlobalIllumination* indirect = nullptr;
+        /// Frames drawn first and left out of the average, while the cache fills.
+        std::uint32_t warmup = 0;
+    };
+
     // What the mesh pass draws of the view, in linear HDR. The view is drawn frames times, each with the
     // next noise (ADR-0039): through the denoiser, the last frame is returned; without, their average.
-    Image Rasterize(const SceneView& view, rhi::Extent extent, std::uint32_t frames = 1, bool denoise = false) {
+    Image Rasterize(const SceneView& view, rhi::Extent extent, const RasterOptions& options = {}) {
+        const std::uint32_t frames = options.frames;
+        const bool denoise = options.denoise;
+        renderer::GlobalIllumination* const indirect = options.indirect;
+        if (indirect != nullptr) {
+            EXPECT_TRUE(indirect->Resize(extent).has_value());
+        }
         const auto created = [&](rhi::Format format, rhi::TextureUsage usage, const char* name) {
             const core::Result<rhi::TextureHandle> texture =
                 Device().CreateTexture({.extent = extent, .format = format, .usage = usage, .name = name});
@@ -168,17 +183,20 @@ protected:
             denoiser.emplace(std::move(*made));
         }
         Image image(std::size_t{extent.width} * extent.height, glm::vec4(0.0f));
-        for (std::uint32_t frame = 0; frame < frames; ++frame) {
+        for (std::uint32_t drawn = 0; drawn < options.warmup + frames; ++drawn) {
+            const std::uint32_t frame = m_frameIndex++;
             EXPECT_TRUE(
                 Device()
                     .Submit([&](rhi::CommandList& commands) {
                         const core::Result<std::uint32_t> structure = m_scene->Reserve(0, view.draws.size());
                         ASSERT_TRUE(structure.has_value());
-                        ASSERT_TRUE(
-                            m_pass
-                                ->Prepare(view,
-                                          {.extent = extent, .accelerationStructure = *structure, .frameIndex = frame})
-                                .has_value());
+                        ASSERT_TRUE(m_pass
+                                        ->Prepare(view, {.extent = extent,
+                                                         .indirect = indirect != nullptr ? indirect->Output()
+                                                                                         : rhi::TextureHandle{},
+                                                         .accelerationStructure = *structure,
+                                                         .frameIndex = frame})
+                                        .has_value());
                         ASSERT_TRUE(m_scene->Prepare(m_pass->TracedDraws()).has_value());
                         renderer::RenderGraph graph;
                         m_pass->AddSkinning(graph);
@@ -190,8 +208,19 @@ protected:
                                                                        .depthTarget = depth,
                                                                        .clearDepth = 0.0f}},
                                       [&](rhi::CommandList& list) { m_pass->RecordPrepass(list); });
+                        if (indirect != nullptr) {
+                            indirect->AddTo(graph, {.frameBuffer = m_pass->FrameDataIndex(),
+                                                    .instanceBuffer = m_pass->InstanceDataIndex(),
+                                                    .materialBuffer = m_pass->MaterialDataIndex(),
+                                                    .structure = m_scene->Structure(),
+                                                    .depth = depth,
+                                                    .normals = normals,
+                                                    .frameIndex = frame});
+                        }
                         graph.AddPass({.name = "Meshes",
                                        .rendering = MeshPass::ShadingRendering(*shading, depth, glm::vec4(0.0f)),
+                                       .textures = {{indirect != nullptr ? indirect->Output() : rhi::TextureHandle{},
+                                                     rhi::Access::FragmentShaderRead}},
                                        .structures = {{m_scene->Structure(), rhi::Access::RayQueryRead}}},
                                       [&](rhi::CommandList& list) { m_pass->Record(list); });
                         if (denoiser.has_value()) {
@@ -211,9 +240,13 @@ protected:
                         graph.Execute(commands);
                     })
                     .has_value());
-            const Image drawn = Read(color, extent);
+            if (drawn < options.warmup) {
+                continue;
+            }
+            const Image drawnImage = Read(color, extent);
             for (std::size_t index = 0; index < image.size(); ++index) {
-                image[index] = denoise ? drawn[index] : image[index] + drawn[index] / static_cast<float>(frames);
+                image[index] =
+                    denoise ? drawnImage[index] : image[index] + drawnImage[index] / static_cast<float>(frames);
             }
         }
         denoiser.reset();
@@ -260,6 +293,8 @@ protected:
     std::optional<RayTracingScene> m_scene;
     std::optional<PathTracerPass> m_tracer;
     renderer::MeshHandle m_cube;
+    /// Counts the frames rasterized: the noise of each differs.
+    std::uint32_t m_frameIndex = 0;
 };
 
 constexpr rhi::Extent kSmall{32, 32};
@@ -496,8 +531,8 @@ TEST_F(PathTracerTest, DenoisedSoftShadowsMatchThePathTracer) {
     }
     constexpr rhi::Extent kExtent{96, 96};
     const Image traced = Trace(view, kExtent, {.maxBounces = 1, .seed = 13, .jitter = false}, 256);
-    const Image averaged = Rasterize(view, kExtent, 256);
-    const Image denoised = Rasterize(view, kExtent, 32, true);
+    const Image averaged = Rasterize(view, kExtent, {.frames = 256});
+    const Image denoised = Rasterize(view, kExtent, {.frames = 32, .denoise = true});
     const Image noisy = Rasterize(view, kExtent);
     SceneView hard = view;
     hard.lights.back().radius = 0.0f;
@@ -517,4 +552,140 @@ TEST_F(PathTracerTest, DenoisedSoftShadowsMatchThePathTracer) {
     EXPECT_LT(denoisedFlip, 0.04f);
     EXPECT_LT(denoisedFlip, noisyFlip);
     EXPECT_LT(denoisedFlip, hardFlip);
+}
+
+namespace {
+
+double TotalLuminance(const Image& image) {
+    double total = 0.0;
+    for (const glm::vec4& pixel : image) {
+        total += Luminance(pixel);
+    }
+    return total;
+}
+
+} // namespace
+
+TEST_F(PathTracerTest, IndirectLightMatchesThePathTracerInTheCornellBox) {
+    // The Cornell box with its light bouncing: the path tracer follows each path through eight surfaces, and
+    // the mesh pass adds the indirect light of global illumination (ADR-0040). Direct light alone misses
+    // most of the image: the ceiling, the shadows, the colors the walls throw on the blocks.
+    const renderer::CornellBox box = renderer::MakeCornellBox();
+    SceneView view;
+    view.camera = LookAt(box.eye, box.target, box.verticalFov);
+    view.atmosphere = Dark();
+    view.lights.push_back(box.light);
+    for (const renderer::CornellPart& part : box.parts) {
+        view.draws.push_back({.mesh = m_cube, .world = part.world, .material = Material(part.material)});
+    }
+    constexpr rhi::Extent kExtent{96, 96};
+    const Image traced = Trace(view, kExtent, {.maxBounces = 8, .seed = 17, .jitter = false}, 512);
+    const Image direct = Rasterize(view, kExtent);
+    core::Result<renderer::GlobalIllumination> created = renderer::GlobalIllumination::Create(Device());
+    ASSERT_TRUE(created.has_value()) << core::Format(created.error());
+    renderer::GlobalIllumination& indirect = *created;
+    const Image averaged = Rasterize(view, kExtent, {.frames = 128, .indirect = &indirect, .warmup = 64});
+    const Image denoised = Rasterize(view, kExtent, {.frames = 32, .denoise = true, .indirect = &indirect});
+
+    const double brightness = TotalLuminance(averaged) / TotalLuminance(traced);
+    const float averagedFlip = Flip(traced, averaged, kExtent);
+    const float denoisedFlip = Flip(traced, denoised, kExtent);
+    const float directFlip = Flip(traced, direct, kExtent);
+    RecordProperty("brightness", std::to_string(brightness));
+    RecordProperty("flipAveraged", std::to_string(averagedFlip));
+    RecordProperty("flip", std::to_string(denoisedFlip));
+    RecordProperty("flipDirect", std::to_string(directFlip));
+    // Measured on an RTX 3090: brightness 0.995, FLIP 0.145 averaged, 0.15 denoised, 0.59 direct light only.
+    EXPECT_NEAR(brightness, 1.0, 0.1);
+    EXPECT_LT(averagedFlip, 0.5f * directFlip);
+    EXPECT_LT(denoisedFlip, 0.5f * directFlip);
+    // The red wall throws red on the white ceiling near it, the green one green.
+    const glm::vec4& nearRed = averaged[6 * kExtent.width + 14];
+    const glm::vec4& nearGreen = averaged[6 * kExtent.width + kExtent.width - 15];
+    EXPECT_GT(nearRed.r / nearRed.g, nearGreen.r / nearGreen.g);
+}
+
+namespace {
+
+// Two rooms of 2 by 2 by 2 meters side by side, closed on every side, parted by a wall 2 cm thick at
+// x = 0.03: the left room has a light, the right one none.
+struct TwoRooms {
+    std::vector<renderer::DrawItem> draws;
+    renderer::Light light;
+};
+
+TwoRooms MakeTwoRooms(renderer::MeshHandle cube, renderer::MaterialHandle white) {
+    const auto slab = [&](const glm::vec3& center, const glm::vec3& size) {
+        return renderer::DrawItem{
+            .mesh = cube, .world = glm::scale(glm::translate(glm::mat4(1.0f), center), size), .material = white};
+    };
+    TwoRooms rooms;
+    // The walls go into each other, so that no ray finds a seam between them.
+    rooms.draws = {slab({0.0f, -0.05f, 0.0f}, {4.4f, 0.1f, 2.4f}), slab({0.0f, 2.05f, 0.0f}, {4.4f, 0.1f, 2.4f}),
+                   slab({-2.05f, 1.0f, 0.0f}, {0.1f, 2.2f, 2.4f}), slab({2.05f, 1.0f, 0.0f}, {0.1f, 2.2f, 2.4f}),
+                   slab({0.0f, 1.0f, -1.05f}, {4.2f, 2.2f, 0.1f}), slab({0.0f, 1.0f, 1.05f}, {4.2f, 2.2f, 0.1f}),
+                   slab({0.03f, 1.0f, 0.0f}, {0.02f, 2.2f, 2.2f})};
+    rooms.light = {.position = {-1.0f, 1.5f, 0.0f}, .color = glm::vec3(2.0f), .range = 6.0f, .falloff = 0.0f};
+    return rooms;
+}
+
+} // namespace
+
+TEST_F(PathTracerTest, NoLightLeaksThroughAThinWall) {
+    // The cache's cells are 10 cm across here, wider than the wall: they hold the light of each orientation
+    // apart, so the two faces of the wall never share it. First the camera fills the cache in the lit room,
+    // then it looks at the wall from the dark one, whose faces no light can reach.
+    MaterialDesc matte;
+    matte.baseColorFactor = glm::vec4(0.8f, 0.8f, 0.8f, 1.0f);
+    matte.metallicFactor = 0.0f;
+    const TwoRooms rooms = MakeTwoRooms(m_cube, Material(matte));
+    SceneView view;
+    view.atmosphere = Dark();
+    view.draws = rooms.draws;
+    view.lights.push_back(rooms.light);
+    core::Result<renderer::GlobalIllumination> created = renderer::GlobalIllumination::Create(Device());
+    ASSERT_TRUE(created.has_value()) << core::Format(created.error());
+    renderer::GlobalIllumination& indirect = *created;
+    constexpr rhi::Extent kExtent{64, 64};
+
+    view.camera = LookAt({-1.8f, 1.0f, 0.8f}, {0.0f, 0.6f, -0.3f}, glm::radians(70.0f));
+    const Image litRoom = Rasterize(view, kExtent, {.frames = 1, .indirect = &indirect, .warmup = 32});
+    ASSERT_GT(TotalLuminance(litRoom), 100.0) << "The lit room is lit";
+
+    // The right room, looking at the wall and the floor along it: the cache keeps the left room's cells.
+    view.camera = LookAt({1.8f, 1.2f, 0.8f}, {0.0f, 0.6f, -0.3f}, glm::radians(70.0f));
+    const Image darkRoom = Rasterize(view, kExtent, {.frames = 16, .indirect = &indirect, .warmup = 8});
+    float brightest = 0.0f;
+    for (const glm::vec4& pixel : darkRoom) {
+        brightest = std::max(brightest, Luminance(pixel));
+    }
+    RecordProperty("brightest", std::to_string(brightest));
+    EXPECT_EQ(brightest, 0.0f);
+}
+
+TEST_F(PathTracerTest, IndirectLightFollowsALightTurnedOff) {
+    // The cache forgets: half a second after the light goes off, at 60 frames per second, little of its
+    // bounced light is left. Light that bounces off the cache's own light fades more slowly where surfaces
+    // reflect much of it: here they reflect half.
+    MaterialDesc matte;
+    matte.baseColorFactor = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f);
+    matte.metallicFactor = 0.0f;
+    const TwoRooms rooms = MakeTwoRooms(m_cube, Material(matte));
+    SceneView view;
+    view.atmosphere = Dark();
+    view.draws = rooms.draws;
+    view.lights.push_back(rooms.light);
+    view.camera = LookAt({-1.8f, 1.0f, 0.8f}, {-0.5f, 0.6f, -0.3f}, glm::radians(70.0f));
+    core::Result<renderer::GlobalIllumination> created = renderer::GlobalIllumination::Create(Device());
+    ASSERT_TRUE(created.has_value()) << core::Format(created.error());
+    renderer::GlobalIllumination& indirect = *created;
+    constexpr rhi::Extent kExtent{64, 64};
+    const double lit = TotalLuminance(Rasterize(view, kExtent, {.frames = 8, .indirect = &indirect, .warmup = 32}));
+
+    // A light that reaches nothing: no direct light is left, only what the cache holds.
+    view.lights = {{.position = {0.0f, 100.0f, 0.0f}, .range = 1.0f}};
+    const double after = TotalLuminance(Rasterize(view, kExtent, {.frames = 1, .indirect = &indirect, .warmup = 30}));
+    RecordProperty("remaining", std::to_string(after / lit));
+    // Measured on an RTX 3090: 0.045.
+    EXPECT_LT(after, 0.08 * lit);
 }

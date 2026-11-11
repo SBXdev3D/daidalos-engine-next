@@ -2,17 +2,17 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
-// Puts the mesh pass's light back together (ADR-0039): its ambient light and emission, plus the lights'
-// diffuse light times the surface's diffuse color and their specular light times its specular albedo, as
-// the denoiser left them, then the distance fog. Where nothing was drawn, what the mesh pass left there
-// stays: the sky, or the fog's color.
+// Puts the mesh pass's light back together (ADR-0039): its emission, plus the diffuse light times the
+// surface's diffuse color and the specular light times its specular albedo, as the denoiser left them, then
+// the distance fog. Where nothing was drawn, what the mesh pass left there stays: the sky, or the fog's
+// color.
 
 #define DAI_NO_MESH_PUSH_CONSTANTS
 #include "MeshTypes.slangh"
 
 struct CompositePushConstants {
     uint frameBuffer;
-    uint base;     // Ambient light, emission and the sky.
+    uint base;     // Emission and the sky.
     uint diffuse;  // Diffuse light per unit of diffuse color.
     uint specular; // Specular light per unit of specular albedo.
     uint shading;  // The mesh pass's specular target, whose alpha is the specular albedo.

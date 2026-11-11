@@ -52,18 +52,13 @@ struct DrawItem {
     std::optional<glm::mat4> previousWorld;
 };
 
-/// Light that reaches every surface, distance fog, and the sky: surfaces fade into the fog color, and
-/// where nothing is drawn, the sky shows, or the fog color without one.
+/// Distance fog and the sky: surfaces fade into the fog color, and where nothing is drawn, the sky shows,
+/// or the fog color without one. The sky also lights the scene, through the rays of indirect light that
+/// leave it (ADR-0040): no light comes from nowhere.
 struct Atmosphere {
     glm::vec3 fogColor{0.02f, 0.02f, 0.03f};
     /// Fraction of the light lost per meter; 0 for clear air.
     float fogDensity = 0.0f;
-    /// Linear color, of what comes from above. White shows every surface with its own colors, which
-    /// suits a scene without lights; a dark place keeps a little of it so that shadows are not pure black.
-    glm::vec3 ambient{1.0f};
-    /// What comes from below. A surface facing sideways gets the average of the two, and its normal map
-    /// shows where it leans up or down. The same color as ambient makes the light even.
-    glm::vec3 ambientBelow{1.0f};
     /// A cube texture (rhi::TextureDesc::cube) seen where nothing is drawn, and the light that rays which
     /// leave the scene find (ADR-0036). Null for none.
     rhi::TextureHandle sky;
@@ -72,6 +67,9 @@ struct Atmosphere {
     /// Radians the sky is turned about +Y, counter-clockwise seen from above, as a yaw: pi puts what was
     /// ahead behind (ADR-0040).
     float skyYaw = 0.0f;
+    /// Multiplies the light before tonemapping, with the renderer's own exposure: what a scene sets to be
+    /// seen brighter or darker than its light (ADR-0040).
+    float exposure = 1.0f;
 };
 
 /// A directional light is infinitely far, as the sun or the moon: it shines along its direction everywhere,

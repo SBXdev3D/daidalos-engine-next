@@ -9,13 +9,13 @@ dai_add_module(NAME renderer
         include/daidalos/ui/Canvas.hpp
         include/daidalos/ui/Context.hpp
         include/daidalos/ui/Font.hpp
-        src/AmbientOcclusionPass.cpp
-        src/AmbientOcclusionPass.hpp
         src/Canvas.cpp
         src/Context.cpp
         src/CornellBox.cpp
         src/Denoiser.cpp
         src/Denoiser.hpp
+        src/GlobalIllumination.cpp
+        src/GlobalIllumination.hpp
         src/LightClusters.cpp
         src/LightClusters.hpp
         src/Material.cpp
@@ -44,12 +44,13 @@ dai_add_module(NAME renderer
         daidalos::rhi)
 
 dai_add_shaders(TARGET daidalos_renderer
-    SOURCES shaders/Mesh.slang shaders/Prepass.slang shaders/Ssao.slang shaders/SsaoBlur.slang
+    SOURCES shaders/Mesh.slang shaders/Prepass.slang
         shaders/Tonemap.slang shaders/ParticleDraw.slang shaders/Ui.slang shaders/RayDebug.slang shaders/Sky.slang
         shaders/MotionDebug.slang shaders/Composite.slang
     COMPUTE shaders/PathTracer.slang shaders/Skinning.slang shaders/TemporalResolve.slang shaders/ParticleEmit.slang shaders/ParticleSimulate.slang
         shaders/ParticleFinish.slang shaders/ParticleSort.slang shaders/DenoiseTemporal.slang shaders/DenoiseSpatial.slang
-    INCLUDES shaders/Bsdf.slang shaders/RayQueries.slangh shaders/AmbientOcclusion.slangh shaders/MeshCommon.slangh shaders/MeshTypes.slangh shaders/Particles.slangh
+        shaders/GiUpdate.slang shaders/GiResolve.slang shaders/GiTrace.slang
+    INCLUDES shaders/Bsdf.slang shaders/RayQueries.slangh shaders/GlobalIllumination.slangh shaders/MeshCommon.slangh shaders/MeshTypes.slangh shaders/Particles.slangh
         shaders/Denoiser.slangh)
 
 target_compile_definitions(daidalos_renderer

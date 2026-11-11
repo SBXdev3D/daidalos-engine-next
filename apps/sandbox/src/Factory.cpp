@@ -70,13 +70,9 @@ constexpr float kMaxPitch = glm::radians(89.0f);
 constexpr float kStickLookSpeed = 2.5f; // Radians per second.
 constexpr float kMessageTime = 3.0f;    // Seconds.
 
-// The factory is dark, but never black: enough light everywhere to make out the walls and the way ahead
-// far from any lamp (Settings::ambient), slightly cold, and a thin fog that swallows what is far away.
-constexpr glm::vec3 kAmbientTint{0.9f, 0.95f, 1.1f};
-// The ambient light comes mostly from above, where the lamps are, and less from the floor. Walls get the
-// average, Settings::ambient, and their normal maps show where they lean up or down.
-constexpr float kAmbientAbove = 1.5f;
-constexpr float kAmbientBelow = 0.5f;
+// The factory is dark, lit by its lamps and the light they bounce (ADR-0040), with a thin fog that swallows
+// what is far away. Without its darkness, Settings::darkness 0, the view is exposed this much brighter.
+constexpr float kBrightExposure = 16.0f;
 constexpr glm::vec3 kFogColor{0.005f, 0.006f, 0.008f};
 constexpr float kFogDensity = 0.03f;
 // The moon painted on sky1 shines through the level's openings (ADR-0040). Its disk is centered at pixel
@@ -760,14 +756,13 @@ core::Result<void> LoadSky(scene::Scene& scene, const std::string& directory, st
 /// The factory's darkness and fog, which follow the settings. The sky stays as the level set it.
 void ApplyAtmosphere(scene::Scene& scene, const Settings& settings) {
     const float darkness = std::clamp(settings.darkness, 0.0f, 1.0f);
-    scene.SetAtmosphere(
-        {.fogColor = kFogColor,
-         .fogDensity = kFogDensity * darkness,
-         .ambient = glm::mix(glm::vec3(1.0f), kAmbientTint * settings.ambient * kAmbientAbove, darkness),
-         .ambientBelow = glm::mix(glm::vec3(1.0f), kAmbientTint * settings.ambient * kAmbientBelow, darkness),
-         .sky = scene.Atmosphere().sky,
-         .skyIntensity = scene.Atmosphere().skyIntensity,
-         .skyYaw = scene.Atmosphere().skyYaw});
+    // Brightness is seen in stops, powers of two: halfway is half the stops.
+    scene.SetAtmosphere({.fogColor = kFogColor,
+                         .fogDensity = kFogDensity * darkness,
+                         .sky = scene.Atmosphere().sky,
+                         .skyIntensity = scene.Atmosphere().skyIntensity,
+                         .skyYaw = scene.Atmosphere().skyYaw,
+                         .exposure = std::exp2((1.0f - darkness) * std::log2(kBrightExposure))});
 }
 
 } // namespace

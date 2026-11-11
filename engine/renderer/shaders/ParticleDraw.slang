@@ -80,8 +80,17 @@ ParticleOutput PSMain(VertexOutput input) {
     float3 color = input.color.rgb * texel.rgb;
     if ((effect.flags & kEffectLit) != 0) {
         // Smoke takes the light around it, from every side: no normal, no shadow. Directional lights are left
-        // out: without shadows, the moon would light smoke deep indoors.
-        float3 light = (frame.ambient + frame.ambientBelow) * 0.5;
+        // out: without shadows, the moon would light smoke deep indoors. The indirect light is that of the
+        // surfaces behind it, averaged over a few pixels around, which also smooths its noise (ADR-0040).
+        float3 light = float3(0.0, 0.0, 0.0);
+        if (frame.indirectTexture != kNoTexture) {
+            const int2 pixel = int2(input.clipPosition.xy);
+            const int2 last = int2(1.0 / frame.screenTexel) - 1;
+            for (int tap = 0; tap < 4; ++tap) {
+                const int2 offset = int2((tap & 1) != 0 ? 6 : -6, (tap & 2) != 0 ? 6 : -6);
+                light += g_textures[frame.indirectTexture].Load(int3(clamp(pixel + offset, int2(0, 0), last), 0)).rgb * 0.25;
+            }
+        }
         const uint2 cluster = g_clusters[frame.clusterBuffer][ClusterOf(frame, input.clipPosition.xy, input.worldPosition)];
         for (uint entry = 0; entry < cluster.y; ++entry) {
             const LightData lamp = g_lights[frame.lightBuffer][g_clusterLights[frame.clusterLightBuffer][cluster.x + entry]];

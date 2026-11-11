@@ -110,7 +110,7 @@ sandbox.exe +window.fullscreen true +renderer.antialiasing off
 | `renderer.exposure` | 1 | Multiplies the light before tonemapping |
 | `renderer.anisotropy` | 16 | Anisotropic filtering of textures, from 1 to 16, read at startup |
 | `renderer.normal_strength` | 1 | Relief of normal maps: 0 flattens them |
-| `renderer.ambient_occlusion` | true | Darken the ambient light in creases and corners |
+| `renderer.indirect_light` | true | Light that bounces off surfaces; off leaves direct light only |
 | `renderer.antialiasing` | `taa` | `taa` or `off` |
 | `renderer.validation` | true in Debug | Enable the Vulkan validation layers, if installed |
 | `view.fov` | 90 | Degrees across the screen, from 30 to 150 |

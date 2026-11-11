@@ -74,29 +74,26 @@ struct FrameData {
     float fogDensity;
     glm::vec3 fogColor;
     std::uint32_t lightCount;
-    glm::vec3 ambient;
     std::uint32_t lightBuffer;
     std::uint32_t skyTexture;
     float skyIntensity;
     std::uint32_t frameIndex;
     float normalStrength;
-    glm::vec3 ambientBelow;
-    std::uint32_t occlusionTexture;
+    std::uint32_t indirectTexture;
     glm::vec2 screenTexel;
     float nearPlane;
     std::uint32_t clusterBuffer;
-    glm::vec3 cameraForward;
-    float clusterSliceScale;
     std::uint32_t clusterLightBuffer;
     float farPlane;
+    glm::vec3 cameraForward;
+    float clusterSliceScale;
     std::uint32_t accelerationStructure;
     float skyYaw;
+    glm::vec2 jitter;
     glm::mat4 unjitteredViewProjection;
     glm::mat4 previousViewProjection;
-    glm::vec2 jitter;
-    glm::vec2 padding1;
 };
-static_assert(sizeof(FrameData) == 400);
+static_assert(sizeof(FrameData) == 368);
 
 struct LightData {
     glm::vec3 position;
@@ -539,28 +536,25 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                           view.atmosphere.fogDensity,
                           view.atmosphere.fogColor,
                           static_cast<std::uint32_t>(view.lights.size()),
-                          view.atmosphere.ambient,
                           m_device->StorageIndex(slot.lights),
                           view.atmosphere.sky ? m_device->BindlessIndex(view.atmosphere.sky) : kNoTexture,
                           view.atmosphere.skyIntensity,
                           targets.frameIndex,
                           m_normalStrength,
-                          view.atmosphere.ambientBelow,
-                          targets.occlusion ? m_device->BindlessIndex(targets.occlusion) : kNoTexture,
+                          targets.indirect ? m_device->BindlessIndex(targets.indirect) : kNoTexture,
                           glm::vec2(1.0f / static_cast<float>(std::max(targets.extent.width, 1U)),
                                     1.0f / static_cast<float>(std::max(targets.extent.height, 1U))),
                           camera.nearPlane,
                           m_device->StorageIndex(slot.clusters),
-                          glm::normalize(-glm::vec3(glm::inverse(camera.view)[2])),
-                          ClusterSliceScale(camera.nearPlane, farPlane),
                           m_device->StorageIndex(slot.clusterLights),
                           farPlane,
+                          glm::normalize(-glm::vec3(glm::inverse(camera.view)[2])),
+                          ClusterSliceScale(camera.nearPlane, farPlane),
                           targets.accelerationStructure,
                           view.atmosphere.skyYaw,
-                          viewProjection,
-                          previousViewProjection,
                           jitter,
-                          glm::vec2(0.0f)};
+                          viewProjection,
+                          previousViewProjection};
     std::memcpy(m_device->Mapped(slot.clusters).data(), m_clusters.ranges.data(),
                 m_clusters.ranges.size() * sizeof(glm::uvec2));
     if (!m_clusters.lightIndices.empty()) {

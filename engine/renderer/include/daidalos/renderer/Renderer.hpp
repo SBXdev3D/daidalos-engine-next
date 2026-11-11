@@ -37,6 +37,10 @@ enum class DebugView {
     Path,
     /// The motion vectors of the pre-pass, in color (ADR-0037): grey where nothing moved.
     Motion,
+    /// The indirect diffuse light of each pixel, as its ray found it, before the denoiser (ADR-0040).
+    Indirect,
+    /// The light the radiance cache holds at each pixel's surface (ADR-0040): its cells show.
+    RadianceCache,
 };
 
 struct RendererConfig {
@@ -51,9 +55,10 @@ struct RendererConfig {
     float anisotropy = 16.0f;
     /// Multiplies the tilt of every normal map: 0 flattens them, 1 keeps them as authored.
     float normalStrength = 1.0f;
-    /// Darkens the ambient light in creases and corners (ADR-0024).
-    bool ambientOcclusion = true;
-    /// Filters the noise of soft shadows (ADR-0039). Off shows the light as the rays found it.
+    /// Light that bounces off surfaces (ADR-0040). Off leaves direct light only: what no light reaches is black.
+    bool indirectLight = true;
+    /// Filters the noise of soft shadows and indirect light (ADR-0039). Off shows the light as the rays
+    /// found it.
     bool denoiser = true;
     /// Radians across the view, for cameras that set no field of view of their own.
     float fieldOfView = glm::radians(90.0f);
@@ -125,7 +130,7 @@ public:
     void SetVsync(bool vsync);
     void SetExposure(float exposure);
     void SetNormalStrength(float strength);
-    void SetAmbientOcclusion(bool enabled);
+    void SetIndirectLight(bool enabled);
     void SetDenoiser(bool enabled);
     /// From the next frame; see RendererConfig.
     void SetFieldOfView(float radians);

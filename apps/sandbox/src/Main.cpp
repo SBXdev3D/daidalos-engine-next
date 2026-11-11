@@ -73,15 +73,13 @@ public:
                                        "Level to load from the assets directory, or cornell for the Cornell box")
                 .Get();
         m_settings.mouseSensitivity = app.MouseSensitivity();
-        m_settings.darkness = static_cast<float>(
-            app.CVars().Register<double>("sandbox.darkness", 1.0, "Multiplies the darkness; 0 shows the level").Get());
+        m_settings.darkness =
+            static_cast<float>(app.CVars()
+                                   .Register<double>("sandbox.darkness", 1.0,
+                                                     "1 is the factory's darkness; 0 shows it brighter, without fog")
+                                   .Get());
         m_settings.startWithFlashlight =
             app.CVars().Register<bool>("sandbox.flashlight", false, "Start with the flashlight on").Get();
-        m_settings.ambient =
-            static_cast<float>(app.CVars()
-                                   .Register<double>("sandbox.ambient", 0.1,
-                                                     "Light everywhere in the dark, far from lamps; 0 is pitch black")
-                                   .Get());
         m_start =
             app.CVars()
                 .Register<std::string>("sandbox.start", "", "Where to start: 'x y z yaw pitch', in meters and degrees")

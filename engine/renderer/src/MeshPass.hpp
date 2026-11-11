@@ -27,8 +27,9 @@ class RenderGraph;
 /// The targets of a frame that the mesh pass needs to know about.
 struct FrameTargets {
     rhi::Extent extent;
-    /// The ambient occlusion of the frame, or null to leave ambient light unoccluded.
-    rhi::TextureHandle occlusion;
+    /// The indirect diffuse light of the frame, per unit of diffuse color (ADR-0040), which the mesh pass
+    /// adds to its lights' light. Null for none: direct light only.
+    rhi::TextureHandle indirect;
     /// Index of the top-level acceleration structure the frame traces, for FrameData.
     std::uint32_t accelerationStructure = 0;
     /// Where the frame samples each pixel, relative to its center, in pixels, y down: the jitter of
@@ -40,12 +41,11 @@ struct FrameTargets {
 
 /// The targets the mesh pass shades into (ADR-0039), which the composite pass puts back together.
 struct ShadingTargets {
-    /// Ambient light, emission and the sky, in the mesh pass's color format.
+    /// Emission and the sky, in the mesh pass's color format.
     rhi::TextureHandle base;
-    /// The lights' diffuse light per unit of diffuse color (MeshPass::kDiffuseFormat).
+    /// The diffuse light, direct and indirect, per unit of diffuse color (MeshPass::kDiffuseFormat).
     rhi::TextureHandle diffuse;
-    /// The lights' specular light per unit of specular albedo, and the albedo in alpha
-    /// (MeshPass::kSpecularFormat).
+    /// The specular light per unit of specular albedo, and the albedo in alpha (MeshPass::kSpecularFormat).
     rhi::TextureHandle specular;
     /// The diffuse color (MeshPass::kAlbedoFormat).
     rhi::TextureHandle albedo;

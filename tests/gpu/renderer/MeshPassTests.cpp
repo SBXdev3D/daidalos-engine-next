@@ -17,7 +17,6 @@
 #include <utility>
 #include <vector>
 
-#include "AmbientOcclusionPass.hpp"
 #include "Denoiser.hpp"
 #include "GpuFixture.hpp"
 #include "MeshPass.hpp"
@@ -162,7 +161,15 @@ protected:
 
     // Renders the view, each pixel sampled at jitter from its center (in pixels), then puts its light
     // together, through the denoiser if there is one (ADR-0039). Each frame moves the noise of soft shadows.
-    void Render(const SceneView& view, glm::vec2 jitter = glm::vec2(0.0f), renderer::Denoiser* denoiser = nullptr) {
+    // A view without lights is lit by a white light from behind the camera: what faces the camera shows its
+    // color, as a white ambient light showed it before global illumination (ADR-0040).
+    void Render(const SceneView& scene, glm::vec2 jitter = glm::vec2(0.0f), renderer::Denoiser* denoiser = nullptr) {
+        SceneView view = scene;
+        if (view.camera.has_value() && view.lights.empty()) {
+            view.lights.push_back({.type = renderer::LightType::Directional,
+                                   .direction = -glm::vec3(glm::inverse(view.camera->view)[2]),
+                                   .color = glm::vec3(1.0f)});
+        }
         ASSERT_TRUE(
             Device()
                 .Submit([&](rhi::CommandList& commands) {
@@ -326,43 +333,25 @@ TEST_F(MeshPassTest, WorldMatrixMovesTheMesh) {
 // In the dark, with one light.
 SceneView LitView(const CameraView& camera, renderer::DrawItem draw, const renderer::Light& light) {
     SceneView view{camera, {draw}};
-    view.atmosphere.ambient = glm::vec3(0.0f);
-    view.atmosphere.ambientBelow = glm::vec3(0.0f);
     view.lights.push_back(light);
     return view;
 }
 
-TEST_F(MeshPassTest, WithoutLightsTheAmbientLightShowsTheBaseColor) {
+TEST_F(MeshPassTest, WhereNoLightReachesOnlyEmissionShows) {
+    // No light comes from nowhere (ADR-0040): a light that reaches nothing leaves the surface black, unless
+    // it glows.
     const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
-    SceneView view{TestCamera(), {{mesh, glm::mat4(1.0f), Material({0.5f, 0.25f, 0.0f})}}};
-    Render(view);
-    // The base color, plus the faint white reflection of a dielectric.
-    EXPECT_NEAR(Pixel(32, 32).r, 128, 6);
-    EXPECT_NEAR(Pixel(32, 32).g, 64, 6);
-
-    view.atmosphere.ambient = glm::vec3(0.0f);
-    view.atmosphere.ambientBelow = glm::vec3(0.0f);
-    Render(view);
+    const renderer::Light faraway{.position = {0.0f, 0.0f, 100.0f}, .range = 1.0f};
+    Render(LitView(TestCamera(), {mesh, glm::mat4(1.0f), Material({0.5f, 0.25f, 0.0f})}, faraway));
     EXPECT_EQ(Pixel(32, 32), glm::ivec3(0));
-}
 
-TEST_F(MeshPassTest, AmbientLightFromAboveLightsWhatFacesUp) {
-    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
-    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
-    const auto shade = [&](float degrees) {
-        SceneView view{
-            TestCamera(),
-            {{mesh, glm::rotate(glm::mat4(1.0f), glm::radians(degrees), glm::vec3(1.0f, 0.0f, 0.0f)), white}}};
-        view.atmosphere.ambient = glm::vec3(1.0f);
-        view.atmosphere.ambientBelow = glm::vec3(0.0f);
-        Render(view);
-        return Pixel(32, 32).r;
-    };
-    const int facingUp = shade(-60.0f);
-    const int facingCamera = shade(0.0f);
-    const int facingDown = shade(60.0f);
-    EXPECT_GT(facingUp, facingCamera + 30);
-    EXPECT_GT(facingCamera, facingDown + 30);
+    MaterialDesc glowing;
+    glowing.emissiveFactor = glm::vec3(0.5f, 0.25f, 0.0f);
+    const core::Result<MaterialHandle> material = m_pass->CreateMaterial(glowing);
+    ASSERT_TRUE(material.has_value());
+    Render(LitView(TestCamera(), {mesh, glm::mat4(1.0f), *material}, faraway));
+    EXPECT_NEAR(Pixel(32, 32).r, 128, 1);
+    EXPECT_NEAR(Pixel(32, 32).g, 64, 1);
 }
 
 TEST_F(MeshPassTest, NormalsFollowTheWorldRotation) {
@@ -629,54 +618,6 @@ TEST_F(MeshPassTest, CameraWithoutAFieldOfViewUsesTheRenderersAcrossTheView) {
     EXPECT_TRUE(IsBackground(2, 32));
 }
 
-TEST_F(MeshPassTest, AmbientOcclusionDarkensACreaseAndNotAnOpenWall) {
-    // A back wall facing the camera, and a side wall standing out of it at x = -1, from y = 0 to 2. Along
-    // the line where they meet, the hemisphere above the back wall is half closed; far to the right, open.
-    const MeshHandle back = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
-    const MeshHandle side = Mesh(MakeQuad(-4.0f, 4.0f, 0.0f, 2.0f, 0.0f));
-    const glm::mat4 standing = glm::rotate(glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 0.0f, 0.0f)),
-                                           glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
-    const SceneView view{TestCamera(), {{back, glm::mat4(1.0f), white}, {side, standing, white}}};
-    Render(view);
-
-    core::Result<renderer::AmbientOcclusionPass> created = renderer::AmbientOcclusionPass::Create(Device());
-    ASSERT_TRUE(created.has_value()) << core::Format(created.error());
-    renderer::AmbientOcclusionPass& occlusion = *created;
-    ASSERT_TRUE(occlusion.Resize(kExtent).has_value());
-    constexpr std::uint32_t kHalf = kExtent.width / 2;
-    const core::Result<rhi::BufferHandle> readback = Device().CreateBuffer({.size = kHalf * kHalf,
-                                                                            .usage = rhi::BufferUsage::TransferDst,
-                                                                            .memory = rhi::MemoryLocation::GpuToCpu,
-                                                                            .name = "Occlusion readback"});
-    ASSERT_TRUE(readback.has_value());
-    ASSERT_TRUE(Device()
-                    .Submit([&](rhi::CommandList& commands) {
-                        renderer::RenderGraph graph;
-                        occlusion.AddTo(graph, m_pass->FrameDataIndex(), m_depth, m_normals);
-                        graph.Execute(commands);
-                        commands.Transition(occlusion.Output(), rhi::TextureState::TransferSrc);
-                        commands.CopyTextureToBuffer(occlusion.Output(), *readback);
-                    })
-                    .has_value());
-
-    const auto open = [&](std::uint32_t x, std::uint32_t y) {
-        return static_cast<int>(
-            reinterpret_cast<const std::uint8_t*>(Device().Mapped(*readback).data())[std::size_t{y} * kHalf + x]);
-    };
-    // The crease is a third of the way across, in the upper half; the open wall is at the right.
-    std::string row;
-    for (std::uint32_t x = 0; x < kHalf; ++x) {
-        row += std::to_string(open(x, 10)) + " ";
-    }
-    const int crease = open(12, 10);
-    const int openWall = open(28, 10);
-    SCOPED_TRACE(row);
-    EXPECT_GT(openWall, 240) << "an open wall stays open";
-    EXPECT_LT(crease, openWall - 30) << "the crease is darker";
-    Device().DestroyBuffer(*readback);
-}
-
 namespace {
 
 // A particle pass drawing over the mesh pass's frame, with a plain white texture.
@@ -919,8 +860,11 @@ TEST_F(MeshPassTest, DoubleSidedMaterialDrawsTheBackOfTriangles) {
     desc.doubleSided = true;
     const core::Result<MaterialHandle> material = m_pass->CreateMaterial(desc);
     ASSERT_TRUE(material.has_value());
-    const MeshHandle mesh = Mesh(Reversed(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f)));
-    Render({TestCamera(), {{mesh, glm::mat4(1.0f), *material}}});
+    // Turned away from the camera, which sees its back, lit from behind the camera: the back's normal faces
+    // the light.
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
+    const glm::mat4 turned = glm::rotate(glm::mat4(1.0f), glm::pi<float>(), glm::vec3(0.0f, 1.0f, 0.0f));
+    Render({TestCamera(), {{mesh, turned, *material}}});
     EXPECT_FALSE(IsBackground(32, 32));
 }
 
@@ -1328,7 +1272,8 @@ TEST_F(DenoiserTest, ALightTurnedOffGoesDarkAtOnce) {
     SceneView view = ShadowView(1.0f);
     Denoise(view, 16);
     ASSERT_GT(Pixel(48, 32).r, 100);
-    view.lights.clear();
+    // A light that reaches nothing: without any, the test's light from behind the camera would come on.
+    view.lights = {{.position = {0.0f, 0.0f, 100.0f}, .range = 1.0f}};
     Denoise(view);
     EXPECT_LT(Pixel(48, 32).r, 10) << "no light lingers in the history";
 }

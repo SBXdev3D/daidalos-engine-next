@@ -55,10 +55,17 @@ renderer::DebugView DebugViewMode(const core::CVar<std::string>& cvar) {
     if (name == "motion") {
         return renderer::DebugView::Motion;
     }
+    if (name == "indirect") {
+        return renderer::DebugView::Indirect;
+    }
+    if (name == "radiance_cache") {
+        return renderer::DebugView::RadianceCache;
+    }
     static std::string warned;
     if (name != "off" && name != warned) {
         warned = name;
-        DAI_LOG_WARNING(kModule, "Unknown debug view '{}': use off, rays, path or motion", name);
+        DAI_LOG_WARNING(kModule, "Unknown debug view '{}': use off, rays, path, motion, indirect or radiance_cache",
+                        name);
     }
 
     return renderer::DebugView::Off;
@@ -223,10 +230,10 @@ core::Result<void> Application::LoadConfiguration() {
         m_exposure = m_cvars.Register<double>("renderer.exposure", 1.0, "Multiplies the light before tonemapping");
         m_anisotropy = m_cvars.Register<std::int64_t>(
             "renderer.anisotropy", 16, "Anisotropic filtering of textures, from 1 (off) to 16, read at startup");
-        m_ambientOcclusion = m_cvars.Register<bool>("renderer.ambient_occlusion", true,
-                                                    "Darken the ambient light in creases and corners");
-        m_denoiser = m_cvars.Register<bool>("renderer.denoiser", true,
-                                            "Filter the noise of soft shadows; off shows it as traced");
+        m_indirectLight = m_cvars.Register<bool>("renderer.indirect_light", true,
+                                                 "Light that bounces off surfaces; off leaves direct light only");
+        m_denoiser = m_cvars.Register<bool>(
+            "renderer.denoiser", true, "Filter the noise of soft shadows and indirect light; off shows it as traced");
         m_normalStrength = m_cvars.Register<double>(
             "renderer.normal_strength", 1.0, "Multiplies the relief of normal maps: 0 flattens them, 1 as authored");
         m_fieldOfView = m_cvars.Register<double>(
@@ -238,7 +245,8 @@ core::Result<void> Application::LoadConfiguration() {
         m_validation = m_cvars.Register<bool>("renderer.validation", kValidationByDefault,
                                               "Enable the Vulkan validation layers, read at startup");
         m_debugView = m_cvars.Register<std::string>(
-            "renderer.debug_view", "off", "Shows a debug view instead of the lit scene: off, rays, path or motion");
+            "renderer.debug_view", "off",
+            "Shows a debug view instead of the lit scene: off, rays, path, motion, indirect or radiance_cache");
         m_pathBounces = m_cvars.Register<std::int64_t>(
             "renderer.path_bounces", 4, "Surfaces a path of the path tracer meets at most; 1 is direct light only");
         m_pathSamples = m_cvars.Register<std::int64_t>(
@@ -398,7 +406,7 @@ core::Result<void> Application::CreateRenderer() {
              .exposure = static_cast<float>(m_exposure->Get()),
              .anisotropy = static_cast<float>(std::clamp<std::int64_t>(m_anisotropy->Get(), 1, 16)),
              .normalStrength = static_cast<float>(m_normalStrength->Get()),
-             .ambientOcclusion = m_ambientOcclusion->Get(),
+             .indirectLight = m_indirectLight->Get(),
              .denoiser = m_denoiser->Get(),
              .fieldOfView = FieldOfViewRadians(*m_fieldOfView),
              .viewDistance = ViewDistanceMeters(*m_viewDistance),
@@ -447,7 +455,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_renderer->SetVsync(m_vsync->Get());
     m_renderer->SetExposure(static_cast<float>(m_exposure->Get()));
     m_renderer->SetNormalStrength(static_cast<float>(m_normalStrength->Get()));
-    m_renderer->SetAmbientOcclusion(m_ambientOcclusion->Get());
+    m_renderer->SetIndirectLight(m_indirectLight->Get());
     m_renderer->SetDenoiser(m_denoiser->Get());
     m_renderer->SetFieldOfView(FieldOfViewRadians(*m_fieldOfView));
     m_renderer->SetViewDistance(ViewDistanceMeters(*m_viewDistance));

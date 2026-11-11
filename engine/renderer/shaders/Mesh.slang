@@ -3,13 +3,14 @@
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
 // Forward shading of opaque meshes, in linear HDR (ADR-0022): metallic-roughness PBR with normal maps,
-// the frame's lights, ambient light, occlusion and emission. A pixel evaluates only the lights of its
+// the frame's lights, its indirect light, occlusion and emission. A pixel evaluates only the lights of its
 // cluster (ADR-0008). Every light casts shadows: a ray towards a random point of the light says whether
 // it reaches the pixel, which makes the shadows of lights with a radius soft, and noisy (ADR-0035,
 // ADR-0039).
-// The pass writes the light of its lights apart from the rest, diffuse and specular, without the colors
-// of the surface, for the denoiser; the composite pass puts them back together and adds the fog.
-// The ambient light is darkened by the frame's ambient occlusion (ADR-0024).
+// The indirect light comes from the global illumination pass, one ray per pixel (ADR-0040): noisy too. Until
+// reflections are ray traced, it also lights the specular albedo, as if every direction sent the same light.
+// The pass writes the light apart from the emission, diffuse and specular, without the colors of the
+// surface, for the denoiser; the composite pass puts them back together and adds the fog.
 
 #include "MeshCommon.slangh"
 #include "RayQueries.slangh"
@@ -17,12 +18,12 @@ import Bsdf;
 
 // What the pass writes for each pixel (ADR-0039).
 struct ShadingOutput {
-    // Ambient light and emission, in linear HDR.
+    // Emission, in linear HDR.
     float4 base : SV_Target0;
-    // The lights' diffuse light per unit of diffuse color. Alpha is 1 where a shadow ray aimed at a random
-    // point of a light, so that the denoiser knows that the light may be noisy there.
+    // The diffuse light per unit of diffuse color. Alpha is 1 where it may be noisy: where there is indirect
+    // light, or a shadow ray aimed at a random point of a light, so that the denoiser filters it.
     float4 diffuse : SV_Target1;
-    // The lights' specular light divided by the surface's specular albedo, and the albedo in alpha.
+    // The specular light divided by the surface's specular albedo, and the albedo in alpha.
     float4 specular : SV_Target2;
     // The diffuse color, which the composite pass multiplies the diffuse light by.
     float4 albedo : SV_Target3;
@@ -66,20 +67,18 @@ ShadingOutput PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) {
     const float3 view = toCamera / max(cameraDistance, 0.0001);
 
     const float3 specularAlbedo = SpecularAlbedo(f0, roughness, max(dot(normal, view), 0.0));
-    // Light from everywhere, brighter from above than from below: what leans up catches more of it. Only
-    // this light is occluded: direct light has its shadows.
-    float ambientOcclusion = occlusion;
-    if (frame.occlusionTexture != kNoTexture) {
-        ambientOcclusion *= g_textures[frame.occlusionTexture]
-                                .SampleLevel(g_samplers[kSamplerLinearClamp], input.clipPosition.xy * frame.screenTexel, 0.0)
-                                .r;
-    }
-    const float3 ambient = lerp(frame.ambientBelow, frame.ambient, normal.y * 0.5 + 0.5);
     ShadingOutput output;
-    output.base = float4(ambient * (diffuseColor + specularAlbedo) * ambientOcclusion + emission, 1.0);
+    output.base = float4(emission, 1.0);
     float3 diffuseLight = float3(0.0, 0.0, 0.0);
     float3 specularLight = float3(0.0, 0.0, 0.0);
     bool stochastic = false;
+    // Indirect light, which the material's occlusion darkens: direct light has its shadows.
+    if (frame.indirectTexture != kNoTexture) {
+        const float3 indirect = g_textures[frame.indirectTexture].Load(int3(int2(input.clipPosition.xy), 0)).rgb * occlusion;
+        diffuseLight += indirect;
+        specularLight += indirect * specularAlbedo;
+        stochastic = true;
+    }
     // The face's own normal, towards the camera, from which shadow rays start.
     float3 faceNormal = normalize(cross(ddy(input.worldPosition), ddx(input.worldPosition)));
     if (dot(faceNormal, view) < 0.0) {

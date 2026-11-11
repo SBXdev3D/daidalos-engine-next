@@ -23,28 +23,25 @@ struct FrameData {
     float fogDensity;
     float3 fogColor;
     uint lightCount;
-    float3 ambient;
     uint lightBuffer;
-    uint skyTexture;     // Index in g_cubeTextures, or kNoTexture for no sky.
-    float skyIntensity;  // Multiplies the sky's colors.
-    uint frameIndex;     // Counts the frames, for what changes from one to the next, such as noise.
+    uint skyTexture;      // Index in g_cubeTextures, or kNoTexture for no sky.
+    float skyIntensity;   // Multiplies the sky's colors.
+    uint frameIndex;      // Counts the frames, for what changes from one to the next, such as noise.
     float normalStrength; // Multiplies every normal map's tilt.
-    float3 ambientBelow;  // Ambient light from below; ambient comes from above.
-    uint occlusionTexture; // Half-resolution ambient occlusion, or kNoTexture.
-    float2 screenTexel;    // One pixel of the frame, in texture coordinates.
-    float nearPlane;       // Of the camera: LinearDepth turns a depth into meters.
-    uint clusterBuffer;    // For each cluster, the first of its lights in clusterLightBuffer, and their count.
-    float3 cameraForward;
-    float clusterSliceScale; // A depth's slice is log(depth / nearPlane) * clusterSliceScale.
+    uint indirectTexture; // Indirect diffuse light per unit of diffuse color (ADR-0040), or kNoTexture.
+    float2 screenTexel;   // One pixel of the frame, in texture coordinates.
+    float nearPlane;      // Of the camera: LinearDepth turns a depth into meters.
+    uint clusterBuffer;   // For each cluster, the first of its lights in clusterLightBuffer, and their count.
     uint clusterLightBuffer; // Indices into lightBuffer.
     float farPlane;          // Nothing is drawn beyond it: the view distance.
+    float3 cameraForward;
+    float clusterSliceScale;    // A depth's slice is log(depth / nearPlane) * clusterSliceScale.
     uint accelerationStructure; // The frame's top-level structure in g_accelerationStructures.
     float skyYaw;               // Radians the sky is turned about +Y (ADR-0040).
+    float2 jitter; // Where each pixel samples the scene, relative to its center, in texture coordinates.
     // Without the jitter of temporal antialiasing (ADR-0037): motion vectors compare these two.
     float4x4 unjitteredViewProjection;
     float4x4 previousViewProjection;
-    float2 jitter; // Where each pixel samples the scene, relative to its center, in texture coordinates.
-    float2 padding1;
 };
 
 // Where a point of clip space is on the screen, in texture coordinates: y goes down (CONVENTIONS.md,
