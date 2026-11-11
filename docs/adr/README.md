@@ -27,7 +27,7 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0021](0021-module-consolidation.md) | Nine modules, each a layer or a wall around a library | Accepted |
 | [0022](0022-lighting-and-materials.md) | HDR, PBR, legacy light units, glTF normal maps with MikkTSpace | Accepted, amended |
 | [0023](0023-shadows.md) | Spot-light shadows: four per frame in one atlas, nearest first | Superseded by 0035 |
-| [0024](0024-prepass-and-ambient-occlusion.md) | Depth pre-pass, half-resolution SSAO, ambient light from above and below | Accepted |
+| [0024](0024-prepass-and-ambient-occlusion.md) | Depth pre-pass, half-resolution SSAO, ambient light from above and below | Partly superseded by 0040 |
 | [0025](0025-gpu-particles.md) | Particles emitted, simulated, sorted and drawn on the GPU | Accepted |
 | [0026](0026-engine-settings-and-antialiasing.md) | The engine's settings file, daidalos.cfg; shadows, view and antialiasing settings; FXAA and MSAA | Accepted, antialiasing superseded by 0037 |
 | [0027](0027-game-interface.md) | The game's interface: an immediate-mode canvas, distance field fonts, drawn after antialiasing | Accepted |
@@ -43,3 +43,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0037](0037-temporal-antialiasing.md) | Motion vectors, jitter and temporal antialiasing, replacing FXAA and MSAA | Accepted |
 | [0038](0038-releases.md) | Releases: a tag builds Windows and Linux archives into a draft GitHub release | Accepted |
 | [0039](0039-denoiser-and-soft-shadows.md) | An own spatiotemporal denoiser of the lights' diffuse and specular light; lights with a radius and soft shadows | Accepted |
+| [0040](0040-diffuse-global-illumination.md) | Diffuse global illumination from an own radiance cache, replacing ambient light and SSAO; directional lights and the moon | Accepted |

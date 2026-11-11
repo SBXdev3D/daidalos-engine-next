@@ -113,10 +113,8 @@ struct Player {
 /// Settings of the game, which must outlive the scene.
 struct Settings {
     float mouseSensitivity = 0.0025f;
-    /// 1 is the factory's darkness, and 0 lights the whole level evenly, with no fog.
+    /// 1 is the factory's darkness, and 0 shows it much brighter, with no fog.
     float darkness = 1.0f;
-    /// Light that reaches everywhere in the dark, far from any lamp. 0 is pitch black.
-    float ambient = 0.1f;
     /// Starts with the flashlight on, for tests, instead of finding it in the east wing.
     bool startWithFlashlight = false;
 };

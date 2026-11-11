@@ -1945,7 +1945,7 @@ Hardware ray tracing is mandatory and no raster fallback is kept: each step dele
 6. A sky: cube textures, the level's sky seen through its openings and found by the rays that leave the scene (done, ADR-0036).
 7. Motion vectors (skinned meshes and particles included), jittered projection and TAA, replacing MSAA and FXAA (done, ADR-0037).
 8. An own spatiotemporal denoiser, a concrete class whose inputs and outputs are the seam for another; lights with a radius and soft shadows (done, ADR-0039).
-9. Diffuse global illumination: an own hash-grid radiance cache and a ray-traced bounce, replacing SSAO and the ambient term.
+9. Diffuse global illumination: an own hash-grid radiance cache and a ray-traced bounce, replacing SSAO and the ambient term; directional lights, for the moon (done, ADR-0040).
 10. Ray-traced reflections below a roughness threshold; glass.
 11. ReSTIR DI, with emissive triangles, and ReSTIR GI, replacing CPU light clustering.
 12. FSR 2 upscaling, auto-exposure, bloom, AgX tone mapping, HDR output.

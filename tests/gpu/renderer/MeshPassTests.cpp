@@ -17,7 +17,6 @@
 #include <utility>
 #include <vector>
 
-#include "AmbientOcclusionPass.hpp"
 #include "Denoiser.hpp"
 #include "GpuFixture.hpp"
 #include "MeshPass.hpp"
@@ -162,7 +161,15 @@ protected:
 
     // Renders the view, each pixel sampled at jitter from its center (in pixels), then puts its light
     // together, through the denoiser if there is one (ADR-0039). Each frame moves the noise of soft shadows.
-    void Render(const SceneView& view, glm::vec2 jitter = glm::vec2(0.0f), renderer::Denoiser* denoiser = nullptr) {
+    // A view without lights is lit by a white light from behind the camera: what faces the camera shows its
+    // color, as a white ambient light showed it before global illumination (ADR-0040).
+    void Render(const SceneView& scene, glm::vec2 jitter = glm::vec2(0.0f), renderer::Denoiser* denoiser = nullptr) {
+        SceneView view = scene;
+        if (view.camera.has_value() && view.lights.empty()) {
+            view.lights.push_back({.type = renderer::LightType::Directional,
+                                   .direction = -glm::vec3(glm::inverse(view.camera->view)[2]),
+                                   .color = glm::vec3(1.0f)});
+        }
         ASSERT_TRUE(
             Device()
                 .Submit([&](rhi::CommandList& commands) {
@@ -326,43 +333,25 @@ TEST_F(MeshPassTest, WorldMatrixMovesTheMesh) {
 // In the dark, with one light.
 SceneView LitView(const CameraView& camera, renderer::DrawItem draw, const renderer::Light& light) {
     SceneView view{camera, {draw}};
-    view.atmosphere.ambient = glm::vec3(0.0f);
-    view.atmosphere.ambientBelow = glm::vec3(0.0f);
     view.lights.push_back(light);
     return view;
 }
 
-TEST_F(MeshPassTest, WithoutLightsTheAmbientLightShowsTheBaseColor) {
+TEST_F(MeshPassTest, WhereNoLightReachesOnlyEmissionShows) {
+    // No light comes from nowhere (ADR-0040): a light that reaches nothing leaves the surface black, unless
+    // it glows.
     const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
-    SceneView view{TestCamera(), {{mesh, glm::mat4(1.0f), Material({0.5f, 0.25f, 0.0f})}}};
-    Render(view);
-    // The base color, plus the faint white reflection of a dielectric.
-    EXPECT_NEAR(Pixel(32, 32).r, 128, 6);
-    EXPECT_NEAR(Pixel(32, 32).g, 64, 6);
-
-    view.atmosphere.ambient = glm::vec3(0.0f);
-    view.atmosphere.ambientBelow = glm::vec3(0.0f);
-    Render(view);
+    const renderer::Light faraway{.position = {0.0f, 0.0f, 100.0f}, .range = 1.0f};
+    Render(LitView(TestCamera(), {mesh, glm::mat4(1.0f), Material({0.5f, 0.25f, 0.0f})}, faraway));
     EXPECT_EQ(Pixel(32, 32), glm::ivec3(0));
-}
 
-TEST_F(MeshPassTest, AmbientLightFromAboveLightsWhatFacesUp) {
-    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
-    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
-    const auto shade = [&](float degrees) {
-        SceneView view{
-            TestCamera(),
-            {{mesh, glm::rotate(glm::mat4(1.0f), glm::radians(degrees), glm::vec3(1.0f, 0.0f, 0.0f)), white}}};
-        view.atmosphere.ambient = glm::vec3(1.0f);
-        view.atmosphere.ambientBelow = glm::vec3(0.0f);
-        Render(view);
-        return Pixel(32, 32).r;
-    };
-    const int facingUp = shade(-60.0f);
-    const int facingCamera = shade(0.0f);
-    const int facingDown = shade(60.0f);
-    EXPECT_GT(facingUp, facingCamera + 30);
-    EXPECT_GT(facingCamera, facingDown + 30);
+    MaterialDesc glowing;
+    glowing.emissiveFactor = glm::vec3(0.5f, 0.25f, 0.0f);
+    const core::Result<MaterialHandle> material = m_pass->CreateMaterial(glowing);
+    ASSERT_TRUE(material.has_value());
+    Render(LitView(TestCamera(), {mesh, glm::mat4(1.0f), *material}, faraway));
+    EXPECT_NEAR(Pixel(32, 32).r, 128, 1);
+    EXPECT_NEAR(Pixel(32, 32).g, 64, 1);
 }
 
 TEST_F(MeshPassTest, NormalsFollowTheWorldRotation) {
@@ -496,6 +485,41 @@ TEST_F(MeshPassTest, PointLightCastsShadowsToo) {
     EXPECT_GT(Pixel(48, 32).r, 100);
 }
 
+TEST_F(MeshPassTest, DirectionalLightLightsEverywhereAtTheSameStrength) {
+    // Straight at the floor, from as far as it can be: the whole floor gets the light's color, wherever the
+    // light's position says, and whatever its range.
+    const MeshHandle floor = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
+    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
+    Render(LitView(TestCamera(), {floor, glm::mat4(1.0f), white},
+                   {.type = renderer::LightType::Directional,
+                    .position = {0.0f, 0.0f, -100.0f},
+                    .direction = {0.0f, 0.0f, -1.0f},
+                    .color = glm::vec3(0.5f),
+                    .range = 0.1f}));
+    EXPECT_NEAR(Pixel(32, 32).r, Pixel(4, 4).r, 2);
+    // 0.5 of light, in the 8-bit target, less what the dielectric reflects instead of diffusing.
+    EXPECT_GE(Pixel(32, 32).r, 118);
+    EXPECT_LE(Pixel(32, 32).r, 140);
+}
+
+TEST_F(MeshPassTest, DirectionalLightCastsParallelShadows) {
+    // From the right, at 31 degrees like the spot of the shadow tests: the panel's shadow falls on the floor
+    // left of it. Nothing near the light's far-away position can stop it.
+    const MeshHandle floor = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
+    const MeshHandle panel = Mesh(MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 1.0f));
+    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
+    SceneView view = LitView(TestCamera(), {floor, glm::mat4(1.0f), white},
+                             {.type = renderer::LightType::Directional,
+                              .direction = glm::normalize(glm::vec3(-3.0f, 0.0f, -5.0f)),
+                              .color = glm::vec3(1.0f)});
+    view.draws.push_back({.mesh = panel, .material = white});
+    Render(view);
+    // The shadow runs from x = -1.1 to -0.1 on the floor.
+    EXPECT_LT(Pixel(22, 32).r, 10);
+    EXPECT_GT(Pixel(48, 32).r, 100);
+    EXPECT_GT(Pixel(32, 32).r, 100);
+}
+
 TEST_F(MeshPassTest, AlphaTestedSurfaceLetsLightThroughWhereItIsCut) {
     // The panel's alpha is below its cutoff everywhere: the mesh pass does not draw it, and shadow rays go
     // through it as well.
@@ -550,6 +574,18 @@ TEST_F(MeshPassTest, SkyShowsWhereNothingIsDrawn) {
     EXPECT_EQ(ahead.g, 0);
     EXPECT_NEAR(ahead.b, 128, 1);
     EXPECT_NE(Pixel(46, 32), ahead); // The quad, 1.3 m right of the view's middle.
+
+    // Turned half a turn, the sky shows ahead what was behind: the back face, green. A quarter turn
+    // counter-clockwise brings what was on the right, red, ahead.
+    view.atmosphere.skyYaw = glm::pi<float>();
+    Render(view);
+    EXPECT_EQ(Pixel(32, 32).r, 0);
+    EXPECT_NEAR(Pixel(32, 32).g, 128, 1);
+    EXPECT_EQ(Pixel(32, 32).b, 0);
+    view.atmosphere.skyYaw = glm::half_pi<float>();
+    Render(view);
+    EXPECT_NEAR(Pixel(32, 32).r, 128, 1);
+    EXPECT_EQ(Pixel(32, 32).b, 0);
     Device().DestroyTexture(*sky);
 }
 
@@ -580,54 +616,6 @@ TEST_F(MeshPassTest, CameraWithoutAFieldOfViewUsesTheRenderersAcrossTheView) {
     Render(view);
     EXPECT_FALSE(IsBackground(16, 32));
     EXPECT_TRUE(IsBackground(2, 32));
-}
-
-TEST_F(MeshPassTest, AmbientOcclusionDarkensACreaseAndNotAnOpenWall) {
-    // A back wall facing the camera, and a side wall standing out of it at x = -1, from y = 0 to 2. Along
-    // the line where they meet, the hemisphere above the back wall is half closed; far to the right, open.
-    const MeshHandle back = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
-    const MeshHandle side = Mesh(MakeQuad(-4.0f, 4.0f, 0.0f, 2.0f, 0.0f));
-    const glm::mat4 standing = glm::rotate(glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 0.0f, 0.0f)),
-                                           glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
-    const SceneView view{TestCamera(), {{back, glm::mat4(1.0f), white}, {side, standing, white}}};
-    Render(view);
-
-    core::Result<renderer::AmbientOcclusionPass> created = renderer::AmbientOcclusionPass::Create(Device());
-    ASSERT_TRUE(created.has_value()) << core::Format(created.error());
-    renderer::AmbientOcclusionPass& occlusion = *created;
-    ASSERT_TRUE(occlusion.Resize(kExtent).has_value());
-    constexpr std::uint32_t kHalf = kExtent.width / 2;
-    const core::Result<rhi::BufferHandle> readback = Device().CreateBuffer({.size = kHalf * kHalf,
-                                                                            .usage = rhi::BufferUsage::TransferDst,
-                                                                            .memory = rhi::MemoryLocation::GpuToCpu,
-                                                                            .name = "Occlusion readback"});
-    ASSERT_TRUE(readback.has_value());
-    ASSERT_TRUE(Device()
-                    .Submit([&](rhi::CommandList& commands) {
-                        renderer::RenderGraph graph;
-                        occlusion.AddTo(graph, m_pass->FrameDataIndex(), m_depth, m_normals);
-                        graph.Execute(commands);
-                        commands.Transition(occlusion.Output(), rhi::TextureState::TransferSrc);
-                        commands.CopyTextureToBuffer(occlusion.Output(), *readback);
-                    })
-                    .has_value());
-
-    const auto open = [&](std::uint32_t x, std::uint32_t y) {
-        return static_cast<int>(
-            reinterpret_cast<const std::uint8_t*>(Device().Mapped(*readback).data())[std::size_t{y} * kHalf + x]);
-    };
-    // The crease is a third of the way across, in the upper half; the open wall is at the right.
-    std::string row;
-    for (std::uint32_t x = 0; x < kHalf; ++x) {
-        row += std::to_string(open(x, 10)) + " ";
-    }
-    const int crease = open(12, 10);
-    const int openWall = open(28, 10);
-    SCOPED_TRACE(row);
-    EXPECT_GT(openWall, 240) << "an open wall stays open";
-    EXPECT_LT(crease, openWall - 30) << "the crease is darker";
-    Device().DestroyBuffer(*readback);
 }
 
 namespace {
@@ -872,8 +860,11 @@ TEST_F(MeshPassTest, DoubleSidedMaterialDrawsTheBackOfTriangles) {
     desc.doubleSided = true;
     const core::Result<MaterialHandle> material = m_pass->CreateMaterial(desc);
     ASSERT_TRUE(material.has_value());
-    const MeshHandle mesh = Mesh(Reversed(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f)));
-    Render({TestCamera(), {{mesh, glm::mat4(1.0f), *material}}});
+    // Turned away from the camera, which sees its back, lit from behind the camera: the back's normal faces
+    // the light.
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
+    const glm::mat4 turned = glm::rotate(glm::mat4(1.0f), glm::pi<float>(), glm::vec3(0.0f, 1.0f, 0.0f));
+    Render({TestCamera(), {{mesh, turned, *material}}});
     EXPECT_FALSE(IsBackground(32, 32));
 }
 
@@ -1281,7 +1272,8 @@ TEST_F(DenoiserTest, ALightTurnedOffGoesDarkAtOnce) {
     SceneView view = ShadowView(1.0f);
     Denoise(view, 16);
     ASSERT_GT(Pixel(48, 32).r, 100);
-    view.lights.clear();
+    // A light that reaches nothing: without any, the test's light from behind the camera would come on.
+    view.lights = {{.position = {0.0f, 0.0f, 100.0f}, .range = 1.0f}};
     Denoise(view);
     EXPECT_LT(Pixel(48, 32).r, 10) << "no light lingers in the history";
 }

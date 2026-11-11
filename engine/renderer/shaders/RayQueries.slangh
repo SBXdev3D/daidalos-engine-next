@@ -118,6 +118,54 @@ bool Occluded(RayDesc ray, uint structure, uint instanceBuffer, uint materialBuf
     return query.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
 }
 
+// The surface at a hit, as the mesh pass shades it: its material, read at full detail, and its normal,
+// with the normal map, turned towards the ray as the mesh pass does for the back of double-sided surfaces.
+struct Surface {
+    float3 position;
+    float3 faceNormal;
+    float3 normal;
+    float3 diffuseColor;
+    float3 f0;
+    float roughness;
+    float3 emission;
+};
+
+Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame, uint instanceBuffer, uint materialBuffer) {
+    const InstanceData instance = g_instances[instanceBuffer][hit.instance];
+    const MaterialData material = g_materials[materialBuffer][instance.material];
+    const Vertex vertex = Interpolate(instance, hit.primitive, hit.barycentrics);
+
+    Surface surface;
+    surface.position = mul(instance.world, float4(vertex.position, 1.0)).xyz;
+    surface.faceNormal = normalize(FaceNormal(instance, hit.primitive));
+    float3 normal = normalize(TransformNormal(instance.world, vertex.normal));
+    float4 tangent = float4(mul((float3x3)instance.world, vertex.tangent.xyz), vertex.tangent.w);
+    if (dot(surface.faceNormal, rayDirection) > 0.0) {
+        surface.faceNormal = -surface.faceNormal;
+        normal = -normal;
+        tangent.w = -tangent.w;
+    }
+    if (material.normalTexture != kNoTexture && dot(tangent.xyz, tangent.xyz) > 0.0) {
+        const float3 t = normalize(tangent.xyz - normal * dot(normal, tangent.xyz));
+        const float3 b = cross(normal, t) * (tangent.w < 0.0 ? -1.0 : 1.0);
+        float2 xy = SampleLevelZero(material.normalTexture, vertex.uv, float4(0.5, 0.5, 1.0, 1.0)).rg * 2.0 - 1.0;
+        xy *= material.normalScale * frame.normalStrength;
+        const float z = sqrt(saturate(1.0 - dot(xy, xy)));
+        normal = normalize(t * xy.x + b * xy.y + normal * z);
+    }
+    surface.normal = normal;
+
+    const float4 baseColor = material.baseColorFactor * SampleLevelZero(material.baseColorTexture, vertex.uv, float4(1.0, 1.0, 1.0, 1.0));
+    // glTF: roughness in green, metalness in blue.
+    const float4 metallicRoughness = SampleLevelZero(material.metallicRoughnessTexture, vertex.uv, float4(1.0, 1.0, 1.0, 1.0));
+    const float metallic = saturate(material.metallicFactor * metallicRoughness.b);
+    surface.roughness = clamp(material.roughnessFactor * metallicRoughness.g, 0.045, 1.0);
+    surface.diffuseColor = baseColor.rgb * (1.0 - metallic);
+    surface.f0 = lerp(float3(0.04, 0.04, 0.04), baseColor.rgb, metallic);
+    surface.emission = material.emissiveFactor * SampleLevelZero(material.emissiveTexture, vertex.uv, float4(1.0, 1.0, 1.0, 1.0)).rgb;
+    return surface;
+}
+
 // Moves a ray's origin off the surface it starts from, so that it does not hit it again.
 float3 OffsetOrigin(float3 position, float3 faceNormal) {
     return position + faceNormal * (1e-3 * (1.0 + max(abs(position.x), max(abs(position.y), abs(position.z))) * 0.01));

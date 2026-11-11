@@ -207,7 +207,7 @@ MenuChoice DrawOptions(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud
     if (ui.Choice("Antialiasing", row(), modeIndex, kModeNames)) {
         Change(app, "renderer.antialiasing", kModes[modeIndex], changed);
     }
-    toggle("Ambient occlusion", "renderer.ambient_occlusion");
+    toggle("Indirect light", "renderer.indirect_light");
     slider("Brightness", "renderer.exposure", 0.5f, 2.0f, 0.05f, percent, twoDecimals);
     slider(
         "Field of view", "view.fov", 60.0f, 120.0f, 5.0f, [](float value) { return std::format("{:.0f}°", value); },

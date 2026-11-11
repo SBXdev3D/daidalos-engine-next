@@ -142,10 +142,16 @@ TEST_F(RendererTest, ShowsEachDebugView) {
     ASSERT_TRUE(mesh.has_value());
     const renderer::SceneView view = TestView(*mesh);
     using renderer::DebugView;
-    for (const DebugView debugView : {DebugView::Rays, DebugView::Path, DebugView::Motion, DebugView::Off}) {
+    for (const DebugView debugView : {DebugView::Rays, DebugView::Path, DebugView::Motion, DebugView::Indirect,
+                                      DebugView::RadianceCache, DebugView::Off}) {
         target->SetDebugView(debugView);
         RenderFrames(*target, view, 3);
     }
+    // Without indirect light, then with it again: the cache starts over.
+    target->SetIndirectLight(false);
+    RenderFrames(*target, view, 2);
+    target->SetIndirectLight(true);
+    RenderFrames(*target, view, 2);
     EXPECT_EQ(target->Device().ValidationErrorCount(), 0U);
 }
 

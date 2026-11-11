@@ -61,8 +61,8 @@ struct NodeName {
     std::string value;
 };
 
-/// ECS component: a light at the entity's WorldTransform. A spot light shines down the entity's local -Z,
-/// like a camera. See renderer::Light for what the values mean (ADR-0022).
+/// ECS component: a light at the entity's WorldTransform. Spot and directional lights shine down the
+/// entity's local -Z, like a camera. See renderer::Light for what the values mean (ADR-0022, ADR-0040).
 struct Light {
     renderer::LightType type = renderer::LightType::Point;
     /// Linear color.
@@ -77,6 +77,8 @@ struct Light {
     float outerAngle = glm::radians(30.0f);
     /// Meters: the size of the bulb, which softens the shadows (ADR-0039). Zero gives hard shadows.
     float radius = 0.05f;
+    /// Directional lights: radians from the center of their disk to its edge, which softens the shadows.
+    float angularRadius = 0.0f;
     bool enabled = true;
 };
 

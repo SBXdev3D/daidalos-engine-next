@@ -1,0 +1,272 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+
+#ifndef DAIDALOS_GLOBAL_ILLUMINATION_SLANGH
+#define DAIDALOS_GLOBAL_ILLUMINATION_SLANGH
+
+// What the passes of diffuse global illumination share (ADR-0040): the radiance cache, a hash grid of world
+// space whose cells hold the light that surfaces send, and the light that reaches a point of a surface.
+// The cache follows Gautron's "Real-Time Ray-Traced Ambient Occlusion of Complex Scenes using Spatial
+// Hashing" (2020) and NVIDIA's SHaRC, from their papers: a cell is found from its position, the size of
+// cells grows with the distance to the camera, and each surface orientation has its own cells, so that the
+// two faces of a wall never share their light. A wall thinner than a cell still lets the floor on either
+// side fall in the same cell: each cell keeps the point that made it, its anchor, and a point that cannot
+// see the anchor, behind a wall, takes the cell's second variant instead (ADR-0040).
+// Include after MeshTypes.slangh and RayQueries.slangh. Matches GlobalIllumination.cpp.
+
+struct GiPushConstants {
+    uint frameBuffer;
+    uint instanceBuffer;
+    uint materialBuffer;
+    uint keys;         // Per cell: its checksum, 0 for a free cell.
+    uint accumulation; // Per cell, four uints: this frame's light in fixed point, red, green, blue, and its samples.
+    uint radiance;     // Per cell: the light it sends, and the samples it is worth.
+    uint ages;         // Per cell: frames since a path last went through it.
+    uint anchors;      // Per cell: the point that made it, off its surface, and 1 once written.
+    uint depth;        // Of the pre-pass.
+    uint normals;      // Of the pre-pass.
+    uint output;       // Storage image: the indirect light of each pixel.
+    uint width;
+    uint height;
+    uint seed;    // Changes every frame.
+    uint mode;    // The trace pass: 0 for the indirect light, 1 shows the cache at each pixel's surface.
+    uint spacing; // The update pass: pixels between paths, across and down.
+    uint reset;   // The resolve pass: 1 empties the cache.
+};
+
+[[vk::push_constant]] GiPushConstants g_gi;
+
+[[vk::binding(2, 0)]] RWStructuredBuffer<uint> g_cacheWords[];
+[[vk::binding(2, 0)]] RWStructuredBuffer<float4> g_cacheRadiance[];
+
+// Matches kCacheCapacity in GlobalIllumination.hpp: a power of two.
+static const uint kCacheCapacity = 1u << 20;
+// Cells are looked for among this many slots from where their hash points.
+static const uint kBucketSize = 8;
+static const uint kNoCell = 0xFFFFFFFF;
+// The smallest cells, in meters, near the camera; farther, cells are about kCellPerMeter of the distance
+// across, in powers of two.
+static const float kSmallestCell = 0.1;
+static const float kCellPerMeter = 0.04;
+// Light is added up in fixed point: a sample is at most kMaxSampleRadiance, which keeps a few thousand
+// samples per cell and frame within a uint.
+static const float kFixedPoint = 1024.0;
+static const float kMaxSampleRadiance = 256.0;
+
+static const float kPi = 3.14159265;
+
+// PCG (O'Neill 2014): a small, good random number generator.
+uint NextRandom(inout uint state) {
+    state = state * 747796405u + 2891336453u;
+    const uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float Random(inout uint state) {
+    return float(NextRandom(state) >> 8) * (1.0 / 16777216.0);
+}
+
+uint Pcg(uint value) {
+    const uint state = value * 747796405u + 2891336453u;
+    const uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+// xxHash32's final mix: a hash independent of Pcg, for the checksum.
+uint XxHash(uint value) {
+    uint hash = value + 374761393u;
+    hash = 668265263u * ((hash << 17) | (hash >> 15));
+    hash = 2246822519u * (hash ^ (hash >> 15));
+    hash = 3266489917u * (hash ^ (hash >> 13));
+    return hash ^ (hash >> 16);
+}
+
+// A direction around normal, more of them near it than at grazing angles: the cosine-weighted hemisphere.
+float3 CosineDirection(float3 normal, float2 u) {
+    // An orthonormal frame around the normal (Duff et al. 2017).
+    const float sign = normal.z >= 0.0 ? 1.0 : -1.0;
+    const float a = -1.0 / (sign + normal.z);
+    const float b = normal.x * normal.y * a;
+    const float3 tangent = float3(1.0 + sign * normal.x * normal.x * a, sign * b, -sign * normal.x);
+    const float3 bitangent = float3(b, sign + normal.y * normal.y * a, -normal.y);
+    const float radius = sqrt(u.x);
+    const float angle = 2.0 * kPi * u.y;
+    return normalize(tangent * (radius * cos(angle)) + bitangent * (radius * sin(angle)) + normal * sqrt(max(1.0 - u.x, 0.0)));
+}
+
+// Which of the six axis directions a normal is closest to.
+uint NormalBucket(float3 normal) {
+    const float3 size = abs(normal);
+    if (size.x >= size.y && size.x >= size.z) {
+        return normal.x >= 0.0 ? 0 : 1;
+    }
+    if (size.y >= size.z) {
+        return normal.y >= 0.0 ? 2 : 3;
+    }
+    return normal.z >= 0.0 ? 4 : 5;
+}
+
+// Where a cell is looked for, and what tells it from the other cells there.
+struct CellKey {
+    uint hash;
+    uint checksum;
+};
+
+CellKey CellOf(FrameData frame, float3 position, float3 normal) {
+    const float distance = length(position - frame.cameraPosition);
+    const uint level = uint(clamp(ceil(log2(max(distance * kCellPerMeter / kSmallestCell, 1.0))), 0.0, 15.0));
+    const int3 cell = int3(floor(position / (kSmallestCell * exp2(float(level)))));
+    const uint kind = level | (NormalBucket(normal) << 4);
+    CellKey key;
+    key.hash = Pcg(Pcg(Pcg(Pcg(kind) + uint(cell.x)) + uint(cell.y)) + uint(cell.z));
+    key.checksum = XxHash(XxHash(XxHash(XxHash(kind) + uint(cell.x)) + uint(cell.y)) + uint(cell.z));
+    key.checksum = max(key.checksum, 1u); // 0 marks a free slot.
+    return key;
+}
+
+// How far off its surface a cell's anchor is, and a point looking at it: the rays between them pass
+// above the surface they share, and through any wall that stands on it.
+static const float kAnchorHeight = 0.01;
+
+// Whether a point of a surface, off it along its normal, sees a cell's anchor.
+bool SeesAnchor(FrameData frame, float3 from, float3 anchor) {
+    const float3 offset = anchor - from;
+    const float distance = length(offset);
+    if (distance < 1e-4) {
+        return true;
+    }
+    RayDesc ray;
+    ray.Origin = from;
+    ray.Direction = offset / distance;
+    ray.TMin = 0.0;
+    ray.TMax = distance;
+    return !Occluded(ray, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer);
+}
+
+// The slot of a cell, or kNoCell. With insert, a cell that is not there takes a free slot if there is one,
+// and position becomes its anchor. A cell whose anchor position does not see is passed over for its
+// second variant.
+uint FindCell(FrameData frame, CellKey key, float3 position, float3 normal, bool insert) {
+    const uint first = key.hash & (kCacheCapacity - 1) & ~(kBucketSize - 1);
+    const float3 from = position + normal * kAnchorHeight;
+    for (uint variant = 0; variant < 2; ++variant) {
+        const uint checksum = variant == 0 ? key.checksum : max(XxHash(key.checksum ^ 0x9E3779B9u), 1u);
+        uint free = kNoCell;
+        uint found = kNoCell;
+        for (uint index = 0; index < kBucketSize && found == kNoCell; ++index) {
+            const uint stored = g_cacheWords[g_gi.keys][first + index];
+            if (stored == checksum) {
+                found = first + index;
+            } else if (stored == 0 && free == kNoCell) {
+                free = first + index;
+            }
+        }
+        if (found != kNoCell) {
+            // An anchor not written yet, by a thread of this pass, is trusted.
+            const float4 anchor = g_cacheRadiance[g_gi.anchors][found];
+            if (anchor.w == 0.0 || SeesAnchor(frame, from, anchor.xyz)) {
+                return found;
+            }
+            continue;
+        }
+        if (!insert) {
+            return kNoCell;
+        }
+        // Another thread may take the free slot first, for this cell or another.
+        for (uint index = free == kNoCell ? kBucketSize : free - first; index < kBucketSize; ++index) {
+            uint original;
+            InterlockedCompareExchange(g_cacheWords[g_gi.keys][first + index], 0u, checksum, original);
+            if (original == 0) {
+                g_cacheRadiance[g_gi.anchors][first + index] = float4(from, 1.0);
+                return first + index;
+            }
+            if (original == checksum) {
+                return first + index;
+            }
+        }
+        return kNoCell;
+    }
+    return kNoCell;
+}
+
+// The cell of a surface: see FindCell.
+uint FindCellOf(FrameData frame, float3 position, float3 normal, bool insert) {
+    return FindCell(frame, CellOf(frame, position, normal), position, normal, insert);
+}
+
+// Adds a sample of the light a cell sends.
+void AddToCell(uint cell, float3 radiance) {
+    if (cell == kNoCell) {
+        return;
+    }
+    const uint3 fixed = uint3(clamp(radiance, 0.0, kMaxSampleRadiance) * kFixedPoint + 0.5);
+    const uint base = cell * 4;
+    InterlockedAdd(g_cacheWords[g_gi.accumulation][base], fixed.r);
+    InterlockedAdd(g_cacheWords[g_gi.accumulation][base + 1], fixed.g);
+    InterlockedAdd(g_cacheWords[g_gi.accumulation][base + 2], fixed.b);
+    InterlockedAdd(g_cacheWords[g_gi.accumulation][base + 3], 1u);
+}
+
+// The light the cell of a surface sends, or black if it has none yet.
+float3 CachedRadiance(FrameData frame, float3 position, float3 normal) {
+    const uint cell = FindCellOf(frame, position, normal, false);
+    return cell == kNoCell ? float3(0.0, 0.0, 0.0) : g_cacheRadiance[g_gi.radiance][cell].rgb;
+}
+
+float Luminance(float3 color) {
+    return dot(color, float3(0.2126, 0.7152, 0.0722));
+}
+
+// The light of the frame's lights that a matte surface sends, as if it were matte, from one of them chosen
+// among a few at random, the brighter the more likely (resampled importance sampling, Talbot et al. 2005),
+// and one shadow ray. Unbiased: on average, the light of every light.
+float3 DirectDiffuseLight(Surface surface, FrameData frame, inout uint random) {
+    if (frame.lightCount == 0 || all(surface.diffuseColor <= 0.0)) {
+        return float3(0.0, 0.0, 0.0);
+    }
+    static const uint kCandidates = 8;
+    float weightSum = 0.0;
+    float3 chosenLight = float3(0.0, 0.0, 0.0);
+    float chosenWeight = 0.0;
+    LightData chosen = g_lights[frame.lightBuffer][0];
+    for (uint candidate = 0; candidate < kCandidates; ++candidate) {
+        const uint index = min(uint(Random(random) * float(frame.lightCount)), frame.lightCount - 1);
+        const LightData light = LightAt(g_lights[frame.lightBuffer][index], surface.position);
+        const float3 offset = light.position - surface.position;
+        const float distanceToLight = length(offset);
+        if (distanceToLight >= light.range) {
+            continue;
+        }
+        const float3 toLight = offset / max(distanceToLight, 0.0001);
+        const float cosine = dot(surface.normal, toLight);
+        if (cosine <= 0.0 || dot(surface.faceNormal, toLight) <= 0.0) {
+            continue;
+        }
+        // A light's color is what a white surface facing it reflects (ADR-0022).
+        const float3 reflected = light.color * Attenuation(light, distanceToLight, toLight) * cosine * surface.diffuseColor;
+        const float weight = Luminance(reflected);
+        if (weight <= 0.0) {
+            continue;
+        }
+        weightSum += weight;
+        if (Random(random) * weightSum < weight) {
+            chosen = light;
+            chosenLight = reflected;
+            chosenWeight = weight;
+        }
+    }
+    if (weightSum <= 0.0) {
+        return float3(0.0, 0.0, 0.0);
+    }
+    const float2 u = float2(Random(random), Random(random));
+    const float3 toPoint = SampleLightPoint(chosen.position, chosen.radius, surface.position, u) - surface.position;
+    const float distanceToPoint = length(toPoint);
+    if (!LightReaches(surface.position, surface.faceNormal, toPoint / max(distanceToPoint, 0.0001), distanceToPoint,
+                      chosen.range, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer)) {
+        return float3(0.0, 0.0, 0.0);
+    }
+    return chosenLight / chosenWeight * (weightSum / float(kCandidates)) * float(frame.lightCount);
+}
+
+#endif

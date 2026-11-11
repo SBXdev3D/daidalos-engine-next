@@ -70,15 +70,22 @@ constexpr float kMaxPitch = glm::radians(89.0f);
 constexpr float kStickLookSpeed = 2.5f; // Radians per second.
 constexpr float kMessageTime = 3.0f;    // Seconds.
 
-// The factory is dark, but never black: enough light everywhere to make out the walls and the way ahead
-// far from any lamp (Settings::ambient), slightly cold, and a thin fog that swallows what is far away.
-constexpr glm::vec3 kAmbientTint{0.9f, 0.95f, 1.1f};
-// The ambient light comes mostly from above, where the lamps are, and less from the floor. Walls get the
-// average, Settings::ambient, and their normal maps show where they lean up or down.
-constexpr float kAmbientAbove = 1.5f;
-constexpr float kAmbientBelow = 0.5f;
+// The factory is dark, lit by its lamps and the light they bounce (ADR-0040), with a thin fog that swallows
+// what is far away. Without its darkness, Settings::darkness 0, the view is exposed this much brighter.
+constexpr float kBrightExposure = 16.0f;
 constexpr glm::vec3 kFogColor{0.005f, 0.006f, 0.008f};
 constexpr float kFogDensity = 0.03f;
+// The moon painted on sky1 shines through the level's openings (ADR-0040). Its disk is centered at pixel
+// (343.5, 147) of the 512-pixel front face, the legacy +Z: towards (0.344, 0.424, 1) in the cube, -Z in the
+// engine, 22 degrees above the horizon. That low, it would light only walls that the player sees from
+// behind: the sky is turned half a turn, which puts the moon behind the start and its light on the far
+// wall of the big room ahead. The painted disk and its glow span 5 degrees; behind the clouds the light
+// comes from a little less.
+constexpr std::string_view kMoonSky = "sky1";
+constexpr float kMoonSkyYaw = glm::pi<float>();
+constexpr glm::vec3 kTowardsThePaintedMoon{0.344f, 0.424f, -1.0f};
+constexpr glm::vec3 kMoonColor{0.7f, 0.8f, 1.0f};
+constexpr float kMoonAngularRadius = glm::radians(2.5f);
 constexpr glm::vec3 kFlashlightColor{2.4f, 2.25f, 1.95f};
 constexpr float kFlashlightRange = 32.0f;                    // Meters.
 constexpr float kFlashlightFalloff = 0.15f;                  // Fraction of the range at full light.
@@ -720,7 +727,7 @@ void UpdateDoors(scene::Scene& scene, ecs::Entity playerEntity, float delta) {
 }
 
 /// The sky that the level's openings show: six faces next to the level, named as the legacy engine named
-/// them, in the order of a cube's faces (ADR-0036).
+/// them, in the order of a cube's faces (ADR-0036). A sky with a moon also lights the level from it.
 core::Result<void> LoadSky(scene::Scene& scene, const std::string& directory, std::string_view name) {
     const std::string prefix = (directory.empty() ? std::string("Sky/") : directory + "/Sky/") + std::string(name);
     const std::array<std::string, 6> faces{prefix + "_right.png", prefix + "_left.png",  prefix + "_up.png",
@@ -728,6 +735,20 @@ core::Result<void> LoadSky(scene::Scene& scene, const std::string& directory, st
     DAI_TRY_ASSIGN(rhi::TextureHandle sky, scene.Assets().LoadCubeTexture(faces));
     renderer::Atmosphere atmosphere = scene.Atmosphere();
     atmosphere.sky = sky;
+    if (name == kMoonSky) {
+        atmosphere.skyYaw = kMoonSkyYaw;
+        // A light from where the moon is painted, turned with the sky, which shines down its local -Z.
+        ecs::World& world = scene.World();
+        const ecs::Entity moon = world.Create();
+        const glm::vec3 towardsTheMoon =
+            glm::angleAxis(kMoonSkyYaw, math::kUp) * glm::normalize(kTowardsThePaintedMoon);
+        ecs::LocalTransform transform;
+        transform.rotation = glm::quatLookAtRH(-towardsTheMoon, math::kUp);
+        world.Add<ecs::LocalTransform>(moon, transform);
+        world.Add<scene::Light>(moon, scene::Light{.type = renderer::LightType::Directional,
+                                                   .color = kMoonColor,
+                                                   .angularRadius = kMoonAngularRadius});
+    }
     scene.SetAtmosphere(atmosphere);
     return {};
 }
@@ -735,13 +756,13 @@ core::Result<void> LoadSky(scene::Scene& scene, const std::string& directory, st
 /// The factory's darkness and fog, which follow the settings. The sky stays as the level set it.
 void ApplyAtmosphere(scene::Scene& scene, const Settings& settings) {
     const float darkness = std::clamp(settings.darkness, 0.0f, 1.0f);
-    scene.SetAtmosphere(
-        {.fogColor = kFogColor,
-         .fogDensity = kFogDensity * darkness,
-         .ambient = glm::mix(glm::vec3(1.0f), kAmbientTint * settings.ambient * kAmbientAbove, darkness),
-         .ambientBelow = glm::mix(glm::vec3(1.0f), kAmbientTint * settings.ambient * kAmbientBelow, darkness),
-         .sky = scene.Atmosphere().sky,
-         .skyIntensity = scene.Atmosphere().skyIntensity});
+    // Brightness is seen in stops, powers of two: halfway is half the stops.
+    scene.SetAtmosphere({.fogColor = kFogColor,
+                         .fogDensity = kFogDensity * darkness,
+                         .sky = scene.Atmosphere().sky,
+                         .skyIntensity = scene.Atmosphere().skyIntensity,
+                         .skyYaw = scene.Atmosphere().skyYaw,
+                         .exposure = std::exp2((1.0f - darkness) * std::log2(kBrightExposure))});
 }
 
 } // namespace

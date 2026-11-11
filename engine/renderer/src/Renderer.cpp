@@ -21,8 +21,8 @@
 #include <optional>
 #include <utility>
 
-#include "AmbientOcclusionPass.hpp"
 #include "Denoiser.hpp"
+#include "GlobalIllumination.hpp"
 #include "MeshPass.hpp"
 #include "ParticlePass.hpp"
 #include "PathTracerPass.hpp"
@@ -75,7 +75,7 @@ struct Renderer::Impl {
         }
         rayTracing.reset();
         meshPass.reset();
-        ambientOcclusionPass.reset();
+        globalIllumination.reset();
         particlePass.reset();
         uiPass.reset();
         device.DestroyPipeline(tonemap);
@@ -97,7 +97,7 @@ struct Renderer::Impl {
     rhi::Device device;
     rhi::Swapchain swapchain;
     std::optional<MeshPass> meshPass;
-    std::optional<AmbientOcclusionPass> ambientOcclusionPass;
+    std::optional<GlobalIllumination> globalIllumination;
     std::optional<ParticlePass> particlePass;
     std::optional<UiPass> uiPass;
     std::optional<TemporalResolvePass> temporalResolve;
@@ -113,7 +113,9 @@ struct Renderer::Impl {
     bool resolved = false;
     /// Bursts and emissions of the last view drawn, for FrameStats.
     std::uint32_t particleSpawns = 0;
-    bool ambientOcclusion = true;
+    bool indirectLight = true;
+    /// The last frame went through global illumination: its cache still follows the scene.
+    bool illuminated = false;
     Antialiasing antialiasing = Antialiasing::Taa;
     DebugView debugView = DebugView::Off;
     std::optional<RayTracingScene> rayTracing;
@@ -179,7 +181,7 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
                                                   .format = MeshPass::kNormalFormat,
                                                   .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
                                                   .name = "Normals"}));
-    DAI_TRY(ambientOcclusionPass->Resize(extent));
+    DAI_TRY(globalIllumination->Resize(extent));
     DAI_TRY_ASSIGN(depth, device.CreateTexture({.extent = extent,
                                                 .format = kDepthFormat,
                                                 .usage = rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled,
@@ -280,9 +282,9 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     impl->pathTracer.emplace(std::move(pathTracer));
     impl->pathSettings = {
         .maxBounces = config.pathBounces, .maxSamples = config.pathSamples, .background = config.pathBackground};
-    DAI_TRY_ASSIGN(AmbientOcclusionPass ambientOcclusionPass, AmbientOcclusionPass::Create(impl->device));
-    impl->ambientOcclusionPass.emplace(std::move(ambientOcclusionPass));
-    impl->ambientOcclusion = config.ambientOcclusion;
+    DAI_TRY_ASSIGN(GlobalIllumination globalIllumination, GlobalIllumination::Create(impl->device));
+    impl->globalIllumination.emplace(std::move(globalIllumination));
+    impl->indirectLight = config.indirectLight;
     DAI_TRY_ASSIGN(ParticlePass particlePass, ParticlePass::Create(impl->device, kHdrFormat));
     impl->particlePass.emplace(std::move(particlePass));
     DAI_TRY_ASSIGN(TemporalResolvePass temporalResolve, TemporalResolvePass::Create(impl->device));
@@ -341,8 +343,8 @@ void Renderer::SetExposure(float exposure) {
     m_impl->exposure = exposure;
 }
 
-void Renderer::SetAmbientOcclusion(bool enabled) {
-    m_impl->ambientOcclusion = enabled;
+void Renderer::SetIndirectLight(bool enabled) {
+    m_impl->indirectLight = enabled;
 }
 
 void Renderer::SetDenoiser(bool enabled) {
@@ -415,15 +417,18 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     // Temporal antialiasing jitters the camera; the debug views show their own images unjittered.
     const bool taa = impl.antialiasing == Antialiasing::Taa && impl.debugView == DebugView::Off;
     RenderGraph& graph = impl.graph;
-    const rhi::TextureHandle occlusion =
-        impl.ambientOcclusion ? impl.ambientOcclusionPass->Output() : rhi::TextureHandle{};
+    const bool cacheView = impl.debugView == DebugView::RadianceCache;
+    const bool indirectView = impl.debugView == DebugView::Indirect || cacheView;
+    const bool indirectLight = impl.indirectLight || indirectView;
+    const rhi::TextureHandle indirect = indirectLight ? impl.globalIllumination->Output() : rhi::TextureHandle{};
+    const std::uint32_t frameIndex = impl.frameIndex++;
     if (status) {
         status = impl.rayTracing->Reserve(frame.slot, view.draws.size()).and_then([&](std::uint32_t structure) {
             return impl.meshPass->Prepare(view, {.extent = frame.extent,
-                                                 .occlusion = occlusion,
+                                                 .indirect = indirect,
                                                  .accelerationStructure = structure,
                                                  .jitter = taa ? Jitter(impl.frameNumber) : glm::vec2(0.0f),
-                                                 .frameIndex = impl.frameIndex++});
+                                                 .frameIndex = frameIndex});
         });
         impl.particleSpawns = static_cast<std::uint32_t>(view.particleSpawns.size());
     }
@@ -449,9 +454,25 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
              .buffers = {skinnedVertices, {impl.meshPass->PreviousSkinnedPositions(), rhi::Access::VertexShaderRead}}},
             [&impl](rhi::CommandList& commands) { impl.meshPass->RecordPrepass(commands); });
     }
-    if (hasFrame && impl.ambientOcclusion) {
-        impl.ambientOcclusionPass->AddTo(graph, impl.meshPass->FrameDataIndex(), impl.depth, impl.normals);
+    // Indirect light: the cache forgets the last scene after a cut, and whatever it held while it was off.
+    const bool illuminate = status && hasFrame && indirectLight;
+    if (illuminate) {
+        if (!impl.illuminated || view.cut) {
+            impl.globalIllumination->Reset();
+        }
+        impl.globalIllumination->AddTo(graph,
+                                       {.frameBuffer = impl.meshPass->FrameDataIndex(),
+                                        .instanceBuffer = impl.meshPass->InstanceDataIndex(),
+                                        .materialBuffer = impl.meshPass->MaterialDataIndex(),
+                                        .structure = impl.rayTracing->Structure(),
+                                        .skinnedVertices = impl.meshPass->SkinnedVertices(),
+                                        .depth = impl.depth,
+                                        .normals = impl.normals,
+                                        .frameIndex = frameIndex},
+                                       cacheView ? GlobalIllumination::Mode::Cache
+                                                 : GlobalIllumination::Mode::Indirect);
     }
+    impl.illuminated = illuminate;
     if (hasFrame) {
         status = impl.particlePass->AddSimulation(graph, view.particleSpawns, view.timeStep,
                                                   impl.meshPass->FrameDataIndex(), impl.depth, impl.normals);
@@ -460,7 +481,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         graph.AddPass({.name = "Meshes",
                        .rendering = MeshPass::ShadingRendering(impl.shading, impl.depth,
                                                                glm::vec4(view.atmosphere.fogColor, 1.0f)),
-                       .textures = {{occlusion, rhi::Access::FragmentShaderRead}},
+                       .textures = {{illuminate ? indirect : rhi::TextureHandle{}, rhi::Access::FragmentShaderRead}},
                        // Shadow rays: the frame's structure, and the vertices of the skinned draws they test for alpha.
                        .buffers = {skinnedVertices, {skinnedVertices.buffer, rhi::Access::FragmentShaderRead}},
                        .structures = {{hasFrame ? impl.rayTracing->Structure() : rhi::AccelerationStructureHandle{},
@@ -554,18 +575,19 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
 
     if (status) {
         // Without a camera, the mesh pass only cleared its base to the fog's color.
-        const rhi::TextureHandle source = path       ? impl.pathTracer->Output()
-                                          : resolve  ? impl.temporalResolve->Output()
-                                          : hasFrame ? impl.hdr
-                                                     : impl.shading.base;
+        const rhi::TextureHandle source = path                         ? impl.pathTracer->Output()
+                                          : illuminate && indirectView ? impl.globalIllumination->Output()
+                                          : resolve                    ? impl.temporalResolve->Output()
+                                          : hasFrame                   ? impl.hdr
+                                                                       : impl.shading.base;
 
         graph.AddPass({.name = "Tonemap",
                        .rendering = rhi::RenderingDesc{.colorTarget = frame.backBuffer},
                        .textures = {{frame.backBuffer, rhi::Access::ColorTarget, true},
                                     {source, rhi::Access::FragmentShaderRead}}},
-                      [&impl, source](rhi::CommandList& commands) {
+                      [&impl, source, exposure = impl.exposure * view.atmosphere.exposure](rhi::CommandList& commands) {
                           commands.BindPipeline(impl.tonemap);
-                          commands.Push(TonemapPushConstants{impl.device.BindlessIndex(source), impl.exposure});
+                          commands.Push(TonemapPushConstants{impl.device.BindlessIndex(source), exposure});
                           commands.Draw(3);
                       });
     }

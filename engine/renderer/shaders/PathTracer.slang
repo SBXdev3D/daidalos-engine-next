@@ -4,8 +4,8 @@
 
 // The reference path tracer (ADR-0034): one path per pixel per frame, averaged with the paths of earlier
 // frames until the view changes. It shades hits with the materials and lights of the mesh pass and its
-// BSDF (Bsdf.slang): it is the image that real-time techniques are compared with. It has no fog and no
-// ambient term: light bounces instead. A path that leaves the scene sees the background radiance.
+// BSDF (Bsdf.slang): it is the image that real-time techniques are compared with. It has no fog: light
+// bounces as far as the paths go. A path that leaves the scene sees the background radiance.
 
 #define DAI_NO_MESH_PUSH_CONSTANTS
 #include "MeshTypes.slangh"
@@ -44,54 +44,6 @@ float Random(inout uint state) {
     return float(NextRandom(state) >> 8) * (1.0 / 16777216.0);
 }
 
-// The surface at a hit, as the mesh pass shades it: its material, read at full detail, and its normal,
-// with the normal map, turned towards the ray as the mesh pass does for the back of double-sided surfaces.
-struct Surface {
-    float3 position;
-    float3 faceNormal;
-    float3 normal;
-    float3 diffuseColor;
-    float3 f0;
-    float roughness;
-    float3 emission;
-};
-
-Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame) {
-    const InstanceData instance = g_instances[g_path.instanceBuffer][hit.instance];
-    const MaterialData material = g_materials[g_path.materialBuffer][instance.material];
-    const Vertex vertex = Interpolate(instance, hit.primitive, hit.barycentrics);
-
-    Surface surface;
-    surface.position = mul(instance.world, float4(vertex.position, 1.0)).xyz;
-    surface.faceNormal = normalize(FaceNormal(instance, hit.primitive));
-    float3 normal = normalize(TransformNormal(instance.world, vertex.normal));
-    float4 tangent = float4(mul((float3x3)instance.world, vertex.tangent.xyz), vertex.tangent.w);
-    if (dot(surface.faceNormal, rayDirection) > 0.0) {
-        surface.faceNormal = -surface.faceNormal;
-        normal = -normal;
-        tangent.w = -tangent.w;
-    }
-    if (material.normalTexture != kNoTexture && dot(tangent.xyz, tangent.xyz) > 0.0) {
-        const float3 t = normalize(tangent.xyz - normal * dot(normal, tangent.xyz));
-        const float3 b = cross(normal, t) * (tangent.w < 0.0 ? -1.0 : 1.0);
-        float2 xy = SampleLevelZero(material.normalTexture, vertex.uv, float4(0.5, 0.5, 1.0, 1.0)).rg * 2.0 - 1.0;
-        xy *= material.normalScale * frame.normalStrength;
-        const float z = sqrt(saturate(1.0 - dot(xy, xy)));
-        normal = normalize(t * xy.x + b * xy.y + normal * z);
-    }
-    surface.normal = normal;
-
-    const float4 baseColor = material.baseColorFactor * SampleLevelZero(material.baseColorTexture, vertex.uv, float4(1.0, 1.0, 1.0, 1.0));
-    // glTF: roughness in green, metalness in blue.
-    const float4 metallicRoughness = SampleLevelZero(material.metallicRoughnessTexture, vertex.uv, float4(1.0, 1.0, 1.0, 1.0));
-    const float metallic = saturate(material.metallicFactor * metallicRoughness.b);
-    surface.roughness = clamp(material.roughnessFactor * metallicRoughness.g, 0.045, 1.0);
-    surface.diffuseColor = baseColor.rgb * (1.0 - metallic);
-    surface.f0 = lerp(float3(0.04, 0.04, 0.04), baseColor.rgb, metallic);
-    surface.emission = material.emissiveFactor * SampleLevelZero(material.emissiveTexture, vertex.uv, float4(1.0, 1.0, 1.0, 1.0)).rgb;
-    return surface;
-}
-
 // Light that reaches the surface straight from the frame's lights and leaves towards view, with the
 // mesh pass's falloff and its convention that a light's color is what a white surface facing it reflects.
 // Like the mesh pass, it shades with the light's center and aims its shadow ray at a random point of the
@@ -99,7 +51,7 @@ Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame) {
 float3 DirectLight(Surface surface, float3 view, FrameData frame, inout uint random) {
     float3 total = float3(0.0, 0.0, 0.0);
     for (uint index = 0; index < frame.lightCount; ++index) {
-        const LightData light = g_lights[frame.lightBuffer][index];
+        const LightData light = LightAt(g_lights[frame.lightBuffer][index], surface.position);
         const float3 offset = light.position - surface.position;
         const float distanceToLight = length(offset);
         if (distanceToLight >= light.range) {
@@ -156,7 +108,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             radiance += throughput * (frame.skyTexture != kNoTexture ? SkyRadiance(frame, ray.Direction) : g_path.background);
             break;
         }
-        const Surface surface = ShadeHit(hit, ray.Direction, frame);
+        const Surface surface = ShadeHit(hit, ray.Direction, frame, g_path.instanceBuffer, g_path.materialBuffer);
         const float3 view = -ray.Direction;
         radiance += throughput * (surface.emission + DirectLight(surface, view, frame, random));
         if (bounce + 1 >= g_path.maxBounces) {

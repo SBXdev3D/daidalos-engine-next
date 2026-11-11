@@ -74,29 +74,26 @@ struct FrameData {
     float fogDensity;
     glm::vec3 fogColor;
     std::uint32_t lightCount;
-    glm::vec3 ambient;
     std::uint32_t lightBuffer;
     std::uint32_t skyTexture;
     float skyIntensity;
     std::uint32_t frameIndex;
     float normalStrength;
-    glm::vec3 ambientBelow;
-    std::uint32_t occlusionTexture;
+    std::uint32_t indirectTexture;
     glm::vec2 screenTexel;
     float nearPlane;
     std::uint32_t clusterBuffer;
-    glm::vec3 cameraForward;
-    float clusterSliceScale;
     std::uint32_t clusterLightBuffer;
     float farPlane;
+    glm::vec3 cameraForward;
+    float clusterSliceScale;
     std::uint32_t accelerationStructure;
-    std::uint32_t padding;
+    float skyYaw;
+    glm::vec2 jitter;
     glm::mat4 unjitteredViewProjection;
     glm::mat4 previousViewProjection;
-    glm::vec2 jitter;
-    glm::vec2 padding1;
 };
-static_assert(sizeof(FrameData) == 400);
+static_assert(sizeof(FrameData) == 368);
 
 struct LightData {
     glm::vec3 position;
@@ -106,15 +103,31 @@ struct LightData {
     glm::vec3 color;
     float cosOuter; // kPointLight for a point light.
     float cosInner;
-    float radius;
-    std::array<std::uint32_t, 2> padding;
+    float radius;       // Directional lights: the tangent of their angular radius.
+    std::uint32_t kind; // kLightNear or kLightDirectional.
+    std::uint32_t padding;
 };
 static_assert(sizeof(LightData) == 64);
 
 /// The cosine of the outer angle of a point light: every direction is inside.
 constexpr float kPointLight = -2.0f;
+/// Match the kinds of light in MeshTypes.slangh: lights with a position, and directional lights.
+constexpr std::uint32_t kLightNear = 0;
+constexpr std::uint32_t kLightDirectional = 1;
 
 LightData ToGpu(const Light& light) {
+    if (light.type == LightType::Directional) {
+        return {glm::vec3(0.0f),
+                0.0f,
+                glm::normalize(light.direction),
+                0.0f,
+                light.color,
+                kPointLight,
+                kPointLight + 1.0f,
+                std::tan(std::clamp(light.angularRadius, 0.0f, 1.0f)),
+                kLightDirectional,
+                0};
+    }
     const bool spot = light.type == LightType::Spot;
     return {light.position,
             light.range,
@@ -124,7 +137,8 @@ LightData ToGpu(const Light& light) {
             spot ? std::cos(light.outerAngle) : kPointLight,
             spot ? std::cos(light.innerAngle) : kPointLight + 1.0f,
             std::max(light.radius, 0.0f),
-            {}};
+            kLightNear,
+            0};
 }
 
 struct InstanceData {
@@ -522,28 +536,25 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                           view.atmosphere.fogDensity,
                           view.atmosphere.fogColor,
                           static_cast<std::uint32_t>(view.lights.size()),
-                          view.atmosphere.ambient,
                           m_device->StorageIndex(slot.lights),
                           view.atmosphere.sky ? m_device->BindlessIndex(view.atmosphere.sky) : kNoTexture,
                           view.atmosphere.skyIntensity,
                           targets.frameIndex,
                           m_normalStrength,
-                          view.atmosphere.ambientBelow,
-                          targets.occlusion ? m_device->BindlessIndex(targets.occlusion) : kNoTexture,
+                          targets.indirect ? m_device->BindlessIndex(targets.indirect) : kNoTexture,
                           glm::vec2(1.0f / static_cast<float>(std::max(targets.extent.width, 1U)),
                                     1.0f / static_cast<float>(std::max(targets.extent.height, 1U))),
                           camera.nearPlane,
                           m_device->StorageIndex(slot.clusters),
-                          glm::normalize(-glm::vec3(glm::inverse(camera.view)[2])),
-                          ClusterSliceScale(camera.nearPlane, farPlane),
                           m_device->StorageIndex(slot.clusterLights),
                           farPlane,
+                          glm::normalize(-glm::vec3(glm::inverse(camera.view)[2])),
+                          ClusterSliceScale(camera.nearPlane, farPlane),
                           targets.accelerationStructure,
-                          0,
-                          viewProjection,
-                          previousViewProjection,
+                          view.atmosphere.skyYaw,
                           jitter,
-                          glm::vec2(0.0f)};
+                          viewProjection,
+                          previousViewProjection};
     std::memcpy(m_device->Mapped(slot.clusters).data(), m_clusters.ranges.data(),
                 m_clusters.ranges.size() * sizeof(glm::uvec2));
     if (!m_clusters.lightIndices.empty()) {

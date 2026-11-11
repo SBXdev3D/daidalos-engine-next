@@ -1,6 +1,6 @@
 # ADR-0024: Depth pre-pass, ambient occlusion and ambient light from above
 
-- **Status:** Accepted
+- **Status:** Partly superseded by ADR-0040: the ambient light and the ambient occlusion are gone; the depth pre-pass stays
 - **Date:** 2026-11-03
 
 ## Context

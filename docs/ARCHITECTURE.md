@@ -1,6 +1,6 @@
 # Architecture
 
-How the engine is built today, through Phase 9.8: real lights with soft ray-traced shadows and their denoiser, temporal antialiasing, a sky, clustered lights, ambient occlusion, PBR materials, normal maps and particles on the GPU. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
+How the engine is built today, through Phase 9.9: real lights with soft ray-traced shadows, indirect light from a radiance cache, their denoiser, temporal antialiasing, a sky, clustered lights, PBR materials, normal maps and particles on the GPU. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
 
 ## Modules
 
@@ -90,10 +90,10 @@ sequenceDiagram
     R->>D: BeginFrame: send the pending uploads, read last timestamps
     R->>D: Skinning, with the previous joints too, then the frame's acceleration structures
     R->>D: Pre-pass, jittered: depth, normals and motion vectors
-    R->>D: Ambient occlusion, at half resolution
+    R->>D: Global illumination: update the radiance cache, resolve it, one ray per pixel (compute)
     R->>D: Particles: emit, simulate, sort (compute)
-    R->>D: Mesh pass, where depth is equal: ambient light, the lights' diffuse and specular light apart, albedo
-    R->>D: Denoiser: the lights' light averaged over frames, then over neighbours (compute)
+    R->>D: Mesh pass, where depth is equal: emission, diffuse and specular light apart, albedo
+    R->>D: Denoiser: the light averaged over frames, then over neighbours (compute)
     R->>D: Composite: the light put back together, and the fog, into the HDR target
     R->>D: Particles drawn back to front, one indirect draw, and their coverage as a reactive mask
     R->>D: Temporal resolve: the frame blended with the reprojected history (compute)
@@ -162,7 +162,7 @@ The renderer uses bindless access: one descriptor set holds every texture, cube 
 
 ```mermaid
 flowchart LR
-    P["Push constants<br/>buffer and element indices"] --> FB["FrameData<br/>view-projection, fog,<br/>ambient, sky"]
+    P["Push constants<br/>buffer and element indices"] --> FB["FrameData<br/>view-projection, fog,<br/>sky, indirect light"]
     FB --> LB["LightData<br/>every light of the frame"]
     P --> IB["InstanceData<br/>world matrix, vertices,<br/>indices, material"]
     IB --> VB["Vertices and indices<br/>of the mesh, or its<br/>skinned vertices"]
@@ -174,25 +174,26 @@ flowchart LR
 
 ## Lighting
 
-Meshes are shaded in linear HDR with metallic-roughness PBR and the frame's lights, then tonemapped (ADR-0022). Lights are `scene::Light` entities: a spot light shines down its entity's local -Z, so a lamp is placed and turned like anything else, and a light parented to the camera follows it.
+Meshes are shaded in linear HDR with metallic-roughness PBR, the frame's lights and the light that bounces between surfaces, then tonemapped (ADR-0022, ADR-0040). Lights are `scene::Light` entities: point, spot or directional. Spot and directional lights shine down their entity's local -Z, so a lamp is placed and turned like anything else, and a light parented to the camera follows it. A directional light, such as the factory's moon, is infinitely far and has an angular radius instead of a radius.
 
 ```mermaid
 flowchart LR
     E["scene::Light<br/>on entities"] -->|"ExtractScene"| L["SceneView::lights<br/>position, direction, color, range"]
     AS["Acceleration structure<br/>of the frame"] -->|"a shadow ray per light,<br/>to a random point of it"| M
     L -->|"CPU clustering<br/>16×9×24"| CL["Cluster light lists"]
-    CL --> M["Mesh pass<br/>GGX, normal maps,<br/>shadows, ambient,<br/>then the sky"]
-    P["Pre-pass<br/>depth, normals, roughness,<br/>motion"] --> AO["Ambient occlusion<br/>half resolution"]
-    AO --> M
+    CL --> M["Mesh pass<br/>GGX, normal maps,<br/>shadows, indirect light,<br/>then the sky"]
+    AS -->|"update paths, one ray<br/>per pixel"| GI["Global illumination<br/>radiance cache"]
+    P["Pre-pass<br/>depth, normals, roughness,<br/>motion"] --> GI
+    GI -->|"indirect light<br/>per pixel"| M
     M -->|"diffuse and specular<br/>light, apart"| DN["Denoiser<br/>temporal, then spatial"]
     P --> DN
-    M -->|"ambient, emission,<br/>albedo"| CO["Composite<br/>and fog"]
+    M -->|"emission,<br/>albedo"| CO["Composite<br/>and fog"]
     DN --> CO
     CO --> H["HDR target<br/>Rgba16Float"]
     H -->|"temporal resolve, exposure,<br/>PBR Neutral"| S["Swapchain<br/>sRGB"]
 ```
 
-A light's color is what a white surface facing it reflects up close, and it fades linearly to zero at its range, as in the legacy engine. Normal maps follow glTF (green up, bitangent from the tangent's `w`), and meshes that lack tangents get MikkTSpace ones at load. Each frame, lights are assigned to 16×9×24 clusters of the view on the CPU, and a pixel shades only the lights of its cluster (ADR-0008). A pre-pass writes depth and normals first, so that the mesh pass shades each pixel once, and ambient occlusion darkens the ambient light in creases (ADR-0024). The ambient light itself comes more from above than from below. Every light casts shadows: for each light of its cluster that would light it, a pixel casts a ray towards the light against the frame's acceleration structure, and alpha-tested surfaces let light through their holes (ADR-0035). A light is a sphere, 5 cm across by default for `scene::Light`: each frame, the ray aims at another point of it, so shadows are soft and noisy at their edges. The mesh pass writes the lights' diffuse and specular light apart from the rest, without the surface's colors, and the denoiser averages them with their history where the surface is the same as last frame, then with neighbours on the same surface, as much as their noise asks: light that is not noisy, such as a hard shadow, goes through unchanged. A composite pass multiplies the colors back in and adds the fog (ADR-0039). Where nothing is drawn, the mesh pass ends with the level's sky, a cube texture, behind everything (ADR-0036). Nothing beyond the view distance is drawn or lit: the projection has a far plane there, and the clusters end at it. Edges are smoothed by temporal antialiasing (ADR-0037): each frame moves the camera by a fraction of a pixel, the pre-pass writes where each pixel's surface was in the previous frame, from the previous matrices that `ExtractScene` keeps per entity, and a compute pass blends the frame with the history of the earlier ones, clipped towards the colors around each pixel. Particles mark what they cover, where the history counts less, and a teleport or a new scene starts the history over. Draws can opt out, as the sandbox's weapons do. Each group of passes is timed with GPU timestamps, which `Renderer::GpuTimes` returns and the developer tools show.
+A light's color is what a white surface facing it reflects up close, and it fades linearly to zero at its range, as in the legacy engine. Normal maps follow glTF (green up, bitangent from the tangent's `w`), and meshes that lack tangents get MikkTSpace ones at load. Each frame, lights are assigned to 16×9×24 clusters of the view on the CPU, and a pixel shades only the lights of its cluster (ADR-0008). A pre-pass writes depth and normals first, so that the mesh pass shades each pixel once (ADR-0024). No light comes from nowhere: what no light reaches, directly or after bouncing, is black. Indirect light comes from a radiance cache, a hash grid of world space whose cells hold the light surfaces send (ADR-0040). Each frame, one path from the camera per 4×4 pixels adds to the cells of the surfaces it meets the light of one light, picked among eight, and what it brings back from farther. Its last ray reads the cache, so light bounces on frame after frame. Then each pixel casts one ray, in a random direction around its normal, and reads the cache where it hits, or the sky where it leaves. Cells are kept apart by the orientation of their surface, and by an anchor that a point behind a wall cannot see: light does not leak through walls. Every light casts shadows: for each light of its cluster that would light it, a pixel casts a ray towards the light against the frame's acceleration structure, and alpha-tested surfaces let light through their holes (ADR-0035). A light is a sphere, 5 cm across by default for `scene::Light`: each frame, the ray aims at another point of it, so shadows are soft and noisy at their edges. The mesh pass writes the diffuse and specular light apart from the emission, without the surface's colors, and the denoiser averages them with their history where the surface is the same as last frame, then with neighbours on the same surface, as much as their noise asks: light that is not noisy, such as a hard shadow, goes through unchanged. A composite pass multiplies the colors back in and adds the fog (ADR-0039). Where nothing is drawn, the mesh pass ends with the level's sky, a cube texture, behind everything (ADR-0036). Nothing beyond the view distance is drawn or lit: the projection has a far plane there, and the clusters end at it. Edges are smoothed by temporal antialiasing (ADR-0037): each frame moves the camera by a fraction of a pixel, the pre-pass writes where each pixel's surface was in the previous frame, from the previous matrices that `ExtractScene` keeps per entity, and a compute pass blends the frame with the history of the earlier ones, clipped towards the colors around each pixel. Particles mark what they cover, where the history counts less, and a teleport or a new scene starts the history over. Draws can opt out, as the sandbox's weapons do. Each group of passes is timed with GPU timestamps, which `Renderer::GpuTimes` returns and the developer tools show.
 
 `MeshPass` keeps one frame slot per frame in flight, so the CPU never writes data the GPU is still reading. Shaders are written in Slang, compiled to SPIR-V by `slangc` during the build and embedded in the binary. In development builds, the sources are watched and recompiled by the `slangc` executable (ADR-0031).
 
@@ -202,7 +203,7 @@ Each frame, the renderer and its passes add their passes to a `RenderGraph`, in 
 
 ```mermaid
 flowchart LR
-    SK["Skinning"] --> AS["Acceleration<br/>structures"] --> PP["Prepass"] --> OC["Occlusion<br/>2 passes"] --> SI["Simulation<br/>emit, simulate,<br/>finish, sort"] --> ME["Meshes"] --> DN["Denoiser<br/>temporal, 5 spatial"] --> CO["Composite"] --> PA["Particles"] --> TR["Temporal<br/>resolve"] --> TO["Tonemap"] --> UI["Interface"] --> OV["Overlay"]
+    SK["Skinning"] --> AS["Acceleration<br/>structures"] --> PP["Prepass"] --> GI["Global illumination<br/>update, resolve,<br/>trace"] --> SI["Simulation<br/>emit, simulate,<br/>finish, sort"] --> ME["Meshes"] --> DN["Denoiser<br/>temporal, 5 spatial"] --> CO["Composite"] --> PA["Particles"] --> TR["Temporal<br/>resolve"] --> TO["Tonemap"] --> UI["Interface"] --> OV["Overlay"]
 ```
 
 Barriers come from the RHI: each texture and buffer remembers its last write and the reads since, and `CommandList::Use` decides from that whether the next use must wait (`rhi::NextAccess`). The GPU tests run with synchronization validation, which reports any use that no barrier orders.
@@ -281,11 +282,13 @@ A tag `vX.Y.Z` runs the Release workflow (ADR-0038): it builds the `*-shipping` 
 ## Known gaps
 
 - No tool produces KTX2 files yet, although the loader reads them.
-- Ambient occlusion only sees what is on screen, and particles only collide with what is on screen.
-- Particles are lit evenly from every side, and they cast no shadow and receive none.
+- Particles only collide with what is on screen.
+- Particles are lit evenly from every side, and they cast no shadow and receive none: their indirect light is that of the surfaces behind them.
+- Indirect light lags a few frames behind a moving light, and starts over after a cut while the cache fills.
+- Light only comes from lamps, so the factory is lit only where its lamps are: the route has 13 of them since ADR-0040, and the underground stays dark until the flashlight is found.
 - The denoiser reprojects specular light with the surface's motion: a highlight that moves across a surface as the camera turns lags behind until the clamp to its neighbours catches it. Reflections bring a reprojection of their own.
 - The view distance cuts the scene sharply where fog does not hide it, and a wide field of view stretches the weapon held in front of the camera, which has no field of view of its own.
-- There are no reflections: metals reflect only an estimate of the ambient light.
+- There are no reflections: until 9.10, the specular albedo reflects the indirect diffuse light, and metals, with no diffuse color, pass no indirect light on.
 - Sound passes through walls and doors: there is no occlusion.
 - Volumes are read at startup and cannot change during play.
 - Joint matrices are computed and uploaded for every skinned mesh, even out of view, and collisions use the bind pose of skinned meshes.
