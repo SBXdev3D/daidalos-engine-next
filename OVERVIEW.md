@@ -1972,7 +1972,7 @@ Deliverables may include:
 - Navigation support where required.
 - Cinematic camera control.
 - Camera transitions.
-- Indoor spatial partitioning.
+- Indoor spatial partitioning (planned).
 - Portal visibility where justified by measurements.
 - Scene-specific profiling.
 
