@@ -1,6 +1,6 @@
 # ADR-0035: Ray-traced shadows for every light
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by ADR-0039 (lights have a radius and their shadows are soft, without a shadow pass of their own)
 - **Date:** 2026-11-07
 - **Supersedes:** ADR-0023 (shadow maps); amends ADR-0026 (its shadow settings are gone)
 

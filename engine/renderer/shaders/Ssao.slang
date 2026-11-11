@@ -14,12 +14,6 @@ float SceneDepth(float2 uv) {
     return g_textures[g_ao.depthTexture].SampleLevel(g_samplers[kSamplerNearestClamp], uv, 0.0).r;
 }
 
-// The world position of a pixel of the frame, from its depth.
-float3 WorldPosition(FrameData frame, float2 uv, float depth) {
-    const float4 world = mul(frame.inverseViewProjection, float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0));
-    return world.xyz / world.w;
-}
-
 // A different angle for each pixel, which the blur then averages out (Jimenez's interleaved gradient noise).
 float Noise(float2 pixel) {
     return frac(52.9829189 * frac(dot(pixel, float2(0.06711056, 0.00583715))));

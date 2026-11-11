@@ -1,6 +1,6 @@
 # ADR-0028: Ray-traced rendering
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by ADR-0039 (a concrete denoiser instead of an `IDenoiser` interface)
 - **Date:** 2026-11-05
 
 ## Context
@@ -45,7 +45,7 @@ ADR-0008, 0009, 0023 and 0024, and the antialiasing part of 0026, become superse
 
 - The engine no longer runs on GPUs without hardware ray tracing, and no longer on SwiftShader. Lavapipe supports acceleration structures and ray queries since Mesa 24.1, very slowly: whether the Linux CI runner's Mesa is recent enough is checked in 9.1. If it is not, ray-traced GPU tests run only on the developer's RTX 3090. Windows CI still has no Vulkan.
 - Only an RTX 3090 is available: AMD and Intel behaviour, and the RDNA 2 worst case the plan names, are not verified.
-- An own denoiser starts behind NRD in quality. It sits behind an `IDenoiser` interface so it can be improved or replaced.
+- An own denoiser starts behind NRD in quality. It can be improved or replaced: ADR-0039 makes it a concrete class whose inputs and outputs are that seam, rather than an `IDenoiser` interface with a single implementation.
 - Every 9.x step ends with a GPU-time measurement in the factory and a comparison with the path tracer.
 - The plan's phase numbers (0 to 7) do not match the engine's; its Phase 0 to 5 are the steps above, its Phase 6 (neural) is out and its Phase 7 is the deferred list.
 

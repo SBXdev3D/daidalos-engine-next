@@ -20,6 +20,7 @@
 #include <optional>
 #include <vector>
 
+#include "Denoiser.hpp"
 #include "GpuFixture.hpp"
 #include "MeshPass.hpp"
 #include "PathTracerPass.hpp"
@@ -141,8 +142,9 @@ protected:
         return Read(m_tracer->Output(), extent);
     }
 
-    // What the mesh pass draws of the view, in linear HDR.
-    Image Rasterize(const SceneView& view, rhi::Extent extent) {
+    // What the mesh pass draws of the view, in linear HDR. The view is drawn frames times, each with the
+    // next noise (ADR-0039): through the denoiser, the last frame is returned; without, their average.
+    Image Rasterize(const SceneView& view, rhi::Extent extent, std::uint32_t frames = 1, bool denoise = false) {
         const auto created = [&](rhi::Format format, rhi::TextureUsage usage, const char* name) {
             const core::Result<rhi::TextureHandle> texture =
                 Device().CreateTexture({.extent = extent, .format = format, .usage = usage, .name = name});
@@ -155,36 +157,67 @@ protected:
             created(kDepthFormat, rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled, "Depth");
         const rhi::TextureHandle normals =
             created(MeshPass::kNormalFormat, rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled, "Normals");
-        const rhi::TextureHandle motion = created(MeshPass::kMotionFormat, rhi::TextureUsage::ColorTarget, "Motion");
-        EXPECT_TRUE(
-            Device()
-                .Submit([&](rhi::CommandList& commands) {
-                    const core::Result<std::uint32_t> structure = m_scene->Reserve(0, view.draws.size());
-                    ASSERT_TRUE(structure.has_value());
-                    ASSERT_TRUE(
-                        m_pass->Prepare(view, {.extent = extent, .accelerationStructure = *structure}).has_value());
-                    ASSERT_TRUE(m_scene->Prepare(m_pass->TracedDraws()).has_value());
-                    renderer::RenderGraph graph;
-                    m_pass->AddSkinning(graph);
-                    m_scene->AddBuild(graph);
-                    graph.AddPass({.name = "Prepass",
-                                   .rendering = rhi::RenderingDesc{.colorTarget = normals,
-                                                                   .clearColor = glm::vec4(0.0f),
-                                                                   .moreColorTargets = {{motion, glm::vec4(0.0f)}},
-                                                                   .depthTarget = depth,
-                                                                   .clearDepth = 0.0f}},
-
-                                  [&](rhi::CommandList& list) { m_pass->RecordPrepass(list); });
-                    graph.AddPass({.name = "Meshes",
-                                   .rendering = rhi::RenderingDesc{.colorTarget = color,
-                                                                   .clearColor = glm::vec4(0.0f),
-                                                                   .depthTarget = depth},
-                                   .structures = {{m_scene->Structure(), rhi::Access::RayQueryRead}}},
-                                  [&](rhi::CommandList& list) { m_pass->Record(list); });
-                    graph.Execute(commands);
-                })
-                .has_value());
-        Image image = Read(color, extent);
+        const rhi::TextureHandle motion =
+            created(MeshPass::kMotionFormat, rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled, "Motion");
+        core::Result<renderer::ShadingTargets> shading = m_pass->CreateShadingTargets(extent);
+        EXPECT_TRUE(shading.has_value());
+        std::optional<renderer::Denoiser> denoiser;
+        if (denoise) {
+            core::Result<renderer::Denoiser> made = renderer::Denoiser::Create(Device());
+            EXPECT_TRUE(made.has_value() && made->Resize(extent).has_value());
+            denoiser.emplace(std::move(*made));
+        }
+        Image image(std::size_t{extent.width} * extent.height, glm::vec4(0.0f));
+        for (std::uint32_t frame = 0; frame < frames; ++frame) {
+            EXPECT_TRUE(
+                Device()
+                    .Submit([&](rhi::CommandList& commands) {
+                        const core::Result<std::uint32_t> structure = m_scene->Reserve(0, view.draws.size());
+                        ASSERT_TRUE(structure.has_value());
+                        ASSERT_TRUE(
+                            m_pass
+                                ->Prepare(view,
+                                          {.extent = extent, .accelerationStructure = *structure, .frameIndex = frame})
+                                .has_value());
+                        ASSERT_TRUE(m_scene->Prepare(m_pass->TracedDraws()).has_value());
+                        renderer::RenderGraph graph;
+                        m_pass->AddSkinning(graph);
+                        m_scene->AddBuild(graph);
+                        graph.AddPass({.name = "Prepass",
+                                       .rendering = rhi::RenderingDesc{.colorTarget = normals,
+                                                                       .clearColor = glm::vec4(0.0f),
+                                                                       .moreColorTargets = {{motion, glm::vec4(0.0f)}},
+                                                                       .depthTarget = depth,
+                                                                       .clearDepth = 0.0f}},
+                                      [&](rhi::CommandList& list) { m_pass->RecordPrepass(list); });
+                        graph.AddPass({.name = "Meshes",
+                                       .rendering = MeshPass::ShadingRendering(*shading, depth, glm::vec4(0.0f)),
+                                       .structures = {{m_scene->Structure(), rhi::Access::RayQueryRead}}},
+                                      [&](rhi::CommandList& list) { m_pass->Record(list); });
+                        if (denoiser.has_value()) {
+                            denoiser->AddTo(graph, {.frameBuffer = m_pass->FrameDataIndex(),
+                                                    .diffuse = shading->diffuse,
+                                                    .specular = shading->specular,
+                                                    .depth = depth,
+                                                    .normals = normals,
+                                                    .motion = motion});
+                        }
+                        m_pass->AddComposite(
+                            graph, color,
+                            {.shading = &*shading,
+                             .diffuse = denoiser.has_value() ? denoiser->Diffuse() : shading->diffuse,
+                             .specular = denoiser.has_value() ? denoiser->Specular() : shading->specular,
+                             .depth = depth});
+                        graph.Execute(commands);
+                    })
+                    .has_value());
+            const Image drawn = Read(color, extent);
+            for (std::size_t index = 0; index < image.size(); ++index) {
+                image[index] = denoise ? drawn[index] : image[index] + drawn[index] / static_cast<float>(frames);
+            }
+        }
+        denoiser.reset();
+        m_pass->DestroyShadingTargets(*shading);
         Device().DestroyTexture(color);
         Device().DestroyTexture(depth);
         Device().DestroyTexture(normals);
@@ -445,4 +478,43 @@ TEST_F(PathTracerTest, RayTracedShadowsMatchThePathTracer) {
     // Measured on an RTX 3090: 0.014, and 0.113 without shadows.
     EXPECT_LT(withShadows, 0.03f);
     EXPECT_GT(withoutShadows, 4.0f * withShadows);
+}
+
+TEST_F(PathTracerTest, DenoisedSoftShadowsMatchThePathTracer) {
+    // The Cornell box's direct light, from a light of 30 cm radius: the blocks' shadows are soft. The path
+    // tracer averages many points of the light; the mesh pass aims at one per frame (ADR-0039). The average
+    // of its frames is the path tracer's image, and the denoiser comes near it from a few frames. The hard
+    // shadows of a point light are far from it.
+    const renderer::CornellBox box = renderer::MakeCornellBox();
+    SceneView view;
+    view.camera = LookAt(box.eye, box.target, box.verticalFov);
+    view.atmosphere = Dark();
+    view.lights.push_back(box.light);
+    view.lights.back().radius = 0.3f;
+    for (const renderer::CornellPart& part : box.parts) {
+        view.draws.push_back({.mesh = m_cube, .world = part.world, .material = Material(part.material)});
+    }
+    constexpr rhi::Extent kExtent{96, 96};
+    const Image traced = Trace(view, kExtent, {.maxBounces = 1, .seed = 13, .jitter = false}, 256);
+    const Image averaged = Rasterize(view, kExtent, 256);
+    const Image denoised = Rasterize(view, kExtent, 32, true);
+    const Image noisy = Rasterize(view, kExtent);
+    SceneView hard = view;
+    hard.lights.back().radius = 0.0f;
+    const Image hardShadows = Rasterize(hard, kExtent);
+
+    const float averagedFlip = Flip(traced, averaged, kExtent);
+    const float denoisedFlip = Flip(traced, denoised, kExtent);
+    const float noisyFlip = Flip(traced, noisy, kExtent);
+    const float hardFlip = Flip(traced, hardShadows, kExtent);
+    RecordProperty("flipAveraged", std::to_string(averagedFlip));
+    RecordProperty("flip", std::to_string(denoisedFlip));
+    RecordProperty("flipNoisy", std::to_string(noisyFlip));
+    RecordProperty("flipHard", std::to_string(hardFlip));
+    // Measured on an RTX 3090: 0.025 for the average, 0.032 denoised, 0.084 for one frame, 0.083 for hard
+    // shadows. The average still differs where a pixel's center falls on the seam of two walls.
+    EXPECT_LT(averagedFlip, 0.03f);
+    EXPECT_LT(denoisedFlip, 0.04f);
+    EXPECT_LT(denoisedFlip, noisyFlip);
+    EXPECT_LT(denoisedFlip, hardFlip);
 }

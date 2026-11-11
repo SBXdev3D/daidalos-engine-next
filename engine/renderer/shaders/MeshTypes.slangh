@@ -27,7 +27,7 @@ struct FrameData {
     uint lightBuffer;
     uint skyTexture;     // Index in g_cubeTextures, or kNoTexture for no sky.
     float skyIntensity;  // Multiplies the sky's colors.
-    uint padding0;
+    uint frameIndex;     // Counts the frames, for what changes from one to the next, such as noise.
     float normalStrength; // Multiplies every normal map's tilt.
     float3 ambientBelow;  // Ambient light from below; ambient comes from above.
     uint occlusionTexture; // Half-resolution ambient occlusion, or kNoTexture.
@@ -53,6 +53,12 @@ float2 ClipToUv(float4 clip) {
     return clip.xy / clip.w * float2(0.5, -0.5) + 0.5;
 }
 
+// Where the surface behind a pixel is, from its reverse-Z depth and its position in texture coordinates.
+float3 WorldPosition(FrameData frame, float2 uv, float depth) {
+    const float4 position = mul(frame.inverseViewProjection, float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0));
+    return position.xyz / position.w;
+}
+
 // Meters in front of the camera, from a reverse-Z depth: 1 at the near plane, 0 at the far plane.
 float LinearDepth(FrameData frame, float depth) {
     return frame.nearPlane * frame.farPlane / (depth * (frame.farPlane - frame.nearPlane) + frame.nearPlane);
@@ -72,7 +78,7 @@ struct LightData {
     float3 color;
     float cosOuter;
     float cosInner;
-    uint padding0;
+    float radius; // Meters: a sphere whose shadows are soft; 0 is a point (ADR-0039).
     uint2 padding;
 };
 

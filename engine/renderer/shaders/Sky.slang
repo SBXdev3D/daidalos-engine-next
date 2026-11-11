@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
 // The sky, wherever the mesh pass drew nothing (ADR-0036): one triangle over the screen at the far plane,
-// which the depth test keeps only where the depth is still the cleared one.
+// which the depth test keeps only where the depth is still the cleared one. It is drawn with the mesh
+// pass's targets, and writes no light to the others (ADR-0039).
 
 #include "MeshTypes.slangh"
 
@@ -13,11 +14,23 @@ float4 VSMain(uint vertexId : SV_VulkanVertexID) : SV_Position {
     return float4(corner * 2.0 - 1.0, 0.0, 1.0);
 }
 
-float4 PSMain(float4 position : SV_Position) : SV_Target {
+struct SkyOutput {
+    float4 base : SV_Target0;
+    float4 diffuse : SV_Target1;
+    float4 specular : SV_Target2;
+    float4 albedo : SV_Target3;
+};
+
+SkyOutput PSMain(float4 position : SV_Position) {
     const FrameData frame = g_frames[g_push.frameBuffer][0];
     // Pixels count down from the top; clip-space Y points up (CONVENTIONS.md, section 5).
     const float2 uv = position.xy * frame.screenTexel;
     const float4 through = mul(frame.inverseViewProjection, float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 0.5, 1.0));
     const float3 direction = normalize(through.xyz / through.w - frame.cameraPosition);
-    return float4(SkyRadiance(frame, direction), 1.0);
+    SkyOutput output;
+    output.base = float4(SkyRadiance(frame, direction), 1.0);
+    output.diffuse = float4(0.0, 0.0, 0.0, 0.0);
+    output.specular = float4(0.0, 0.0, 0.0, 0.0);
+    output.albedo = float4(0.0, 0.0, 0.0, 0.0);
+    return output;
 }

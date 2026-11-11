@@ -1,0 +1,43 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+
+// What the passes of the denoiser share (ADR-0039). Include after MeshTypes.slangh.
+
+#ifndef DAIDALOS_DENOISER_SLANGH
+#define DAIDALOS_DENOISER_SLANGH
+
+// Frames a pixel averages at most: older light weighs less and less.
+static const float kMaxFrames = 32.0;
+
+// Every texture the denoiser writes is half floats (rhi::Format::Rgba16Float).
+[[vk::binding(4, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> g_halfStorageImages[];
+
+float Luminance(float3 color) {
+    return dot(color, float3(0.2126, 0.7152, 0.0722));
+}
+
+// A unit vector in two numbers, the octahedron unfolded on a square (Cigolle et al. 2014).
+float2 EncodeNormal(float3 normal) {
+    const float2 folded = normal.xy / (abs(normal.x) + abs(normal.y) + abs(normal.z));
+    if (normal.z >= 0.0) {
+        return folded;
+    }
+    return (1.0 - abs(folded.yx)) * float2(folded.x >= 0.0 ? 1.0 : -1.0, folded.y >= 0.0 ? 1.0 : -1.0);
+}
+
+float3 DecodeNormal(float2 encoded) {
+    float3 normal = float3(encoded, 1.0 - abs(encoded.x) - abs(encoded.y));
+    const float fold = saturate(-normal.z);
+    normal.x += normal.x >= 0.0 ? -fold : fold;
+    normal.y += normal.y >= 0.0 ? -fold : fold;
+    return normalize(normal);
+}
+
+// The pre-pass's normal and roughness of a pixel.
+float4 LoadNormalRoughness(uint texture, int2 pixel) {
+    const float4 texel = g_textures[texture].Load(int3(pixel, 0));
+    return float4(normalize(texel.xyz * 2.0 - 1.0), texel.a);
+}
+
+#endif

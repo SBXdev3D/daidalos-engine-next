@@ -94,7 +94,9 @@ Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame) {
 
 // Light that reaches the surface straight from the frame's lights and leaves towards view, with the
 // mesh pass's falloff and its convention that a light's color is what a white surface facing it reflects.
-float3 DirectLight(Surface surface, float3 view, FrameData frame) {
+// Like the mesh pass, it shades with the light's center and aims its shadow ray at a random point of the
+// light's sphere (ADR-0039).
+float3 DirectLight(Surface surface, float3 view, FrameData frame, inout uint random) {
     float3 total = float3(0.0, 0.0, 0.0);
     for (uint index = 0; index < frame.lightCount; ++index) {
         const LightData light = g_lights[frame.lightBuffer][index];
@@ -113,8 +115,11 @@ float3 DirectLight(Surface surface, float3 view, FrameData frame) {
         if (all(reflected <= 0.0)) {
             continue;
         }
-        if (LightReaches(surface.position, surface.faceNormal, toLight, distanceToLight, light.range,
-                         frame.accelerationStructure, g_path.instanceBuffer, g_path.materialBuffer)) {
+        const float2 u = float2(Random(random), Random(random));
+        const float3 toPoint = SampleLightPoint(light.position, light.radius, surface.position, u) - surface.position;
+        const float distanceToPoint = length(toPoint);
+        if (LightReaches(surface.position, surface.faceNormal, toPoint / max(distanceToPoint, 0.0001), distanceToPoint,
+                         light.range, frame.accelerationStructure, g_path.instanceBuffer, g_path.materialBuffer)) {
             total += reflected;
         }
     }
@@ -153,7 +158,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         }
         const Surface surface = ShadeHit(hit, ray.Direction, frame);
         const float3 view = -ray.Direction;
-        radiance += throughput * (surface.emission + DirectLight(surface, view, frame));
+        radiance += throughput * (surface.emission + DirectLight(surface, view, frame, random));
         if (bounce + 1 >= g_path.maxBounces) {
             break;
         }

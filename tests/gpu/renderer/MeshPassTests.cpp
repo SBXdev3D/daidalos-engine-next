@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "AmbientOcclusionPass.hpp"
+#include "Denoiser.hpp"
 #include "GpuFixture.hpp"
 #include "MeshPass.hpp"
 #include "ParticlePass.hpp"
@@ -123,10 +124,14 @@ protected:
                                    .name = "Readback"});
         ASSERT_TRUE(readback.has_value());
         m_readback = *readback;
+        const core::Result<renderer::ShadingTargets> shading = m_pass->CreateShadingTargets(kExtent);
+        ASSERT_TRUE(shading.has_value()) << core::Format(shading.error());
+        m_shading = *shading;
     }
 
     void TearDown() override {
         if (m_pass.has_value()) {
+            m_pass->DestroyShadingTargets(m_shading);
             m_scene.reset();
             m_pass.reset();
             Device().DestroyTexture(m_color);
@@ -155,18 +160,21 @@ protected:
         return material.value_or(MaterialHandle{});
     }
 
-    // Renders the view, each pixel sampled at jitter from its center (in pixels).
-    void Render(const SceneView& view, glm::vec2 jitter = glm::vec2(0.0f)) {
+    // Renders the view, each pixel sampled at jitter from its center (in pixels), then puts its light
+    // together, through the denoiser if there is one (ADR-0039). Each frame moves the noise of soft shadows.
+    void Render(const SceneView& view, glm::vec2 jitter = glm::vec2(0.0f), renderer::Denoiser* denoiser = nullptr) {
         ASSERT_TRUE(
             Device()
                 .Submit([&](rhi::CommandList& commands) {
                     // Every light casts shadows by rays: the frame's structure comes first.
                     const core::Result<std::uint32_t> structure = m_scene->Reserve(0, view.draws.size());
                     ASSERT_TRUE(structure.has_value());
-                    EXPECT_TRUE(
-                        m_pass
-                            ->Prepare(view, {.extent = kExtent, .accelerationStructure = *structure, .jitter = jitter})
-                            .has_value());
+                    EXPECT_TRUE(m_pass
+                                    ->Prepare(view, {.extent = kExtent,
+                                                     .accelerationStructure = *structure,
+                                                     .jitter = jitter,
+                                                     .frameIndex = m_frameIndex++})
+                                    .has_value());
                     renderer::RenderGraph graph;
                     m_pass->AddSkinning(graph);
                     rhi::AccelerationStructureHandle traced;
@@ -186,12 +194,32 @@ protected:
                          .buffers = {skinned, {m_pass->PreviousSkinnedPositions(), rhi::Access::VertexShaderRead}}},
                         [&](rhi::CommandList& list) { m_pass->RecordPrepass(list); });
                     graph.AddPass({.name = "Meshes",
-                                   .rendering = rhi::RenderingDesc{.colorTarget = m_color,
-                                                                   .clearColor = kBackground,
-                                                                   .depthTarget = m_depth},
+                                   .rendering = MeshPass::ShadingRendering(m_shading, m_depth, kBackground),
                                    .buffers = {skinned, {skinned.buffer, rhi::Access::FragmentShaderRead}},
                                    .structures = {{traced, rhi::Access::RayQueryRead}}},
                                   [&](rhi::CommandList& list) { m_pass->Record(list); });
+                    if (denoiser != nullptr && view.camera.has_value()) {
+                        denoiser->AddTo(graph, {.frameBuffer = m_pass->FrameDataIndex(),
+                                                .diffuse = m_shading.diffuse,
+                                                .specular = m_shading.specular,
+                                                .depth = m_depth,
+                                                .normals = m_normals,
+                                                .motion = m_motion});
+                    }
+                    const bool denoised = denoiser != nullptr && view.camera.has_value();
+                    if (view.camera.has_value()) {
+                        m_pass->AddComposite(graph, m_color,
+                                             {.shading = &m_shading,
+                                              .diffuse = denoised ? denoiser->Diffuse() : m_shading.diffuse,
+                                              .specular = denoised ? denoiser->Specular() : m_shading.specular,
+                                              .depth = m_depth});
+                    } else {
+                        // Nothing to put together: the frame is the background.
+                        graph.AddPass(
+                            {.name = "Clear",
+                             .rendering = rhi::RenderingDesc{.colorTarget = m_color, .clearColor = kBackground}},
+                            [](rhi::CommandList& /*list*/) {});
+                    }
                     graph.Execute(commands);
                     commands.Transition(m_color, rhi::TextureState::TransferSrc);
                     commands.CopyTextureToBuffer(m_color, m_readback);
@@ -223,6 +251,8 @@ protected:
 
     std::optional<MeshPass> m_pass;
     std::optional<renderer::RayTracingScene> m_scene;
+    renderer::ShadingTargets m_shading;
+    std::uint32_t m_frameIndex = 0;
     rhi::TextureHandle m_color;
     rhi::TextureHandle m_depth;
     rhi::TextureHandle m_normals;
@@ -763,10 +793,24 @@ TEST_F(MeshPassTest, ReloadedShadersAreUsedByTheNextFrame) {
     const std::filesystem::path directory = std::filesystem::temp_directory_path() / "daidalos-reload-test";
     std::filesystem::create_directories(directory);
     const std::filesystem::path source = directory / "Green.slang";
-    // The vertex shader of the mesh pass, which the pre-pass shares, and a pixel shader of its own.
+    // The vertex shader of the mesh pass, which the pre-pass shares, and a pixel shader of its own, which
+    // writes green and no light to the mesh pass's targets.
     std::ofstream(source) << R"(
 #include "MeshCommon.slangh"
-float4 PSMain(VertexOutput input) : SV_Target { return float4(0.0, 1.0, 0.0, 1.0); }
+struct Output {
+    float4 base : SV_Target0;
+    float4 diffuse : SV_Target1;
+    float4 specular : SV_Target2;
+    float4 albedo : SV_Target3;
+};
+Output PSMain(VertexOutput input) {
+    Output output;
+    output.base = float4(0.0, 1.0, 0.0, 1.0);
+    output.diffuse = float4(0.0, 0.0, 0.0, 0.0);
+    output.specular = float4(0.0, 0.0, 0.0, 0.0);
+    output.albedo = float4(0.0, 0.0, 0.0, 0.0);
+    return output;
+}
 )";
     for (const char* include : {"MeshTypes.slangh", "MeshCommon.slangh"}) {
         std::filesystem::copy_file(std::filesystem::path(DAI_SHADER_SOURCE_DIR) / include, directory / include,
@@ -1108,4 +1152,164 @@ TEST_F(TemporalTest, AMovedObjectLeavesNoTrail) {
     Resolve(view);
     EXPECT_NEAR(Resolved(15, 32), background16, 0.02f) << "where it was, only the background";
     EXPECT_NEAR(Resolved(48, 32), square16, 0.02f) << "it carried its history along";
+}
+
+namespace {
+
+// The mesh pass's frames, through the denoiser (ADR-0039). The scene of the shadow tests, with a spot light
+// of a meter's radius: the panel's shadow on the floor, left of the panel, has a wide, soft edge.
+class DenoiserTest : public MeshPassTest {
+protected:
+    void SetUp() override {
+        MeshPassTest::SetUp();
+        if (IsSkipped() || HasFatalFailure()) {
+            return;
+        }
+        core::Result<renderer::Denoiser> denoiser = renderer::Denoiser::Create(Device());
+        ASSERT_TRUE(denoiser.has_value()) << core::Format(denoiser.error());
+        m_denoiser.emplace(std::move(*denoiser));
+        ASSERT_TRUE(m_denoiser->Resize(kExtent).has_value());
+        m_floor = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
+        m_panel = Mesh(MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 1.0f));
+        m_white = Material({1.0f, 1.0f, 1.0f});
+    }
+
+    void TearDown() override {
+        m_denoiser.reset();
+        MeshPassTest::TearDown();
+    }
+
+    SceneView ShadowView(float radius) {
+        renderer::Light light = ShadowTestLight();
+        light.radius = radius;
+        SceneView view = LitView(TestCamera(), {m_floor, glm::mat4(1.0f), m_white}, light);
+        view.draws.push_back({.mesh = m_panel, .material = m_white});
+        return view;
+    }
+
+    // Renders frames of the view through the denoiser.
+    void Denoise(const SceneView& view, int frames = 1) {
+        for (int frame = 0; frame < frames; ++frame) {
+            Render(view, glm::vec2(0.0f), &*m_denoiser);
+        }
+    }
+
+    // The red channel of every pixel of the region where the shadow's left edge falls on the floor.
+    [[nodiscard]] std::vector<int> Edge() {
+        std::vector<int> values;
+        for (std::uint32_t y = kEdgeTop; y < kEdgeBottom; ++y) {
+            for (std::uint32_t x = kEdgeLeft; x < kEdgeRight; ++x) {
+                values.push_back(Pixel(x, y).r);
+            }
+        }
+        return values;
+    }
+
+    static constexpr std::uint32_t kEdgeLeft = 4;
+    static constexpr std::uint32_t kEdgeRight = 24;
+    static constexpr std::uint32_t kEdgeTop = 26;
+    static constexpr std::uint32_t kEdgeBottom = 38;
+
+    std::optional<renderer::Denoiser> m_denoiser;
+    MeshHandle m_floor;
+    MeshHandle m_panel;
+    MaterialHandle m_white;
+};
+
+// How many values differ by more than tolerance.
+int Differences(const std::vector<int>& first, const std::vector<int>& second, int tolerance) {
+    int count = 0;
+    for (std::size_t index = 0; index < first.size(); ++index) {
+        count += std::abs(first[index] - second[index]) > tolerance ? 1 : 0;
+    }
+    return count;
+}
+
+} // namespace
+
+TEST_F(DenoiserTest, HardShadowsGoThroughUnchanged) {
+    // A light without a radius is not noisy: the denoiser must keep its sharp shadow as it is.
+    const SceneView view = ShadowView(0.0f);
+    Render(view);
+    const std::vector<int> raw = Edge();
+    Denoise(view);
+    EXPECT_EQ(Differences(raw, Edge(), 1), 0) << "the first frame";
+    Denoise(view, 8);
+    EXPECT_EQ(Differences(raw, Edge(), 1), 0) << "after eight frames";
+}
+
+TEST_F(DenoiserTest, ASoftShadowIsNoisyUntilDenoised) {
+    const SceneView view = ShadowView(1.0f);
+    // Each frame aims its rays at other points of the light: alone, frames differ along the edge.
+    Render(view);
+    const std::vector<int> first = Edge();
+    Render(view);
+    const std::vector<int> second = Edge();
+    const int rawDifferences = Differences(first, second, 12);
+    EXPECT_GT(rawDifferences, 20) << "the shadow's edge is noisy";
+
+    // The average of many frames is the soft shadow without noise: the denoiser comes near it from few.
+    std::vector<double> sum(first.size(), 0.0);
+    constexpr int kAveraged = 64;
+    for (int frame = 0; frame < kAveraged; ++frame) {
+        Render(view);
+        const std::vector<int> values = Edge();
+        for (std::size_t index = 0; index < values.size(); ++index) {
+            sum[index] += values[index];
+        }
+    }
+    std::vector<int> average(sum.size());
+    int softened = 0;
+    for (std::size_t index = 0; index < sum.size(); ++index) {
+        average[index] = static_cast<int>(std::lround(sum[index] / kAveraged));
+        softened += average[index] > 20 && average[index] < 120 ? 1 : 0;
+    }
+    EXPECT_GT(softened, 20) << "the shadow has a wide, soft edge";
+
+    Denoise(view, 16);
+    const std::vector<int> denoised = Edge();
+    double error = 0.0;
+    for (std::size_t index = 0; index < denoised.size(); ++index) {
+        error += std::abs(denoised[index] - average[index]);
+    }
+    EXPECT_LT(error / static_cast<double>(denoised.size()), 6.0) << "mean difference from the average, of 255";
+    Denoise(view);
+    EXPECT_LT(Differences(denoised, Edge(), 12), rawDifferences / 10) << "the next frame barely changes";
+}
+
+TEST_F(DenoiserTest, ALightTurnedOffGoesDarkAtOnce) {
+    SceneView view = ShadowView(1.0f);
+    Denoise(view, 16);
+    ASSERT_GT(Pixel(48, 32).r, 100);
+    view.lights.clear();
+    Denoise(view);
+    EXPECT_LT(Pixel(48, 32).r, 10) << "no light lingers in the history";
+}
+
+TEST_F(DenoiserTest, AMovedPanelLeavesNoShadowBehind) {
+    SceneView view = ShadowView(1.0f);
+    Denoise(view, 16);
+    ASSERT_LT(Pixel(20, 32).r, 20) << "in the shadow";
+    // The panel jumps out of the light's way, and its motion vectors say so.
+    const glm::mat4 away = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 6.0f, 0.0f));
+    view.draws[1].world = away;
+    view.draws[1].previousWorld = glm::mat4(1.0f);
+    Denoise(view);
+    EXPECT_GT(Pixel(20, 32).r, 100) << "the floor is lit where the shadow was";
+}
+
+TEST_F(DenoiserTest, AResetForgetsTheHistory) {
+    // After a reset, a frame comes out as it would from a denoiser that never saw another.
+    const SceneView view = ShadowView(1.0f);
+    Denoise(view, 8);
+    m_denoiser->Reset();
+    const std::uint32_t frame = m_frameIndex;
+    Denoise(view);
+    const std::vector<int> afterReset = Edge();
+
+    core::Result<renderer::Denoiser> fresh = renderer::Denoiser::Create(Device());
+    ASSERT_TRUE(fresh.has_value() && fresh->Resize(kExtent).has_value());
+    m_frameIndex = frame;
+    Render(view, glm::vec2(0.0f), &*fresh);
+    EXPECT_EQ(Differences(afterReset, Edge(), 0), 0);
 }

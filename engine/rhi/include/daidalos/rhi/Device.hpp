@@ -124,7 +124,8 @@ public:
     /// faces follow each other, each with its levels.
     /// The texture needs TextureUsage::TransferDst and Sampled.
     [[nodiscard]] core::Result<void> UploadTexture(TextureHandle texture, std::span<const std::byte> pixels);
-    /// Index of a TextureUsage::Storage texture in the g_storageImages array of shaders.
+    /// Index of a TextureUsage::Storage texture in the storage image arrays of shaders, at binding 4: one
+    /// array per format, all at the same binding, each declaring its format.
     [[nodiscard]] std::uint32_t StorageImageIndex(TextureHandle texture) const;
     /// Index of a sampled texture in the g_textures array of shaders, or of a cube in g_cubeTextures.
     [[nodiscard]] std::uint32_t BindlessIndex(TextureHandle texture) const;

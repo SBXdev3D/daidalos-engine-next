@@ -10,12 +10,20 @@ module Bsdf;
 
 static const float kBsdfPi = 3.14159265;
 
-// The BSDF times the cosine of the light's angle: what a surface sends towards view of the light coming
-// from toLight, per unit of that light. All directions point away from the surface and are normalized.
-public float3 EvaluateBsdf(float3 normal, float3 view, float3 toLight, float3 diffuseColor, float3 f0, float roughness) {
+// The two parts of the BSDF times the cosine: the diffuse part per unit of diffuse color, which the
+// denoiser filters without the texture's detail, and the specular part (ADR-0039).
+public struct BsdfTerms {
+    public float3 diffuse;
+    public float3 specular;
+}
+
+public BsdfTerms EvaluateBsdfTerms(float3 normal, float3 view, float3 toLight, float3 f0, float roughness) {
+    BsdfTerms terms;
+    terms.diffuse = float3(0.0, 0.0, 0.0);
+    terms.specular = float3(0.0, 0.0, 0.0);
     const float nDotL = saturate(dot(normal, toLight));
     if (nDotL <= 0.0) {
-        return float3(0.0, 0.0, 0.0);
+        return terms;
     }
     const float3 halfway = normalize(view + toLight);
     const float nDotV = max(dot(normal, view), 0.0001);
@@ -31,9 +39,28 @@ public float3 EvaluateBsdf(float3 normal, float3 view, float3 toLight, float3 di
                nDotV * sqrt(nDotL * nDotL * (1.0 - alpha2) + alpha2));
     const float3 fresnel = f0 + (1.0 - f0) * pow(1.0 - vDotH, 5.0);
 
-    const float3 specular = distribution * visibility * fresnel;
-    const float3 diffuse = (1.0 - fresnel) * diffuseColor / kBsdfPi;
-    return (diffuse + specular) * nDotL;
+    terms.specular = distribution * visibility * fresnel * nDotL;
+    terms.diffuse = (1.0 - fresnel) / kBsdfPi * nDotL;
+    return terms;
+}
+
+// The BSDF times the cosine of the light's angle: what a surface sends towards view of the light coming
+// from toLight, per unit of that light. All directions point away from the surface and are normalized.
+public float3 EvaluateBsdf(float3 normal, float3 view, float3 toLight, float3 diffuseColor, float3 f0, float roughness) {
+    const BsdfTerms terms = EvaluateBsdfTerms(normal, view, toLight, f0, roughness);
+    return terms.diffuse * diffuseColor + terms.specular;
+}
+
+// The fraction of the light from everywhere that a surface reflects specularly towards view: Karis's
+// analytic fit of the split-sum lookup. Specular light is divided by it before denoising, and multiplied
+// by it after (ADR-0039).
+public float3 SpecularAlbedo(float3 f0, float roughness, float nDotV) {
+    const float4 c0 = float4(-1.0, -0.0275, -0.572, 0.022);
+    const float4 c1 = float4(1.0, 0.0425, 1.04, -0.04);
+    const float4 r = roughness * c0 + c1;
+    const float a004 = min(r.x * r.x, exp2(-9.28 * nDotV)) * r.x + r.y;
+    const float2 scaleBias = float2(-1.04, 1.04) * a004 + r.zw;
+    return f0 * scaleBias.x + scaleBias.y;
 }
 
 // A direction chosen by the BSDF, and what a path's throughput is multiplied by when it follows it: the

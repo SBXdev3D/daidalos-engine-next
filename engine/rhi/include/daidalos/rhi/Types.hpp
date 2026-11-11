@@ -97,7 +97,7 @@ enum class TextureUsage : std::uint32_t {
     TransferSrc = 1U << 3U,
     TransferDst = 1U << 4U,
     /// Read and written by compute shaders through the storage image array, with Device::StorageImageIndex.
-    /// Rgba32Float only, which shaders declare.
+    /// Rgba32Float or Rgba16Float only: shaders declare the format of the array they access it through.
     Storage = 1U << 5U,
 };
 
