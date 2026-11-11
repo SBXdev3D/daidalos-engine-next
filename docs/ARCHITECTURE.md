@@ -285,7 +285,7 @@ A tag `vX.Y.Z` runs the Release workflow (ADR-0038): it builds the `*-shipping` 
 - Particles only collide with what is on screen.
 - Particles are lit evenly from every side, and they cast no shadow and receive none: their indirect light is that of the surfaces behind them.
 - Indirect light lags a few frames behind a moving light, and starts over after a cut while the cache fills.
-- Much of the factory has no lamp: without the ambient term it lit, it is black until the flashlight is found.
+- Light only comes from lamps, so the factory is lit only where its lamps are: the route has 13 of them since ADR-0040, and the underground stays dark until the flashlight is found.
 - The denoiser reprojects specular light with the surface's motion: a highlight that moves across a surface as the camera turns lags behind until the clamp to its neighbours catches it. Reflections bring a reprojection of their own.
 - The view distance cuts the scene sharply where fog does not hide it, and a wide field of view stretches the weapon held in front of the camera, which has no field of view of its own.
 - There are no reflections: until 9.10, the specular albedo reflects the indirect diffuse light, and metals, with no diffuse color, pass no indirect light on.
