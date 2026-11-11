@@ -4,8 +4,10 @@
 
 #include <daidalos/rhi/Spirv.hpp>
 
+#include <glm/gtc/packing.hpp>
 #include <shaders/ComputeTest.cs.spv.h>
 #include <shaders/CubeTest.cs.spv.h>
+#include <shaders/HalfStorageImageTest.cs.spv.h>
 #include <shaders/HalfTriangleTest.ps.spv.h>
 #include <shaders/HalfTriangleTest.vs.spv.h>
 #include <shaders/StorageImageTest.cs.spv.h>
@@ -535,6 +537,44 @@ TEST_F(GpuTest, ComputeShaderReadsAndWritesAStorageImage) {
     };
     EXPECT_FLOAT_EQ(texel(5, 3, 0) - texel(0, 0, 0), 10.0f);
     EXPECT_FLOAT_EQ(texel(5, 3, 1) - texel(0, 0, 1), 6.0f);
+    Device().DestroyPipeline(*pipeline);
+    Device().DestroyTexture(*image);
+    Device().DestroyBuffer(*readback);
+}
+
+TEST_F(GpuTest, ComputeShaderWritesAHalfFloatStorageImage) {
+    constexpr rhi::Extent kSize{8, 8};
+    const core::Result<rhi::TextureHandle> image =
+        Device().CreateTexture({.extent = kSize,
+                                .format = rhi::Format::Rgba16Float,
+                                .usage = rhi::TextureUsage::Storage | rhi::TextureUsage::TransferSrc,
+                                .name = "Half storage image"});
+    const core::Result<rhi::BufferHandle> readback = Device().CreateBuffer(
+        {.size = 8 * 8 * 8, .usage = rhi::BufferUsage::TransferDst, .memory = rhi::MemoryLocation::GpuToCpu});
+    const core::Result<rhi::PipelineHandle> pipeline = Device().CreateComputePipeline(
+        {.shader = rhi::ToSpirv(kHalfStorageImageTestCsSpirv), .name = "Half storage image"});
+    ASSERT_TRUE(image && readback && pipeline);
+
+    ASSERT_TRUE(Device()
+                    .Submit([&](rhi::CommandList& commands) {
+                        const rhi::TextureUse written{*image, rhi::Access::ComputeShaderWrite, true};
+                        commands.Use({&written, 1}, {});
+                        commands.BindPipeline(*pipeline);
+                        commands.Push(StorageImagePush{Device().StorageImageIndex(*image)});
+                        commands.Dispatch(1, 1);
+                        commands.Transition(*image, rhi::TextureState::TransferSrc);
+                        commands.CopyTextureToBuffer(*image, *readback);
+                    })
+                    .has_value());
+
+    const auto* texels = reinterpret_cast<const std::uint16_t*>(Device().Mapped(*readback).data());
+    const auto texel = [&](std::uint32_t x, std::uint32_t y, std::uint32_t channel) {
+        return glm::unpackHalf1x16(texels[(std::size_t{y} * kSize.width + x) * 4 + channel]);
+    };
+    EXPECT_FLOAT_EQ(texel(5, 3, 0), 5.0f);
+    EXPECT_FLOAT_EQ(texel(5, 3, 1), 3.0f);
+    EXPECT_FLOAT_EQ(texel(5, 3, 2), 1.0f);
+    EXPECT_FLOAT_EQ(texel(5, 3, 3), 0.5f);
     Device().DestroyPipeline(*pipeline);
     Device().DestroyTexture(*image);
     Device().DestroyBuffer(*readback);

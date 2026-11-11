@@ -243,7 +243,8 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
 
     const bool sampled = HasFlag(desc.usage, TextureUsage::Sampled);
     const bool storage = HasFlag(desc.usage, TextureUsage::Storage);
-    DAI_ASSERT(!storage || desc.format == Format::Rgba32Float, "A storage texture is Rgba32Float");
+    DAI_ASSERT(!storage || desc.format == Format::Rgba32Float || desc.format == Format::Rgba16Float,
+               "A storage texture is Rgba32Float or Rgba16Float");
     if (storage && m_impl->freeStorageImageIndices.empty()) {
         return core::MakeError(
             core::ErrorCode::OutOfMemory, kModule,
