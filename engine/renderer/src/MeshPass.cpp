@@ -10,6 +10,8 @@
 #include <daidalos/rhi/Spirv.hpp>
 
 #include <glm/ext/matrix_transform.hpp>
+#include <shaders/Composite.ps.spv.h>
+#include <shaders/Composite.vs.spv.h>
 #include <shaders/Mesh.ps.spv.h>
 #include <shaders/Mesh.vs.spv.h>
 #include <shaders/Prepass.ps.spv.h>
@@ -40,6 +42,18 @@ struct MeshPushConstants {
     std::uint32_t materialIndex;
 };
 
+// Matches CompositePushConstants in shaders/Composite.slang.
+struct CompositePushConstants {
+    std::uint32_t frameBuffer;
+    std::uint32_t base;
+    std::uint32_t diffuse;
+    std::uint32_t specular;
+    std::uint32_t shading;
+    std::uint32_t albedo;
+    std::uint32_t depth;
+    std::uint32_t padding;
+};
+
 struct SkinningPushConstants {
     std::uint32_t source;
     std::uint32_t skin;
@@ -64,7 +78,7 @@ struct FrameData {
     std::uint32_t lightBuffer;
     std::uint32_t skyTexture;
     float skyIntensity;
-    std::uint32_t padding0;
+    std::uint32_t frameIndex;
     float normalStrength;
     glm::vec3 ambientBelow;
     std::uint32_t occlusionTexture;
@@ -92,7 +106,8 @@ struct LightData {
     glm::vec3 color;
     float cosOuter; // kPointLight for a point light.
     float cosInner;
-    std::array<std::uint32_t, 3> padding;
+    float radius;
+    std::array<std::uint32_t, 2> padding;
 };
 static_assert(sizeof(LightData) == 64);
 
@@ -108,6 +123,7 @@ LightData ToGpu(const Light& light) {
             light.color,
             spot ? std::cos(light.outerAngle) : kPointLight,
             spot ? std::cos(light.innerAngle) : kPointLight + 1.0f,
+            std::max(light.radius, 0.0f),
             {}};
 }
 
@@ -222,7 +238,8 @@ core::Result<rhi::PipelineHandle> MeshPass::BuildPipeline(std::span<const std::u
                              {2, rhi::Format::Rg32Float, static_cast<std::uint32_t>(offsetof(Vertex, uv))},
                              {3, rhi::Format::Rgba32Float, static_cast<std::uint32_t>(offsetof(Vertex, tangent))}},
         .colorFormat = prepass ? kNormalFormat : m_colorFormat,
-        .moreColorFormats = prepass ? std::vector{kMotionFormat} : std::vector<rhi::Format>{},
+        .moreColorFormats =
+            prepass ? std::vector{kMotionFormat} : std::vector{kDiffuseFormat, kSpecularFormat, kAlbedoFormat},
         .depthFormat = m_depthFormat,
         // The mesh pass keeps the pre-pass's depth: equal depths pass the reverse-Z test.
         .depthWrite = prepass,
@@ -233,6 +250,7 @@ core::Result<rhi::PipelineHandle> MeshPass::BuildPipeline(std::span<const std::u
 
 void MeshPass::DestroyPipelines(Pipelines& pipelines) {
     m_device->DestroyPipeline(pipelines.sky);
+    m_device->DestroyPipeline(pipelines.composite);
     m_device->DestroyPipeline(pipelines.prepass);
     m_device->DestroyPipeline(pipelines.prepassDoubleSided);
     m_device->DestroyPipeline(pipelines.mesh);
@@ -256,13 +274,21 @@ core::Result<void> MeshPass::ReplaceShaders(std::span<const std::uint32_t> verte
             .and_then([&] { return build(built.meshDoubleSided, fragmentShader, rhi::CullMode::None, false); })
             .and_then([&]() -> core::Result<void> {
                 // Behind everything: drawn at the far plane, where the depth is still the cleared one.
-                DAI_TRY_ASSIGN(built.sky, m_device->CreatePipeline({.vertexShader = rhi::ToSpirv(kSkyVsSpirv),
-                                                                    .fragmentShader = rhi::ToSpirv(kSkyPsSpirv),
-                                                                    .colorFormat = m_colorFormat,
-                                                                    .depthFormat = m_depthFormat,
-                                                                    .depthWrite = false,
-                                                                    .cull = rhi::CullMode::None,
-                                                                    .name = "Sky"}));
+                DAI_TRY_ASSIGN(built.sky, m_device->CreatePipeline(
+                                              {.vertexShader = rhi::ToSpirv(kSkyVsSpirv),
+                                               .fragmentShader = rhi::ToSpirv(kSkyPsSpirv),
+                                               .colorFormat = m_colorFormat,
+                                               .moreColorFormats = {kDiffuseFormat, kSpecularFormat, kAlbedoFormat},
+                                               .depthFormat = m_depthFormat,
+                                               .depthWrite = false,
+                                               .cull = rhi::CullMode::None,
+                                               .name = "Sky"}));
+                DAI_TRY_ASSIGN(built.composite,
+                               m_device->CreatePipeline({.vertexShader = rhi::ToSpirv(kCompositeVsSpirv),
+                                                         .fragmentShader = rhi::ToSpirv(kCompositePsSpirv),
+                                                         .colorFormat = m_colorFormat,
+                                                         .cull = rhi::CullMode::None,
+                                                         .name = "Composite"}));
                 return {};
             });
     if (!result) {
@@ -500,7 +526,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                           m_device->StorageIndex(slot.lights),
                           view.atmosphere.sky ? m_device->BindlessIndex(view.atmosphere.sky) : kNoTexture,
                           view.atmosphere.skyIntensity,
-                          0,
+                          targets.frameIndex,
                           m_normalStrength,
                           view.atmosphere.ambientBelow,
                           targets.occlusion ? m_device->BindlessIndex(targets.occlusion) : kNoTexture,
@@ -703,6 +729,78 @@ void MeshPass::Record(rhi::CommandList& commands) {
         commands.Push(MeshPushConstants{.frameBuffer = m_device->StorageIndex(m_prepared->frame)});
         commands.Draw(3);
     }
+}
+
+core::Result<ShadingTargets> MeshPass::CreateShadingTargets(rhi::Extent extent) const {
+    ShadingTargets targets;
+    const auto create = [&](rhi::TextureHandle& texture, rhi::Format format, const char* name) -> core::Result<void> {
+        DAI_TRY_ASSIGN(texture,
+                       m_device->CreateTexture({.extent = extent,
+                                                .format = format,
+                                                .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled |
+                                                         rhi::TextureUsage::TransferSrc,
+                                                .name = name}));
+        return {};
+    };
+    core::Result<void> created =
+        create(targets.base, m_colorFormat, "Base light")
+            .and_then([&] { return create(targets.diffuse, kDiffuseFormat, "Diffuse light"); })
+            .and_then([&] { return create(targets.specular, kSpecularFormat, "Specular light"); })
+            .and_then([&] { return create(targets.albedo, kAlbedoFormat, "Albedo"); });
+    if (!created) {
+        DestroyShadingTargets(targets);
+        return tl::unexpected(std::move(created.error()));
+    }
+    return targets;
+}
+
+void MeshPass::DestroyShadingTargets(ShadingTargets& targets) const {
+    m_device->DestroyTexture(targets.base);
+    m_device->DestroyTexture(targets.diffuse);
+    m_device->DestroyTexture(targets.specular);
+    m_device->DestroyTexture(targets.albedo);
+    targets = {};
+}
+
+rhi::RenderingDesc MeshPass::ShadingRendering(const ShadingTargets& targets, rhi::TextureHandle depth,
+                                              const glm::vec4& clearColor) {
+    return {.colorTarget = targets.base,
+            .clearColor = clearColor,
+            .moreColorTargets = {{targets.diffuse, glm::vec4(0.0f)},
+                                 {targets.specular, glm::vec4(0.0f)},
+                                 {targets.albedo, glm::vec4(0.0f)}},
+            .depthTarget = depth};
+}
+
+void MeshPass::AddComposite(RenderGraph& graph, rhi::TextureHandle target, const CompositeInputs& inputs) {
+    DAI_ASSERT(inputs.shading != nullptr, "The composite reads the shading targets");
+    if (m_prepared == nullptr) {
+        return;
+    }
+    const ShadingTargets& shading = *inputs.shading;
+    const auto index = [this](rhi::TextureHandle texture) { return m_device->BindlessIndex(texture); };
+    const CompositePushConstants push{m_device->StorageIndex(m_prepared->frame),
+                                      index(shading.base),
+                                      index(inputs.diffuse),
+                                      index(inputs.specular),
+                                      index(shading.specular),
+                                      index(shading.albedo),
+                                      index(inputs.depth),
+                                      0};
+    graph.AddPass({.name = "Composite",
+                   .rendering = rhi::RenderingDesc{.colorTarget = target},
+                   .textures = {{target, rhi::Access::ColorTarget, true},
+                                {shading.base, rhi::Access::FragmentShaderRead},
+                                {shading.specular, rhi::Access::FragmentShaderRead},
+                                {shading.albedo, rhi::Access::FragmentShaderRead},
+                                {inputs.diffuse, rhi::Access::FragmentShaderRead},
+                                {inputs.specular, rhi::Access::FragmentShaderRead},
+                                {inputs.depth, rhi::Access::FragmentShaderRead}}},
+                  [this, push](rhi::CommandList& commands) {
+                      commands.BindPipeline(m_pipelines.composite);
+                      commands.Push(push);
+                      commands.Draw(3);
+                  });
 }
 
 std::uint32_t MeshPass::FrameDataIndex() const {

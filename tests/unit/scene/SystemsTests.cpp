@@ -217,9 +217,11 @@ TEST(ExtractScene, LightsTakeTheirPlaceAndDirectionFromTheirEntity) {
     const ecs::Entity lamp = AddAt(world, {1.0f, 3.0f, 2.0f});
     // Turned to look down: a spot light shines down its entity's local -Z.
     world.Get<ecs::LocalTransform>(lamp).rotation = glm::angleAxis(glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    world.Add<scene::Light>(
-        lamp, scene::Light{
-                  .type = renderer::LightType::Spot, .color = {0.5f, 0.25f, 1.0f}, .intensity = 2.0f, .range = 7.0f});
+    world.Add<scene::Light>(lamp, scene::Light{.type = renderer::LightType::Spot,
+                                               .color = {0.5f, 0.25f, 1.0f},
+                                               .intensity = 2.0f,
+                                               .range = 7.0f,
+                                               .radius = 0.1f});
     world.Add<scene::Light>(AddAt(world, {}), scene::Light{.enabled = false});
     ecs::PropagateTransforms(world);
 
@@ -232,6 +234,17 @@ TEST(ExtractScene, LightsTakeTheirPlaceAndDirectionFromTheirEntity) {
     EXPECT_NEAR(glm::distance(light.direction, glm::vec3(0.0f, -1.0f, 0.0f)), 0.0f, 1e-5f);
     EXPECT_EQ(light.color, glm::vec3(1.0f, 0.5f, 2.0f));
     EXPECT_EQ(light.range, 7.0f);
+    EXPECT_EQ(light.radius, 0.1f);
+}
+
+TEST(ExtractScene, LightsAreTheSizeOfABulbUnlessToldOtherwise) {
+    ecs::World world;
+    world.Add<scene::Light>(AddAt(world, {}), scene::Light{});
+    ecs::PropagateTransforms(world);
+    SceneView view;
+    scene::ExtractScene(world, view);
+    ASSERT_EQ(view.lights.size(), 1U);
+    EXPECT_EQ(view.lights[0].radius, 0.05f);
 }
 
 TEST(EmitParticles, RateAccumulatesAcrossFrames) {

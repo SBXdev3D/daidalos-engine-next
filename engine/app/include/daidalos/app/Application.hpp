@@ -188,6 +188,7 @@ private:
     std::optional<core::CVar<bool>> m_fullscreen;
     std::optional<core::CVar<double>> m_normalStrength;
     std::optional<core::CVar<bool>> m_ambientOcclusion;
+    std::optional<core::CVar<bool>> m_denoiser;
     std::optional<core::CVar<bool>> m_validation;
     std::optional<core::CVar<bool>> m_syncValidation;
     std::optional<core::CVar<std::string>> m_debugView;

@@ -123,6 +123,25 @@ float3 OffsetOrigin(float3 position, float3 faceNormal) {
     return position + faceNormal * (1e-3 * (1.0 + max(abs(position.x), max(abs(position.y), abs(position.z))) * 0.01));
 }
 
+// A point of a light that is a sphere of this radius, as seen from position, from two uniform random numbers:
+// uniformly on the disk of the sphere that faces position (ADR-0039). Shadow rays aimed at such points
+// make the shadow soft; a light without a radius is its center, and its shadows hard.
+float3 SampleLightPoint(float3 lightPosition, float radius, float3 position, float2 u) {
+    if (radius <= 0.0) {
+        return lightPosition;
+    }
+    const float3 axis = normalize(position - lightPosition);
+    // An orthonormal frame around the axis (Duff et al. 2017).
+    const float sign = axis.z >= 0.0 ? 1.0 : -1.0;
+    const float a = -1.0 / (sign + axis.z);
+    const float c = axis.x * axis.y * a;
+    const float3 tangent = float3(1.0 + sign * axis.x * axis.x * a, sign * c, -sign * axis.x);
+    const float3 bitangent = float3(c, sign + axis.y * axis.y * a, -axis.y);
+    const float distance = radius * sqrt(u.x);
+    const float angle = 6.28318531 * u.y;
+    return lightPosition + (tangent * cos(angle) + bitangent * sin(angle)) * distance;
+}
+
 // Whether the light at distanceToLight along the unit vector toLight reaches position, on a surface whose
 // face points along faceNormal. The ray stops kShadowNearPlane short of the light (ADR-0035).
 bool LightReaches(float3 position, float3 faceNormal, float3 toLight, float distanceToLight, float lightRange,

@@ -75,6 +75,8 @@ struct Light {
     /// Spot lights: radians from the axis.
     float innerAngle = glm::radians(20.0f);
     float outerAngle = glm::radians(30.0f);
+    /// Meters: the size of the bulb, which softens the shadows (ADR-0039). Zero gives hard shadows.
+    float radius = 0.05f;
     bool enabled = true;
 };
 

@@ -22,6 +22,7 @@
 #include <utility>
 
 #include "AmbientOcclusionPass.hpp"
+#include "Denoiser.hpp"
 #include "MeshPass.hpp"
 #include "ParticlePass.hpp"
 #include "PathTracerPass.hpp"
@@ -68,6 +69,10 @@ struct Renderer::Impl {
         }
         pathTracer.reset();
         temporalResolve.reset();
+        denoiser.reset();
+        if (meshPass.has_value()) {
+            meshPass->DestroyShadingTargets(shading);
+        }
         rayTracing.reset();
         meshPass.reset();
         ambientOcclusionPass.reset();
@@ -96,8 +101,14 @@ struct Renderer::Impl {
     std::optional<ParticlePass> particlePass;
     std::optional<UiPass> uiPass;
     std::optional<TemporalResolvePass> temporalResolve;
+    std::optional<Denoiser> denoiser;
     /// Counts the frames, for the jitter of temporal antialiasing.
     std::uint64_t frameNumber = 0;
+    /// Counts every frame drawn, for the noise of soft shadows.
+    std::uint32_t frameIndex = 0;
+    /// The last frame went through the denoiser: its history can be reprojected.
+    bool denoised = false;
+    bool denoise = true;
     /// The last frame went through the temporal resolve: its history can be reprojected.
     bool resolved = false;
     /// Bursts and emissions of the last view drawn, for FrameStats.
@@ -114,6 +125,8 @@ struct Renderer::Impl {
     bool pathShown = false;
     rhi::PipelineHandle tonemap;
     rhi::PipelineHandle motionDebug;
+    /// What the mesh pass shades into, which the composite puts together into hdr (ADR-0039).
+    ShadingTargets shading;
     rhi::TextureHandle hdr;
     rhi::TextureHandle depth;
     /// World normals of the pre-pass.
@@ -145,12 +158,15 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
     device.DestroyTexture(motion);
     device.DestroyTexture(reactive);
     device.DestroyTexture(hdr);
+    meshPass->DestroyShadingTargets(shading);
     depth = {};
     normals = {};
     motion = {};
     reactive = {};
     hdr = {};
     DAI_TRY(temporalResolve->Resize(extent));
+    DAI_TRY(denoiser->Resize(extent));
+    DAI_TRY_ASSIGN(shading, meshPass->CreateShadingTargets(extent));
     DAI_TRY_ASSIGN(reactive, device.CreateTexture({.extent = extent,
                                                    .format = ParticlePass::kReactiveFormat,
                                                    .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
@@ -271,6 +287,9 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     impl->particlePass.emplace(std::move(particlePass));
     DAI_TRY_ASSIGN(TemporalResolvePass temporalResolve, TemporalResolvePass::Create(impl->device));
     impl->temporalResolve.emplace(std::move(temporalResolve));
+    DAI_TRY_ASSIGN(Denoiser denoiser, Denoiser::Create(impl->device));
+    impl->denoiser.emplace(std::move(denoiser));
+    impl->denoise = config.denoiser;
     impl->meshPass->SetNormalStrength(config.normalStrength);
     impl->meshPass->SetFieldOfView(config.fieldOfView);
     impl->meshPass->SetViewDistance(config.viewDistance);
@@ -324,6 +343,10 @@ void Renderer::SetExposure(float exposure) {
 
 void Renderer::SetAmbientOcclusion(bool enabled) {
     m_impl->ambientOcclusion = enabled;
+}
+
+void Renderer::SetDenoiser(bool enabled) {
+    m_impl->denoise = enabled;
 }
 
 void Renderer::SetFieldOfView(float radians) {
@@ -399,7 +422,8 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
             return impl.meshPass->Prepare(view, {.extent = frame.extent,
                                                  .occlusion = occlusion,
                                                  .accelerationStructure = structure,
-                                                 .jitter = taa ? Jitter(impl.frameNumber) : glm::vec2(0.0f)});
+                                                 .jitter = taa ? Jitter(impl.frameNumber) : glm::vec2(0.0f),
+                                                 .frameIndex = impl.frameIndex++});
         });
         impl.particleSpawns = static_cast<std::uint32_t>(view.particleSpawns.size());
     }
@@ -434,15 +458,36 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     }
     if (status) {
         graph.AddPass({.name = "Meshes",
-                       .rendering = rhi::RenderingDesc{.colorTarget = impl.hdr,
-                                                       .clearColor = glm::vec4(view.atmosphere.fogColor, 1.0f),
-                                                       .depthTarget = impl.depth},
+                       .rendering = MeshPass::ShadingRendering(impl.shading, impl.depth,
+                                                               glm::vec4(view.atmosphere.fogColor, 1.0f)),
                        .textures = {{occlusion, rhi::Access::FragmentShaderRead}},
                        // Shadow rays: the frame's structure, and the vertices of the skinned draws they test for alpha.
                        .buffers = {skinnedVertices, {skinnedVertices.buffer, rhi::Access::FragmentShaderRead}},
                        .structures = {{hasFrame ? impl.rayTracing->Structure() : rhi::AccelerationStructureHandle{},
                                        rhi::Access::RayQueryRead}}},
                       [&impl](rhi::CommandList& commands) { impl.meshPass->Record(commands); });
+    }
+    // The lights' light, denoised, then put back together with the rest (ADR-0039). A frame that does not
+    // follow the last one denoised starts the history over.
+    const bool denoise = status && hasFrame && impl.denoise;
+    if (denoise) {
+        if (!impl.denoised || view.cut) {
+            impl.denoiser->Reset();
+        }
+        impl.denoiser->AddTo(graph, {.frameBuffer = impl.meshPass->FrameDataIndex(),
+                                     .diffuse = impl.shading.diffuse,
+                                     .specular = impl.shading.specular,
+                                     .depth = impl.depth,
+                                     .normals = impl.normals,
+                                     .motion = impl.motion});
+    }
+    impl.denoised = denoise;
+    if (status && hasFrame) {
+        impl.meshPass->AddComposite(graph, impl.hdr,
+                                    {.shading = &impl.shading,
+                                     .diffuse = denoise ? impl.denoiser->Diffuse() : impl.shading.diffuse,
+                                     .specular = denoise ? impl.denoiser->Specular() : impl.shading.specular,
+                                     .depth = impl.depth});
     }
     if (status && hasFrame) {
         const glm::mat4 cameraWorld = glm::inverse(view.camera->view);
@@ -508,9 +553,11 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     impl.pathShown = path;
 
     if (status) {
-        const rhi::TextureHandle source = path      ? impl.pathTracer->Output()
-                                          : resolve ? impl.temporalResolve->Output()
-                                                    : impl.hdr;
+        // Without a camera, the mesh pass only cleared its base to the fog's color.
+        const rhi::TextureHandle source = path       ? impl.pathTracer->Output()
+                                          : resolve  ? impl.temporalResolve->Output()
+                                          : hasFrame ? impl.hdr
+                                                     : impl.shading.base;
 
         graph.AddPass({.name = "Tonemap",
                        .rendering = rhi::RenderingDesc{.colorTarget = frame.backBuffer},

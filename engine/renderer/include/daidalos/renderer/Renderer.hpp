@@ -53,6 +53,8 @@ struct RendererConfig {
     float normalStrength = 1.0f;
     /// Darkens the ambient light in creases and corners (ADR-0024).
     bool ambientOcclusion = true;
+    /// Filters the noise of soft shadows (ADR-0039). Off shows the light as the rays found it.
+    bool denoiser = true;
     /// Radians across the view, for cameras that set no field of view of their own.
     float fieldOfView = glm::radians(90.0f);
     /// Meters: farther, nothing is drawn or lit.
@@ -124,6 +126,7 @@ public:
     void SetExposure(float exposure);
     void SetNormalStrength(float strength);
     void SetAmbientOcclusion(bool enabled);
+    void SetDenoiser(bool enabled);
     /// From the next frame; see RendererConfig.
     void SetFieldOfView(float radians);
     void SetViewDistance(float meters);

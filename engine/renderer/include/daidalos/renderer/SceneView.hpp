@@ -89,6 +89,9 @@ struct Light {
     /// Spot lights: radians from the axis, full light inside the inner angle, none outside the outer.
     float innerAngle = 0.0f;
     float outerAngle = 0.0f;
+    /// Meters: the light is a sphere of this radius, whose shadows are soft (ADR-0039). Zero is a point,
+    /// with hard shadows.
+    float radius = 0.0f;
 };
 
 /// What the renderer draws in one frame. It holds copies, so that rendering never touches the ECS

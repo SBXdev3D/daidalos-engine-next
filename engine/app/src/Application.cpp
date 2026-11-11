@@ -225,6 +225,8 @@ core::Result<void> Application::LoadConfiguration() {
             "renderer.anisotropy", 16, "Anisotropic filtering of textures, from 1 (off) to 16, read at startup");
         m_ambientOcclusion = m_cvars.Register<bool>("renderer.ambient_occlusion", true,
                                                     "Darken the ambient light in creases and corners");
+        m_denoiser = m_cvars.Register<bool>("renderer.denoiser", true,
+                                            "Filter the noise of soft shadows; off shows it as traced");
         m_normalStrength = m_cvars.Register<double>(
             "renderer.normal_strength", 1.0, "Multiplies the relief of normal maps: 0 flattens them, 1 as authored");
         m_fieldOfView = m_cvars.Register<double>(
@@ -397,6 +399,7 @@ core::Result<void> Application::CreateRenderer() {
              .anisotropy = static_cast<float>(std::clamp<std::int64_t>(m_anisotropy->Get(), 1, 16)),
              .normalStrength = static_cast<float>(m_normalStrength->Get()),
              .ambientOcclusion = m_ambientOcclusion->Get(),
+             .denoiser = m_denoiser->Get(),
              .fieldOfView = FieldOfViewRadians(*m_fieldOfView),
              .viewDistance = ViewDistanceMeters(*m_viewDistance),
              .antialiasing = AntialiasingMode(*m_antialiasing),
@@ -445,6 +448,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_renderer->SetExposure(static_cast<float>(m_exposure->Get()));
     m_renderer->SetNormalStrength(static_cast<float>(m_normalStrength->Get()));
     m_renderer->SetAmbientOcclusion(m_ambientOcclusion->Get());
+    m_renderer->SetDenoiser(m_denoiser->Get());
     m_renderer->SetFieldOfView(FieldOfViewRadians(*m_fieldOfView));
     m_renderer->SetViewDistance(ViewDistanceMeters(*m_viewDistance));
     m_renderer->SetAntialiasing(AntialiasingMode(*m_antialiasing));

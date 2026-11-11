@@ -34,6 +34,30 @@ struct FrameTargets {
     /// Where the frame samples each pixel, relative to its center, in pixels, y down: the jitter of
     /// temporal antialiasing (ADR-0037). Motion vectors leave it out.
     glm::vec2 jitter{0.0f};
+    /// Counts the frames: the noise of soft shadows changes with it (ADR-0039).
+    std::uint32_t frameIndex = 0;
+};
+
+/// The targets the mesh pass shades into (ADR-0039), which the composite pass puts back together.
+struct ShadingTargets {
+    /// Ambient light, emission and the sky, in the mesh pass's color format.
+    rhi::TextureHandle base;
+    /// The lights' diffuse light per unit of diffuse color (MeshPass::kDiffuseFormat).
+    rhi::TextureHandle diffuse;
+    /// The lights' specular light per unit of specular albedo, and the albedo in alpha
+    /// (MeshPass::kSpecularFormat).
+    rhi::TextureHandle specular;
+    /// The diffuse color (MeshPass::kAlbedoFormat).
+    rhi::TextureHandle albedo;
+};
+
+/// What the composite pass reads.
+struct CompositeInputs {
+    const ShadingTargets* shading = nullptr;
+    /// The diffuse and specular light to add: the denoiser's, or the shading targets' own.
+    rhi::TextureHandle diffuse;
+    rhi::TextureHandle specular;
+    rhi::TextureHandle depth;
 };
 
 /// A draw as rays see it (ADR-0033). Rigid draws use their mesh's bottom-level structure; skinned draws
@@ -73,6 +97,19 @@ public:
     /// Motion vectors of the pre-pass, its second target: where each pixel's surface was in the previous
     /// frame minus where it is, in texture coordinates (ADR-0037).
     static constexpr rhi::Format kMotionFormat = rhi::Format::Rg16Float;
+    /// The light of the mesh pass's lights, apart from the rest, for the denoiser (ADR-0039).
+    static constexpr rhi::Format kDiffuseFormat = rhi::Format::Rgba16Float;
+    static constexpr rhi::Format kSpecularFormat = rhi::Format::Rgba16Float;
+    /// sRGB, for precision in the dark colors.
+    static constexpr rhi::Format kAlbedoFormat = rhi::Format::Rgba8Srgb;
+
+    /// The targets of Record, at this size, sampled by the passes after it.
+    [[nodiscard]] core::Result<ShadingTargets> CreateShadingTargets(rhi::Extent extent) const;
+    void DestroyShadingTargets(ShadingTargets& targets) const;
+    /// The rendering of Record into these targets, over the pre-pass's depth. The base is cleared to
+    /// clearColor, which stays where nothing is drawn; the others are cleared to zero.
+    [[nodiscard]] static rhi::RenderingDesc ShadingRendering(const ShadingTargets& targets, rhi::TextureHandle depth,
+                                                             const glm::vec4& clearColor);
 
     /// Replaces the shaders of the mesh pass. The pre-pass uses the same vertex shader, so that both
     /// compute the same depth. On failure the current pipelines stay in use.
@@ -117,10 +154,13 @@ public:
     /// Writes depth, normals and motion vectors, inside a rendering scope with a kNormalFormat target, a
     /// kMotionFormat target and a cleared depth. Skinned draws read PreviousSkinnedPositions.
     void RecordPrepass(rhi::CommandList& commands);
-    /// Shades the prepared frame inside a rendering scope whose depth holds the pre-pass's: each pixel is
-    /// shaded once, where its depth equals the pre-pass's. Then draws the sky where nothing was drawn, if
-    /// the frame has one.
+    /// Shades the prepared frame inside a ShadingRendering scope, whose depth holds the pre-pass's: each
+    /// pixel is shaded once, where its depth equals the pre-pass's. Then draws the sky where nothing was
+    /// drawn, if the frame has one.
     void Record(rhi::CommandList& commands);
+    /// Adds the pass that puts the shading targets back together into target, with the fog, as
+    /// "Composite" (ADR-0039). target has the mesh pass's color format and is written whole.
+    void AddComposite(RenderGraph& graph, rhi::TextureHandle target, const CompositeInputs& inputs);
 
     /// The storage index of the prepared frame's FrameData, for the passes that read it.
     [[nodiscard]] std::uint32_t FrameDataIndex() const;
@@ -182,6 +222,7 @@ private:
         rhi::PipelineHandle mesh;
         rhi::PipelineHandle meshDoubleSided;
         rhi::PipelineHandle sky;
+        rhi::PipelineHandle composite;
     };
     [[nodiscard]] core::Result<rhi::PipelineHandle> BuildPipeline(std::span<const std::uint32_t> vertexShader,
                                                                   std::span<const std::uint32_t> fragmentShader,
