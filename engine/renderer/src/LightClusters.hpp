@@ -45,8 +45,9 @@ struct LightClusters {
     std::vector<glm::uvec2> hits;
 };
 
-/// Lists, for each cluster, the lights whose range reaches into it. Conservative: a light that reaches a
-/// point is always in the list of that point's cluster. The vectors of clusters are reused.
+/// Lists, for each cluster, the lights whose range reaches into it, and the directional lights, which reach
+/// every cluster. Conservative: a light that reaches a point is always in the list of that point's cluster.
+/// The vectors of clusters are reused.
 void AssignLightsToClusters(std::span<const Light> lights, const ClusterCamera& camera, LightClusters& clusters);
 
 /// The depth slice of a view depth (meters in front of the camera), as the shader computes it.

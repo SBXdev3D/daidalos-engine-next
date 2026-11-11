@@ -87,7 +87,8 @@ ShadingOutput PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) {
     }
     const uint2 cluster = g_clusters[frame.clusterBuffer][ClusterOf(frame, input.clipPosition.xy, input.worldPosition)];
     for (uint entry = 0; entry < cluster.y; ++entry) {
-        const LightData light = g_lights[frame.lightBuffer][g_clusterLights[frame.clusterLightBuffer][cluster.x + entry]];
+        const LightData light = LightAt(
+            g_lights[frame.lightBuffer][g_clusterLights[frame.clusterLightBuffer][cluster.x + entry]], input.worldPosition);
         const float3 offset = light.position - input.worldPosition;
         const float distanceToLight = length(offset);
         if (distanceToLight >= light.range) {

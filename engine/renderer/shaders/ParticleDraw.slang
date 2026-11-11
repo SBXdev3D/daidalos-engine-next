@@ -79,11 +79,15 @@ ParticleOutput PSMain(VertexOutput input) {
 
     float3 color = input.color.rgb * texel.rgb;
     if ((effect.flags & kEffectLit) != 0) {
-        // Smoke takes the light around it, from every side: no normal, no shadow.
+        // Smoke takes the light around it, from every side: no normal, no shadow. Directional lights are left
+        // out: without shadows, the moon would light smoke deep indoors.
         float3 light = (frame.ambient + frame.ambientBelow) * 0.5;
         const uint2 cluster = g_clusters[frame.clusterBuffer][ClusterOf(frame, input.clipPosition.xy, input.worldPosition)];
         for (uint entry = 0; entry < cluster.y; ++entry) {
             const LightData lamp = g_lights[frame.lightBuffer][g_clusterLights[frame.clusterLightBuffer][cluster.x + entry]];
+            if (lamp.kind == kLightDirectional) {
+                continue;
+            }
             const float3 offset = lamp.position - input.worldPosition;
             const float distanceToLight = length(offset);
             if (distanceToLight < lamp.range) {

@@ -90,7 +90,7 @@ struct FrameData {
     std::uint32_t clusterLightBuffer;
     float farPlane;
     std::uint32_t accelerationStructure;
-    std::uint32_t padding;
+    float skyYaw;
     glm::mat4 unjitteredViewProjection;
     glm::mat4 previousViewProjection;
     glm::vec2 jitter;
@@ -106,15 +106,31 @@ struct LightData {
     glm::vec3 color;
     float cosOuter; // kPointLight for a point light.
     float cosInner;
-    float radius;
-    std::array<std::uint32_t, 2> padding;
+    float radius;       // Directional lights: the tangent of their angular radius.
+    std::uint32_t kind; // kLightNear or kLightDirectional.
+    std::uint32_t padding;
 };
 static_assert(sizeof(LightData) == 64);
 
 /// The cosine of the outer angle of a point light: every direction is inside.
 constexpr float kPointLight = -2.0f;
+/// Match the kinds of light in MeshTypes.slangh: lights with a position, and directional lights.
+constexpr std::uint32_t kLightNear = 0;
+constexpr std::uint32_t kLightDirectional = 1;
 
 LightData ToGpu(const Light& light) {
+    if (light.type == LightType::Directional) {
+        return {glm::vec3(0.0f),
+                0.0f,
+                glm::normalize(light.direction),
+                0.0f,
+                light.color,
+                kPointLight,
+                kPointLight + 1.0f,
+                std::tan(std::clamp(light.angularRadius, 0.0f, 1.0f)),
+                kLightDirectional,
+                0};
+    }
     const bool spot = light.type == LightType::Spot;
     return {light.position,
             light.range,
@@ -124,7 +140,8 @@ LightData ToGpu(const Light& light) {
             spot ? std::cos(light.outerAngle) : kPointLight,
             spot ? std::cos(light.innerAngle) : kPointLight + 1.0f,
             std::max(light.radius, 0.0f),
-            {}};
+            kLightNear,
+            0};
 }
 
 struct InstanceData {
@@ -539,7 +556,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                           m_device->StorageIndex(slot.clusterLights),
                           farPlane,
                           targets.accelerationStructure,
-                          0,
+                          view.atmosphere.skyYaw,
                           viewProjection,
                           previousViewProjection,
                           jitter,

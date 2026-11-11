@@ -34,7 +34,8 @@ void ExtractLights(ecs::World& world, renderer::SceneView& view) {
                                    .falloff = light.falloff,
                                    .innerAngle = light.innerAngle,
                                    .outerAngle = light.outerAngle,
-                                   .radius = light.radius});
+                                   .radius = light.radius,
+                                   .angularRadius = light.angularRadius});
         });
 }
 

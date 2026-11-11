@@ -496,6 +496,41 @@ TEST_F(MeshPassTest, PointLightCastsShadowsToo) {
     EXPECT_GT(Pixel(48, 32).r, 100);
 }
 
+TEST_F(MeshPassTest, DirectionalLightLightsEverywhereAtTheSameStrength) {
+    // Straight at the floor, from as far as it can be: the whole floor gets the light's color, wherever the
+    // light's position says, and whatever its range.
+    const MeshHandle floor = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
+    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
+    Render(LitView(TestCamera(), {floor, glm::mat4(1.0f), white},
+                   {.type = renderer::LightType::Directional,
+                    .position = {0.0f, 0.0f, -100.0f},
+                    .direction = {0.0f, 0.0f, -1.0f},
+                    .color = glm::vec3(0.5f),
+                    .range = 0.1f}));
+    EXPECT_NEAR(Pixel(32, 32).r, Pixel(4, 4).r, 2);
+    // 0.5 of light, in the 8-bit target, less what the dielectric reflects instead of diffusing.
+    EXPECT_GE(Pixel(32, 32).r, 118);
+    EXPECT_LE(Pixel(32, 32).r, 140);
+}
+
+TEST_F(MeshPassTest, DirectionalLightCastsParallelShadows) {
+    // From the right, at 31 degrees like the spot of the shadow tests: the panel's shadow falls on the floor
+    // left of it. Nothing near the light's far-away position can stop it.
+    const MeshHandle floor = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
+    const MeshHandle panel = Mesh(MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 1.0f));
+    const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
+    SceneView view = LitView(TestCamera(), {floor, glm::mat4(1.0f), white},
+                             {.type = renderer::LightType::Directional,
+                              .direction = glm::normalize(glm::vec3(-3.0f, 0.0f, -5.0f)),
+                              .color = glm::vec3(1.0f)});
+    view.draws.push_back({.mesh = panel, .material = white});
+    Render(view);
+    // The shadow runs from x = -1.1 to -0.1 on the floor.
+    EXPECT_LT(Pixel(22, 32).r, 10);
+    EXPECT_GT(Pixel(48, 32).r, 100);
+    EXPECT_GT(Pixel(32, 32).r, 100);
+}
+
 TEST_F(MeshPassTest, AlphaTestedSurfaceLetsLightThroughWhereItIsCut) {
     // The panel's alpha is below its cutoff everywhere: the mesh pass does not draw it, and shadow rays go
     // through it as well.
@@ -550,6 +585,18 @@ TEST_F(MeshPassTest, SkyShowsWhereNothingIsDrawn) {
     EXPECT_EQ(ahead.g, 0);
     EXPECT_NEAR(ahead.b, 128, 1);
     EXPECT_NE(Pixel(46, 32), ahead); // The quad, 1.3 m right of the view's middle.
+
+    // Turned half a turn, the sky shows ahead what was behind: the back face, green. A quarter turn
+    // counter-clockwise brings what was on the right, red, ahead.
+    view.atmosphere.skyYaw = glm::pi<float>();
+    Render(view);
+    EXPECT_EQ(Pixel(32, 32).r, 0);
+    EXPECT_NEAR(Pixel(32, 32).g, 128, 1);
+    EXPECT_EQ(Pixel(32, 32).b, 0);
+    view.atmosphere.skyYaw = glm::half_pi<float>();
+    Render(view);
+    EXPECT_NEAR(Pixel(32, 32).r, 128, 1);
+    EXPECT_EQ(Pixel(32, 32).b, 0);
     Device().DestroyTexture(*sky);
 }
 

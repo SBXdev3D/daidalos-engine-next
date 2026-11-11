@@ -95,6 +95,13 @@ void AssignLightsToClusters(std::span<const Light> lights, const ClusterCamera& 
     hits.clear();
     for (std::uint32_t index = 0; index < lights.size(); ++index) {
         const Light& light = lights[index];
+        if (light.type == LightType::Directional) {
+            // It reaches everywhere.
+            for (std::uint32_t cluster = 0; cluster < kClusterCount; ++cluster) {
+                hits.emplace_back(cluster, index);
+            }
+            continue;
+        }
         const glm::vec3 center = glm::vec3(camera.view * glm::vec4(light.position, 1.0f));
         const float depth = -center.z;
         if (depth + light.range < camera.nearPlane || depth - light.range > camera.farPlane) {

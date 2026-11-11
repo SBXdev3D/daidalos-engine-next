@@ -69,16 +69,21 @@ struct Atmosphere {
     rhi::TextureHandle sky;
     /// Multiplies the sky's colors, which are linear light.
     float skyIntensity = 1.0f;
+    /// Radians the sky is turned about +Y, counter-clockwise seen from above, as a yaw: pi puts what was
+    /// ahead behind (ADR-0040).
+    float skyYaw = 0.0f;
 };
 
-enum class LightType { Point, Spot };
+/// A directional light is infinitely far, as the sun or the moon: it shines along its direction everywhere,
+/// at the same strength, and has no position, range or falloff (ADR-0040).
+enum class LightType { Point, Spot, Directional };
 
 /// A light of the frame (ADR-0022). Its color times its intensity is what a white surface facing it
 /// reflects up close: a light of color 0.4 lights a white wall to 0.4, as in the legacy engine.
 struct Light {
     LightType type = LightType::Point;
     glm::vec3 position{0.0f};
-    /// Spot lights shine along it. Normalized.
+    /// Spot and directional lights shine along it. Normalized.
     glm::vec3 direction{0.0f, 0.0f, -1.0f};
     /// Linear color, already multiplied by the intensity.
     glm::vec3 color{1.0f};
@@ -92,6 +97,9 @@ struct Light {
     /// Meters: the light is a sphere of this radius, whose shadows are soft (ADR-0039). Zero is a point,
     /// with hard shadows.
     float radius = 0.0f;
+    /// Directional lights: radians from the center of the disk the light comes from to its edge, which
+    /// softens the shadows as radius does. The moon is 0.0045.
+    float angularRadius = 0.0f;
 };
 
 /// What the renderer draws in one frame. It holds copies, so that rendering never touches the ECS

@@ -139,3 +139,17 @@ TEST(LightClusters, LightBeyondTheFarPlaneReachesNoCluster) {
     EXPECT_FALSE(clusters.lightIndices.empty());
     EXPECT_EQ(std::ranges::count(clusters.lightIndices, 0U), 0);
 }
+
+TEST(LightClusters, DirectionalLightReachesEveryCluster) {
+    // Far behind the camera, with no range: a directional light has neither.
+    std::vector<Light> lights = ScatteredLights(5);
+    lights.push_back({.type = renderer::LightType::Directional,
+                      .position = {0.0f, 0.0f, 1000.0f},
+                      .direction = glm::normalize(glm::vec3(1.0f, -2.0f, 0.5f)),
+                      .range = 0.0f});
+    LightClusters clusters;
+    renderer::AssignLightsToClusters(lights, TestCamera(), clusters);
+    for (std::uint32_t cluster = 0; cluster < renderer::kClusterCount; ++cluster) {
+        EXPECT_TRUE(LightsOf(clusters, cluster).contains(5U)) << "cluster " << cluster;
+    }
+}

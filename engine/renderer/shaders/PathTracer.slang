@@ -99,7 +99,7 @@ Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame) {
 float3 DirectLight(Surface surface, float3 view, FrameData frame, inout uint random) {
     float3 total = float3(0.0, 0.0, 0.0);
     for (uint index = 0; index < frame.lightCount; ++index) {
-        const LightData light = g_lights[frame.lightBuffer][index];
+        const LightData light = LightAt(g_lights[frame.lightBuffer][index], surface.position);
         const float3 offset = light.position - surface.position;
         const float distanceToLight = length(offset);
         if (distanceToLight >= light.range) {

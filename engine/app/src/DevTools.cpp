@@ -142,12 +142,23 @@ void DevTools::AddEngineInspectors() {
         ImGui::Checkbox("Casts shadows", &mesh.castsShadows);
     });
     AddInspector<scene::Light>("Light", [](scene::Light& light) {
-        TextLine(light.type == renderer::LightType::Spot ? "Spot light" : "Point light");
+        const bool directional = light.type == renderer::LightType::Directional;
+        TextLine(directional                               ? "Directional light"
+                 : light.type == renderer::LightType::Spot ? "Spot light"
+                                                           : "Point light");
         ImGui::Checkbox("Enabled", &light.enabled);
         ImGui::ColorEdit3("Color", &light.color.x, ImGuiColorEditFlags_Float);
         ImGui::DragFloat("Intensity", &light.intensity, 0.01f, 0.0f, 100.0f);
+        if (directional) {
+            float angle = glm::degrees(light.angularRadius);
+            if (ImGui::SliderFloat("Angular radius", &angle, 0.0f, 10.0f)) {
+                light.angularRadius = glm::radians(angle);
+            }
+            return;
+        }
         ImGui::DragFloat("Range", &light.range, 0.05f, 0.0f, 500.0f);
         ImGui::SliderFloat("Falloff", &light.falloff, 0.0f, 1.0f);
+        ImGui::DragFloat("Radius", &light.radius, 0.005f, 0.0f, 2.0f);
         if (light.type == renderer::LightType::Spot) {
             float inner = glm::degrees(light.innerAngle);
             float outer = glm::degrees(light.outerAngle);

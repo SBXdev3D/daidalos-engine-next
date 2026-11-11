@@ -39,7 +39,7 @@ struct FrameData {
     uint clusterLightBuffer; // Indices into lightBuffer.
     float farPlane;          // Nothing is drawn beyond it: the view distance.
     uint accelerationStructure; // The frame's top-level structure in g_accelerationStructures.
-    uint padding;
+    float skyYaw;               // Radians the sky is turned about +Y (ADR-0040).
     // Without the jitter of temporal antialiasing (ADR-0037): motion vectors compare these two.
     float4x4 unjitteredViewProjection;
     float4x4 previousViewProjection;
@@ -69,6 +69,10 @@ static const uint kClusterColumns = 16;
 static const uint kClusterRows = 9;
 static const uint kClusterSlices = 24;
 
+// The kinds of light: lights with a position, and directional lights, infinitely far (ADR-0040).
+static const uint kLightNear = 0;
+static const uint kLightDirectional = 1;
+
 // A point light has a cosOuter of -2, which every direction passes.
 struct LightData {
     float3 position;
@@ -78,9 +82,26 @@ struct LightData {
     float3 color;
     float cosOuter;
     float cosInner;
-    float radius; // Meters: a sphere whose shadows are soft; 0 is a point (ADR-0039).
-    uint2 padding;
+    float radius; // Meters: a sphere whose shadows are soft; 0 is a point (ADR-0039). Directional
+                  // lights: the tangent of their angular radius.
+    uint kind;
+    uint padding;
 };
+
+// How far a directional light is put from the point it lights: beyond anything in a level.
+static const float kDirectionalDistance = 10000.0;
+
+// The light as seen from position. A directional light becomes a light far away against its direction, as
+// large as its disk, so that every kind of light is shaded, and casts its shadows, the same way.
+LightData LightAt(LightData light, float3 position) {
+    if (light.kind == kLightDirectional) {
+        light.position = position - light.direction * kDirectionalDistance;
+        light.range = kDirectionalDistance * 2.0;
+        light.fullRange = light.range;
+        light.radius *= kDirectionalDistance;
+    }
+    return light;
+}
 
 // One per draw of the frame, in the order of the sorted draws; also what a ray hit's custom index points to.
 // A skinned draw's vertices were skinned by the frame's skinning pass, in world space: its world is identity.
@@ -187,12 +208,16 @@ float3 TransformNormal(float4x4 world, float3 normal) {
 }
 
 // The light the sky sends along a direction, from where it is seen, or black without a sky (ADR-0036).
-// Sky cubes keep the faces of the legacy engine, which was left-handed: the engine's -Z is their +Z.
+// Sky cubes keep the faces of the legacy engine, which was left-handed: the engine's -Z is their +Z. The
+// sky is turned by its yaw: the direction is turned back before the cube is read.
 float3 SkyRadiance(FrameData frame, float3 direction) {
     if (frame.skyTexture == kNoTexture) {
         return float3(0.0, 0.0, 0.0);
     }
-    const float3 cube = float3(direction.x, direction.y, -direction.z);
+    const float c = cos(frame.skyYaw);
+    const float s = sin(frame.skyYaw);
+    const float3 turned = float3(c * direction.x - s * direction.z, direction.y, s * direction.x + c * direction.z);
+    const float3 cube = float3(turned.x, turned.y, -turned.z);
     return g_cubeTextures[frame.skyTexture].SampleLevel(g_samplers[kSamplerLinearClamp], cube, 0.0).rgb *
            frame.skyIntensity;
 }
