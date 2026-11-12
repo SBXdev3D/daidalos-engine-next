@@ -12,7 +12,7 @@
 **Repository:** https://github.com/StephaneBX/daidalos-engine-next  
 **Decision records:** `docs/adr/`; coding and math conventions: `docs/CONVENTIONS.md`  
 **Development approach:** Modular architecture, incremental implementation, testable components, and AI-assisted development  
-**Current project status:** Phases 0 to 8 (foundation to modern rendering, the game's interface, menus and developer tools) are implemented; Phase 9 moves rendering to ray tracing (ADR-0028); implementation proceeds through small, verifiable milestones, each of which improves the demo described in `docs/DEMO.md`
+**Current project status:** Phases 0 to 8 (foundation to modern rendering, the game's interface, menus and developer tools) are implemented; Phase 9 moves rendering to ray tracing (ADR-0028); the engine technical spec for a Doom-inspired game with an oppressive horror atmosphere sets the phases after it (ADR-0041); implementation proceeds through small, verifiable milestones, each of which improves the demo described in `docs/DEMO.md`
 
 ---
 
@@ -1059,7 +1059,7 @@ This separation allows gameplay logic and scene organization to evolve independe
 
 From Phase 9 the renderer requires hardware ray tracing (ADR-0028). Rasterization keeps drawing the depth and normal prepass and the forward pass; ray queries and a reference path tracer provide shadows, indirect light, reflections and volumetric shadows. Lighting is fully dynamic, with no baking. The denoiser, radiance cache and ReSTIR samplers are the engine's own, written from the published papers.
 
-The plan in `docs/daidalos-engine-next-rendering-plan.md` describes the long-term target, including techniques deferred until measurements or content justify them.
+The plan in `docs/daidalos-engine-next-rendering-plan.md` describes the long-term target, including techniques deferred until measurements or content justify them. The owner's engine technical spec widens it to a horror game; ADR-0041 records what of it joins the roadmap.
 
 ---
 
@@ -1946,44 +1946,109 @@ Hardware ray tracing is mandatory and no raster fallback is kept: each step dele
 7. Motion vectors (skinned meshes and particles included), jittered projection and TAA, replacing MSAA and FXAA (done, ADR-0037).
 8. An own spatiotemporal denoiser, a concrete class whose inputs and outputs are the seam for another; lights with a radius and soft shadows (done, ADR-0039).
 9. Diffuse global illumination: an own hash-grid radiance cache and a ray-traced bounce, replacing SSAO and the ambient term; directional lights, for the moon (done, ADR-0040).
-10. Ray-traced reflections below a roughness threshold; glass.
-11. ReSTIR DI, with emissive triangles, and ReSTIR GI, replacing CPU light clustering.
-12. FSR 2 upscaling, auto-exposure, bloom, AgX tone mapping, HDR output.
-13. Froxel volumetric fog with ray-traced shadows, replacing exponential fog.
+10. Ray-traced reflections below a roughness threshold, recursive on mirrors; reflection motion vectors for the denoiser; glass (thin for windows, thick with absorption for bottles); a mirror-room test scene. Replaces the ambient specular term.
+11. Physical units (ADR-0041): lights in lumens and candela with inverse-square falloff, color temperature in kelvin, emission in nits, exposure in EV. Replaces the legacy intensity and range (ADR-0022); the factory's lights are retuned.
+12. ReSTIR DI over every light and emissive triangle, and ReSTIR GI with two to three bounces ending in the radiance cache, replacing CPU light clustering. An emissive mesh is either the light or seen only by camera and reflection rays, never both. Radiance is clamped on indirect bounces only. Test scenes: a dark corridor lit only by the flashlight, which validates low-light quality before anything builds on it, and a room of 1,000 lights.
+13. FSR 2 upscaling with dynamic resolution (a frame-time target of 30, 60 or 120 fps, with hysteresis; the denoiser's history survives a resolution change), auto-exposure in EV with slow dark adaptation, bloom without threshold, AgX tone mapping, HDR output, a brightness calibration screen.
+14. Froxel volumetric fog with ray-traced shadows and local volumes (a dusty room, a steam pipe), replacing exponential fog.
+15. Quality presets and no stutter (ADR-0041): Low, Medium, High and Ultra set the cost of every feature, chosen at first launch from the GPU; the pipeline cache persists on disk and is rebuilt after a driver or GPU change; a pipeline created during gameplay is logged as a bug; VRAM use against `VK_EXT_memory_budget` in the statistics; each feature has its debug view.
 
-Deferred until measurements justify them: meshlets, mesh shaders, the visibility buffer, Hi-Z occlusion, LODs, portals. Deferred until content needs them: layered material lobes, IES profiles, area lights. Out of scope: the neural rendering tier and NVIDIA's RTX SDKs (licence, see ADR-0028).
+Deferred until measurements justify them: meshlets, mesh shaders, the visibility buffer, Hi-Z occlusion, LODs, portals, async compute, resource aliasing, `VK_EXT_descriptor_heap`, opacity micromaps, shader execution reordering, adaptive ray budgets. Deferred until content needs them: ReSTIR PT, subsurface scattering. Out of scope: the neural rendering tier and NVIDIA's RTX SDKs (licence, see ADR-0028 and ADR-0041).
 
 Completion criteria:
 
-- The factory runs at 60 fps at 1080p on an RTX 3090.
+- The factory runs at 60 fps at 1080p on an RTX 3090, on the High preset.
 - No light leaks through the thin-wall test scene.
-- Real-time output matches the path tracer within a FLIP threshold on the test scenes.
+- Real-time output matches the path tracer within a FLIP threshold on the test scenes, the dark corridor included.
 - Validation layers, synchronization validation included, report no errors.
 - Every pass reports its GPU time.
+- No pipeline is created after a level has loaded.
 
-## Phase 10 — AI, Cinematics, and Indoor Optimization
+## Phase 10 — Level Editor
 
-**Goal:** Add higher-level engine capabilities.
+**Goal:** Build levels without code: import models, place lights, choose the sky, save (ADR-0041). Simple for now.
+
+Deliverables:
+
+- A level file: the models it places (glTF, with their transforms), its lights, its sky and atmosphere, the player's start and named entities for the game's code. The game loads it; a bare glTF still loads as today.
+- An editor executable, in development builds, whose viewport is the game's renderer, ray tracing included.
+- Importing glTF models and sky textures into the assets.
+- Selecting by clicking in the viewport or in a hierarchy panel; move, rotate and scale gizmos; an inspector of the selected entity's components (transform, model, light).
+- Undo and redo of every edit; saving and opening levels.
+- Starting the game on the level being edited.
+- The factory's lights that are added in code today move into its level file.
+
+Later phases add their own fields to the inspector (light profiles, visibility masks, porosity, triggers). Prefabs, painting tools, material, VFX and sequencer editors wait until content asks for them.
+
+Completion criteria:
+
+- A level built in the editor from imported models, lights and a sky plays in the game exactly as it looked in the editor.
+- The factory loads from its level file and looks as before.
+- Every edit can be undone.
+
+## Phase 11 — Materials, Lights and Atmosphere
+
+**Goal:** Give the engine what a dark, indoor horror game needs on screen (ADR-0041). Everything here works in the mesh pass, at ray hits and in the path tracer, through the one material function.
+
+Deliverables, each its own pull request:
+
+1. Layered materials on the OpenPBR model, read from glTF's `KHR_materials_*` extensions: clear coat, sheen, anisotropy, transmission (thin diffuse for lampshades and paper, frosted and tinted glass), thin film, emissive strength. Each lobe comes with a use in the factory or a test scene.
+2. Lights: IES profiles, cookie textures, rectangle and disk area lights. One parameter drives a light and its emissive mesh together, with scriptable flicker, buzz, slow failure and power cuts. Candles, lighters, emergency lights and screens as presets.
+3. The flashlight: an IES or cookie beam, sway tied to the camera's motion, a small offset from the eye so its shadows read, hooks for battery, flicker and failure.
+4. Ray visibility masks: per entity, whether the camera, shadow, reflection and indirect rays see it, set in the editor and by the game's code. A figure seen only in a mirror, a shadow with no caster.
+5. Decals evaluated in the material function, so they show in reflections and indirect light: blood, mold, grime, stains, and impacts (bullet holes, splatter, scorch marks).
+6. Wetness: a porosity per material, wetness from vertex colors, textures and decals, darkening by porosity, a water coat (IOR 1.33), drying over time; puddles from a height and a water level, with ripples from drips, steps and impacts; running water on walls from flow maps. A flooded test room.
+7. Particles in the acceleration structure (a BLAS rebuilt each frame, opt-out per effect), so smoke and sparks cast shadows and show in reflections; smoke and steam as small density volumes lit by the volumetrics pass.
+8. Camera effects: film grain, vignette, lens dirt lit by the flashlight, optional chromatic aberration and motion blur, depth of field from the camera's aperture.
+
+Deferred (ADR-0041): deep water with refraction and caustics, the GPU leak simulation, grid-based fire (flames are flipbooks plus a light), video textures, strand hair and skin rendering.
+
+Completion criteria:
+
+- Every new lobe and light type matches the path tracer within a FLIP threshold.
+- The factory at 60 fps on the High preset with its new materials and effects.
+- Each feature has a setting in the presets and a debug view.
+
+## Phase 12 — Sound
+
+**Goal:** Sound carries half the fear: make it come from the right place, through the right walls (ADR-0041).
+
+Deliverables:
+
+- Steam Audio (Apache 2.0) behind the `audio` module: HRTF, occlusion and transmission through walls and doors, reverb from traced paths, propagation around corners and through open doors, on worker threads over several frames.
+- Acoustic properties on materials, next to the visual ones; footsteps and impacts per surface.
+- Buses, snapshots and ducking on miniaudio's sound groups.
+- Dynamic music in layers driven by a tension value, stingers for scares; sources that follow a light's flicker.
+
+Completion criteria:
+
+- A source behind a closed door sounds muffled, and comes from the door once it opens.
+- The sound update stays within its CPU budget, measured.
+
+## Phase 13 — Gameplay Systems
+
+**Goal:** Give games the systems a horror game builds on: enemies that hunt, scripted scares, saves (ADR-0041).
 
 Deliverables may include:
 
-- Basic AI state machines.
-- AI perception and queries.
-- Navigation support where required.
-- Cinematic camera control.
-- Camera transitions.
-- Indoor spatial partitioning (planned).
-- Portal visibility where justified by measurements.
-- Scene-specific profiling.
+- Navigation meshes and pathfinding with Recast and Detour, with doors, vents and moving obstacles.
+- Perception: how lit the player is (from the radiance cache) and how much noise they make (from the sound system).
+- Behaviour trees or utility AI for stalking, searching, hiding and ambushing; AI state stays the game's.
+- Events and sequences: timelines of light, sound, camera and entity cues, started by triggers. A scripting language (Lua) only when content is authored by someone who does not write C++.
+- Cinematics: a sequencer for cutscenes and scares, camera paths, focus pulls and handheld shake.
+- Save and load: checkpoints and saves of the world's state (doors, items, triggers, AI).
+- Physics: picking up, dragging and throwing objects, leaning, ragdolls blended with animation, cloth through Jolt's soft bodies.
+- Animation: layered state machines, additive layers, foot and hand IK, look-at, morph targets, the player's own body in first person.
+- Portal visibility and scene-specific profiling, if measurements justify them.
 
 Completion criteria:
 
 - AI logic integrates cleanly with ECS.
-- Cinematic behavior can be driven by gameplay.
-- Indoor visibility improvements are validated against a baseline.
+- A scare can be authored without engine changes.
+- A saved game restores the world the player left.
 - Added complexity provides measurable or functional value.
 
-## Phase 11 — Linux Validation
+## Phase 14 — Linux Validation
 
 **Goal:** Validate the engine fully on Linux.
 
@@ -2001,21 +2066,22 @@ Completion criteria:
 - Platform-specific differences are contained in the platform layer.
 - No test is disabled on Linux without a documented reason.
 
-## Phase 12 — Editor and Production Readiness
+## Phase 15 — Content Pipeline and Production Readiness
 
 **Goal:** Make the engine practical for developing larger projects.
 
 Potential deliverables:
 
-- Scene editor.
-- Entity hierarchy panel.
-- Component inspection and editing.
-- Resource browser.
-- Scene serialization.
-- Improved asset pipeline.
-- Profiling and diagnostics.
+- The level editor grown by need: prefabs, painting wetness and decals on surfaces, a material editor with live preview, trigger editing.
+- Asset pipeline: mesh optimization (meshoptimizer), BC6H for HDR textures next to BC7 and BC5.
+- Level and texture streaming, when a level no longer fits in memory or in one load.
+- Accessibility: subtitles with speakers and sound captions, colorblind modes, toggles for motion blur, camera shake, film grain and chromatic aberration.
+- Localization of text and subtitles.
+- Input: full rebinding, gamepad rumble and trigger effects tied to tension.
+- Diegetic UI: the game's interface drawn into textures on screens, notes and watches.
+- Crash reports from the minidumps.
+- Photo mode: a free camera, the path tracer converging, physical camera and image controls, high-resolution and EXR capture. The game provides its menu and rules.
 - Packaging and deployment.
-- Cross-platform validation.
 - Documentation and sample projects.
 
 This phase is deliberately open-ended.
