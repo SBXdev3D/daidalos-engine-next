@@ -1,6 +1,6 @@
 # The demo
 
-The sandbox is becoming a remake of the demo of the legacy Daidalos engine: a first-person shooter in the spirit of Doom and Quake, set in a dark underground factory. It serves as the engine's test bench: each phase of the [roadmap](../OVERVIEW.md) must make it better, so nothing is built without a real use.
+The sandbox is becoming a remake of the demo of the legacy Daidalos engine: a first-person shooter in the spirit of Doom and Quake, set in a dark underground factory, with an oppressive horror atmosphere: darkness the flashlight barely holds back, failing lights, sounds behind closed doors (ADR-0041). It serves as the engine's test bench: each phase of the [roadmap](../OVERVIEW.md) must make it better, so nothing is built without a real use.
 
 ## The original
 
@@ -34,13 +34,18 @@ flowchart LR
 | 6: Physics, audio and animation | Walking with collisions, jumps, crouching, ladders and solid doors, sound, skinned zombies and turning fans, hitscan handgun and shotgun, zombies that hunt, wounds and death | Done |
 | 7: Modern rendering | Real lights replacing the fog, the flashlight's shadow, rotating alarms, normal maps, ambient occlusion, particles for smoke, blood and green fog | 7.1 to 7.4 done: lights, alarms, normal maps, shadows, ambient occlusion, particles |
 | 8: GUI | The game's own HUD, crosshair, menus and loading screen | Done: HUD and crosshair in every build; loading screen with the turning gear, main, pause and options menus, death and "factory cleared" screens; developer tools in development builds |
-| 9: AI, cinematics, optimization | Security camera, opening camera flight, better zombie navigation, culling | |
+| 9: Ray-traced rendering | Soft ray-traced shadows, the sky through the openings, moonlight and bounced light; then reflections, many lights, exposure and volumetric fog | 9.1 to 9.9 done |
+| 10: Level editor | The factory's lights and sky in a level file, new rooms built without code | |
+| 11: Materials, lights and atmosphere | Wet floors and puddles, decals of blood and grime, a better flashlight, flickering and dying lamps, film grain | |
+| 12: Sound | Doors that muffle sound, reverb that follows the rooms, music that follows the danger | |
+| 13: Gameplay systems | Security camera, opening camera flight, better zombie navigation, scripted scares, saves | |
 
-Zombies come earlier than the roadmap's AI phase, because a shooter with no one to shoot is not a demo. Their state machine belongs to the game, and Phase 10 only adds what they turn out to lack.
+Zombies come earlier than the roadmap's AI phase, because a shooter with no one to shoot is not a demo. Their state machine belongs to the game, and Phase 13 only adds what they turn out to lack.
 
 ## Where it should improve on the original
 
 - **Pace.** Faster movement, more enemies, ambushes when doors open: closer to Doom than to the original's slow zombies.
+- **Dread.** Between the fights, the factory should feel hostile: dark corridors, lights that flicker and die, wet floors, scares set up by the level.
 - **Feel.** Hit feedback, screen flash on damage, stronger recoil and sway.
 - **Structure.** The factory level has shotgun ammunition, but no shotgun to pick up. The remake has a shotgun next to the shells, and still needs a clear exit and an end-of-level summary of kills, items and time.
 - **Sound.** Spatial audio is done. Occlusion by doors can come later, with rays from the listener.

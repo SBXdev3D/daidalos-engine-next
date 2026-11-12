@@ -21,6 +21,8 @@
 > - One binding model: descriptor indexing. `VK_EXT_descriptor_heap` waits for KHR.
 > - Layered material lobes, IES profiles and area lights come when content needs them.
 > - Verified on one GPU only, an RTX 3090: 60 fps at 1080p.
+>
+> **Engine technical spec (2026-11-12, ADR-0041).** The owner's engine technical spec widens the target to a horror game. Physical light units, dynamic resolution, quality presets and persistent pipeline caches join Phase 9 (steps 9.10 to 9.15); layered materials, IES profiles and area lights get a phase of their own (Phase 11). NVIDIA's SDKs stay out.
 
 ---
 

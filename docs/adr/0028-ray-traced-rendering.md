@@ -1,6 +1,6 @@
 # ADR-0028: Ray-traced rendering
 
-- **Status:** Accepted, amended by ADR-0039 (a concrete denoiser instead of an `IDenoiser` interface) and ADR-0040 (32-bit cache keys)
+- **Status:** Accepted, amended by ADR-0039 (a concrete denoiser instead of an `IDenoiser` interface) ADR-0040 (32-bit cache keys) and ADR-0041 (the engine technical spec: steps 9.10 to 9.15)
 - **Date:** 2026-11-05
 
 ## Context
