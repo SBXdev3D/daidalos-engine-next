@@ -12,6 +12,7 @@
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
+#include <limits>
 #include <span>
 #include <string>
 
@@ -29,6 +30,17 @@ struct MaterialDesc {
     float alphaCutoff = 0.0f;
     /// Draws both sides of the triangles.
     bool doubleSided = false;
+    /// Glass (ADR-0042): the fraction of the light that goes through, tinted by the base color. Above zero,
+    /// the material is drawn by the glass pass, after everything opaque, and casts no shadow.
+    float transmission = 0.0f;
+    /// The index of refraction: how much light bends, and how much the glass reflects.
+    float ior = 1.5f;
+    /// Thin glass, such as a window, bends nothing. Thick glass is a closed mesh: light bends where it enters
+    /// and where it leaves, and is absorbed on the way.
+    bool thin = true;
+    /// Thick glass: the color white light takes after attenuationDistance meters inside it.
+    glm::vec3 attenuationColor{1.0f};
+    float attenuationDistance = std::numeric_limits<float>::infinity();
     rhi::TextureHandle baseColorTexture;
     rhi::TextureHandle metallicRoughnessTexture;
     rhi::TextureHandle normalTexture;

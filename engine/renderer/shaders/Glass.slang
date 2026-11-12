@@ -1,0 +1,199 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+
+// Glass (ADR-0042), drawn over the finished frame, which it reads as its background: the pre-pass and the
+// mesh pass leave glass out. A pixel of glass is what its surface reflects, as much as Fresnel says, plus
+// what goes through it, tinted by its base color:
+// - thin glass, such as a window, bends nothing: what goes through is the frame behind the pixel;
+// - thick glass is a closed mesh: a ray bends where it enters, crosses the glass to its far side, losing
+//   some of each color on the way (Beer-Lambert), bends again as it leaves, and finds what is there.
+// What a ray finds is read from the frame when it is on the screen and in view there; otherwise it is
+// shaded with its emission and the frame's lights, shadows included, but without indirect light: only where
+// it counts, since glass reflects little but at grazing angles. The lights of the pixel's cluster shine on
+// the glass itself, as on any surface, which makes highlights.
+// The glass tests the pre-pass's depth itself, since it reads it: it has no depth target.
+
+#include "MeshCommon.slangh"
+#include "RayQueries.slangh"
+import Bsdf;
+
+// How far, relative to its distance, the surface the frame shows at a point may be from it for the frame's
+// color to be the point's.
+static const float kScreenDepthTolerance = 0.03;
+// A reflection weaker than this is not worth lighting what it shows, out of view: only its emission counts.
+static const float kLitReflection = 0.1;
+// Sides a ray inside thick glass meets at most before it is given up, as black.
+static const uint kInsideBounces = 4;
+
+// Where a point is in the frame, and whether the frame shows it there.
+bool OnScreen(FrameData frame, float3 position, out int2 pixel) {
+    const float4 clip = mul(frame.viewProjection, float4(position, 1.0));
+    pixel = int2(0, 0);
+    if (clip.w <= frame.nearPlane) {
+        return false;
+    }
+    const float2 uv = ClipToUv(clip);
+    if (any(uv < 0.0) || any(uv >= 1.0)) {
+        return false;
+    }
+    pixel = int2(uv / frame.screenTexel);
+    const float shown = g_textures[frame.depthTexture].Load(int3(pixel, 0)).r;
+    return shown > 0.0 && abs(LinearDepth(frame, shown) - clip.w) < kScreenDepthTolerance * clip.w;
+}
+
+// The light of the frame's lights that a surface sends back towards view, with hard shadows.
+float3 DirectLight(FrameData frame, Surface surface, float3 view) {
+    float3 total = float3(0.0, 0.0, 0.0);
+    for (uint index = 0; index < frame.lightCount; ++index) {
+        const LightData light = LightAt(g_lights[frame.lightBuffer][index], surface.position);
+        const float3 offset = light.position - surface.position;
+        const float distanceToLight = length(offset);
+        if (distanceToLight >= light.range) {
+            continue;
+        }
+        const float3 toLight = offset / max(distanceToLight, 0.0001);
+        const float attenuation = Attenuation(light, distanceToLight, toLight);
+        if (attenuation <= 0.0 || dot(surface.faceNormal, toLight) <= 0.0) {
+            continue;
+        }
+        // A light's color is what a white surface facing it reflects (ADR-0022).
+        const float3 reflected = light.color * attenuation * kPi *
+                                 EvaluateBsdf(surface.normal, view, toLight, surface.diffuseColor, surface.f0, surface.roughness);
+        if (all(reflected <= 0.0) ||
+            !LightReaches(surface.position, surface.faceNormal, toLight, distanceToLight, light.range,
+                          frame.accelerationStructure, g_push.instanceBuffer, g_push.materialBuffer)) {
+            continue;
+        }
+        total += reflected;
+    }
+    return total;
+}
+
+// The light that comes back along a ray: what the frame shows where it hits, or the hit shaded (lit or not),
+// or the sky.
+float3 TraceLight(FrameData frame, RayDesc ray, bool lit) {
+    const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_push.instanceBuffer, g_push.materialBuffer);
+    if (!hit.found) {
+        return SkyRadiance(frame, ray.Direction);
+    }
+    const float3 position = ray.Origin + ray.Direction * hit.distance;
+    int2 pixel;
+    if (OnScreen(frame, position, pixel)) {
+        return g_textures[frame.backgroundTexture].Load(int3(pixel, 0)).rgb;
+    }
+    const Surface surface = ShadeHit(hit, ray.Direction, frame, g_push.instanceBuffer, g_push.materialBuffer);
+    return surface.emission + (lit ? DirectLight(frame, surface, -ray.Direction) : float3(0.0, 0.0, 0.0));
+}
+
+// The highlights of the lights of the pixel's cluster on a smooth surface, with their shadows.
+float3 Highlights(FrameData frame, float2 pixel, float3 position, float3 normal, float3 faceNormal, float3 view) {
+    float3 total = float3(0.0, 0.0, 0.0);
+    const uint2 cluster = g_clusters[frame.clusterBuffer][ClusterOf(frame, pixel, position)];
+    for (uint entry = 0; entry < cluster.y; ++entry) {
+        const LightData light =
+            LightAt(g_lights[frame.lightBuffer][g_clusterLights[frame.clusterLightBuffer][cluster.x + entry]], position);
+        const float3 offset = light.position - position;
+        const float distanceToLight = length(offset);
+        if (distanceToLight >= light.range) {
+            continue;
+        }
+        const float3 toLight = offset / max(distanceToLight, 0.0001);
+        // The smoothest surface the mesh pass shades, so that a light the size of a point still shows.
+        const float3 specular = light.color * Attenuation(light, distanceToLight, toLight) * kPi *
+                                EvaluateBsdfTerms(normal, view, toLight, float3(0.04, 0.04, 0.04), 0.045).specular;
+        if (all(specular <= 1e-4) || !LightReaches(position, faceNormal, toLight, distanceToLight, light.range,
+                                                   frame.accelerationStructure, g_push.instanceBuffer,
+                                                   g_push.materialBuffer)) {
+            continue;
+        }
+        total += specular;
+    }
+    return total;
+}
+
+// What reaches the eye through thick glass, entering at position along direction, already bent; or a
+// negative value if the glass has no far side, which makes it thin.
+float3 ThroughVolume(FrameData frame, MaterialData material, float3 position, float3 faceNormal, float3 direction) {
+    RayDesc ray;
+    ray.Origin = position - faceNormal * 1e-3;
+    ray.Direction = direction;
+    ray.TMin = 0.0;
+    ray.TMax = 1e6;
+    float3 absorbed = float3(1.0, 1.0, 1.0);
+    // Light that a side reflects back in, past the critical angle, goes round a few more times.
+    for (uint side = 0; side < kInsideBounces; ++side) {
+        const Hit exit = TraceClosest(ray, frame.accelerationStructure, g_push.instanceBuffer, g_push.materialBuffer, kMaskGlass);
+        if (!exit.found) {
+            return float3(-1.0, -1.0, -1.0);
+        }
+        absorbed *= exp(-material.absorption * exit.distance);
+        float3 outward = normalize(FaceNormal(g_instances[g_push.instanceBuffer][exit.instance], exit.primitive));
+        if (dot(outward, ray.Direction) < 0.0) {
+            outward = -outward;
+        }
+        const float3 exitPosition = ray.Origin + ray.Direction * exit.distance;
+        const float cosine = dot(ray.Direction, outward);
+        const float reflected = FresnelDielectric(cosine, material.ior);
+        if (reflected < 1.0) {
+            RayDesc leaving;
+            // From just inside: what touches the glass there, such as the floor under a block, is in front.
+            leaving.Origin = exitPosition - outward * 1e-3;
+            leaving.Direction = refract(ray.Direction, -outward, material.ior);
+            leaving.TMin = 0.0;
+            leaving.TMax = 1e6;
+            return absorbed * (1.0 - reflected) * TraceLight(frame, leaving, true);
+        }
+        // All of it is reflected back inside.
+        ray.Origin = exitPosition - outward * 1e-3;
+        ray.Direction = reflect(ray.Direction, outward);
+    }
+    return float3(0.0, 0.0, 0.0);
+}
+
+float4 PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target {
+    const FrameData frame = g_frames[g_push.frameBuffer][0];
+    // Behind what the pre-pass drew: hidden. Reverse-Z: nearer is larger.
+    const int2 pixel = int2(input.clipPosition.xy);
+    if (input.clipPosition.z < g_textures[frame.depthTexture].Load(int3(pixel, 0)).r) {
+        discard;
+    }
+    const MaterialData material = g_materials[g_push.materialBuffer][g_push.materialIndex];
+    const float4 baseColor = BaseColor(material, input.uv);
+    const float3 normal = SurfaceNormal(input, isFrontFace, material, frame.normalStrength);
+    const float3 toCamera = frame.cameraPosition - input.worldPosition;
+    const float cameraDistance = length(toCamera);
+    const float3 view = toCamera / max(cameraDistance, 0.0001);
+    // The face's own normal, towards the camera, from which rays start.
+    float3 faceNormal = normalize(cross(ddy(input.worldPosition), ddx(input.worldPosition)));
+    if (dot(faceNormal, view) < 0.0) {
+        faceNormal = -faceNormal;
+    }
+    const float cosine = saturate(dot(normal, view));
+    const float reflected = FresnelDielectric(cosine, 1.0 / material.ior);
+
+    RayDesc ray;
+    ray.Origin = OffsetOrigin(input.worldPosition, faceNormal);
+    ray.Direction = reflect(-view, normal);
+    if (dot(ray.Direction, faceNormal) <= 0.0) {
+        ray.Direction = reflect(ray.Direction, faceNormal);
+    }
+    ray.TMin = 0.0;
+    ray.TMax = 1e6;
+    const float3 reflection = TraceLight(frame, ray, reflected > kLitReflection) +
+                              Highlights(frame, input.clipPosition.xy, input.worldPosition, normal, faceNormal, view) /
+                                  max(reflected, 0.001);
+
+    const float3 behind = g_textures[frame.backgroundTexture].Load(int3(pixel, 0)).rgb;
+    float3 through = behind;
+    if (material.thin == 0) {
+        const float3 bent = refract(-view, normal, 1.0 / material.ior);
+        const float3 volume = ThroughVolume(frame, material, input.worldPosition, faceNormal, bent);
+        through = volume.r >= 0.0 ? volume : behind;
+    }
+    // The fog between the camera and the glass veils its reflection; what is behind the glass is fogged
+    // already, as the frame drew it.
+    const float visibility = exp(-frame.fogDensity * cameraDistance);
+    const float3 surface = reflected * lerp(frame.fogColor, reflection, visibility);
+    return float4(surface + (1.0 - reflected) * material.transmission * baseColor.rgb * through, 1.0);
+}

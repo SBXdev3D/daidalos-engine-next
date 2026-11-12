@@ -9,9 +9,12 @@
 #include <daidalos/math/Projection.hpp>
 #include <daidalos/rhi/Spirv.hpp>
 
+#include <glm/common.hpp>
+#include <glm/exponential.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <shaders/Composite.ps.spv.h>
 #include <shaders/Composite.vs.spv.h>
+#include <shaders/Glass.ps.spv.h>
 #include <shaders/Mesh.ps.spv.h>
 #include <shaders/Mesh.vs.spv.h>
 #include <shaders/Prepass.ps.spv.h>
@@ -92,8 +95,12 @@ struct FrameData {
     glm::vec2 jitter;
     glm::mat4 unjitteredViewProjection;
     glm::mat4 previousViewProjection;
+    std::uint32_t reflectionTexture;
+    std::uint32_t backgroundTexture;
+    std::uint32_t depthTexture;
+    std::uint32_t padding;
 };
-static_assert(sizeof(FrameData) == 368);
+static_assert(sizeof(FrameData) == 384);
 
 struct LightData {
     glm::vec3 position;
@@ -168,9 +175,22 @@ struct GpuMaterial {
     std::uint32_t normalTexture;
     std::uint32_t occlusionTexture;
     std::uint32_t emissiveTexture;
-    std::array<std::uint32_t, 3> padding;
+    float transmission;
+    float ior;
+    std::uint32_t thin;
+    /// Thick glass: the fraction of each color lost per meter, as an exponent: exp(-absorption * meters).
+    glm::vec3 absorption;
+    float padding;
 };
-static_assert(sizeof(GpuMaterial) == 80);
+static_assert(sizeof(GpuMaterial) == 96);
+
+/// The absorption coefficient of glass that gives white light this color after this distance.
+glm::vec3 Absorption(const glm::vec3& color, float distance) {
+    if (!(distance > 0.0f) || std::isinf(distance)) {
+        return glm::vec3(0.0f);
+    }
+    return -glm::log(glm::clamp(color, glm::vec3(1e-4f), glm::vec3(1.0f))) / distance;
+}
 
 constexpr std::uint32_t kNoTexture = 0xFFFFFFFF;
 constexpr std::uint32_t kInitialMaterialCapacity = 64;
@@ -269,6 +289,8 @@ void MeshPass::DestroyPipelines(Pipelines& pipelines) {
     m_device->DestroyPipeline(pipelines.prepassDoubleSided);
     m_device->DestroyPipeline(pipelines.mesh);
     m_device->DestroyPipeline(pipelines.meshDoubleSided);
+    m_device->DestroyPipeline(pipelines.glass);
+    m_device->DestroyPipeline(pipelines.glassDoubleSided);
     pipelines = {};
 }
 
@@ -286,6 +308,29 @@ core::Result<void> MeshPass::ReplaceShaders(std::span<const std::uint32_t> verte
             .and_then([&] { return build(built.prepassDoubleSided, prepassShader, rhi::CullMode::None, true); })
             .and_then([&] { return build(built.mesh, fragmentShader, rhi::CullMode::Back, false); })
             .and_then([&] { return build(built.meshDoubleSided, fragmentShader, rhi::CullMode::None, false); })
+            .and_then([&]() -> core::Result<void> {
+                // Glass tests the pre-pass's depth itself, which it also reads: no depth target (ADR-0042).
+                const std::vector<std::uint32_t> glassShader = rhi::ToSpirv(kGlassPsSpirv);
+                using resources::Vertex;
+                for (const auto& [pipeline, cull] : {std::pair{&built.glass, rhi::CullMode::Back},
+                                                     std::pair{&built.glassDoubleSided, rhi::CullMode::None}}) {
+                    DAI_TRY_ASSIGN(
+                        *pipeline,
+                        m_device->CreatePipeline(
+                            {.vertexShader = vertexShader,
+                             .fragmentShader = glassShader,
+                             .vertexStride = sizeof(Vertex),
+                             .vertexAttributes =
+                                 {{0, rhi::Format::Rgb32Float, static_cast<std::uint32_t>(offsetof(Vertex, position))},
+                                  {1, rhi::Format::Rgb32Float, static_cast<std::uint32_t>(offsetof(Vertex, normal))},
+                                  {2, rhi::Format::Rg32Float, static_cast<std::uint32_t>(offsetof(Vertex, uv))},
+                                  {3, rhi::Format::Rgba32Float, static_cast<std::uint32_t>(offsetof(Vertex, tangent))}},
+                             .colorFormat = m_colorFormat,
+                             .cull = cull,
+                             .name = "Glass"}));
+                }
+                return {};
+            })
             .and_then([&]() -> core::Result<void> {
                 // Behind everything: drawn at the far plane, where the depth is still the cleared one.
                 DAI_TRY_ASSIGN(built.sky, m_device->CreatePipeline(
@@ -441,10 +486,15 @@ core::Result<MaterialHandle> MeshPass::CreateMaterial(const MaterialDesc& desc) 
         .normalTexture = TextureIndex(desc.normalTexture),
         .occlusionTexture = TextureIndex(desc.occlusionTexture),
         .emissiveTexture = TextureIndex(desc.emissiveTexture),
-        .padding = {},
+        .transmission = std::clamp(desc.transmission, 0.0f, 1.0f),
+        .ior = std::max(desc.ior, 1.0f),
+        .thin = desc.thin ? 1U : 0U,
+        .absorption = Absorption(desc.attenuationColor, desc.attenuationDistance),
+        .padding = 0.0f,
     };
 
-    const MaterialHandle material = m_materials.Insert({desc.doubleSided, desc.alphaCutoff > 0.0f});
+    const MaterialHandle material =
+        m_materials.Insert({desc.doubleSided, desc.alphaCutoff > 0.0f, desc.transmission > 0.0f});
     if (core::Result<void> reserved = ReserveMaterialSlot(material.Index()); !reserved) {
         m_materials.Remove(material);
         return tl::unexpected(std::move(reserved.error()));
@@ -554,7 +604,11 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                           view.atmosphere.skyYaw,
                           jitter,
                           viewProjection,
-                          previousViewProjection};
+                          previousViewProjection,
+                          targets.reflections ? m_device->BindlessIndex(targets.reflections) : kNoTexture,
+                          targets.background ? m_device->BindlessIndex(targets.background) : kNoTexture,
+                          targets.depth ? m_device->BindlessIndex(targets.depth) : kNoTexture,
+                          0};
     std::memcpy(m_device->Mapped(slot.clusters).data(), m_clusters.ranges.data(),
                 m_clusters.ranges.size() * sizeof(glm::uvec2));
     if (!m_clusters.lightIndices.empty()) {
@@ -594,8 +648,10 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         const glm::vec3 center(draw.world * glm::vec4(glm::vec3(bounds), 1.0f));
         const bool visible =
             draw.firstJoint != kNoJoints || glm::distance(center, cameraPosition) - bounds.w * scale <= farPlane;
-        m_sorted.push_back({(doubleSided << 32U) | draw.mesh.Index(), draw.mesh, material, index, draw.castsShadows,
-                            visible, kNotSkinned});
+        const bool glass = m_materials.Get(material).glass;
+        // Glass casts no shadow: light goes through it (ADR-0042).
+        m_sorted.push_back({(doubleSided << 32U) | draw.mesh.Index(), draw.mesh, material, index,
+                            draw.castsShadows && !glass, visible, kNotSkinned, glass});
     }
     std::ranges::sort(m_sorted, {}, &SortedDraw::key);
 
@@ -653,6 +709,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         traced.opaque = !material.alphaTested;
         traced.doubleSided = material.doubleSided;
         traced.castsShadows = sorted.castsShadows;
+        traced.glass = sorted.glass;
         if (skinned) {
             traced.skinned = {.vertices = m_skinned,
                               .vertexOffset = std::uint64_t{sorted.firstSkinnedVertex} * sizeof(resources::Vertex),
@@ -666,7 +723,9 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     }
     m_counts = {.draws = static_cast<std::uint32_t>(view.draws.size()),
                 .lights = static_cast<std::uint32_t>(view.lights.size())};
+    m_hasGlass = false;
     for (const SortedDraw& sorted : m_sorted) {
+        m_hasGlass = m_hasGlass || (sorted.visible && sorted.glass);
         if (sorted.visible) {
             ++m_counts.drawnDraws;
             m_counts.triangles += m_meshes.Get(sorted.mesh).indexCount / 3;
@@ -729,12 +788,17 @@ void MeshPass::BindGeometry(rhi::CommandList& commands, const SortedDraw& draw, 
 
 void MeshPass::RecordPrepass(rhi::CommandList& commands) {
     DAI_PROFILE_SCOPE("renderer::MeshPass::RecordPrepass");
-    RecordDraws(commands, m_pipelines.prepass, m_pipelines.prepassDoubleSided);
+    RecordDraws(commands, m_pipelines.prepass, m_pipelines.prepassDoubleSided, false);
+}
+
+void MeshPass::RecordGlass(rhi::CommandList& commands) {
+    DAI_PROFILE_SCOPE("renderer::MeshPass::RecordGlass");
+    RecordDraws(commands, m_pipelines.glass, m_pipelines.glassDoubleSided, true);
 }
 
 void MeshPass::Record(rhi::CommandList& commands) {
     DAI_PROFILE_SCOPE("renderer::MeshPass::Record");
-    RecordDraws(commands, m_pipelines.mesh, m_pipelines.meshDoubleSided);
+    RecordDraws(commands, m_pipelines.mesh, m_pipelines.meshDoubleSided, false);
     if (m_prepared != nullptr && m_hasSky) {
         commands.BindPipeline(m_pipelines.sky);
         commands.Push(MeshPushConstants{.frameBuffer = m_device->StorageIndex(m_prepared->frame)});
@@ -819,7 +883,8 @@ std::uint32_t MeshPass::FrameDataIndex() const {
     return m_device->StorageIndex(m_prepared->frame);
 }
 
-void MeshPass::RecordDraws(rhi::CommandList& commands, rhi::PipelineHandle oneSided, rhi::PipelineHandle doubleSided) {
+void MeshPass::RecordDraws(rhi::CommandList& commands, rhi::PipelineHandle oneSided, rhi::PipelineHandle doubleSided,
+                           bool glass) {
     if (m_prepared == nullptr) {
         return;
     }
@@ -836,7 +901,7 @@ void MeshPass::RecordDraws(rhi::CommandList& commands, rhi::PipelineHandle oneSi
     MeshHandle boundIndices;
     for (std::uint32_t index = 0; index < m_sorted.size(); ++index) {
         const SortedDraw& draw = m_sorted[index];
-        if (!draw.visible) {
+        if (!draw.visible || draw.glass != glass) {
             continue;
         }
         const Mesh& mesh = m_meshes.Get(draw.mesh);

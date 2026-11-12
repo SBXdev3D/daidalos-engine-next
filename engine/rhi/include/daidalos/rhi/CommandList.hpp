@@ -138,6 +138,9 @@ public:
     /// Fills every mip level, laid out as for Device::UploadTexture. The texture must be in the
     /// TransferDst state.
     void CopyBufferToTexture(BufferHandle source, TextureHandle destination);
+    /// Copies the first mip level of every layer to a texture of the same size, format and layers. The source
+    /// must be in the TransferSrc state and the destination in the TransferDst state.
+    void CopyTexture(TextureHandle source, TextureHandle destination);
     /// The texture must be in the TransferSrc state. Pixels are tightly packed, row by row from the top.
     void CopyTextureToBuffer(TextureHandle source, BufferHandle destination, std::uint32_t mipLevel = 0);
 

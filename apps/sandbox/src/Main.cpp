@@ -6,6 +6,7 @@
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/platform/Platform.hpp>
 #include <daidalos/renderer/CornellBox.hpp>
+#include <daidalos/renderer/MirrorRoom.hpp>
 #include <daidalos/renderer/Primitives.hpp>
 
 #include <glm/gtc/quaternion.hpp>
@@ -181,7 +182,7 @@ private:
     void LoadLevel(app::Application& app, scene::Scene& target) {
         m_loading = true;
         m_loadingSeconds = 0.0f;
-        if (m_levelPath == kCornellBox) {
+        if (m_levelPath == kCornellBox || m_levelPath == kMirrorRoom) {
             OnLevelLoaded(app, target, core::MakeError(core::ErrorCode::NotFound, "sandbox", "Built in code"));
             return;
         }
@@ -303,7 +304,11 @@ private:
     core::Result<void> Build(app::Application& app, scene::Scene& target,
                              const core::Result<const scene::Model*>& model) {
         if (m_levelPath == kCornellBox) {
-            DAI_TRY(BuildCornellBox(app, target));
+            const renderer::CornellBox box = renderer::MakeCornellBox();
+            DAI_TRY(BuildTestRoom(app, target, box.parts, {&box.light, 1}, 2.75f));
+        } else if (m_levelPath == kMirrorRoom) {
+            const renderer::MirrorRoom room = renderer::MakeMirrorRoom();
+            DAI_TRY(BuildTestRoom(app, target, room.parts, room.lights, 3.0f));
         } else if (model) {
             core::Result<ecs::Entity> player = sandbox::BuildLevel(target, **model, m_levelPath);
             if (!player) {
@@ -328,7 +333,10 @@ private:
         float yaw = 0.0f;
         float pitch = 0.0f;
         // In front of the Cornell box's opening, unless told otherwise.
-        std::istringstream text(m_start.empty() && m_levelPath == kCornellBox ? std::string("0 1.5 9 0 0") : m_start);
+        std::istringstream text(!m_start.empty()             ? m_start
+                                : m_levelPath == kCornellBox ? std::string("0 1.5 9 0 0")
+                                : m_levelPath == kMirrorRoom ? std::string("0.6 1.6 6 0 -5")
+                                                             : m_start);
         if (!(text >> position.x >> position.y >> position.z >> yaw >> pitch)) {
             return;
         }
@@ -361,12 +369,15 @@ private:
         return {};
     }
 
-    /// The Cornell box (renderer::MakeCornellBox), the test scene of the path tracer: sandbox.scene cornell.
-    static core::Result<void> BuildCornellBox(app::Application& app, scene::Scene& target) {
-        const renderer::CornellBox box = renderer::MakeCornellBox();
-        DAI_TRY_ASSIGN(renderer::MeshHandle cube, app.Renderer().CreateMesh(renderer::MakeCube(), "Cornell box"));
+    /// A test room built of cubes: the Cornell box (renderer::MakeCornellBox), the test scene of the path
+    /// tracer, with sandbox.scene cornell, or the mirror room (renderer::MakeMirrorRoom), of reflections and
+    /// glass, with sandbox.scene mirrors. Its floor spans x and z from -half to half, and goes on in front.
+    static core::Result<void> BuildTestRoom(app::Application& app, scene::Scene& target,
+                                            std::span<const renderer::CornellPart> parts,
+                                            std::span<const renderer::Light> lights, float half) {
+        DAI_TRY_ASSIGN(renderer::MeshHandle cube, app.Renderer().CreateMesh(renderer::MakeCube(), "Test room"));
         ecs::World& world = target.World();
-        for (const renderer::CornellPart& part : box.parts) {
+        for (const renderer::CornellPart& part : parts) {
             DAI_TRY_ASSIGN(renderer::MaterialHandle material, app.Renderer().CreateMaterial(part.material));
             const ecs::Entity entity = world.Create();
             ecs::LocalTransform transform;
@@ -376,17 +387,18 @@ private:
             world.Add<ecs::LocalTransform>(entity, transform);
             world.Add<scene::MeshRenderer>(entity, cube, material);
         }
-        const ecs::Entity light = world.Create();
-        ecs::LocalTransform lightTransform;
-        lightTransform.translation = box.light.position;
-        world.Add<ecs::LocalTransform>(light, lightTransform);
-        world.Add<scene::Light>(light, scene::Light{.type = box.light.type,
-                                                    .color = box.light.color,
-                                                    .range = box.light.range,
-                                                    .falloff = box.light.falloff});
+        for (const renderer::Light& lamp : lights) {
+            const ecs::Entity light = world.Create();
+            ecs::LocalTransform lightTransform;
+            lightTransform.translation = lamp.position;
+            world.Add<ecs::LocalTransform>(light, lightTransform);
+            world.Add<scene::Light>(
+                light,
+                scene::Light{.type = lamp.type, .color = lamp.color, .range = lamp.range, .falloff = lamp.falloff});
+        }
         // Something to stand on, inside the room and in front of it.
-        const std::array<glm::vec3, 4> corners{glm::vec3(-2.75f, 0.0f, -2.75f), glm::vec3(-2.75f, 0.0f, 12.0f),
-                                               glm::vec3(2.75f, 0.0f, 12.0f), glm::vec3(2.75f, 0.0f, -2.75f)};
+        const std::array<glm::vec3, 4> corners{glm::vec3(-half, 0.0f, -half), glm::vec3(-half, 0.0f, 12.0f),
+                                               glm::vec3(half, 0.0f, 12.0f), glm::vec3(half, 0.0f, -half)};
         const std::array<std::uint32_t, 6> triangles{0, 1, 2, 0, 2, 3};
         DAI_TRY(target.Physics().AddStaticMesh(corners, triangles));
         DAI_TRY(sandbox::BuildLevel(target, scene::Model{}, ""));
@@ -482,6 +494,8 @@ private:
     std::string m_levelPath;
     /// The value of sandbox.scene that builds the Cornell box instead of loading a level.
     static constexpr std::string_view kCornellBox = "cornell";
+    /// The value of sandbox.scene that builds the mirror room.
+    static constexpr std::string_view kMirrorRoom = "mirrors";
     sandbox::Settings m_settings;
     std::string m_start;
     std::unique_ptr<scene::Scene> m_nextScene;

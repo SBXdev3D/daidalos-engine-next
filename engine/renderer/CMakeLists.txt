@@ -1,6 +1,7 @@
 dai_add_module(NAME renderer
     SOURCES
         include/daidalos/renderer/CornellBox.hpp
+        include/daidalos/renderer/MirrorRoom.hpp
         include/daidalos/renderer/Material.hpp
         include/daidalos/renderer/Particles.hpp
         include/daidalos/renderer/Primitives.hpp
@@ -12,6 +13,7 @@ dai_add_module(NAME renderer
         src/Canvas.cpp
         src/Context.cpp
         src/CornellBox.cpp
+        src/MirrorRoom.cpp
         src/Denoiser.cpp
         src/Denoiser.hpp
         src/GlobalIllumination.cpp
@@ -46,10 +48,10 @@ dai_add_module(NAME renderer
 dai_add_shaders(TARGET daidalos_renderer
     SOURCES shaders/Mesh.slang shaders/Prepass.slang
         shaders/Tonemap.slang shaders/ParticleDraw.slang shaders/Ui.slang shaders/RayDebug.slang shaders/Sky.slang
-        shaders/MotionDebug.slang shaders/Composite.slang
+        shaders/MotionDebug.slang shaders/Composite.slang shaders/Glass.slang
     COMPUTE shaders/PathTracer.slang shaders/Skinning.slang shaders/TemporalResolve.slang shaders/ParticleEmit.slang shaders/ParticleSimulate.slang
         shaders/ParticleFinish.slang shaders/ParticleSort.slang shaders/DenoiseTemporal.slang shaders/DenoiseSpatial.slang
-        shaders/GiUpdate.slang shaders/GiResolve.slang shaders/GiTrace.slang
+        shaders/GiUpdate.slang shaders/GiResolve.slang shaders/GiTrace.slang shaders/GiReflect.slang
     INCLUDES shaders/Bsdf.slang shaders/RayQueries.slangh shaders/GlobalIllumination.slangh shaders/MeshCommon.slangh shaders/MeshTypes.slangh shaders/Particles.slangh
         shaders/Denoiser.slangh)
 

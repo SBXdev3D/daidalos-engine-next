@@ -12,8 +12,13 @@
 [[vk::binding(2, 0)]] StructuredBuffer<uint> g_indices[];
 [[vk::binding(3, 0)]] RaytracingAccelerationStructure g_accelerationStructures[];
 
-// Matches kMaskShadowCasters in renderer/src/RayTracingScene.hpp.
+// Match the masks in renderer/src/RayTracingScene.hpp.
 static const uint kMaskShadowCasters = 0x01;
+static const uint kMaskOthers = 0x02;
+static const uint kMaskGlass = 0x04;
+// What rays see, but for glass: only the glass pass and the path tracer see it (ADR-0042).
+static const uint kMaskSurfaces = kMaskShadowCasters | kMaskOthers;
+static const uint kMaskAll = 0xFF;
 // Nothing this close to a light shadows it: a lamp's own shade, around the light, would darken it.
 static const float kShadowNearPlane = 0.1;
 
@@ -85,9 +90,9 @@ struct Hit {
     float distance;
 };
 
-Hit TraceClosest(RayDesc ray, uint structure, uint instanceBuffer, uint materialBuffer) {
+Hit TraceClosest(RayDesc ray, uint structure, uint instanceBuffer, uint materialBuffer, uint mask = kMaskSurfaces) {
     RayQuery<RAY_FLAG_NONE> query;
-    query.TraceRayInline(g_accelerationStructures[structure], RAY_FLAG_NONE, 0xFF, ray);
+    query.TraceRayInline(g_accelerationStructures[structure], RAY_FLAG_NONE, mask, ray);
     while (query.Proceed()) {
         if (query.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
             PassesAlphaTest(instanceBuffer, materialBuffer, query.CandidateInstanceID(), query.CandidatePrimitiveIndex(),
@@ -128,6 +133,13 @@ struct Surface {
     float3 f0;
     float roughness;
     float3 emission;
+    // Glass (ADR-0042): transmission above zero. The ray hit the face its normal points out of.
+    float transmission;
+    float ior;
+    bool thin;
+    float3 absorption;
+    float3 tint; // The base color, which tints the light that goes through.
+    bool entering;
 };
 
 Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame, uint instanceBuffer, uint materialBuffer) {
@@ -140,7 +152,8 @@ Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame, uint instanceBuf
     surface.faceNormal = normalize(FaceNormal(instance, hit.primitive));
     float3 normal = normalize(TransformNormal(instance.world, vertex.normal));
     float4 tangent = float4(mul((float3x3)instance.world, vertex.tangent.xyz), vertex.tangent.w);
-    if (dot(surface.faceNormal, rayDirection) > 0.0) {
+    surface.entering = dot(surface.faceNormal, rayDirection) <= 0.0;
+    if (!surface.entering) {
         surface.faceNormal = -surface.faceNormal;
         normal = -normal;
         tangent.w = -tangent.w;
@@ -163,6 +176,11 @@ Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame, uint instanceBuf
     surface.diffuseColor = baseColor.rgb * (1.0 - metallic);
     surface.f0 = lerp(float3(0.04, 0.04, 0.04), baseColor.rgb, metallic);
     surface.emission = material.emissiveFactor * SampleLevelZero(material.emissiveTexture, vertex.uv, float4(1.0, 1.0, 1.0, 1.0)).rgb;
+    surface.transmission = material.transmission;
+    surface.ior = material.ior;
+    surface.thin = material.thin != 0;
+    surface.absorption = material.absorption;
+    surface.tint = baseColor.rgb;
     return surface;
 }
 

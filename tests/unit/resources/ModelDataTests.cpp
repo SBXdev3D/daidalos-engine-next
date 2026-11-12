@@ -59,6 +59,27 @@ TEST(LoadModelFile, ReadsTheMaterialWithAllItsValues) {
     EXPECT_EQ(model->primitives[0].material, 0U);
 }
 
+TEST(LoadModelFile, MaterialsWithoutGlassExtensionsAreOpaque) {
+    const core::Result<ModelData> model = resources::LoadModelFile(kAssets / "quad.gltf");
+    ASSERT_TRUE(model.has_value());
+    const resources::MaterialData& material = model->materials[0];
+    EXPECT_FLOAT_EQ(material.transmission, 0.0f);
+    EXPECT_FLOAT_EQ(material.ior, 1.5f);
+    EXPECT_FLOAT_EQ(material.thickness, 0.0f);
+}
+
+TEST(LoadModelFile, ReadsGlassFromTheTransmissionIorAndVolumeExtensions) {
+    const core::Result<ModelData> model = resources::LoadModelFile(kAssets / "glass.gltf");
+    ASSERT_TRUE(model.has_value()) << core::Format(model.error());
+    const resources::MaterialData& material = model->materials[0];
+    EXPECT_EQ(material.name, "Glass");
+    EXPECT_FLOAT_EQ(material.transmission, 0.8f);
+    EXPECT_FLOAT_EQ(material.ior, 1.45f);
+    EXPECT_FLOAT_EQ(material.thickness, 0.02f);
+    EXPECT_EQ(material.attenuationColor, glm::vec3(0.5f, 0.75f, 1.0f));
+    EXPECT_FLOAT_EQ(material.attenuationDistance, 0.3f);
+}
+
 TEST(LoadModelFile, ImagesAreNotDecodedButLocated) {
     const core::Result<ModelData> model = resources::LoadModelFile(kAssets / "quad.gltf");
     ASSERT_TRUE(model.has_value());

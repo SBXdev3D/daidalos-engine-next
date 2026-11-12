@@ -45,3 +45,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0039](0039-denoiser-and-soft-shadows.md) | An own spatiotemporal denoiser of the lights' diffuse and specular light; lights with a radius and soft shadows | Accepted |
 | [0040](0040-diffuse-global-illumination.md) | Diffuse global illumination from an own radiance cache, replacing ambient light and SSAO; directional lights and the moon | Accepted |
 | [0041](0041-engine-technical-spec.md) | The engine technical spec: what joins the roadmap (physical units, presets, a level editor, materials and atmosphere, sound), what changes, what stays out | Accepted |
+| [0042](0042-reflections-and-glass.md) | Ray-traced reflections along each pixel's specular lobe, followed by the denoiser; glass drawn over the frame | Accepted |

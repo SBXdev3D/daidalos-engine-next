@@ -28,6 +28,9 @@ struct DenoiserInputs {
     rhi::TextureHandle normals;
     /// The pre-pass's motion vectors.
     rhi::TextureHandle motion;
+    /// The reflections, whose hit distance in alpha moves the specular history of smooth surfaces with the
+    /// reflected point (GlobalIllumination::Reflections, ADR-0042). Null: it moves with the surface.
+    rhi::TextureHandle reflections;
 };
 
 /// The engine's own spatiotemporal denoiser (ADR-0039): it filters the diffuse and the specular light of

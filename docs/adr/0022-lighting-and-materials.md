@@ -1,6 +1,6 @@
 # ADR-0022: Lighting and materials
 
-- **Status:** Accepted
+- **Status:** Accepted; its ambient light replaced by ADR-0040, and the specular term of that light by ADR-0042
 - **Date:** 2026-11-03
 
 ## Context

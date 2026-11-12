@@ -4,10 +4,12 @@
 
 #include <daidalos/renderer/CornellBox.hpp>
 #include <daidalos/renderer/Material.hpp>
+#include <daidalos/renderer/MirrorRoom.hpp>
 #include <daidalos/renderer/Primitives.hpp>
 
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/geometric.hpp>
+#include <glm/gtc/packing.hpp>
 
 #include <FLIP.h>
 
@@ -17,6 +19,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -149,6 +152,12 @@ protected:
         renderer::GlobalIllumination* indirect = nullptr;
         /// Frames drawn first and left out of the average, while the cache fills.
         std::uint32_t warmup = 0;
+        /// With indirect: reflections traced along each pixel's specular lobe (ADR-0042).
+        bool reflections = false;
+        /// With reflections: the denoiser follows them with their hit distance.
+        bool reprojectReflections = true;
+        /// Changes the view before each frame is drawn, warmup included.
+        std::function<void(SceneView&, std::uint32_t)> animate;
     };
 
     // What the mesh pass draws of the view, in linear HDR. The view is drawn frames times, each with the
@@ -174,6 +183,11 @@ protected:
             created(MeshPass::kNormalFormat, rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled, "Normals");
         const rhi::TextureHandle motion =
             created(MeshPass::kMotionFormat, rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled, "Motion");
+        const rhi::TextureHandle background =
+            created(kColorFormat, rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDst, "Behind glass");
+        const rhi::TextureHandle reflections =
+            indirect != nullptr && options.reflections ? indirect->Reflections() : rhi::TextureHandle{};
+        SceneView animated = view;
         core::Result<renderer::ShadingTargets> shading = m_pass->CreateShadingTargets(extent);
         EXPECT_TRUE(shading.has_value());
         std::optional<renderer::Denoiser> denoiser;
@@ -185,17 +199,23 @@ protected:
         Image image(std::size_t{extent.width} * extent.height, glm::vec4(0.0f));
         for (std::uint32_t drawn = 0; drawn < options.warmup + frames; ++drawn) {
             const std::uint32_t frame = m_frameIndex++;
+            if (options.animate) {
+                options.animate(animated, drawn);
+            }
             EXPECT_TRUE(
                 Device()
                     .Submit([&](rhi::CommandList& commands) {
-                        const core::Result<std::uint32_t> structure = m_scene->Reserve(0, view.draws.size());
+                        const core::Result<std::uint32_t> structure = m_scene->Reserve(0, animated.draws.size());
                         ASSERT_TRUE(structure.has_value());
                         ASSERT_TRUE(m_pass
-                                        ->Prepare(view, {.extent = extent,
-                                                         .indirect = indirect != nullptr ? indirect->Output()
-                                                                                         : rhi::TextureHandle{},
-                                                         .accelerationStructure = *structure,
-                                                         .frameIndex = frame})
+                                        ->Prepare(animated, {.extent = extent,
+                                                             .indirect = indirect != nullptr ? indirect->Output()
+                                                                                             : rhi::TextureHandle{},
+                                                             .accelerationStructure = *structure,
+                                                             .frameIndex = frame,
+                                                             .reflections = reflections,
+                                                             .background = background,
+                                                             .depth = depth})
                                         .has_value());
                         ASSERT_TRUE(m_scene->Prepare(m_pass->TracedDraws()).has_value());
                         renderer::RenderGraph graph;
@@ -215,21 +235,26 @@ protected:
                                                     .structure = m_scene->Structure(),
                                                     .depth = depth,
                                                     .normals = normals,
-                                                    .frameIndex = frame});
+                                                    .frameIndex = frame,
+                                                    .reflections = options.reflections});
                         }
                         graph.AddPass({.name = "Meshes",
                                        .rendering = MeshPass::ShadingRendering(*shading, depth, glm::vec4(0.0f)),
                                        .textures = {{indirect != nullptr ? indirect->Output() : rhi::TextureHandle{},
-                                                     rhi::Access::FragmentShaderRead}},
+                                                     rhi::Access::FragmentShaderRead},
+                                                    {reflections, rhi::Access::FragmentShaderRead}},
                                        .structures = {{m_scene->Structure(), rhi::Access::RayQueryRead}}},
                                       [&](rhi::CommandList& list) { m_pass->Record(list); });
                         if (denoiser.has_value()) {
-                            denoiser->AddTo(graph, {.frameBuffer = m_pass->FrameDataIndex(),
-                                                    .diffuse = shading->diffuse,
-                                                    .specular = shading->specular,
-                                                    .depth = depth,
-                                                    .normals = normals,
-                                                    .motion = motion});
+                            denoiser->AddTo(
+                                graph,
+                                {.frameBuffer = m_pass->FrameDataIndex(),
+                                 .diffuse = shading->diffuse,
+                                 .specular = shading->specular,
+                                 .depth = depth,
+                                 .normals = normals,
+                                 .motion = motion,
+                                 .reflections = options.reprojectReflections ? reflections : rhi::TextureHandle{}});
                         }
                         m_pass->AddComposite(
                             graph, color,
@@ -237,6 +262,19 @@ protected:
                              .diffuse = denoiser.has_value() ? denoiser->Diffuse() : shading->diffuse,
                              .specular = denoiser.has_value() ? denoiser->Specular() : shading->specular,
                              .depth = depth});
+                        if (m_pass->HasGlass()) {
+                            graph.AddPass({.name = "Behind glass",
+                                           .textures = {{color, rhi::Access::TransferRead},
+                                                        {background, rhi::Access::TransferWrite, true}}},
+                                          [&](rhi::CommandList& list) { list.CopyTexture(color, background); });
+                            graph.AddPass({.name = "Glass",
+                                           .rendering = rhi::RenderingDesc{.colorTarget = color},
+                                           .textures = {{color, rhi::Access::ColorTarget},
+                                                        {background, rhi::Access::FragmentShaderRead},
+                                                        {depth, rhi::Access::FragmentShaderRead}},
+                                           .structures = {{m_scene->Structure(), rhi::Access::RayQueryRead}}},
+                                          [&](rhi::CommandList& list) { m_pass->RecordGlass(list); });
+                        }
                         graph.Execute(commands);
                     })
                     .has_value());
@@ -255,6 +293,7 @@ protected:
         Device().DestroyTexture(depth);
         Device().DestroyTexture(normals);
         Device().DestroyTexture(motion);
+        Device().DestroyTexture(background);
         return image;
     }
 
@@ -688,4 +727,195 @@ TEST_F(PathTracerTest, IndirectLightFollowsALightTurnedOff) {
     RecordProperty("remaining", std::to_string(after / lit));
     // Measured on an RTX 3090: 0.045.
     EXPECT_LT(after, 0.08 * lit);
+}
+
+namespace {
+
+// The mirror room (ADR-0042), as a view: its parts, its lights and its camera; with or without its glass.
+SceneView MirrorRoomView(const renderer::MirrorRoom& room, renderer::MeshHandle cube,
+                         const std::function<renderer::MaterialHandle(const MaterialDesc&)>& material, bool glass) {
+    SceneView view;
+    view.camera = LookAt(room.eye, room.target, room.verticalFov);
+    view.atmosphere = Dark();
+    view.lights = room.lights;
+    for (const renderer::CornellPart& part : room.parts) {
+        if (glass || part.material.transmission <= 0.0f) {
+            view.draws.push_back({.mesh = cube, .world = part.world, .material = material(part.material)});
+        }
+    }
+    return view;
+}
+
+// Copies a half-float texture of extent back to the CPU, as floats. It must be TransferSrc already.
+Image ReadHalf(rhi::Device& device, rhi::TextureHandle texture, rhi::Extent extent) {
+    const std::size_t count = std::size_t{extent.width} * extent.height;
+    const core::Result<rhi::BufferHandle> readback = device.CreateBuffer({.size = count * 4 * sizeof(std::uint16_t),
+                                                                          .usage = rhi::BufferUsage::TransferDst,
+                                                                          .memory = rhi::MemoryLocation::GpuToCpu,
+                                                                          .name = "Readback"});
+    EXPECT_TRUE(readback.has_value());
+    EXPECT_TRUE(device
+                    .Submit([&](rhi::CommandList& commands) {
+                        commands.Transition(texture, rhi::TextureState::TransferSrc);
+                        commands.CopyTextureToBuffer(texture, *readback);
+                    })
+                    .has_value());
+    std::vector<std::uint16_t> halves(count * 4);
+    std::memcpy(halves.data(), device.Mapped(*readback).data(), halves.size() * sizeof(std::uint16_t));
+    device.DestroyBuffer(*readback);
+    Image image(count);
+    for (std::size_t index = 0; index < count; ++index) {
+        for (int channel = 0; channel < 4; ++channel) {
+            image[index][channel] = glm::unpackHalf1x16(halves[index * 4 + channel]);
+        }
+    }
+    return image;
+}
+
+} // namespace
+
+TEST_F(PathTracerTest, ReflectionsMatchThePathTracerInTheMirrorRoom) {
+    // The mirror room without its glass: a mirror, a polished floor and a gold block, whose reflections the
+    // path tracer follows through eight surfaces. The mesh pass adds the reflections of global illumination
+    // (ADR-0042); without them, the indirect light stands in for what the specular lobe reflects, and the
+    // mirror shows a flat grey.
+    const renderer::MirrorRoom room = renderer::MakeMirrorRoom();
+    const SceneView view =
+        MirrorRoomView(room, m_cube, [this](const MaterialDesc& desc) { return Material(desc); }, false);
+    constexpr rhi::Extent kExtent{128, 96};
+    const Image traced = Trace(view, kExtent, {.maxBounces = 8, .seed = 19, .jitter = false}, 512);
+    core::Result<renderer::GlobalIllumination> created = renderer::GlobalIllumination::Create(Device());
+    ASSERT_TRUE(created.has_value()) << core::Format(created.error());
+    renderer::GlobalIllumination& indirect = *created;
+    const Image reflected =
+        Rasterize(view, kExtent, {.frames = 128, .indirect = &indirect, .warmup = 64, .reflections = true});
+    const Image denoised =
+        Rasterize(view, kExtent, {.frames = 32, .denoise = true, .indirect = &indirect, .reflections = true});
+    const Image unreflected = Rasterize(view, kExtent, {.frames = 128, .indirect = &indirect, .warmup = 64});
+
+    const float reflectedFlip = Flip(traced, reflected, kExtent);
+    const float denoisedFlip = Flip(traced, denoised, kExtent);
+    const float unreflectedFlip = Flip(traced, unreflected, kExtent);
+    RecordProperty("flipAveraged", std::to_string(reflectedFlip));
+    RecordProperty("flip", std::to_string(denoisedFlip));
+    RecordProperty("flipWithoutReflections", std::to_string(unreflectedFlip));
+    // Measured on an RTX 3090: 0.183 averaged, 0.192 denoised, 0.269 without reflections. What remains is
+    // mostly the indirect light's, as in the Cornell box.
+    EXPECT_LT(reflectedFlip, 0.21f);
+    EXPECT_LT(denoisedFlip, 0.22f);
+    EXPECT_LT(reflectedFlip, 0.8f * unreflectedFlip);
+}
+
+TEST_F(PathTracerTest, GlassMatchesThePathTracerInTheMirrorRoom) {
+    // The whole mirror room, with its window pane and its block of thick glass, drawn by the glass pass over
+    // the frame (ADR-0042), against the same room without its glass.
+    const renderer::MirrorRoom room = renderer::MakeMirrorRoom();
+    const auto material = [this](const MaterialDesc& desc) { return Material(desc); };
+    const SceneView view = MirrorRoomView(room, m_cube, material, true);
+    const SceneView withoutGlass = MirrorRoomView(room, m_cube, material, false);
+    constexpr rhi::Extent kExtent{128, 96};
+    const Image traced = Trace(view, kExtent, {.maxBounces = 8, .seed = 23, .jitter = false}, 512);
+    core::Result<renderer::GlobalIllumination> created = renderer::GlobalIllumination::Create(Device());
+    ASSERT_TRUE(created.has_value()) << core::Format(created.error());
+    renderer::GlobalIllumination& indirect = *created;
+    const Image glass =
+        Rasterize(view, kExtent, {.frames = 128, .indirect = &indirect, .warmup = 64, .reflections = true});
+    const Image bare =
+        Rasterize(withoutGlass, kExtent, {.frames = 128, .indirect = &indirect, .warmup = 64, .reflections = true});
+
+    const float glassFlip = Flip(traced, glass, kExtent);
+    const float bareFlip = Flip(traced, bare, kExtent);
+    RecordProperty("flip", std::to_string(glassFlip));
+    RecordProperty("flipWithoutGlass", std::to_string(bareFlip));
+    // Measured on an RTX 3090: 0.187, and 0.198 without the glass, which covers a small part of the image.
+    EXPECT_LT(glassFlip, 0.21f);
+    EXPECT_LT(glassFlip, bareFlip);
+}
+
+TEST_F(PathTracerTest, ReflectionsKnowHowFarWhatTheyReflectIs) {
+    // A camera a meter above a mirror floor looks 45 degrees down, at a wall 4 m away: the center's
+    // reflection rises at 45 degrees, and meets the wall after 3 * sqrt(2) m. The denoiser follows a
+    // reflection with that distance (ADR-0042). A rough floor, beyond renderer.reflection_roughness, traces
+    // no ray: its distance is 0, and the indirect light stands in for its reflection.
+    MaterialDesc mirror;
+    mirror.metallicFactor = 1.0f;
+    mirror.roughnessFactor = 0.0f;
+    MaterialDesc matte;
+    matte.metallicFactor = 0.0f;
+    const glm::mat4 floor = glm::scale(glm::translate(glm::mat4(1.0f), {0.0f, -0.05f, 0.0f}), {20.0f, 0.1f, 20.0f});
+    const glm::mat4 wall = glm::scale(glm::translate(glm::mat4(1.0f), {0.0f, 0.0f, -4.05f}), {20.0f, 20.0f, 0.1f});
+    SceneView view;
+    view.atmosphere = Dark();
+    view.camera = LookAt({0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, glm::radians(30.0f));
+    view.lights.push_back({.position = {0.0f, 3.0f, -2.0f}, .range = 20.0f});
+    view.draws.push_back({.mesh = m_cube, .world = floor, .material = Material(mirror)});
+    view.draws.push_back({.mesh = m_cube, .world = wall, .material = Material(matte)});
+    core::Result<renderer::GlobalIllumination> created = renderer::GlobalIllumination::Create(Device());
+    ASSERT_TRUE(created.has_value()) << core::Format(created.error());
+    renderer::GlobalIllumination& indirect = *created;
+    constexpr rhi::Extent kExtent{32, 32};
+    const auto centerDistance = [&] {
+        const Image reflections = ReadHalf(Device(), indirect.Reflections(), kExtent);
+        return reflections[(kExtent.height / 2) * kExtent.width + kExtent.width / 2].a;
+    };
+    Rasterize(view, kExtent, {.indirect = &indirect, .reflections = true});
+    const float distance = centerDistance();
+    RecordProperty("distance", std::to_string(distance));
+    // Measured on an RTX 3090: 4.27, the pixel's center a little off the image's.
+    EXPECT_NEAR(distance, 3.0f * std::sqrt(2.0f), 0.15f);
+
+    MaterialDesc rough = mirror;
+    rough.roughnessFactor = 0.9f;
+    view.draws[0].material = Material(rough);
+    Rasterize(view, kExtent, {.indirect = &indirect, .reflections = true});
+    EXPECT_EQ(centerDistance(), 0.0f);
+}
+
+TEST_F(PathTracerTest, DenoisedReflectionsFollowTheReflectedPoint) {
+    // A camera slides sideways over a polished floor that reflects a bright panel, through the denoiser. A
+    // reflection's history moved with the floor smears the panel's reflection along the way; moved with the
+    // reflected point, from the reflections' hit distance (ADR-0042), it stays where the path tracer puts it.
+    MaterialDesc floorMaterial;
+    floorMaterial.baseColorFactor = glm::vec4(0.2f, 0.2f, 0.2f, 1.0f);
+    floorMaterial.metallicFactor = 1.0f;
+    floorMaterial.roughnessFactor = 0.08f;
+    MaterialDesc panelMaterial;
+    panelMaterial.metallicFactor = 0.0f;
+    panelMaterial.baseColorFactor = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+    panelMaterial.emissiveFactor = glm::vec3(4.0f);
+    const glm::mat4 floor = glm::scale(glm::translate(glm::mat4(1.0f), {0.0f, -0.05f, 0.0f}), {20.0f, 0.1f, 20.0f});
+    const glm::mat4 panel = glm::scale(glm::translate(glm::mat4(1.0f), {0.0f, 1.5f, -5.0f}), {1.0f, 3.0f, 0.1f});
+    SceneView view;
+    view.atmosphere = Dark();
+    view.draws.push_back({.mesh = m_cube, .world = floor, .material = Material(floorMaterial)});
+    view.draws.push_back({.mesh = m_cube, .world = panel, .material = Material(panelMaterial)});
+    const auto cameraAt = [](std::uint32_t frame) {
+        const glm::vec3 eye(-1.0f + 0.03f * static_cast<float>(frame), 1.0f, 0.0f);
+        return LookAt(eye, eye + glm::vec3(0.0f, -0.6f, -1.0f), glm::radians(50.0f));
+    };
+    constexpr std::uint32_t kFrames = 48;
+    view.camera = cameraAt(kFrames - 1);
+    constexpr rhi::Extent kExtent{96, 64};
+    const Image traced = Trace(view, kExtent, {.maxBounces = 4, .seed = 29, .jitter = false}, 256);
+    const auto slide = [&](SceneView& moving, std::uint32_t frame) { moving.camera = cameraAt(frame); };
+    core::Result<renderer::GlobalIllumination> created = renderer::GlobalIllumination::Create(Device());
+    ASSERT_TRUE(created.has_value()) << core::Format(created.error());
+    renderer::GlobalIllumination& indirect = *created;
+    const Image followed =
+        Rasterize(view, kExtent,
+                  {.frames = kFrames, .denoise = true, .indirect = &indirect, .reflections = true, .animate = slide});
+    const Image smeared = Rasterize(view, kExtent,
+                                    {.frames = kFrames,
+                                     .denoise = true,
+                                     .indirect = &indirect,
+                                     .reflections = true,
+                                     .reprojectReflections = false,
+                                     .animate = slide});
+    const float followedFlip = Flip(traced, followed, kExtent);
+    const float smearedFlip = Flip(traced, smeared, kExtent);
+    RecordProperty("flip", std::to_string(followedFlip));
+    RecordProperty("flipMovedWithTheSurface", std::to_string(smearedFlip));
+    // Measured on an RTX 3090: 0.186, and 0.399 moved with the floor.
+    EXPECT_LT(followedFlip, 0.25f);
+    EXPECT_LT(followedFlip, 0.6f * smearedFlip);
 }

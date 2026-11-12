@@ -85,6 +85,7 @@ struct Renderer::Impl {
         device.DestroyTexture(depth);
         device.DestroyTexture(normals);
         device.DestroyTexture(hdr);
+        device.DestroyTexture(background);
     }
 
     /// The targets follow the size of the back buffer.
@@ -114,6 +115,8 @@ struct Renderer::Impl {
     /// Bursts and emissions of the last view drawn, for FrameStats.
     std::uint32_t particleSpawns = 0;
     bool indirectLight = true;
+    bool reflections = true;
+    float reflectionRoughness = 0.6f;
     /// The last frame went through global illumination: its cache still follows the scene.
     bool illuminated = false;
     Antialiasing antialiasing = Antialiasing::Taa;
@@ -130,6 +133,8 @@ struct Renderer::Impl {
     /// What the mesh pass shades into, which the composite puts together into hdr (ADR-0039).
     ShadingTargets shading;
     rhi::TextureHandle hdr;
+    /// A copy of hdr before glass, which the glass pass reads (ADR-0042).
+    rhi::TextureHandle background;
     rhi::TextureHandle depth;
     /// World normals of the pre-pass.
     rhi::TextureHandle normals;
@@ -160,12 +165,14 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
     device.DestroyTexture(motion);
     device.DestroyTexture(reactive);
     device.DestroyTexture(hdr);
+    device.DestroyTexture(background);
     meshPass->DestroyShadingTargets(shading);
     depth = {};
     normals = {};
     motion = {};
     reactive = {};
     hdr = {};
+    background = {};
     DAI_TRY(temporalResolve->Resize(extent));
     DAI_TRY(denoiser->Resize(extent));
     DAI_TRY_ASSIGN(shading, meshPass->CreateShadingTargets(extent));
@@ -188,8 +195,14 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
                                                 .name = "Depth"}));
     DAI_TRY_ASSIGN(hdr, device.CreateTexture({.extent = extent,
                                               .format = kHdrFormat,
-                                              .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
+                                              .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled |
+                                                       rhi::TextureUsage::TransferSrc,
                                               .name = "HDR color"}));
+    DAI_TRY_ASSIGN(background,
+                   device.CreateTexture({.extent = extent,
+                                         .format = kHdrFormat,
+                                         .usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDst,
+                                         .name = "Behind glass"}));
     targetExtent = extent;
     return {};
 }
@@ -292,6 +305,8 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     DAI_TRY_ASSIGN(Denoiser denoiser, Denoiser::Create(impl->device));
     impl->denoiser.emplace(std::move(denoiser));
     impl->denoise = config.denoiser;
+    impl->reflections = config.reflections;
+    impl->reflectionRoughness = config.reflectionRoughness;
     impl->meshPass->SetNormalStrength(config.normalStrength);
     impl->meshPass->SetFieldOfView(config.fieldOfView);
     impl->meshPass->SetViewDistance(config.viewDistance);
@@ -349,6 +364,14 @@ void Renderer::SetIndirectLight(bool enabled) {
 
 void Renderer::SetDenoiser(bool enabled) {
     m_impl->denoise = enabled;
+}
+
+void Renderer::SetReflections(bool enabled) {
+    m_impl->reflections = enabled;
+}
+
+void Renderer::SetReflectionRoughness(float roughness) {
+    m_impl->reflectionRoughness = roughness;
 }
 
 void Renderer::SetFieldOfView(float radians) {
@@ -418,9 +441,13 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     const bool taa = impl.antialiasing == Antialiasing::Taa && impl.debugView == DebugView::Off;
     RenderGraph& graph = impl.graph;
     const bool cacheView = impl.debugView == DebugView::RadianceCache;
-    const bool indirectView = impl.debugView == DebugView::Indirect || cacheView;
+    const bool reflectionView = impl.debugView == DebugView::Reflections;
+    const bool indirectView = impl.debugView == DebugView::Indirect || cacheView || reflectionView;
     const bool indirectLight = impl.indirectLight || indirectView;
     const rhi::TextureHandle indirect = indirectLight ? impl.globalIllumination->Output() : rhi::TextureHandle{};
+    // Reflections come with indirect light: rough surfaces fall back on it, and smooth ones read its cache.
+    const bool reflect = indirectLight && (impl.reflections || reflectionView) && !cacheView;
+    const rhi::TextureHandle reflections = reflect ? impl.globalIllumination->Reflections() : rhi::TextureHandle{};
     const std::uint32_t frameIndex = impl.frameIndex++;
     if (status) {
         status = impl.rayTracing->Reserve(frame.slot, view.draws.size()).and_then([&](std::uint32_t structure) {
@@ -428,7 +455,10 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                                  .indirect = indirect,
                                                  .accelerationStructure = structure,
                                                  .jitter = taa ? Jitter(impl.frameNumber) : glm::vec2(0.0f),
-                                                 .frameIndex = frameIndex});
+                                                 .frameIndex = frameIndex,
+                                                 .reflections = reflections,
+                                                 .background = impl.background,
+                                                 .depth = impl.depth});
         });
         impl.particleSpawns = static_cast<std::uint32_t>(view.particleSpawns.size());
     }
@@ -468,7 +498,9 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                         .skinnedVertices = impl.meshPass->SkinnedVertices(),
                                         .depth = impl.depth,
                                         .normals = impl.normals,
-                                        .frameIndex = frameIndex},
+                                        .frameIndex = frameIndex,
+                                        .reflections = reflect,
+                                        .reflectionRoughness = impl.reflectionRoughness},
                                        cacheView ? GlobalIllumination::Mode::Cache
                                                  : GlobalIllumination::Mode::Indirect);
     }
@@ -481,7 +513,8 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         graph.AddPass({.name = "Meshes",
                        .rendering = MeshPass::ShadingRendering(impl.shading, impl.depth,
                                                                glm::vec4(view.atmosphere.fogColor, 1.0f)),
-                       .textures = {{illuminate ? indirect : rhi::TextureHandle{}, rhi::Access::FragmentShaderRead}},
+                       .textures = {{illuminate ? indirect : rhi::TextureHandle{}, rhi::Access::FragmentShaderRead},
+                                    {illuminate ? reflections : rhi::TextureHandle{}, rhi::Access::FragmentShaderRead}},
                        // Shadow rays: the frame's structure, and the vertices of the skinned draws they test for alpha.
                        .buffers = {skinnedVertices, {skinnedVertices.buffer, rhi::Access::FragmentShaderRead}},
                        .structures = {{hasFrame ? impl.rayTracing->Structure() : rhi::AccelerationStructureHandle{},
@@ -500,7 +533,8 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                      .specular = impl.shading.specular,
                                      .depth = impl.depth,
                                      .normals = impl.normals,
-                                     .motion = impl.motion});
+                                     .motion = impl.motion,
+                                     .reflections = illuminate ? reflections : rhi::TextureHandle{}});
     }
     impl.denoised = denoise;
     if (status && hasFrame) {
@@ -514,6 +548,23 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         const glm::mat4 cameraWorld = glm::inverse(view.camera->view);
         impl.particlePass->AddDraw(graph, impl.meshPass->FrameDataIndex(), impl.depth, impl.hdr, impl.reactive,
                                    glm::vec3(cameraWorld[0]), glm::vec3(cameraWorld[1]));
+    }
+    // Glass, over everything else, which it reads from a copy of the frame (ADR-0042).
+    if (status && hasFrame && impl.meshPass->HasGlass()) {
+        graph.AddPass(
+            {.name = "Behind glass",
+             .group = "Glass",
+             .textures = {{impl.hdr, rhi::Access::TransferRead}, {impl.background, rhi::Access::TransferWrite, true}}},
+            [&impl](rhi::CommandList& commands) { commands.CopyTexture(impl.hdr, impl.background); });
+        graph.AddPass({.name = "Glass",
+                       .group = "Glass",
+                       .rendering = rhi::RenderingDesc{.colorTarget = impl.hdr},
+                       .textures = {{impl.hdr, rhi::Access::ColorTarget},
+                                    {impl.background, rhi::Access::FragmentShaderRead},
+                                    {impl.depth, rhi::Access::FragmentShaderRead}},
+                       .buffers = {skinnedVertices, {skinnedVertices.buffer, rhi::Access::FragmentShaderRead}},
+                       .structures = {{impl.rayTracing->Structure(), rhi::Access::RayQueryRead}}},
+                      [&impl](rhi::CommandList& commands) { impl.meshPass->RecordGlass(commands); });
     }
     // After everything the frame draws in HDR. A frame that does not follow the last one resolved starts
     // the history over.
@@ -575,11 +626,12 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
 
     if (status) {
         // Without a camera, the mesh pass only cleared its base to the fog's color.
-        const rhi::TextureHandle source = path                         ? impl.pathTracer->Output()
-                                          : illuminate && indirectView ? impl.globalIllumination->Output()
-                                          : resolve                    ? impl.temporalResolve->Output()
-                                          : hasFrame                   ? impl.hdr
-                                                                       : impl.shading.base;
+        const rhi::TextureHandle source = path                           ? impl.pathTracer->Output()
+                                          : illuminate && reflectionView ? impl.globalIllumination->Reflections()
+                                          : illuminate && indirectView   ? impl.globalIllumination->Output()
+                                          : resolve                      ? impl.temporalResolve->Output()
+                                          : hasFrame                     ? impl.hdr
+                                                                         : impl.shading.base;
 
         graph.AddPass({.name = "Tonemap",
                        .rendering = rhi::RenderingDesc{.colorTarget = frame.backBuffer},

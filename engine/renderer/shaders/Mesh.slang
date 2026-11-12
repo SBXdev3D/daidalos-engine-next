@@ -7,8 +7,9 @@
 // cluster (ADR-0008). Every light casts shadows: a ray towards a random point of the light says whether
 // it reaches the pixel, which makes the shadows of lights with a radius soft, and noisy (ADR-0035,
 // ADR-0039).
-// The indirect light comes from the global illumination pass, one ray per pixel (ADR-0040): noisy too. Until
-// reflections are ray traced, it also lights the specular albedo, as if every direction sent the same light.
+// The indirect light comes from the global illumination pass, one ray per pixel (ADR-0040): noisy too. The
+// specular lobe reflects what its own ray found (ADR-0042); without reflections, the indirect light stands in
+// for it, as if every direction sent the same light.
 // The pass writes the light apart from the emission, diffuse and specular, without the colors of the
 // surface, for the denoiser; the composite pass puts them back together and adds the fog.
 
@@ -73,10 +74,14 @@ ShadingOutput PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) {
     float3 specularLight = float3(0.0, 0.0, 0.0);
     bool stochastic = false;
     // Indirect light, which the material's occlusion darkens: direct light has its shadows.
+    const int3 texel = int3(int2(input.clipPosition.xy), 0);
     if (frame.indirectTexture != kNoTexture) {
-        const float3 indirect = g_textures[frame.indirectTexture].Load(int3(int2(input.clipPosition.xy), 0)).rgb * occlusion;
+        const float3 indirect = g_textures[frame.indirectTexture].Load(texel).rgb * occlusion;
         diffuseLight += indirect;
-        specularLight += indirect * specularAlbedo;
+        specularLight += (frame.reflectionTexture != kNoTexture
+                              ? g_textures[frame.reflectionTexture].Load(texel).rgb * occlusion
+                              : indirect) *
+                         specularAlbedo;
         stochastic = true;
     }
     // The face's own normal, towards the camera, from which shadow rays start.

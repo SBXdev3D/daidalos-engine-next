@@ -185,6 +185,20 @@ def main():
     broken["nodes"][1]["children"] = [0]
     save("cycle.gltf", broken)
     save("skinned.gltf", skinned_gltf())
+    # A quad of tinted thick glass (ADR-0042).
+    glass = quad_gltf()
+    glass["materials"][0] = {
+        "name": "Glass",
+        "pbrMetallicRoughness": {"baseColorFactor": [0.9, 1, 0.95, 1], "metallicFactor": 0, "roughnessFactor": 0},
+        "extensions": {
+            "KHR_materials_transmission": {"transmissionFactor": 0.8},
+            "KHR_materials_ior": {"ior": 1.45},
+            "KHR_materials_volume": {"thicknessFactor": 0.02, "attenuationColor": [0.5, 0.75, 1],
+                                     "attenuationDistance": 0.3},
+        },
+    }
+    glass["extensionsUsed"] = ["KHR_materials_transmission", "KHR_materials_ior", "KHR_materials_volume"]
+    save("glass.gltf", glass)
     (HERE / "broken.gltf").write_text("{ this is not JSON\n", encoding="utf-8")
 
 

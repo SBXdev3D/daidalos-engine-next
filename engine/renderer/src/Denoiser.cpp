@@ -36,6 +36,7 @@ struct TemporalPushConstants {
     std::uint32_t historyDiffuse;
     std::uint32_t historySpecular;
     std::uint32_t reset;
+    std::uint32_t reflections;
     std::uint32_t width;
     std::uint32_t height;
 };
@@ -56,6 +57,7 @@ struct SpatialPushConstants {
 };
 
 constexpr std::uint32_t kGroupSize = 8;
+constexpr std::uint32_t kNoTexture = 0xFFFFFFFF;
 constexpr rhi::Format kFormat = rhi::Format::Rgba16Float;
 
 } // namespace
@@ -158,6 +160,7 @@ void Denoiser::AddTo(RenderGraph& graph, const DenoiserInputs& inputs) {
                                          storage(m_diffuse.history[m_current]),
                                          storage(m_specular.history[m_current]),
                                          m_hasHistory ? 0U : 1U,
+                                         inputs.reflections ? sampled(inputs.reflections) : kNoTexture,
                                          m_extent.width,
                                          m_extent.height};
     PassDesc accumulation{.name = "Denoiser temporal accumulation",
@@ -170,7 +173,8 @@ void Denoiser::AddTo(RenderGraph& graph, const DenoiserInputs& inputs) {
                                        {inputs.specular, rhi::Access::ComputeShaderRead},
                                        {inputs.depth, rhi::Access::ComputeShaderRead},
                                        {inputs.normals, rhi::Access::ComputeShaderRead},
-                                       {inputs.motion, rhi::Access::ComputeShaderRead}}};
+                                       {inputs.motion, rhi::Access::ComputeShaderRead},
+                                       {inputs.reflections, rhi::Access::ComputeShaderRead}}};
     // Without history, the shader does not read it: it may never have been written.
     if (m_hasHistory) {
         for (const rhi::TextureHandle texture :
