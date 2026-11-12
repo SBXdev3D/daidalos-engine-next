@@ -41,6 +41,8 @@ enum class DebugView {
     Indirect,
     /// The light the radiance cache holds at each pixel's surface (ADR-0040): its cells show.
     RadianceCache,
+    /// The light each pixel's specular lobe reflects, as its ray found it, before the denoiser (ADR-0042).
+    Reflections,
 };
 
 struct RendererConfig {
@@ -60,6 +62,11 @@ struct RendererConfig {
     /// Filters the noise of soft shadows and indirect light (ADR-0039). Off shows the light as the rays
     /// found it.
     bool denoiser = true;
+    /// Reflections traced along each pixel's specular lobe (ADR-0042), with indirect light. Off, the indirect
+    /// diffuse light stands in for them.
+    bool reflections = true;
+    /// Surfaces rougher than this trace no reflection, from 0 (none do) to 1 (all do).
+    float reflectionRoughness = 0.6f;
     /// Radians across the view, for cameras that set no field of view of their own.
     float fieldOfView = glm::radians(90.0f);
     /// Meters: farther, nothing is drawn or lit.
@@ -132,6 +139,8 @@ public:
     void SetNormalStrength(float strength);
     void SetIndirectLight(bool enabled);
     void SetDenoiser(bool enabled);
+    void SetReflections(bool enabled);
+    void SetReflectionRoughness(float roughness);
     /// From the next frame; see RendererConfig.
     void SetFieldOfView(float radians);
     void SetViewDistance(float meters);

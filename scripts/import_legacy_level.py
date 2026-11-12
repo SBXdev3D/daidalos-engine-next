@@ -91,6 +91,15 @@ NO_NORMAL_MAP = {"black.png", "white.png", "default.png"}
 # Every legacy brush used the "default" material of Materials/default.mtl, with a Blinn-Phong shininess
 # Ns of 100. Its GGX equivalent: alpha = sqrt(2 / (Ns + 2)), and the glTF roughness is sqrt(alpha).
 LEGACY_ROUGHNESS = round(math.sqrt(math.sqrt(2.0 / (100.0 + 2.0))), 3)
+# Textures of bare metal, which the legacy material could not tell apart, and their metalness and
+# roughness: lockers, the lift, pipes and gratings reflect their surroundings (ADR-0042).
+METALS = {
+    "lockers_d.png": (0.8, 0.3),
+    "lift_d.png": (0.8, 0.35),
+    "pipe_floor_d.png": (0.9, 0.3),
+    "grid_1d.png": (0.7, 0.45),
+    "grid_2d.png": (0.7, 0.45),
+}
 
 # Entities the legacy level lacks, in the engine's meters. The legacy game had a shotgun in its code and
 # shotgun shells in this level, but nothing to pick the shotgun up from: it lies next to the shells.
@@ -615,9 +624,10 @@ class GltfWriter:
     def material(self, texture):
         if texture in self.materials:
             return self.materials[texture]
+        metallic, roughness = METALS.get(texture, (0.0, LEGACY_ROUGHNESS))
         material = {"name": texture, "pbrMetallicRoughness": {
             "baseColorTexture": {"index": self.texture(texture)},
-            "metallicFactor": 0.0, "roughnessFactor": LEGACY_ROUGHNESS}}
+            "metallicFactor": metallic, "roughnessFactor": roughness}}
         if texture in NORMAL_MAPS:
             material["normalTexture"] = {"index": self.texture(NORMAL_MAPS[texture])}
         if texture in ALPHA_TESTED_TEXTURES:

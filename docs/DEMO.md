@@ -34,7 +34,7 @@ flowchart LR
 | 6: Physics, audio and animation | Walking with collisions, jumps, crouching, ladders and solid doors, sound, skinned zombies and turning fans, hitscan handgun and shotgun, zombies that hunt, wounds and death | Done |
 | 7: Modern rendering | Real lights replacing the fog, the flashlight's shadow, rotating alarms, normal maps, ambient occlusion, particles for smoke, blood and green fog | 7.1 to 7.4 done: lights, alarms, normal maps, shadows, ambient occlusion, particles |
 | 8: GUI | The game's own HUD, crosshair, menus and loading screen | Done: HUD and crosshair in every build; loading screen with the turning gear, main, pause and options menus, death and "factory cleared" screens; developer tools in development builds |
-| 9: Ray-traced rendering | Soft ray-traced shadows, the sky through the openings, moonlight and bounced light; then reflections, many lights, exposure and volumetric fog | 9.1 to 9.9 done |
+| 9: Ray-traced rendering | Soft ray-traced shadows, the sky through the openings, moonlight and bounced light, reflections in metal and polished floors, glass over the shaft where a zombie patrols; then many lights, exposure and volumetric fog | 9.1 to 9.10 done |
 | 10: Level editor | The factory's lights and sky in a level file, new rooms built without code | |
 | 11: Materials, lights and atmosphere | Wet floors and puddles, decals of blood and grime, a better flashlight, flickering and dying lamps, film grain | |
 | 12: Sound | Doors that muffle sound, reverb that follows the rooms, music that follows the danger | |

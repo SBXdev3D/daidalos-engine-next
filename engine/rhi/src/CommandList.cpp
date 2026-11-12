@@ -420,6 +420,22 @@ void CommandList::CopyBufferToTexture(BufferHandle source, TextureHandle destina
                            regions.data());
 }
 
+void CommandList::CopyTexture(TextureHandle source, TextureHandle destination) {
+    Device::Impl& device = *m_recording->device;
+    const TextureData& from = device.textures.Get(source);
+    const TextureData& to = device.textures.Get(destination);
+    DAI_ASSERT(CurrentAccess(from.access) == Access::TransferRead, "The source must be in the TransferSrc state");
+    DAI_ASSERT(CurrentAccess(to.access) == Access::TransferWrite, "The destination must be in the TransferDst state");
+    DAI_ASSERT(from.extent == to.extent && from.format == to.format && from.layers == to.layers,
+               "A copy needs two textures of the same size, format and layers");
+    const VkImageSubresourceLayers layers{
+        .aspectMask = AspectOf(from.format), .mipLevel = 0, .baseArrayLayer = 0, .layerCount = from.layers};
+    const VkImageCopy region{
+        .srcSubresource = layers, .dstSubresource = layers, .extent = {from.extent.width, from.extent.height, 1}};
+    vkCmdCopyImage(m_recording->commands, from.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, to.image,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+}
+
 void CommandList::CopyTextureToBuffer(TextureHandle source, BufferHandle destination, std::uint32_t mipLevel) {
     Device::Impl& device = *m_recording->device;
     const TextureData& texture = device.textures.Get(source);

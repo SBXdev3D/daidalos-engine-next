@@ -33,6 +33,8 @@ struct GiPushConstants {
     uint mode;    // The trace pass: 0 for the indirect light, 1 shows the cache at each pixel's surface.
     uint spacing; // The update pass: pixels between paths, across and down.
     uint reset;   // The resolve pass: 1 empties the cache.
+    uint reflections;   // Storage image: the light each pixel's specular lobe reflects (ADR-0042).
+    float maxRoughness; // Rougher surfaces trace no reflection ray: the indirect light stands in for it.
 };
 
 [[vk::push_constant]] GiPushConstants g_gi;
@@ -267,6 +269,29 @@ float3 DirectDiffuseLight(Surface surface, FrameData frame, inout uint random) {
         return float3(0.0, 0.0, 0.0);
     }
     return chosenLight / chosenWeight * (weightSum / float(kCandidates)) * float(frame.lightCount);
+}
+
+// The surface behind a pixel of the pre-pass, in world space.
+float3 PositionAt(FrameData frame, int2 pixel) {
+    const int2 clamped = clamp(pixel, int2(0, 0), int2(g_gi.width, g_gi.height) - 1);
+    const float depth = g_textures[g_gi.depth].Load(int3(clamped, 0)).r;
+    return WorldPosition(frame, (float2(clamped) + 0.5) * frame.screenTexel, depth);
+}
+
+// The surface's own orientation, from the positions of the neighbours on the side closest in depth, so as
+// not to take it across an edge; towards the camera.
+float3 FaceNormalAt(FrameData frame, int2 pixel, float3 position) {
+    const float3 left = PositionAt(frame, pixel - int2(1, 0));
+    const float3 right = PositionAt(frame, pixel + int2(1, 0));
+    const float3 up = PositionAt(frame, pixel - int2(0, 1));
+    const float3 down = PositionAt(frame, pixel + int2(0, 1));
+    const float3 across = distance(left, position) < distance(right, position) ? position - left : right - position;
+    const float3 along = distance(up, position) < distance(down, position) ? position - up : down - position;
+    float3 normal = normalize(cross(along, across));
+    if (dot(normal, frame.cameraPosition - position) < 0.0) {
+        normal = -normal;
+    }
+    return normal;
 }
 
 #endif

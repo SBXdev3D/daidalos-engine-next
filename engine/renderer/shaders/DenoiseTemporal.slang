@@ -8,6 +8,9 @@
 // luminance, or, while there are too few frames, from its neighbours (Schied et al., "Spatiotemporal
 // Variance-Guided Filtering", 2017). The average it writes is the next frame's history, unfiltered, so
 // that the spatial filter never blurs it twice.
+// A reflection does not move with its surface: on smooth surfaces, the specular history is found where the
+// reflected point was, the point as far behind the surface as what it reflects is in front of it, from the
+// reflections' hit distance (ADR-0042).
 
 #define DAI_NO_MESH_PUSH_CONSTANTS
 #include "MeshTypes.slangh"
@@ -29,6 +32,7 @@ struct TemporalPushConstants {
     uint historyDiffuse; // The averaged light, and the variance of the average.
     uint historySpecular;
     uint reset;    // 1 when there is no history.
+    uint reflections; // The reflections, with their hit distance in alpha, or kNoTexture.
     // Two numbers rather than a uint2, which would be aligned to 8 bytes.
     uint width;
     uint height;
@@ -44,6 +48,10 @@ static const float kMomentsWeight = 0.2;
 static const float kDepthTolerance = 0.05;
 // The cosine of the largest angle between last frame's normal and this one.
 static const float kNormalTolerance = 0.9;
+// Below this roughness, a reflection moves wholly with the reflected point; from the second, with the
+// surface; in between, partly with each.
+static const float kVirtualRoughness = 0.1;
+static const float kSurfaceRoughness = 0.4;
 
 float4 Load(uint texture, int2 pixel) {
     return g_textures[texture].Load(int3(pixel, 0));
@@ -54,6 +62,53 @@ float4 LumaMoments(float3 diffuse, float3 specular) {
     const float specularLuminance = Luminance(specular);
     return float4(diffuseLuminance, diffuseLuminance * diffuseLuminance, specularLuminance,
                   specularLuminance * specularLuminance);
+}
+
+// Last frame's light around previousUv, from the four pixels around it that show the same surface: about as
+// far from the camera as this one, then or now, and facing the same way. Returns the weight found.
+struct History {
+    float3 diffuse;
+    float3 specular;
+    float4 moments;
+    float frames;
+    float weight;
+};
+
+History FindHistory(float2 previousUv, float2 extent, float expectedDepth, float linearDepth, float3 normal) {
+    History history;
+    history.diffuse = 0.0;
+    history.specular = 0.0;
+    history.moments = 0.0;
+    history.frames = 0.0;
+    history.weight = 0.0;
+    if (g_temporal.reset != 0 || any(previousUv < 0.0) || any(previousUv > 1.0)) {
+        return history;
+    }
+    const int2 size = int2(extent);
+    const float2 texel = previousUv * extent - 0.5;
+    const int2 corner = int2(floor(texel));
+    const float2 f = texel - float2(corner);
+    for (int tap = 0; tap < 4; ++tap) {
+        const int2 offset = int2(tap & 1, tap >> 1);
+        const int2 previous = corner + offset;
+        if (any(previous < 0) || any(previous >= size)) {
+            continue;
+        }
+        const float4 guide = Load(g_temporal.previousGuides, previous);
+        const float depthError = min(abs(guide.x - expectedDepth), abs(guide.x - linearDepth));
+        if (guide.x <= 0.0 || depthError > kDepthTolerance * linearDepth ||
+            dot(DecodeNormal(guide.yz), normal) < kNormalTolerance) {
+            continue;
+        }
+        const float2 bilinear = lerp(1.0 - f, f, float2(offset));
+        const float weight = bilinear.x * bilinear.y;
+        history.diffuse += Load(g_temporal.previousDiffuse, previous).rgb * weight;
+        history.specular += Load(g_temporal.previousSpecular, previous).rgb * weight;
+        history.moments += Load(g_temporal.previousMoments, previous) * weight;
+        history.frames += guide.w * weight;
+        history.weight += weight;
+    }
+    return history;
 }
 
 float2 Variance(float4 moments) {
@@ -81,7 +136,8 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     const float2 uv = (float2(pixel) + 0.5) / extent;
     const float3 position = WorldPosition(frame, uv, depth);
     const float linearDepth = LinearDepth(frame, depth);
-    const float3 normal = LoadNormalRoughness(g_temporal.normals, pixel).xyz;
+    const float4 normalRoughness = LoadNormalRoughness(g_temporal.normals, pixel);
+    const float3 normal = normalRoughness.xyz;
     const float4 diffuse = Load(g_temporal.diffuse, pixel);
     const float3 specular = Load(g_temporal.specular, pixel).rgb;
     // Shadow rays aimed at random points of a light: the light may be noisy.
@@ -116,39 +172,28 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         }
     }
 
-    // Last frame's surface, from the four pixels around where this one was, each kept if it is the same
-    // surface: about as far from the camera as this one, then or now, and facing the same way.
-    float3 historyDiffuse = 0.0;
-    float3 historySpecular = 0.0;
-    float4 historyMoments = 0.0;
-    float historyFrames = 0.0;
-    float historyWeight = 0.0;
+    // Last frame's surface, where the motion vectors say this one was.
     const float2 previousUv = uv + Load(g_temporal.motion, pixel).xy;
-    if (g_temporal.reset == 0 && all(previousUv >= 0.0) && all(previousUv <= 1.0)) {
-        const float expectedDepth = mul(frame.previousViewProjection, float4(position, 1.0)).w;
-        const float2 texel = previousUv * extent - 0.5;
-        const int2 corner = int2(floor(texel));
-        const float2 f = texel - float2(corner);
-        for (int tap = 0; tap < 4; ++tap) {
-            const int2 offset = int2(tap & 1, tap >> 1);
-            const int2 previous = corner + offset;
-            if (any(previous < 0) || any(previous >= int2(size))) {
-                continue;
-            }
-            const float4 guide = Load(g_temporal.previousGuides, previous);
-            const float depthError = min(abs(guide.x - expectedDepth), abs(guide.x - linearDepth));
-            if (guide.x <= 0.0 || depthError > kDepthTolerance * linearDepth ||
-                dot(DecodeNormal(guide.yz), normal) < kNormalTolerance) {
-                continue;
-            }
-            const float2 bilinear = lerp(1.0 - f, f, float2(offset));
-            const float weight = bilinear.x * bilinear.y;
-            historyDiffuse += Load(g_temporal.previousDiffuse, previous).rgb * weight;
-            historySpecular += Load(g_temporal.previousSpecular, previous).rgb * weight;
-            historyMoments += Load(g_temporal.previousMoments, previous) * weight;
-            historyFrames += guide.w * weight;
-            historyWeight += weight;
-        }
+    const float expectedDepth = mul(frame.previousViewProjection, float4(position, 1.0)).w;
+    const History history = FindHistory(previousUv, extent, expectedDepth, linearDepth, normal);
+    float3 historyDiffuse = history.diffuse;
+    float3 historySpecular = history.specular;
+    float4 historyMoments = history.moments;
+    float historyFrames = history.frames;
+    float historyWeight = history.weight;
+    // On a smooth surface, the reflection's history is where the reflected point was.
+    const float hitDistance = g_temporal.reflections != kNoTexture ? Load(g_temporal.reflections, pixel).a : 0.0;
+    const float virtualShare =
+        hitDistance > 0.0 ? saturate((kSurfaceRoughness - normalRoughness.a) / (kSurfaceRoughness - kVirtualRoughness)) : 0.0;
+    // A small share moves the history by less than a pixel: not worth a second search.
+    if (virtualShare > 0.25 && historyWeight > 0.01) {
+        const float3 reflected = position + normalize(position - frame.cameraPosition) * hitDistance;
+        const float2 virtualUv = ClipToUv(mul(frame.previousViewProjection, float4(reflected, 1.0)));
+        const float2 specularUv = lerp(previousUv, virtualUv, virtualShare);
+        const History virtualHistory = FindHistory(specularUv, extent, expectedDepth, linearDepth, normal);
+        // Nowhere to find it: the reflection starts over, with the rest of the history.
+        historySpecular = virtualHistory.weight > 0.01 ? virtualHistory.specular / virtualHistory.weight * historyWeight
+                                                       : specular * historyWeight;
     }
 
     float frames = 1.0;

@@ -102,7 +102,8 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     float3 radiance = float3(0.0, 0.0, 0.0);
     float3 throughput = float3(1.0, 1.0, 1.0);
     for (uint bounce = 0; bounce < g_path.maxBounces; ++bounce) {
-        const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_path.instanceBuffer, g_path.materialBuffer);
+        const Hit hit =
+            TraceClosest(ray, frame.accelerationStructure, g_path.instanceBuffer, g_path.materialBuffer, kMaskAll);
         if (!hit.found) {
             // The sky, or the background a test chose when there is none.
             radiance += throughput * (frame.skyTexture != kNoTexture ? SkyRadiance(frame, ray.Direction) : g_path.background);
@@ -110,6 +111,35 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         }
         const Surface surface = ShadeHit(hit, ray.Direction, frame, g_path.instanceBuffer, g_path.materialBuffer);
         const float3 view = -ray.Direction;
+        if (surface.transmission > 0.0) {
+            // Smooth glass (ADR-0042): reflected or let through, as Fresnel says. Light that crossed thick
+            // glass loses some of each color on the way; what goes in is tinted by the base color, and only
+            // the transmission's share of it goes through. Lights shine through glass, unshaded, as their
+            // shadow rays go through it in the mesh pass.
+            if (bounce + 1 >= g_path.maxBounces) {
+                break;
+            }
+            if (!surface.entering && !surface.thin) {
+                throughput *= exp(-surface.absorption * hit.distance);
+            }
+            const float eta = surface.thin || surface.entering ? 1.0 / surface.ior : surface.ior;
+            const float reflected = FresnelDielectric(saturate(dot(surface.normal, view)), eta);
+            if (Random(random) < reflected) {
+                ray.Direction = reflect(ray.Direction, surface.normal);
+                ray.Origin = OffsetOrigin(surface.position, surface.faceNormal);
+            } else {
+                if (surface.thin || surface.entering) {
+                    throughput *= surface.tint * surface.transmission;
+                }
+                if (!surface.thin) {
+                    ray.Direction = refract(ray.Direction, surface.normal, eta);
+                }
+                ray.Origin = OffsetOrigin(surface.position, -surface.faceNormal);
+            }
+            ray.TMin = 0.0;
+            ray.TMax = 1e6;
+            continue;
+        }
         radiance += throughput * (surface.emission + DirectLight(surface, view, frame, random));
         if (bounce + 1 >= g_path.maxBounces) {
             break;

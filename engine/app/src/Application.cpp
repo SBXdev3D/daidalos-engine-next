@@ -39,6 +39,10 @@ float FieldOfViewRadians(const core::CVar<double>& degrees) {
     return glm::radians(static_cast<float>(std::clamp(degrees.Get(), 30.0, 150.0)));
 }
 
+float ReflectionRoughness(const core::CVar<double>& roughness) {
+    return static_cast<float>(std::clamp(roughness.Get(), 0.0, 1.0));
+}
+
 float ViewDistanceMeters(const core::CVar<double>& meters) {
     return static_cast<float>(std::max(meters.Get(), 1.0));
 }
@@ -61,10 +65,14 @@ renderer::DebugView DebugViewMode(const core::CVar<std::string>& cvar) {
     if (name == "radiance_cache") {
         return renderer::DebugView::RadianceCache;
     }
+    if (name == "reflections") {
+        return renderer::DebugView::Reflections;
+    }
     static std::string warned;
     if (name != "off" && name != warned) {
         warned = name;
-        DAI_LOG_WARNING(kModule, "Unknown debug view '{}': use off, rays, path, motion, indirect or radiance_cache",
+        DAI_LOG_WARNING(kModule,
+                        "Unknown debug view '{}': use off, rays, path, motion, indirect, radiance_cache or reflections",
                         name);
     }
 
@@ -234,6 +242,11 @@ core::Result<void> Application::LoadConfiguration() {
                                                  "Light that bounces off surfaces; off leaves direct light only");
         m_denoiser = m_cvars.Register<bool>(
             "renderer.denoiser", true, "Filter the noise of soft shadows and indirect light; off shows it as traced");
+        m_reflections = m_cvars.Register<bool>("renderer.reflections", true,
+                                               "Ray-traced reflections; off, the indirect light stands in for them");
+        m_reflectionRoughness = m_cvars.Register<double>(
+            "renderer.reflection_roughness", 0.6,
+            "Surfaces rougher than this, from 0 to 1, trace no reflection: the indirect light stands in for it");
         m_normalStrength = m_cvars.Register<double>(
             "renderer.normal_strength", 1.0, "Multiplies the relief of normal maps: 0 flattens them, 1 as authored");
         m_fieldOfView = m_cvars.Register<double>(
@@ -246,7 +259,8 @@ core::Result<void> Application::LoadConfiguration() {
                                               "Enable the Vulkan validation layers, read at startup");
         m_debugView = m_cvars.Register<std::string>(
             "renderer.debug_view", "off",
-            "Shows a debug view instead of the lit scene: off, rays, path, motion, indirect or radiance_cache");
+            "Shows a debug view instead of the lit scene: off, rays, path, motion, indirect, radiance_cache or "
+            "reflections");
         m_pathBounces = m_cvars.Register<std::int64_t>(
             "renderer.path_bounces", 4, "Surfaces a path of the path tracer meets at most; 1 is direct light only");
         m_pathSamples = m_cvars.Register<std::int64_t>(
@@ -408,6 +422,8 @@ core::Result<void> Application::CreateRenderer() {
              .normalStrength = static_cast<float>(m_normalStrength->Get()),
              .indirectLight = m_indirectLight->Get(),
              .denoiser = m_denoiser->Get(),
+             .reflections = m_reflections->Get(),
+             .reflectionRoughness = ReflectionRoughness(*m_reflectionRoughness),
              .fieldOfView = FieldOfViewRadians(*m_fieldOfView),
              .viewDistance = ViewDistanceMeters(*m_viewDistance),
              .antialiasing = AntialiasingMode(*m_antialiasing),
@@ -457,6 +473,8 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_renderer->SetNormalStrength(static_cast<float>(m_normalStrength->Get()));
     m_renderer->SetIndirectLight(m_indirectLight->Get());
     m_renderer->SetDenoiser(m_denoiser->Get());
+    m_renderer->SetReflections(m_reflections->Get());
+    m_renderer->SetReflectionRoughness(ReflectionRoughness(*m_reflectionRoughness));
     m_renderer->SetFieldOfView(FieldOfViewRadians(*m_fieldOfView));
     m_renderer->SetViewDistance(ViewDistanceMeters(*m_viewDistance));
     m_renderer->SetAntialiasing(AntialiasingMode(*m_antialiasing));

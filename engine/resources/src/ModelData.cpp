@@ -131,6 +131,16 @@ core::Result<void> ModelBuilder::AddMaterials() {
         data.metallicFactor = pbr.metallicFactor;
         data.roughnessFactor = pbr.roughnessFactor;
         data.doubleSided = material.doubleSided;
+        data.ior = material.ior;
+        if (material.transmission) {
+            data.transmission = material.transmission->transmissionFactor;
+        }
+        if (material.volume) {
+            data.thickness = material.volume->thicknessFactor;
+            data.attenuationColor = {material.volume->attenuationColor[0], material.volume->attenuationColor[1],
+                                     material.volume->attenuationColor[2]};
+            data.attenuationDistance = material.volume->attenuationDistance;
+        }
         if (material.alphaMode == fastgltf::AlphaMode::Mask) {
             data.alphaCutoff = material.alphaCutoff;
         } else if (material.alphaMode == fastgltf::AlphaMode::Blend) {
@@ -495,7 +505,9 @@ core::Result<ModelData> LoadModelFile(const std::filesystem::path& path) {
         return core::MakeError(core::ErrorCode::IoError, kModule, std::format("Cannot open model file '{}'", fileName));
     }
 
-    fastgltf::Parser parser(fastgltf::Extensions::KHR_texture_basisu);
+    fastgltf::Parser parser(fastgltf::Extensions::KHR_texture_basisu |
+                            fastgltf::Extensions::KHR_materials_transmission |
+                            fastgltf::Extensions::KHR_materials_volume | fastgltf::Extensions::KHR_materials_ior);
     constexpr fastgltf::Options kOptions = fastgltf::Options::LoadExternalBuffers |
                                            fastgltf::Options::DecomposeNodeMatrices |
                                            fastgltf::Options::GenerateMeshIndices;

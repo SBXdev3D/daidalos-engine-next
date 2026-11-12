@@ -15,28 +15,6 @@
 
 [[vk::binding(4, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> g_storageImages[];
 
-float3 PositionAt(FrameData frame, int2 pixel) {
-    const int2 clamped = clamp(pixel, int2(0, 0), int2(g_gi.width, g_gi.height) - 1);
-    const float depth = g_textures[g_gi.depth].Load(int3(clamped, 0)).r;
-    return WorldPosition(frame, (float2(clamped) + 0.5) * frame.screenTexel, depth);
-}
-
-// The surface's own orientation, from the positions of the neighbours on the side closest in depth, so as
-// not to take it across an edge; towards the camera.
-float3 FaceNormalAt(FrameData frame, int2 pixel, float3 position) {
-    const float3 left = PositionAt(frame, pixel - int2(1, 0));
-    const float3 right = PositionAt(frame, pixel + int2(1, 0));
-    const float3 up = PositionAt(frame, pixel - int2(0, 1));
-    const float3 down = PositionAt(frame, pixel + int2(0, 1));
-    const float3 across = distance(left, position) < distance(right, position) ? position - left : right - position;
-    const float3 along = distance(up, position) < distance(down, position) ? position - up : down - position;
-    float3 normal = normalize(cross(along, across));
-    if (dot(normal, frame.cameraPosition - position) < 0.0) {
-        normal = -normal;
-    }
-    return normal;
-}
-
 [numthreads(8, 8, 1)]
 void CSMain(uint3 id : SV_DispatchThreadID) {
     const FrameData frame = g_frames[g_gi.frameBuffer][0];

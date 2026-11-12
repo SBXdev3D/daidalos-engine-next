@@ -151,6 +151,41 @@ TEST_F(GpuTest, TimestampsOfAFrameComeBackInOrder) {
     EXPECT_GE(timestamps[2], timestamps[1]);
 }
 
+TEST_F(GpuTest, ATextureCopiesIntoAnother) {
+    const std::array<std::uint32_t, 4> pixels{0xFF0000FF, 0xFF00FF00, 0xFFFF0000, 0x80808080};
+    const auto bytes = std::as_bytes(std::span(pixels));
+    const auto create = [this](const char* name) {
+        return Device().CreateTexture(
+            {.extent = {2, 2},
+             .format = rhi::Format::Rgba8Unorm,
+             .usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDst | rhi::TextureUsage::TransferSrc,
+             .name = name});
+    };
+    const core::Result<rhi::TextureHandle> source = create("Source");
+    const core::Result<rhi::TextureHandle> copy = create("Copy");
+    ASSERT_TRUE(source.has_value() && copy.has_value());
+    const core::Result<rhi::BufferHandle> readback = Device().CreateBuffer({.size = bytes.size(),
+                                                                            .usage = rhi::BufferUsage::TransferDst,
+                                                                            .memory = rhi::MemoryLocation::GpuToCpu,
+                                                                            .name = "Readback"});
+    ASSERT_TRUE(readback.has_value());
+    ASSERT_TRUE(Device().UploadTexture(*source, bytes).has_value());
+    ASSERT_TRUE(Device()
+                    .Submit([&](rhi::CommandList& commands) {
+                        commands.Transition(*source, rhi::TextureState::TransferSrc);
+                        commands.Transition(*copy, rhi::TextureState::TransferDst);
+                        commands.CopyTexture(*source, *copy);
+                        commands.Transition(*copy, rhi::TextureState::TransferSrc);
+                        commands.CopyTextureToBuffer(*copy, *readback);
+                    })
+                    .has_value());
+
+    EXPECT_EQ(std::memcmp(Device().Mapped(*readback).data(), pixels.data(), bytes.size()), 0);
+    Device().DestroyTexture(*source);
+    Device().DestroyTexture(*copy);
+    Device().DestroyBuffer(*readback);
+}
+
 TEST_F(GpuTest, TimestampsAreRefusedOutsideAFrame) {
     bool written = true;
     ASSERT_TRUE(Device().Submit([&](rhi::CommandList& commands) { written = commands.WriteTimestamp(); }).has_value());

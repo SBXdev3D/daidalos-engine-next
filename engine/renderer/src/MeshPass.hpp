@@ -37,6 +37,12 @@ struct FrameTargets {
     glm::vec2 jitter{0.0f};
     /// Counts the frames: the noise of soft shadows changes with it (ADR-0039).
     std::uint32_t frameIndex = 0;
+    /// The light that each pixel's specular lobe reflects (GlobalIllumination::Reflections), which the mesh
+    /// pass multiplies by the specular albedo (ADR-0042). Null: the indirect light stands in for it.
+    rhi::TextureHandle reflections;
+    /// What the glass pass reads: a copy of the frame before glass, and the pre-pass's depth (ADR-0042).
+    rhi::TextureHandle background;
+    rhi::TextureHandle depth;
 };
 
 /// The targets the mesh pass shades into (ADR-0039), which the composite pass puts back together.
@@ -72,6 +78,8 @@ struct TracedDraw {
     bool opaque = true;
     bool doubleSided = false;
     bool castsShadows = true;
+    /// Its material is glass (ADR-0042): rays other than the glass pass's go through it.
+    bool glass = false;
 };
 
 /// Owns the meshes, the materials and the pipelines that draw them. It works on any target, so that
@@ -158,6 +166,11 @@ public:
     /// pixel is shaded once, where its depth equals the pre-pass's. Then draws the sky where nothing was
     /// drawn, if the frame has one.
     void Record(rhi::CommandList& commands);
+    /// Draws the prepared frame's glass over the frame (ADR-0042), inside a rendering scope with a target of the
+    /// mesh pass's color format and no depth: it reads the pre-pass's depth and the background of FrameTargets.
+    void RecordGlass(rhi::CommandList& commands);
+    /// The prepared frame has glass to draw.
+    [[nodiscard]] bool HasGlass() const { return m_prepared != nullptr && m_hasGlass; }
     /// Adds the pass that puts the shading targets back together into target, with the fog, as
     /// "Composite" (ADR-0039). target has the mesh pass's color format and is written whole.
     void AddComposite(RenderGraph& graph, rhi::TextureHandle target, const CompositeInputs& inputs);
@@ -188,6 +201,7 @@ private:
     struct Material {
         bool doubleSided = false;
         bool alphaTested = false;
+        bool glass = false;
     };
     /// One skinned draw of the frame, for the skinning pass.
     struct SkinningJob {
@@ -223,13 +237,16 @@ private:
         rhi::PipelineHandle meshDoubleSided;
         rhi::PipelineHandle sky;
         rhi::PipelineHandle composite;
+        rhi::PipelineHandle glass;
+        rhi::PipelineHandle glassDoubleSided;
     };
     [[nodiscard]] core::Result<rhi::PipelineHandle> BuildPipeline(std::span<const std::uint32_t> vertexShader,
                                                                   std::span<const std::uint32_t> fragmentShader,
                                                                   rhi::CullMode cull, bool prepass);
     void DestroyPipelines(Pipelines& pipelines);
-    /// Draws the sorted draws with these pipelines, one-sided and double-sided.
-    void RecordDraws(rhi::CommandList& commands, rhi::PipelineHandle oneSided, rhi::PipelineHandle doubleSided);
+    /// Draws the sorted draws of glass, or the others, with these pipelines, one-sided and double-sided.
+    void RecordDraws(rhi::CommandList& commands, rhi::PipelineHandle oneSided, rhi::PipelineHandle doubleSided,
+                     bool glass);
     [[nodiscard]] core::Result<void> PrepareFrameSlot(FrameSlot& slot, const SceneView& view);
     /// Makes room for a material at this index of the table.
     [[nodiscard]] core::Result<void> ReserveMaterialSlot(std::uint32_t index);
@@ -265,6 +282,8 @@ private:
         bool visible;
         /// Where its skinned vertices start in m_skinned, or kNotSkinned.
         std::uint32_t firstSkinnedVertex;
+        /// Drawn by the glass pass, not by the pre-pass and the mesh pass.
+        bool glass;
     };
     static constexpr std::uint32_t kNotSkinned = 0xFFFFFFFF;
     /// Binds the vertices and indices of a draw, unless they are bound already.
@@ -292,6 +311,7 @@ private:
     /// Of the last frame prepared, for its successor's motion vectors.
     std::optional<glm::mat4> m_previousViewProjection;
     bool m_hasSky = false;
+    bool m_hasGlass = false;
 };
 
 } // namespace daidalos::renderer

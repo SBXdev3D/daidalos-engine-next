@@ -125,6 +125,11 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
         desc.occlusionStrength = material.occlusionStrength;
         desc.alphaCutoff = material.alphaCutoff;
         desc.doubleSided = material.doubleSided;
+        desc.transmission = material.transmission;
+        desc.ior = material.ior;
+        desc.thin = material.thickness <= 0.0f;
+        desc.attenuationColor = material.attenuationColor;
+        desc.attenuationDistance = material.attenuationDistance;
         desc.baseColorTexture = textureOf(material.baseColorImage);
         desc.metallicRoughnessTexture = textureOf(material.metallicRoughnessImage);
         desc.normalTexture = textureOf(material.normalImage);

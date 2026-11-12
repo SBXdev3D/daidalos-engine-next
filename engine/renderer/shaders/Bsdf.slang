@@ -119,6 +119,33 @@ float SpecularProbability(float3 normal, float3 view, float3 diffuseColor, float
     return specular + diffuse > 0.0 ? clamp(specular / (specular + diffuse), 0.05, 1.0) : 1.0;
 }
 
+// A direction from the specular lobe alone: a microfacet normal drawn from the visible normals of the GGX
+// distribution, and view reflected about it. Rays in that distribution, averaged and multiplied by the
+// specular albedo, give the specular light (ADR-0042). u holds two uniform random numbers.
+public float3 SampleSpecularDirection(float3 normal, float3 view, float roughness, float2 u) {
+    float3 tangent;
+    float3 bitangent;
+    Frame(normal, tangent, bitangent);
+    const float3 localView = float3(dot(view, tangent), dot(view, bitangent), max(dot(view, normal), 0.0001));
+    const float3 halfway = SampleVisibleNormal(normalize(localView), roughness * roughness, u);
+    const float3 localLight = reflect(-normalize(localView), halfway);
+    return normalize(tangent * localLight.x + bitangent * localLight.y + normal * localLight.z);
+}
+
+// The fraction of light a smooth dielectric reflects, the rest going through, for the cosine of the angle
+// to its normal on the side the light comes from and the ratio of the indices of refraction, that side's
+// over the other's. 1 past the critical angle: all of it is reflected.
+public float FresnelDielectric(float cosine, float eta) {
+    const float sine2 = eta * eta * max(1.0 - cosine * cosine, 0.0);
+    if (sine2 >= 1.0) {
+        return 1.0;
+    }
+    const float cosT = sqrt(1.0 - sine2);
+    const float parallel = (eta * cosine - cosT) / (eta * cosine + cosT);
+    const float perpendicular = (cosine - eta * cosT) / (cosine + eta * cosT);
+    return 0.5 * (parallel * parallel + perpendicular * perpendicular);
+}
+
 public BsdfSample SampleBsdf(float3 normal, float3 view, float3 diffuseColor, float3 f0, float roughness, float3 u) {
     BsdfSample result;
     result.direction = normal;

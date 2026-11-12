@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -69,6 +70,17 @@ struct MaterialData {
     /// Pixels with a lower alpha are discarded. 0 keeps every pixel.
     float alphaCutoff = 0.0f;
     bool doubleSided = false;
+    /// KHR_materials_transmission: the fraction of the light that goes through. Above zero, the material is
+    /// glass (ADR-0042).
+    float transmission = 0.0f;
+    /// KHR_materials_ior: the index of refraction.
+    float ior = 1.5f;
+    /// KHR_materials_volume: meters through the glass, in the mesh's space. Zero is thin glass, which bends
+    /// nothing; otherwise the mesh is a closed volume, and light bends where it enters and leaves it.
+    float thickness = 0.0f;
+    /// KHR_materials_volume: the color white light takes after attenuationDistance meters in the glass.
+    glm::vec3 attenuationColor{1.0f};
+    float attenuationDistance = std::numeric_limits<float>::infinity();
     std::optional<std::uint32_t> baseColorImage;
     std::optional<std::uint32_t> metallicRoughnessImage;
     std::optional<std::uint32_t> normalImage;

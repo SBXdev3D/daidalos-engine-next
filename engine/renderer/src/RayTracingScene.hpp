@@ -21,6 +21,8 @@ class RenderGraph;
 /// Instance masks: what rays see of a draw. A shadow ray queries with kMaskShadowCasters only.
 inline constexpr std::uint8_t kMaskShadowCasters = 0x01;
 inline constexpr std::uint8_t kMaskOthers = 0x02;
+/// Glass (ADR-0042): only the glass pass and the path tracer see it.
+inline constexpr std::uint8_t kMaskGlass = 0x04;
 
 /// The frame's draws as rays see them (ADR-0033): a top-level acceleration structure built each frame
 /// over the meshes' bottom-level structures, and a bottom-level structure per skinned draw, refitted each
