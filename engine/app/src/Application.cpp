@@ -235,7 +235,8 @@ core::Result<void> Application::LoadConfiguration() {
         m_fullscreen = m_cvars.Register<bool>("window.fullscreen", m_config.window.fullscreen,
                                               "Cover the display without borders, at its own resolution");
         m_vsync = m_cvars.Register<bool>("renderer.vsync", true, "Synchronize presentation with the display");
-        m_exposure = m_cvars.Register<double>("renderer.exposure", 1.0, "Multiplies the light before tonemapping");
+        m_exposure = m_cvars.Register<double>("renderer.exposure_compensation", 0.0,
+                                              "Stops added to the scene's exposure: +1 is twice as bright");
         m_anisotropy = m_cvars.Register<std::int64_t>(
             "renderer.anisotropy", 16, "Anisotropic filtering of textures, from 1 (off) to 16, read at startup");
         m_indirectLight = m_cvars.Register<bool>("renderer.indirect_light", true,
@@ -417,7 +418,7 @@ core::Result<void> Application::CreateRenderer() {
             {.validation = m_validation->Get(),
              .synchronizationValidation = m_syncValidation->Get(),
              .vsync = m_vsync->Get(),
-             .exposure = static_cast<float>(m_exposure->Get()),
+             .exposureCompensation = static_cast<float>(m_exposure->Get()),
              .anisotropy = static_cast<float>(std::clamp<std::int64_t>(m_anisotropy->Get(), 1, 16)),
              .normalStrength = static_cast<float>(m_normalStrength->Get()),
              .indirectLight = m_indirectLight->Get(),
@@ -469,7 +470,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
 
     m_window->SetFullscreen(m_fullscreen->Get());
     m_renderer->SetVsync(m_vsync->Get());
-    m_renderer->SetExposure(static_cast<float>(m_exposure->Get()));
+    m_renderer->SetExposureCompensation(static_cast<float>(m_exposure->Get()));
     m_renderer->SetNormalStrength(static_cast<float>(m_normalStrength->Get()));
     m_renderer->SetIndirectLight(m_indirectLight->Get());
     m_renderer->SetDenoiser(m_denoiser->Get());

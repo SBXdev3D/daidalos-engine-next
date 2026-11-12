@@ -30,8 +30,9 @@ struct CornellPart {
 
 /// The Cornell box, the classic test scene of rendering (ADR-0034): a room 5.5 m wide, open at the front,
 /// with a red wall on the left, a green one on the right and two white blocks, all matte. The original
-/// is lit by a panel in the ceiling; the engine has no area lights, so a point light hangs under it. Its
-/// interior spans x and z from -2.75 to 2.75, and y from 0 to 5.5.
+/// is lit by a panel in the ceiling; the engine has no area lights, so a wide spot light hangs under it,
+/// shining down. Its interior spans x and z from -2.75 to 2.75, and y from 0 to 5.5. Its light is made for
+/// EV100 3 (ADR-0043).
 struct CornellBox {
     /// Every part is a MakeCube.
     std::vector<CornellPart> parts;

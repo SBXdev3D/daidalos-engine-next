@@ -61,17 +61,20 @@ struct NodeName {
     std::string value;
 };
 
-/// ECS component: a light at the entity's WorldTransform. Spot and directional lights shine down the
-/// entity's local -Z, like a camera. See renderer::Light for what the values mean (ADR-0022, ADR-0040).
+/// ECS component: a light at the entity's WorldTransform, in physical units (ADR-0043). Spot and directional
+/// lights shine down the entity's local -Z, like a camera, as in glTF. See renderer::Light.
 struct Light {
     renderer::LightType type = renderer::LightType::Point;
-    /// Linear color.
+    /// Linear color, multiplied by the temperature's.
     glm::vec3 color{1.0f};
+    /// Candela for point and spot lights (renderer::PointCandela and SpotCandela convert lumens), lux for
+    /// directional lights.
     float intensity = 1.0f;
-    /// Meters.
+    /// Kelvin: the color of a black body at this temperature (renderer::ColorTemperature), such as 2700 for
+    /// a warm bulb; 0 for none.
+    float temperature = 0.0f;
+    /// Meters: the light fades to zero there.
     float range = 10.0f;
-    /// Fraction of the range lit at full strength.
-    float falloff = 0.5f;
     /// Spot lights: radians from the axis.
     float innerAngle = glm::radians(20.0f);
     float outerAngle = glm::radians(30.0f);

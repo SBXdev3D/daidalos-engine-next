@@ -51,8 +51,8 @@ struct RendererConfig {
     /// With validation, also checks that barriers order every use of every resource. Slow.
     bool synchronizationValidation = false;
     bool vsync = true;
-    /// Multiplies the light before tonemapping.
-    float exposure = 1.0f;
+    /// Stops added to the scene's exposure (Atmosphere::ev100): +1 shows the scene twice as bright (ADR-0043).
+    float exposureCompensation = 0.0f;
     /// Anisotropic filtering of textures, from 1 (off) to 16.
     float anisotropy = 16.0f;
     /// Multiplies the tilt of every normal map: 0 flattens them, 1 keeps them as authored.
@@ -135,7 +135,7 @@ public:
     void DestroyParticleEffect(ParticleEffectHandle effect);
 
     void SetVsync(bool vsync);
-    void SetExposure(float exposure);
+    void SetExposureCompensation(float stops);
     void SetNormalStrength(float strength);
     void SetIndirectLight(bool enabled);
     void SetDenoiser(bool enabled);

@@ -62,6 +62,7 @@ struct ImageSource {
 struct MaterialData {
     std::string name;
     glm::vec4 baseColorFactor{1.0f};
+    /// Nits, times the emissive texture, with KHR_materials_emissive_strength applied (ADR-0043).
     glm::vec3 emissiveFactor{0.0f};
     float metallicFactor = 1.0f;
     float roughnessFactor = 1.0f;
@@ -104,6 +105,23 @@ struct SkinData {
     std::vector<glm::mat4> inverseBindMatrices;
 };
 
+enum class LightKind : std::uint8_t { Point, Spot, Directional };
+
+/// A light of KHR_lights_punctual, in its units (ADR-0043). It shines down its node's local -Z.
+struct LightSource {
+    std::string name;
+    LightKind kind = LightKind::Point;
+    /// Linear color.
+    glm::vec3 color{1.0f};
+    /// Candela for point and spot lights, lux for directional lights.
+    float intensity = 1.0f;
+    /// Meters; none is infinite.
+    std::optional<float> range;
+    /// Spot lights: radians from the axis, full light inside the inner angle, none outside the outer.
+    float innerConeAngle = 0.0f;
+    float outerConeAngle = 0.785398f;
+};
+
 /// A node of the scene. Parents come before their children.
 struct ModelNode {
     std::string name;
@@ -115,6 +133,8 @@ struct ModelNode {
     /// Index into ModelData::skins, for a node whose primitives are skinned. Such a node's own
     /// transform does not move them: only the joints do.
     std::optional<std::uint32_t> skin;
+    /// Index into ModelData::lights.
+    std::optional<std::uint32_t> light;
 };
 
 enum class AnimationPath : std::uint8_t { Translation, Rotation, Scale };
@@ -147,6 +167,7 @@ struct ModelData {
     std::vector<ModelNode> nodes;
     std::vector<SkinData> skins;
     std::vector<AnimationData> animations;
+    std::vector<LightSource> lights;
 };
 
 /// Loads the default scene of a .gltf or .glb file, and the buffers that it refers to. Fails with

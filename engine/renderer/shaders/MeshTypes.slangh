@@ -25,7 +25,7 @@ struct FrameData {
     uint lightCount;
     uint lightBuffer;
     uint skyTexture;      // Index in g_cubeTextures, or kNoTexture for no sky.
-    float skyIntensity;   // Multiplies the sky's colors.
+    float skyIntensity;   // Multiplies the sky's colors: their luminance in nits, times the exposure.
     uint frameIndex;      // Counts the frames, for what changes from one to the next, such as noise.
     float normalStrength; // Multiplies every normal map's tilt.
     uint indirectTexture; // Indirect diffuse light per unit of diffuse color (ADR-0040), or kNoTexture.
@@ -45,7 +45,9 @@ struct FrameData {
     uint reflectionTexture; // The light each pixel's specular lobe reflects (ADR-0042), or kNoTexture.
     uint backgroundTexture; // The glass pass's copy of the frame before glass (ADR-0042).
     uint depthTexture;      // The pre-pass's depth, for the glass pass.
-    uint framePadding;
+    // What luminance in nits is multiplied by on the GPU (ADR-0043): lights and the sky come multiplied
+    // already, emission is multiplied by it where it is read.
+    float exposure;
 };
 
 // Where a point of clip space is on the screen, in texture coordinates: y goes down (CONVENTIONS.md,
@@ -74,12 +76,13 @@ static const uint kClusterSlices = 24;
 static const uint kLightNear = 0;
 static const uint kLightDirectional = 1;
 
-// A point light has a cosOuter of -2, which every direction passes.
+// A point light has a cosOuter of -2, which every direction passes. Physical units (ADR-0043), times the
+// frame's exposure: color is in candela, or lux for a directional light.
 struct LightData {
     float3 position;
-    float range;
+    float range; // Meters: the light fades to zero there.
     float3 direction;
-    float fullRange; // Meters lit at full strength.
+    float spare;
     float3 color;
     float cosOuter;
     float cosInner;
@@ -98,7 +101,6 @@ LightData LightAt(LightData light, float3 position) {
     if (light.kind == kLightDirectional) {
         light.position = position - light.direction * kDirectionalDistance;
         light.range = kDirectionalDistance * 2.0;
-        light.fullRange = light.range;
         light.radius *= kDirectionalDistance;
     }
     return light;
@@ -196,12 +198,20 @@ uint ClusterOf(FrameData frame, float2 pixel, float3 worldPosition) {
     return column + row * kClusterColumns + slice * kClusterColumns * kClusterRows;
 }
 
-// How much of a light reaches a point: full up to fullRange, then fading linearly to zero at the range,
-// and inside the cone of a spot light.
+// What a light's color is multiplied by to give the illuminance it makes at a point, facing it, in lux
+// (ADR-0043): the inverse square of the distance, faded to zero at the light's range by a smooth window
+// (Karis, "Real Shading in Unreal Engine 4", 2013), never nearer than the surface of its sphere; inside the
+// cone of a spot light. A directional light's color is its illuminance already.
 float Attenuation(LightData light, float distanceToLight, float3 toLight) {
-    const float distance = saturate((light.range - distanceToLight) / max(light.range - light.fullRange, 0.0001));
     const float cone = smoothstep(light.cosOuter, light.cosInner, dot(-toLight, light.direction));
-    return distance * cone;
+    if (light.kind == kLightDirectional) {
+        return cone;
+    }
+    const float ratio = distanceToLight / light.range;
+    const float ratio2 = ratio * ratio;
+    const float window = saturate(1.0 - ratio2 * ratio2);
+    const float nearest = max(distanceToLight, max(light.radius, 0.01));
+    return window * window / (nearest * nearest) * cone;
 }
 
 // Transforms a normal with the cofactor matrix, which stays correct under non-uniform scale and

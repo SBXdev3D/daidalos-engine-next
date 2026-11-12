@@ -57,8 +57,8 @@ float3 DirectLight(FrameData frame, Surface surface, float3 view) {
         if (attenuation <= 0.0 || dot(surface.faceNormal, toLight) <= 0.0) {
             continue;
         }
-        // A light's color is what a white surface facing it reflects (ADR-0022).
-        const float3 reflected = light.color * attenuation * kPi *
+        // The illuminance the light makes, times the BSDF and the cosine (ADR-0043).
+        const float3 reflected = light.color * attenuation *
                                  EvaluateBsdf(surface.normal, view, toLight, surface.diffuseColor, surface.f0, surface.roughness);
         if (all(reflected <= 0.0) ||
             !LightReaches(surface.position, surface.faceNormal, toLight, distanceToLight, light.range,
@@ -100,7 +100,7 @@ float3 Highlights(FrameData frame, float2 pixel, float3 position, float3 normal,
         }
         const float3 toLight = offset / max(distanceToLight, 0.0001);
         // The smoothest surface the mesh pass shades, so that a light the size of a point still shows.
-        const float3 specular = light.color * Attenuation(light, distanceToLight, toLight) * kPi *
+        const float3 specular = light.color * Attenuation(light, distanceToLight, toLight) *
                                 EvaluateBsdfTerms(normal, view, toLight, float3(0.04, 0.04, 0.04), 0.045).specular;
         if (all(specular <= 1e-4) || !LightReaches(position, faceNormal, toLight, distanceToLight, light.range,
                                                    frame.accelerationStructure, g_push.instanceBuffer,

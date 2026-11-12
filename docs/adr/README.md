@@ -25,7 +25,7 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0019](0019-audio.md) | miniaudio, an engine per application and a sound world per scene | Accepted |
 | [0020](0020-animation.md) | Own skeletal animation, joints as entities, skinning in the vertex shader | Accepted, amended |
 | [0021](0021-module-consolidation.md) | Nine modules, each a layer or a wall around a library | Accepted |
-| [0022](0022-lighting-and-materials.md) | HDR, PBR, legacy light units, glTF normal maps with MikkTSpace | Accepted, amended |
+| [0022](0022-lighting-and-materials.md) | HDR, PBR, legacy light units, glTF normal maps with MikkTSpace | Accepted, amended; light units superseded by 0043 |
 | [0023](0023-shadows.md) | Spot-light shadows: four per frame in one atlas, nearest first | Superseded by 0035 |
 | [0024](0024-prepass-and-ambient-occlusion.md) | Depth pre-pass, half-resolution SSAO, ambient light from above and below | Partly superseded by 0040 |
 | [0025](0025-gpu-particles.md) | Particles emitted, simulated, sorted and drawn on the GPU | Accepted |
@@ -46,3 +46,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0040](0040-diffuse-global-illumination.md) | Diffuse global illumination from an own radiance cache, replacing ambient light and SSAO; directional lights and the moon | Accepted |
 | [0041](0041-engine-technical-spec.md) | The engine technical spec: what joins the roadmap (physical units, presets, a level editor, materials and atmosphere, sound), what changes, what stays out | Accepted |
 | [0042](0042-reflections-and-glass.md) | Ray-traced reflections along each pixel's specular lobe, followed by the denoiser; glass drawn over the frame | Accepted |
+| [0043](0043-physical-light-units.md) | Physical light units: candela, lux, kelvin, nits and EV100, pre-exposed on the GPU; level lights in KHR_lights_punctual | Accepted |

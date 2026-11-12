@@ -71,8 +71,12 @@ constexpr float kStickLookSpeed = 2.5f; // Radians per second.
 constexpr float kMessageTime = 3.0f;    // Seconds.
 
 // The factory is dark, lit by its lamps and the light they bounce (ADR-0040), with a thin fog that swallows
-// what is far away. Without its darkness, Settings::darkness 0, the view is exposed this much brighter.
-constexpr float kBrightExposure = 16.0f;
+// what is far away. It is exposed as a dim interior, at EV100 3 (ADR-0043); without its darkness,
+// Settings::darkness 0, this many stops brighter.
+constexpr float kFactoryEv100 = 3.0f;
+constexpr float kBrightStops = 4.0f;
+// The legacy sky's colors, in nits: as bright on screen at EV100 3 as they were before physical units.
+constexpr float kSkyLuminance = 9.6f;
 constexpr glm::vec3 kFogColor{0.005f, 0.006f, 0.008f};
 constexpr float kFogDensity = 0.03f;
 // The moon painted on sky1 shines through the level's openings (ADR-0040). Its disk is centered at pixel
@@ -84,11 +88,14 @@ constexpr float kFogDensity = 0.03f;
 constexpr std::string_view kMoonSky = "sky1";
 constexpr float kMoonSkyYaw = glm::pi<float>();
 constexpr glm::vec3 kTowardsThePaintedMoon{0.344f, 0.424f, -1.0f};
-constexpr glm::vec3 kMoonColor{0.7f, 0.8f, 1.0f};
+// Light units (ADR-0043): each light is as bright as it was before them at a distance that matters, here at
+// EV100 3, and falls off with the square of the distance from there.
+constexpr glm::vec3 kMoonColor{0.88f, 1.0f, 1.26f};
+constexpr float kMoonLux = 24.0f;
 constexpr float kMoonAngularRadius = glm::radians(2.5f);
-constexpr glm::vec3 kFlashlightColor{2.4f, 2.25f, 1.95f};
+constexpr glm::vec3 kFlashlightColor{1.06f, 1.0f, 0.86f};
+constexpr float kFlashlightCandela = 1090.0f;                // As bright as before 4 m away.
 constexpr float kFlashlightRange = 32.0f;                    // Meters.
-constexpr float kFlashlightFalloff = 0.15f;                  // Fraction of the range at full light.
 constexpr float kFlashlightInnerAngle = glm::radians(13.0f); // From the axis.
 constexpr float kFlashlightOuterAngle = glm::radians(22.0f);
 // The flashlight is in the left hand, the weapon in the right: from the eye, its shadows would all fall
@@ -96,15 +103,16 @@ constexpr float kFlashlightOuterAngle = glm::radians(22.0f);
 constexpr glm::vec3 kFlashlightHand{-0.3f, -0.15f, 0.0f};
 constexpr float kFlashlightAimDistance = 8.0f;
 // The light of a shot, after the legacy handgun's: 0.7 grey, 45 degrees, 0.7 m in front of the eye.
-constexpr glm::vec3 kMuzzleFlashColor{1.4f, 1.25f, 0.9f};
+constexpr glm::vec3 kMuzzleFlashColor{1.11f, 1.0f, 0.72f};
+constexpr float kMuzzleFlashCandela = 150.0f; // As bright as before 2 m away.
 constexpr float kMuzzleFlashRange = 7.0f;
 // Each alarm turns two red spots, back to back, 0.7 m under it and 25 degrees below the horizon, as the
 // legacy CAlarmEntity did.
-constexpr glm::vec3 kAlarmColor{0.5f, 0.0f, 0.0f};
+constexpr glm::vec3 kAlarmColor{1.0f, 0.0f, 0.0f};
+constexpr float kAlarmCandela = 965.0f; // As bright as before 8 m away.
 constexpr float kAlarmRange = 28.0f;
 constexpr float kAlarmAngle = glm::radians(20.0f);
 constexpr float kAlarmTightness = 0.8f; // Fraction of the angle at full light.
-constexpr float kAlarmFalloff = 0.7f;
 constexpr float kAlarmTilt = glm::radians(25.0f);
 constexpr float kAlarmOffset = 0.7f; // Meters below the alarm.
 constexpr float kAlarmSpeed = 70.0f; // Degrees per second, when the level does not say.
@@ -356,27 +364,12 @@ void AddParticleEmitter(ecs::World& world, ecs::Entity entity, const NodeDescrip
     }
 }
 
-/// A ceiling lamp of the level, which shines straight down.
-void AddSpotLight(ecs::World& world, ecs::Entity lamp, const NodeDescription& node) {
-    const float angle = glm::radians(Number(node, "light_angle", 20.0f));
-    const scene::Light light{.type = renderer::LightType::Spot,
-                             .color = Color(node, "light_color", glm::vec3(1.0f)),
-                             .range = Number(node, "light_range", 7.0f),
-                             .falloff = Number(node, "light_falloff", 0.5f),
-                             .innerAngle = angle * Number(node, "light_tightness", 0.5f),
-                             .outerAngle = angle,
-                             .enabled = node.attributes.find("light_enabled") == node.attributes.end() ||
-                                        node.attributes.at("light_enabled") != "false"};
-    const glm::quat down = glm::angleAxis(glm::radians(-90.0f), math::kRight);
-    AddLight(world, lamp, math::kUp * Number(node, "light_offset", 0.0f), down, light);
-}
-
 void AddAlarmLights(ecs::World& world, ecs::Entity alarm, const NodeDescription& node) {
     world.Add<Alarm>(alarm, Number(node, "rotation_speed", kAlarmSpeed));
     const scene::Light light{.type = renderer::LightType::Spot,
                              .color = kAlarmColor,
+                             .intensity = kAlarmCandela,
                              .range = kAlarmRange,
-                             .falloff = kAlarmFalloff,
                              .innerAngle = kAlarmAngle * kAlarmTightness,
                              .outerAngle = kAlarmAngle};
     for (const float yaw : {0.0f, glm::pi<float>()}) {
@@ -735,6 +728,7 @@ core::Result<void> LoadSky(scene::Scene& scene, const std::string& directory, st
     DAI_TRY_ASSIGN(rhi::TextureHandle sky, scene.Assets().LoadCubeTexture(faces));
     renderer::Atmosphere atmosphere = scene.Atmosphere();
     atmosphere.sky = sky;
+    atmosphere.skyIntensity = kSkyLuminance;
     if (name == kMoonSky) {
         atmosphere.skyYaw = kMoonSkyYaw;
         // A light from where the moon is painted, turned with the sky, which shines down its local -Z.
@@ -747,6 +741,7 @@ core::Result<void> LoadSky(scene::Scene& scene, const std::string& directory, st
         world.Add<ecs::LocalTransform>(moon, transform);
         world.Add<scene::Light>(moon, scene::Light{.type = renderer::LightType::Directional,
                                                    .color = kMoonColor,
+                                                   .intensity = kMoonLux,
                                                    .angularRadius = kMoonAngularRadius});
     }
     scene.SetAtmosphere(atmosphere);
@@ -756,13 +751,13 @@ core::Result<void> LoadSky(scene::Scene& scene, const std::string& directory, st
 /// The factory's darkness and fog, which follow the settings. The sky stays as the level set it.
 void ApplyAtmosphere(scene::Scene& scene, const Settings& settings) {
     const float darkness = std::clamp(settings.darkness, 0.0f, 1.0f);
-    // Brightness is seen in stops, powers of two: halfway is half the stops.
+    // Brightness is seen in stops: halfway is half the stops.
     scene.SetAtmosphere({.fogColor = kFogColor,
                          .fogDensity = kFogDensity * darkness,
                          .sky = scene.Atmosphere().sky,
                          .skyIntensity = scene.Atmosphere().skyIntensity,
                          .skyYaw = scene.Atmosphere().skyYaw,
-                         .exposure = std::exp2((1.0f - darkness) * std::log2(kBrightExposure))});
+                         .ev100 = kFactoryEv100 - (1.0f - darkness) * kBrightStops});
 }
 
 } // namespace
@@ -880,8 +875,8 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
     newPlayer.flashlight = AddLight(world, playerEntity, kFlashlightHand, glm::quatLookAtRH(flashlightAim, math::kUp),
                                     {.type = renderer::LightType::Spot,
                                      .color = kFlashlightColor,
+                                     .intensity = kFlashlightCandela,
                                      .range = kFlashlightRange,
-                                     .falloff = kFlashlightFalloff,
                                      .innerAngle = kFlashlightInnerAngle,
                                      .outerAngle = kFlashlightOuterAngle,
                                      .enabled = false});
@@ -889,8 +884,8 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
         AddLight(world, playerEntity, math::kForward * 0.7f, glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
                  {.type = renderer::LightType::Point,
                   .color = kMuzzleFlashColor,
+                  .intensity = kMuzzleFlashCandela,
                   .range = kMuzzleFlashRange,
-                  .falloff = 0.3f,
                   .enabled = false});
     physics::CharacterConfig body;
     body.height = kStandHeight;
@@ -937,8 +932,6 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
         } else if (node.kind == "alarm") {
             world.Add<LoopedSound>(entity, bank.alarm, 0.5f, 1.4f, 35.0f);
             AddAlarmLights(world, entity, node);
-        } else if (node.kind == "spot") {
-            AddSpotLight(world, entity, node);
         } else if (const auto sky = node.attributes.find("name"); node.kind == "sky" && sky != node.attributes.end()) {
             DAI_TRY(LoadSky(scene, directory, sky->second));
         } else if (node.kind == "particles") {

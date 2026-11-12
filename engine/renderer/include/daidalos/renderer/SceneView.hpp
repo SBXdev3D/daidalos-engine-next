@@ -62,33 +62,33 @@ struct Atmosphere {
     /// A cube texture (rhi::TextureDesc::cube) seen where nothing is drawn, and the light that rays which
     /// leave the scene find (ADR-0036). Null for none.
     rhi::TextureHandle sky;
-    /// Multiplies the sky's colors, which are linear light.
+    /// Multiplies the sky's colors, which are linear light, into its luminance in nits (ADR-0043).
     float skyIntensity = 1.0f;
     /// Radians the sky is turned about +Y, counter-clockwise seen from above, as a yaw: pi puts what was
     /// ahead behind (ADR-0040).
     float skyYaw = 0.0f;
-    /// Multiplies the light before tonemapping, with the renderer's own exposure: what a scene sets to be
-    /// seen brighter or darker than its light (ADR-0040).
-    float exposure = 1.0f;
+    /// The camera's exposure value at ISO 100 (ADR-0043): each step up halves the light that reaches the
+    /// screen. About 3 for a dim interior, 8 for a bright one, 15 for a sunny day outside. The renderer's
+    /// exposure compensation is added in stops, the other way.
+    float ev100 = 0.0f;
 };
 
 /// A directional light is infinitely far, as the sun or the moon: it shines along its direction everywhere,
 /// at the same strength, and has no position, range or falloff (ADR-0040).
 enum class LightType { Point, Spot, Directional };
 
-/// A light of the frame (ADR-0022). Its color times its intensity is what a white surface facing it
-/// reflects up close: a light of color 0.4 lights a white wall to 0.4, as in the legacy engine.
+/// A light of the frame, in physical units (ADR-0043): its intensity in candela, or its illuminance in lux
+/// for a directional light. Light falls off with the inverse square of the distance, and smoothly to zero
+/// at the range.
 struct Light {
     LightType type = LightType::Point;
     glm::vec3 position{0.0f};
     /// Spot and directional lights shine along it. Normalized.
     glm::vec3 direction{0.0f, 0.0f, -1.0f};
-    /// Linear color, already multiplied by the intensity.
+    /// Linear color, already multiplied by the intensity: candela, or lux for a directional light.
     glm::vec3 color{1.0f};
-    /// Meters: the light reaches zero there.
+    /// Meters: the light fades to zero there. Lights are assigned to the clusters it reaches.
     float range = 10.0f;
-    /// Fraction of the range lit at full strength, after which the light fades linearly to zero.
-    float falloff = 0.5f;
     /// Spot lights: radians from the axis, full light inside the inner angle, none outside the outer.
     float innerAngle = 0.0f;
     float outerAngle = 0.0f;

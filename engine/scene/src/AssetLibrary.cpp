@@ -5,6 +5,7 @@
 #include <daidalos/core/Profile.hpp>
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/logging/Log.hpp>
+#include <daidalos/renderer/LightUnits.hpp>
 #include <daidalos/resources/AssetPath.hpp>
 #include <daidalos/scene/AssetLibrary.hpp>
 
@@ -168,6 +169,18 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
         added.local = node.local;
         added.skin = node.skin;
         added.parts = node.primitives;
+        if (node.light.has_value() && *node.light < data.lights.size()) {
+            const resources::LightSource& source = data.lights[*node.light];
+            const bool directional = source.kind == resources::LightKind::Directional;
+            added.light = Light{.type = directional                                 ? renderer::LightType::Directional
+                                        : source.kind == resources::LightKind::Spot ? renderer::LightType::Spot
+                                                                                    : renderer::LightType::Point,
+                                .color = source.color,
+                                .intensity = source.intensity,
+                                .range = source.range.value_or(renderer::LightRange(source.intensity)),
+                                .innerAngle = source.innerConeAngle,
+                                .outerAngle = source.outerConeAngle};
+        }
         restPose.push_back(node.local);
     }
     model.skins.reserve(data.skins.size());
@@ -316,6 +329,9 @@ core::Result<ecs::Entity> Instantiate(ecs::World& world, const Model& model) {
         entities.push_back(entity);
         if (!node.name.empty()) {
             world.Add<NodeName>(entity, node.name);
+        }
+        if (node.light.has_value()) {
+            world.Add<Light>(entity, *node.light);
         }
 
         for (std::size_t index = 0; index < node.parts.size(); ++index) {

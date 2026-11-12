@@ -98,7 +98,7 @@ struct FrameData {
     std::uint32_t reflectionTexture;
     std::uint32_t backgroundTexture;
     std::uint32_t depthTexture;
-    std::uint32_t padding;
+    float exposure;
 };
 static_assert(sizeof(FrameData) == 384);
 
@@ -106,7 +106,7 @@ struct LightData {
     glm::vec3 position;
     float range;
     glm::vec3 direction;
-    float fullRange;
+    float spare;
     glm::vec3 color;
     float cosOuter; // kPointLight for a point light.
     float cosInner;
@@ -122,13 +122,14 @@ constexpr float kPointLight = -2.0f;
 constexpr std::uint32_t kLightNear = 0;
 constexpr std::uint32_t kLightDirectional = 1;
 
-LightData ToGpu(const Light& light) {
+/// A light as shaders read it, its color times the frame's exposure (ADR-0043).
+LightData ToGpu(const Light& light, float exposure) {
     if (light.type == LightType::Directional) {
         return {glm::vec3(0.0f),
                 0.0f,
                 glm::normalize(light.direction),
                 0.0f,
-                light.color,
+                light.color * exposure,
                 kPointLight,
                 kPointLight + 1.0f,
                 std::tan(std::clamp(light.angularRadius, 0.0f, 1.0f)),
@@ -139,8 +140,8 @@ LightData ToGpu(const Light& light) {
     return {light.position,
             light.range,
             spot ? glm::normalize(light.direction) : glm::vec3(0.0f, 0.0f, -1.0f),
-            light.range * std::clamp(light.falloff, 0.0f, 1.0f),
-            light.color,
+            0.0f,
+            light.color * exposure,
             spot ? std::cos(light.outerAngle) : kPointLight,
             spot ? std::cos(light.innerAngle) : kPointLight + 1.0f,
             std::max(light.radius, 0.0f),
@@ -588,7 +589,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                           static_cast<std::uint32_t>(view.lights.size()),
                           m_device->StorageIndex(slot.lights),
                           view.atmosphere.sky ? m_device->BindlessIndex(view.atmosphere.sky) : kNoTexture,
-                          view.atmosphere.skyIntensity,
+                          view.atmosphere.skyIntensity * targets.exposure,
                           targets.frameIndex,
                           m_normalStrength,
                           targets.indirect ? m_device->BindlessIndex(targets.indirect) : kNoTexture,
@@ -608,7 +609,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                           targets.reflections ? m_device->BindlessIndex(targets.reflections) : kNoTexture,
                           targets.background ? m_device->BindlessIndex(targets.background) : kNoTexture,
                           targets.depth ? m_device->BindlessIndex(targets.depth) : kNoTexture,
-                          0};
+                          targets.exposure};
     std::memcpy(m_device->Mapped(slot.clusters).data(), m_clusters.ranges.data(),
                 m_clusters.ranges.size() * sizeof(glm::uvec2));
     if (!m_clusters.lightIndices.empty()) {
@@ -619,7 +620,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
 
     auto* lights = reinterpret_cast<LightData*>(m_device->Mapped(slot.lights).data());
     for (std::size_t index = 0; index < view.lights.size(); ++index) {
-        lights[index] = ToGpu(view.lights[index]);
+        lights[index] = ToGpu(view.lights[index], targets.exposure);
     }
     if (!view.jointMatrices.empty()) {
         // Without previous joints, they stood still.

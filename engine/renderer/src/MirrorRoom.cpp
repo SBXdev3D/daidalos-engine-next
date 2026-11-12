@@ -71,15 +71,21 @@ MirrorRoom MakeMirrorRoom() {
         Box("Glass block", {-0.3f, 0.4f, 0.9f}, {0.8f, 0.8f, 0.8f}, 35.0f,
             Glass(glm::vec3(1.0f), false, {0.35f, 0.8f, 0.7f}, 0.5f)),
     };
-    const Light lamp{.type = LightType::Point,
+    // 170 candela: at EV100 3, the floor under each is as bright as before physical units (ADR-0043).
+    constexpr float kCandela = 170.0f;
+    // Ceiling lamps shine down: one that also shone up, 30 cm from the ceiling, would make a small patch
+    // much brighter than the rest of the room, which one ray per pixel finds too rarely to bounce smoothly.
+    const Light lamp{.type = LightType::Spot,
                      .position = {0.0f, kHeight - 0.3f, 0.0f},
-                     .color = glm::vec3(1.0f, 0.92f, 0.8f),
+                     .direction = {0.0f, -1.0f, 0.0f},
+                     .color = glm::vec3(1.0f, 0.92f, 0.8f) * kCandela,
                      .range = 12.0f,
-                     .falloff = 0.0f};
+                     .innerAngle = glm::radians(60.0f),
+                     .outerAngle = glm::radians(85.0f)};
     room.lights = {lamp, lamp};
     room.lights[0].position = {-1.8f, kHeight - 0.3f, 1.2f};
     room.lights[1].position = {1.8f, kHeight - 0.3f, -1.2f};
-    room.lights[1].color = glm::vec3(0.7f, 0.75f, 0.9f);
+    room.lights[1].color = glm::vec3(0.7f, 0.75f, 0.9f) * kCandela;
     room.eye = {0.6f, 1.6f, 7.0f};
     room.target = {0.0f, 1.0f, 0.0f};
     room.verticalFov = glm::radians(45.0f);

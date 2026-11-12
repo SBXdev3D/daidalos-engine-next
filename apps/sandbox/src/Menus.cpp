@@ -208,7 +208,11 @@ MenuChoice DrawOptions(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud
         Change(app, "renderer.antialiasing", kModes[modeIndex], changed);
     }
     toggle("Indirect light", "renderer.indirect_light");
-    slider("Brightness", "renderer.exposure", 0.5f, 2.0f, 0.05f, percent, twoDecimals);
+    // Stops of exposure compensation (ADR-0043): one more is twice as bright.
+    slider(
+        "Brightness", "renderer.exposure_compensation", -1.0f, 1.0f, 0.1f,
+        [](float value) { return std::format("{:+.1f} EV", value); },
+        [](float value) { return std::format("{:.1f}", value); });
     slider(
         "Field of view", "view.fov", 60.0f, 120.0f, 5.0f, [](float value) { return std::format("{:.0f}°", value); },
         [](float value) { return std::format("{:.0f}", value); });

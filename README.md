@@ -107,10 +107,12 @@ sandbox.exe +window.fullscreen true +renderer.antialiasing off
 | `window.width`, `window.height` | 1280, 720 | Main window size, in screen coordinates |
 | `window.fullscreen` | false | Cover the display without borders, at its own resolution |
 | `renderer.vsync` | true | Synchronize presentation with the display |
-| `renderer.exposure` | 1 | Multiplies the light before tonemapping |
+| `renderer.exposure_compensation` | 0 | Stops added to the scene's exposure: +1 is twice as bright |
 | `renderer.anisotropy` | 16 | Anisotropic filtering of textures, from 1 to 16, read at startup |
 | `renderer.normal_strength` | 1 | Relief of normal maps: 0 flattens them |
 | `renderer.indirect_light` | true | Light that bounces off surfaces; off leaves direct light only |
+| `renderer.reflections` | true | Ray-traced reflections; off, the indirect light stands in for them |
+| `renderer.reflection_roughness` | 0.6 | Surfaces rougher than this trace no reflection |
 | `renderer.antialiasing` | `taa` | `taa` or `off` |
 | `renderer.validation` | true in Debug | Enable the Vulkan validation layers, if installed |
 | `view.fov` | 90 | Degrees across the screen, from 30 to 150 |

@@ -53,6 +53,8 @@ struct Model {
         std::vector<std::uint32_t> parts;
         /// Index into skins, if the parts follow joints.
         std::optional<std::uint32_t> skin;
+        /// From KHR_lights_punctual (ADR-0043): Instantiate gives it to the node's entity.
+        std::optional<Light> light;
     };
     /// One per glTF primitive, each stored once.
     std::vector<Part> parts;

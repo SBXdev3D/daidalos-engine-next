@@ -46,6 +46,7 @@ private:
     core::Result<void> AddNode(std::size_t index, std::optional<std::uint32_t> parent, std::size_t depth);
     core::Result<void> AddSkins();
     core::Result<void> AddAnimations();
+    void AddLights();
     core::Result<std::optional<std::uint32_t>> AddTexture(std::size_t textureIndex, TextureUse use);
     core::Result<ImageSource> MakeImageSource(std::size_t imageIndex, TextureUse use) const;
     core::Result<MeshData> ReadPrimitive(const fastgltf::Primitive& primitive, const std::string& name) const;
@@ -127,7 +128,10 @@ core::Result<void> ModelBuilder::AddMaterials() {
         const auto& pbr = material.pbrData;
         data.baseColorFactor = {pbr.baseColorFactor[0], pbr.baseColorFactor[1], pbr.baseColorFactor[2],
                                 pbr.baseColorFactor[3]};
-        data.emissiveFactor = {material.emissiveFactor[0], material.emissiveFactor[1], material.emissiveFactor[2]};
+        // In nits (ADR-0043), with KHR_materials_emissive_strength's factor, 1 without it.
+        data.emissiveFactor =
+            glm::vec3(material.emissiveFactor[0], material.emissiveFactor[1], material.emissiveFactor[2]) *
+            static_cast<float>(material.emissiveStrength);
         data.metallicFactor = pbr.metallicFactor;
         data.roughnessFactor = pbr.roughnessFactor;
         data.doubleSided = material.doubleSided;
@@ -330,6 +334,10 @@ core::Result<void> ModelBuilder::AddNode(std::size_t index, std::optional<std::u
         // The model keeps every skin of the file, in the same order.
         added.skin = static_cast<std::uint32_t>(*node.skinIndex);
     }
+    if (node.lightIndex.has_value()) {
+        // And every light.
+        added.light = static_cast<std::uint32_t>(*node.lightIndex);
+    }
     const auto addedIndex = static_cast<std::uint32_t>(m_model.nodes.size());
     if (m_nodeIndices[index].has_value()) {
         return Invalid("a node appears twice in its scene");
@@ -393,6 +401,26 @@ core::Result<void> ModelBuilder::AddSkins() {
         }
     }
     return {};
+}
+
+void ModelBuilder::AddLights() {
+    m_model.lights.reserve(m_asset.lights.size());
+    for (const fastgltf::Light& light : m_asset.lights) {
+        LightSource source;
+        source.name = light.name;
+        source.kind = light.type == fastgltf::LightType::Directional ? LightKind::Directional
+                      : light.type == fastgltf::LightType::Spot      ? LightKind::Spot
+                                                                     : LightKind::Point;
+        source.color = {light.color[0], light.color[1], light.color[2]};
+        source.intensity = light.intensity;
+        if (light.range.has_value()) {
+            source.range = *light.range;
+        }
+        // glTF's defaults: a cone of 45 degrees, lit fully to its axis only.
+        source.innerConeAngle = light.innerConeAngle.value_or(0.0f);
+        source.outerConeAngle = light.outerConeAngle.value_or(0.785398f);
+        m_model.lights.push_back(std::move(source));
+    }
 }
 
 core::Result<void> ModelBuilder::AddAnimations() {
@@ -488,6 +516,7 @@ core::Result<ModelData> ModelBuilder::Build() {
     }
     DAI_TRY(AddSkins());
     DAI_TRY(AddAnimations());
+    AddLights();
     return std::move(m_model);
 }
 
@@ -505,9 +534,10 @@ core::Result<ModelData> LoadModelFile(const std::filesystem::path& path) {
         return core::MakeError(core::ErrorCode::IoError, kModule, std::format("Cannot open model file '{}'", fileName));
     }
 
-    fastgltf::Parser parser(fastgltf::Extensions::KHR_texture_basisu |
-                            fastgltf::Extensions::KHR_materials_transmission |
-                            fastgltf::Extensions::KHR_materials_volume | fastgltf::Extensions::KHR_materials_ior);
+    fastgltf::Parser parser(
+        fastgltf::Extensions::KHR_texture_basisu | fastgltf::Extensions::KHR_materials_transmission |
+        fastgltf::Extensions::KHR_materials_volume | fastgltf::Extensions::KHR_materials_ior |
+        fastgltf::Extensions::KHR_materials_emissive_strength | fastgltf::Extensions::KHR_lights_punctual);
     constexpr fastgltf::Options kOptions = fastgltf::Options::LoadExternalBuffers |
                                            fastgltf::Options::DecomposeNodeMatrices |
                                            fastgltf::Options::GenerateMeshIndices;

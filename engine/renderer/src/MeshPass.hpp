@@ -43,6 +43,9 @@ struct FrameTargets {
     /// What the glass pass reads: a copy of the frame before glass, and the pre-pass's depth (ADR-0042).
     rhi::TextureHandle background;
     rhi::TextureHandle depth;
+    /// What luminance in nits is multiplied by before tonemapping (ADR-0043): lights, emission and the sky
+    /// reach the GPU multiplied by it, so that its targets hold values near those of the screen.
+    float exposure = 1.0f;
 };
 
 /// The targets the mesh pass shades into (ADR-0039), which the composite pass puts back together.

@@ -100,7 +100,8 @@ ParticleOutput PSMain(VertexOutput input) {
             const float3 offset = lamp.position - input.worldPosition;
             const float distanceToLight = length(offset);
             if (distanceToLight < lamp.range) {
-                light += lamp.color * Attenuation(lamp, distanceToLight, offset / max(distanceToLight, 0.0001));
+                // A white matte surface facing the light: its illuminance over pi (ADR-0043).
+                light += lamp.color * Attenuation(lamp, distanceToLight, offset / max(distanceToLight, 0.0001)) / 3.14159265;
             }
         }
         color *= light;

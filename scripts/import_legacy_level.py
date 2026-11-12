@@ -69,6 +69,12 @@ ENTITY_ATTRIBUTES = {
 }
 # Attributes in legacy units, written in meters.
 LENGTH_ATTRIBUTES = {"light_range", "light_offset"}
+# Lamps become KHR_lights_punctual lights in physical units (ADR-0043), made for this exposure value: each
+# is as bright as the legacy light where it stopped being at full strength, and falls off with the square
+# of the distance from there.
+LIGHT_EV100 = 3.0
+# A child of a lamp's node, which holds its light, pointing down: glTF lights shine down their local -Z.
+LIGHT_DOWN = [-math.sqrt(0.5), 0.0, 0.0, math.sqrt(0.5)]
 # Kinds that are drawn as a model in place of their legacy animated mesh.
 BOX_MESHES = {"door": "door_bbox.obj"}
 # Animated models, each baked to a glTF file of its own with its texture. Their level nodes keep their
@@ -698,10 +704,11 @@ def read_triangles(models, file):
     return None # Animated models have files of their own: see ANIMATED_MODELS.
 
 
-def entity_name(kind, node):
-    fields = [kind]
+def entity_fields(node):
+    """The attributes the game reads, as (key, value) pairs, lengths in meters."""
+    fields = []
     if node.get("id") is not None:
-        fields.append(f"id={node.get('id')}")
+        fields.append(("id", node.get("id")))
     attributes = node.find("attributes")
     if attributes is not None:
         for element in attributes:
@@ -709,8 +716,47 @@ def entity_name(kind, node):
                 key, value = ENTITY_ATTRIBUTES[element.tag], element.text.strip().rstrip("f")
                 if key in LENGTH_ATTRIBUTES:
                     value = f"{float(value) * METERS_PER_UNIT:g}"
-                fields.append(f"{key}={value}")
-    return ";".join(fields)
+                fields.append((key, value))
+    return fields
+
+
+def entity_name(kind, node):
+    """Its kind and the attributes the game reads, but for a lamp's light, which becomes a glTF light."""
+    return ";".join([kind] + [f"{key}={value}" for key, value in entity_fields(node) if not key.startswith("light_")])
+
+
+def lamp_light(fields):
+    """A legacy lamp's spot light, from its attributes, as a KHR_lights_punctual light and the height of its
+    node below the lamp's; None if it is off. Legacy lights were as bright as their color up to a fraction
+    of their range, the falloff, then faded linearly (ADR-0022)."""
+    values = dict(fields)
+    if values.get("light_enabled", "true") == "false":
+        return None
+    color = [float(channel) for channel in values.get("light_color", "1:1:1:1").split(":")[:3]]
+    light_range = float(values.get("light_range", "7"))
+    full = max(light_range * float(values.get("light_falloff", "0.5")), 0.5)
+    angle = math.radians(float(values.get("light_angle", "20")))
+    peak = max(color) or 1.0
+    # A white surface facing the legacy light at its full range reflected the color; in nits, at LIGHT_EV100,
+    # that is color * 1.2 * 2^EV100, made by color * pi * 1.2 * 2^EV100 lux.
+    candela = peak * math.pi * full * full * 1.2 * 2.0 ** LIGHT_EV100
+    light = {"type": "spot", "color": [round(channel / peak, 4) for channel in color], "intensity": round(candela, 1),
+             "range": light_range,
+             "spot": {"innerConeAngle": round(angle * float(values.get("light_tightness", "0.5")), 5),
+                      "outerConeAngle": round(angle, 5)}}
+    return light, float(values.get("light_offset", "0"))
+
+
+def add_lamp_light(gltf, parent, light, offset):
+    """Adds a light under a lamp's node."""
+    extension = gltf.setdefault("extensions", {}).setdefault("KHR_lights_punctual", {"lights": []})
+    extension["lights"].append(light)
+    gltf["nodes"].append({"name": "lamp light", "translation": [0.0, offset, 0.0], "rotation": LIGHT_DOWN,
+                          "extensions": {"KHR_lights_punctual": {"light": len(extension["lights"]) - 1}}})
+    gltf["nodes"][parent].setdefault("children", []).append(len(gltf["nodes"]) - 1)
+    used = gltf.setdefault("extensionsUsed", [])
+    if "KHR_lights_punctual" not in used:
+        used.append("KHR_lights_punctual")
 
 
 def convert(source, scene, output):
@@ -765,7 +811,9 @@ def convert(source, scene, output):
                     high = [origin[axis] + max(point[axis] for point in geometry.positions) for axis in range(3)]
                     bounds = (f";min={low[0]:.3f},{low[1]:.3f},{low[2]:.3f}"
                               f";max={high[0]:.3f},{high[1]:.3f},{high[2]:.3f}")
-        writer.node(entity_name(kind, node) + bounds, to_engine(position), mesh=mesh)
+        added = writer.node(entity_name(kind, node) + bounds, to_engine(position), mesh=mesh)
+        if kind == "spot" and (light := lamp_light(entity_fields(node))) is not None:
+            add_lamp_light(writer.gltf, added, *light)
         counts[kind] = counts.get(kind, 0) + 1
 
     def walk(parent, origin):
