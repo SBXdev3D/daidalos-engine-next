@@ -1,6 +1,6 @@
 # Architecture
 
-How the engine is built today, through Phase 9.11: real lights with soft ray-traced shadows, indirect light from a radiance cache, ray-traced reflections and glass, their denoiser, temporal antialiasing, a sky, clustered lights, PBR materials, normal maps and particles on the GPU. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
+How the engine is built today, through Phase 9.12: real lights and emissive surfaces with soft ray-traced shadows, sampled by ReSTIR DI over a G-buffer, indirect light from a radiance cache, ray-traced reflections and glass, their denoiser, temporal antialiasing, a sky, PBR materials, normal maps and particles on the GPU. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
 
 ## Modules
 
@@ -31,7 +31,7 @@ Every module also links to `core`; the graph only shows it for the bottom row.
 | `platform` | Window, events, Vulkan surface, processes, crash dumps, and keyboard, mouse and gamepad state with actions (`input::`) | SDL3 |
 | `resources` | Asset paths, caches, decoding of files into plain CPU data | fastgltf, KTX, stb |
 | `rhi` | Vulkan 1.4 device with ray queries, swapchain, buffers, textures, pipelines, command lists, batched uploads | Vulkan, volk, VMA |
-| `renderer` | Draws a `SceneView`: mesh pass, skinning, materials, shader hot reload, the game's interface (`ui::`), and the debug overlay (`debugui::`, development builds) | Dear ImGui, stb_truetype (in `resources`) |
+| `renderer` | Draws a `SceneView`: G-buffer, lighting, skinning, materials, shader hot reload, the game's interface (`ui::`), and the debug overlay (`debugui::`, development builds) | Dear ImGui, stb_truetype (in `resources`) |
 | `physics` | Collisions, characters and ray queries of a scene | Jolt |
 | `audio` | Output, mixing, clips and voices of a scene, silent without an output | miniaudio, stb_vorbis |
 | `scene` | Entities (`ecs::`), animation (`animation::`), the asset library, the engine's components, the systems that tie entities to the renderer, physics and sounds, and the scene itself | |
@@ -89,13 +89,14 @@ sequenceDiagram
     R->>R: Reload changed shaders
     R->>D: BeginFrame: send the pending uploads, read last timestamps
     R->>D: Skinning, with the previous joints too, then the frame's acceleration structures
-    R->>D: Pre-pass, jittered: depth, normals and motion vectors
+    R->>D: Emissive lights: new emissive meshes averaged once, the frame's emissive triangles placed (compute)
+    R->>D: G-buffer, jittered: depth, normals, motion vectors, base color, emission
     R->>D: Global illumination: update the radiance cache, resolve it, one ray per pixel (compute)
     R->>D: Reflections: one ray per pixel along its specular lobe (compute)
     R->>D: Particles: emit, simulate, sort (compute)
-    R->>D: Mesh pass, where depth is equal: emission, diffuse and specular light apart, albedo
+    R->>D: Direct lighting: ReSTIR DI, then one shadow ray per pixel, plus indirect light and reflections (compute)
     R->>D: Denoiser: the light averaged over frames, then over neighbours (compute)
-    R->>D: Composite: the light put back together, and the fog, into the HDR target
+    R->>D: Composite: the light put back together, the sky and the fog, into the HDR target
     R->>D: Particles drawn back to front, one indirect draw, and their coverage as a reactive mask
     R->>D: Glass, if any: the frame copied, then glass drawn over it, reading the copy and tracing rays
     R->>D: Temporal resolve: the frame blended with the reprojected history (compute)
@@ -165,7 +166,9 @@ The renderer uses bindless access: one descriptor set holds every texture, cube 
 ```mermaid
 flowchart LR
     P["Push constants<br/>buffer and element indices"] --> FB["FrameData<br/>view-projection, fog, sky,<br/>indirect light, reflections"]
-    FB --> LB["LightData<br/>every light of the frame"]
+    FB --> LB["LightData<br/>the analytic lights"]
+    FB --> AT["Alias tables<br/>lights and emissive<br/>draws by power"]
+    FB --> ET["Emissive triangles<br/>in world space"]
     P --> IB["InstanceData<br/>world matrix, vertices,<br/>indices, material"]
     IB --> VB["Vertices and indices<br/>of the mesh, or its<br/>skinned vertices"]
     P --> MB["MaterialData<br/>factors and texture indices"]
@@ -180,16 +183,17 @@ Meshes are shaded in linear HDR with metallic-roughness PBR, the frame's lights 
 
 ```mermaid
 flowchart LR
-    E["scene::Light<br/>on entities"] -->|"ExtractScene"| L["SceneView::lights<br/>position, direction, color, range"]
-    AS["Acceleration structure<br/>of the frame"] -->|"a shadow ray per light,<br/>to a random point of it"| M
-    L -->|"CPU clustering<br/>16×9×24"| CL["Cluster light lists"]
-    CL --> M["Mesh pass<br/>GGX, normal maps,<br/>shadows, indirect light,<br/>reflections, then the sky"]
+    E["scene::Light<br/>on entities"] -->|"ExtractScene"| L["SceneView::lights<br/>and emissive draws"]
+    L -->|"by power, on the CPU"| AT["Alias tables"]
+    P["G-buffer<br/>depth, normals, roughness,<br/>motion, base color, emission"] --> M
+    AT --> M["Direct lighting<br/>ReSTIR DI: 8 candidates,<br/>temporal and spatial reuse"]
+    AS["Acceleration structure<br/>of the frame"] -->|"one shadow ray<br/>per pixel"| M
     AS -->|"update paths, one ray<br/>per pixel, one along<br/>its specular lobe"| GI["Global illumination<br/>radiance cache"]
-    P["Pre-pass<br/>depth, normals, roughness,<br/>motion"] --> GI
+    P --> GI
     GI -->|"indirect light and<br/>reflection per pixel"| M
     M -->|"diffuse and specular<br/>light, apart"| DN["Denoiser<br/>temporal, then spatial"]
     P --> DN
-    M -->|"emission,<br/>albedo"| CO["Composite<br/>and fog"]
+    P -->|"emission,<br/>base color"| CO["Composite<br/>sky and fog"]
     DN --> CO
     CO --> H["HDR target<br/>Rgba16Float"]
     H -->|"copied, read behind<br/>glass, rays traced"| GL["Glass pass"]
@@ -197,7 +201,7 @@ flowchart LR
     H -->|"temporal resolve,<br/>PBR Neutral"| S["Swapchain<br/>sRGB"]
 ```
 
-Light is in physical units (ADR-0043): point and spot lights in candela, directional lights in lux, with a tint and an optional color temperature in kelvin; emission and the sky in nits. A light falls off with the inverse square of the distance, faded to zero at its range by a smooth window, and shading is the illuminance times the BSDF. The scene sets its exposure in EV100 (the factory's is 3, a dim interior), and the player adds stops to it. Lights, emission and the sky reach the GPU already multiplied by the exposure, so the targets, the cache and the denoiser hold values near the screen's. Normal maps follow glTF (green up, bitangent from the tangent's `w`), and meshes that lack tangents get MikkTSpace ones at load. Each frame, lights are assigned to 16×9×24 clusters of the view on the CPU, and a pixel shades only the lights of its cluster (ADR-0008). A pre-pass writes depth and normals first, so that the mesh pass shades each pixel once (ADR-0024). No light comes from nowhere: what no light reaches, directly or after bouncing, is black. Indirect light comes from a radiance cache, a hash grid of world space whose cells hold the light surfaces send (ADR-0040). Each frame, one path from the camera per 4×4 pixels adds to the cells of the surfaces it meets the light of one light, picked among eight, and what it brings back from farther. Its last ray reads the cache, so light bounces on frame after frame. Then each pixel casts one ray, in a random direction around its normal, and reads the cache where it hits, or the sky where it leaves. Cells are kept apart by the orientation of their surface, and by an anchor that a point behind a wall cannot see: light does not leak through walls. Each pixel also casts a ray along its specular lobe (ADR-0042), drawn from the GGX distribution of its roughness: on smooth surfaces it shades what it hits, a mirror reflecting on up to three surfaces; on rougher ones it reads the cache where it hits, and fills cells no other path goes to; above `renderer.reflection_roughness` (0.6), no ray is cast and the indirect light stands in. The mesh pass multiplies what came back by the specular albedo. Glass (`KHR_materials_transmission`, with its IOR and volume) is left out of the pre-pass and the mesh pass: after particles, the frame is copied, and the glass pass draws glass over it, testing the pre-pass's depth itself. A pixel of glass is its reflection, as much as Fresnel says, plus what goes through, tinted: the frame behind it for thin glass; for thick glass, a ray bent in, across to the far side and bent out, absorbed on the way. What those rays find is read from the frame when it is on screen, and shaded otherwise. Glass casts no shadow, and only the glass pass and the path tracer see it. Every light casts shadows: for each light of its cluster that would light it, a pixel casts a ray towards the light against the frame's acceleration structure, and alpha-tested surfaces let light through their holes (ADR-0035). A light is a sphere, 5 cm across by default for `scene::Light`: each frame, the ray aims at another point of it, so shadows are soft and noisy at their edges. The mesh pass writes the diffuse and specular light apart from the emission, without the surface's colors, and the denoiser averages them with their history where the surface is the same as last frame, then with neighbours on the same surface, as much as their noise asks: light that is not noisy, such as a hard shadow, goes through unchanged. On smooth surfaces, the specular history is found where the reflected point was, from the reflection's hit distance. A composite pass multiplies the colors back in and adds the fog (ADR-0039). Where nothing is drawn, the mesh pass ends with the level's sky, a cube texture, behind everything (ADR-0036). Nothing beyond the view distance is drawn or lit: the projection has a far plane there, and the clusters end at it. Edges are smoothed by temporal antialiasing (ADR-0037): each frame moves the camera by a fraction of a pixel, the pre-pass writes where each pixel's surface was in the previous frame, from the previous matrices that `ExtractScene` keeps per entity, and a compute pass blends the frame with the history of the earlier ones, clipped towards the colors around each pixel. Particles mark what they cover, where the history counts less, and a teleport or a new scene starts the history over. Draws can opt out, as the sandbox's weapons do. Each group of passes is timed with GPU timestamps, which `Renderer::GpuTimes` returns and the developer tools show.
+Light is in physical units (ADR-0043): point and spot lights in candela, directional lights in lux, with a tint and an optional color temperature in kelvin; emission and the sky in nits. A light falls off with the inverse square of the distance, faded to zero at its range by a smooth window, and shading is the illuminance times the BSDF. The scene sets its exposure in EV100 (the factory's is 3, a dim interior), and the player adds stops to it. Lights, emission and the sky reach the GPU already multiplied by the exposure, so the targets, the cache and the denoiser hold values near the screen's. Normal maps follow glTF (green up, bitangent from the tangent's `w`), and meshes that lack tangents get MikkTSpace ones at load. Lighting is deferred (ADR-0044): one raster pass, the G-buffer, writes each pixel's depth, normal and roughness, motion, base color and metalness, emission and occlusion, and compute passes light it. Lamps and the triangles of emissive meshes are lights alike: an emissive material lights the scene unless its glTF extras say `{"light": false}`. Each frame, the CPU builds an alias table that draws lights by power, and each emissive draw has one of its own over its triangles, whose emission a compute pass averages from the texture once. ReSTIR DI (Bitterli et al. 2020) then gives each pixel one light: eight candidates drawn by power and weighed by what they would send, one kept and tested for shadows, combined with what the same surface kept last frame and with three neighbours on the same surface, and one shadow ray towards it. Whatever the number of lights, a pixel casts one shadow ray; lights keep their names from frame to frame, so a pixel's choice follows its light. `renderer.debug_view lights` shows each pixel's light. No light comes from nowhere: what no light reaches, directly or after bouncing, is black. Indirect light comes from a radiance cache, a hash grid of world space whose cells hold the light surfaces send (ADR-0040). Each frame, one path from the camera per 4×4 pixels adds to the cells of the surfaces it meets the light of one light, picked among eight, and what it brings back from farther. Its last ray reads the cache, so light bounces on frame after frame. Then each pixel casts one ray, in a random direction around its normal, and reads the cache where it hits, or the sky where it leaves. Cells are kept apart by the orientation of their surface, and by an anchor that a point behind a wall cannot see: light does not leak through walls. Each pixel also casts a ray along its specular lobe (ADR-0042), drawn from the GGX distribution of its roughness: on smooth surfaces it shades what it hits, a mirror reflecting on up to three surfaces; on rougher ones it reads the cache where it hits, and fills cells no other path goes to; above `renderer.reflection_roughness` (0.6), no ray is cast and the indirect light stands in. The lighting multiplies what came back by the specular albedo. A sharp reflection shows emissive lights, whose specular light light sampling then leaves out, so each light is counted once. Glass (`KHR_materials_transmission`, with its IOR and volume) is left out of the G-buffer: after particles, the frame is copied, and the glass pass draws glass over it, testing the G-buffer's depth itself. A pixel of glass is its reflection, as much as Fresnel says, plus what goes through, tinted: the frame behind it for thin glass; for thick glass, a ray bent in, across to the far side and bent out, absorbed on the way. What those rays find is read from the frame when it is on screen, and shaded otherwise. Glass casts no shadow, and only the glass pass and the path tracer see it. Every light casts shadows: the shadow ray goes against the frame's acceleration structure, and alpha-tested surfaces let light through their holes (ADR-0035). A light is a sphere, 5 cm across by default for `scene::Light`: each frame, the ray aims at another point of it, so shadows are soft and noisy at their edges. The lighting writes the diffuse and specular light apart from the emission, without the surface's colors, and the denoiser averages them with their history where the surface is the same as last frame, then with neighbours on the same surface, as much as their noise asks: light that is not noisy, such as a hard shadow, goes through unchanged. On smooth surfaces, the specular history is found where the reflected point was, from the reflection's hit distance. A composite pass multiplies the colors back in and adds the fog (ADR-0039). Where nothing is drawn, it shows the level's sky, a cube texture (ADR-0036). Nothing beyond the view distance is drawn: the projection has a far plane there. Edges are smoothed by temporal antialiasing (ADR-0037): each frame moves the camera by a fraction of a pixel, the G-buffer writes where each pixel's surface was in the previous frame, from the previous matrices that `ExtractScene` keeps per entity, and a compute pass blends the frame with the history of the earlier ones, clipped towards the colors around each pixel. Particles mark what they cover, where the history counts less, and a teleport or a new scene starts the history over. Draws can opt out, as the sandbox's weapons do. Each group of passes is timed with GPU timestamps, which `Renderer::GpuTimes` returns and the developer tools show.
 
 `MeshPass` keeps one frame slot per frame in flight, so the CPU never writes data the GPU is still reading. Shaders are written in Slang, compiled to SPIR-V by `slangc` during the build and embedded in the binary. In development builds, the sources are watched and recompiled by the `slangc` executable (ADR-0031).
 
@@ -207,18 +211,18 @@ Each frame, the renderer and its passes add their passes to a `RenderGraph`, in 
 
 ```mermaid
 flowchart LR
-    SK["Skinning"] --> AS["Acceleration<br/>structures"] --> PP["Prepass"] --> GI["Global illumination<br/>update, resolve,<br/>trace"] --> SI["Simulation<br/>emit, simulate,<br/>finish, sort"] --> ME["Meshes"] --> DN["Denoiser<br/>temporal, 5 spatial"] --> CO["Composite"] --> PA["Particles"] --> TR["Temporal<br/>resolve"] --> TO["Tonemap"] --> UI["Interface"] --> OV["Overlay"]
+    SK["Skinning"] --> AS["Acceleration<br/>structures"] --> EL["Emissive<br/>lights"] --> PP["G-buffer"] --> GI["Global illumination<br/>update, resolve,<br/>trace"] --> SI["Simulation<br/>emit, simulate,<br/>finish, sort"] --> ME["Direct lighting<br/>candidates, temporal,<br/>spatial, shading"] --> DN["Denoiser<br/>temporal, 5 spatial"] --> CO["Composite"] --> PA["Particles"] --> TR["Temporal<br/>resolve"] --> TO["Tonemap"] --> UI["Interface"] --> OV["Overlay"]
 ```
 
 Barriers come from the RHI: each texture and buffer remembers its last write and the reads since, and `CommandList::Use` decides from that whether the next use must wait (`rhi::NextAccess`). The GPU tests run with synchronization validation, which reports any use that no barrier orders.
 
 ## Acceleration structures
 
-Rays are traced against a top-level acceleration structure rebuilt every frame from the frame's draws (ADR-0033). Each mesh has a bottom-level structure, built once with its upload. Skinned draws are skinned once per frame by a compute pass, into world-space vertices that the pre-pass and the mesh pass draw and that each skinned draw's own structure is refitted from, so rays and rasterization see the same surface. A ray's hit names its draw's entry in the frame's instance data, which holds its vertices, indices and material. `renderer.debug_view rays` shows the structure from the camera, one color per instance.
+Rays are traced against a top-level acceleration structure rebuilt every frame from the frame's draws (ADR-0033). Each mesh has a bottom-level structure, built once with its upload. Skinned draws are skinned once per frame by a compute pass, into world-space vertices that the G-buffer draws and that each skinned draw's own structure is refitted from, so rays and rasterization see the same surface. A ray's hit names its draw's entry in the frame's instance data, which holds its vertices, indices and material. `renderer.debug_view rays` shows the structure from the camera, one color per instance.
 
 ## The reference path tracer
 
-`renderer.debug_view path` replaces the lit scene with the reference path tracer (ADR-0034): a compute pass that traces one path per pixel per frame against the frame's acceleration structure and averages them while the view stays. It shades hits with the same materials, lights and BSDF as the mesh pass, and rays that leave the scene find the same sky; the BSDF lives in one Slang module, `Bsdf.slang`, that both import. It is what the ray-traced techniques of Phase 9 are compared with; it reflects off and goes through glass as Fresnel says. `sandbox.scene cornell` builds its test scene, the Cornell box, and `sandbox.scene mirrors` the mirror room, of reflections and glass.
+`renderer.debug_view path` replaces the lit scene with the reference path tracer (ADR-0034): a compute pass that traces one path per pixel per frame against the frame's acceleration structure and averages them while the view stays. It shades hits with the same materials, lights and BSDF as the lighting, and rays that leave the scene find the same sky; the BSDF lives in one Slang module, `Bsdf.slang`, that both import. It is what the ray-traced techniques of Phase 9 are compared with; it reflects off and goes through glass as Fresnel says. `sandbox.scene cornell` builds its test scene, the Cornell box, and `sandbox.scene mirrors` the mirror room, of reflections and glass.
 
 ## The game's interface
 
@@ -264,13 +268,13 @@ Particles live on the GPU, in one pool of 16,384 (ADR-0025). The CPU only sends 
 flowchart LR
     E["ParticleEmitter entities,<br/>Scene::SpawnParticles"] -->|"Extract"| V["SceneView::particleSpawns"]
     V --> EM["Emit<br/>slots from the dead list"]
-    EM --> SI["Simulate<br/>gravity, drag, bounces<br/>off the pre-pass"]
+    EM --> SI["Simulate<br/>gravity, drag, bounces<br/>off the G-buffer"]
     SI --> FI["Finish<br/>draw arguments"]
     FI --> SO["Bitonic sort<br/>back to front"]
-    SO --> D["Indirect draw<br/>soft, lit by clusters,<br/>premultiplied"]
+    SO --> D["Indirect draw<br/>soft, lit by one sampled<br/>light, premultiplied"]
 ```
 
-Effects are created on the Renderer from a `ParticleEffectDesc`; `AssetLibrary::CreateParticleEffect` owns them with the level's other assets. Particles hide behind meshes and fade into them, lit ones take the light of their cluster, and additive ones glow in the same draw as the smoke.
+Effects are created on the Renderer from a `ParticleEffectDesc`; `AssetLibrary::CreateParticleEffect` owns them with the level's other assets. Particles hide behind meshes and fade into them, lit ones take the light of one light sampled per pixel, with its shadow, and additive ones glow in the same draw as the smoke.
 
 ## Tests
 
@@ -287,9 +291,10 @@ A tag `vX.Y.Z` runs the Release workflow (ADR-0038): it builds the `*-shipping` 
 
 - No tool produces KTX2 files yet, although the loader reads them.
 - Particles only collide with what is on screen.
-- Particles are lit evenly from every side, and they cast no shadow and receive none: their indirect light is that of the surfaces behind them.
+- Particles are lit evenly from every side, and cast no shadow: their indirect light is that of the surfaces behind them.
 - Indirect light lags a few frames behind a moving light, and starts over after a cut while the cache fills.
-- Light only comes from lamps, so the factory is lit only where its lamps are: the route has 13 of them since ADR-0040, and the underground stays dark until the flashlight is found.
+- The factory is lit only where its lamps are: the route has 13 of them since ADR-0040, it has no emissive surface yet, and the underground stays dark until the flashlight is found.
+- ReSTIR DI takes 1.1 ms at 1080p on an RTX 3090 in the factory and 2.2 ms in a room of 1,000 lights, over its budget of 1 ms (ADR-0044).
 - The denoiser reprojects the highlights of lights with the surface's motion: one that moves across a surface as the camera turns lags behind until the clamp to its neighbours catches it. Reflections have a reprojection of their own on smooth surfaces.
 - The view distance cuts the scene sharply where fog does not hide it, and a wide field of view stretches the weapon held in front of the camera, which has no field of view of its own.
 - Reflections show no glass, and shadows and indirect light go through glass untinted. Glass is smooth, and blurred reflections of metals are dark: the cache holds diffuse light only.

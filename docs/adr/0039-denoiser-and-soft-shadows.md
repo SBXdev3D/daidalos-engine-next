@@ -1,6 +1,6 @@
 # ADR-0039: An own spatiotemporal denoiser, and soft shadows
 
-- **Status:** Accepted
+- **Status:** Accepted; the mesh pass whose light it filters is replaced by ADR-0044's lighting pass, which writes the same targets
 - **Date:** 2026-11-11
 - **Amends:** ADR-0028 (a concrete denoiser, not an `IDenoiser` interface), ADR-0035 (lights have a radius; no shadow pass of their own)
 

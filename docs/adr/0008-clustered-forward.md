@@ -1,6 +1,6 @@
 # ADR-0008: Clustered forward rendering
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0044 (2026-11-13)
 - **Date:** 2026-10-27
 
 ## Context
