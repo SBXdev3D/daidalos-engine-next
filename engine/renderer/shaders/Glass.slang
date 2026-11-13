@@ -45,7 +45,7 @@ bool OnScreen(FrameData frame, float3 position, out int2 pixel) {
 }
 
 // The light that comes back along a ray: what the frame shows where it hits, or the hit shaded (lit or not),
-// or the sky.
+// or the sky. Emissive lights show: glass is a mirror, whose highlights leave them out (ADR-0044).
 float3 TraceLight(FrameData frame, RayDesc ray, bool lit, inout uint random) {
     const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_push.instanceBuffer, g_push.materialBuffer);
     if (!hit.found) {
@@ -65,7 +65,8 @@ float3 TraceLight(FrameData frame, RayDesc ray, bool lit, inout uint random) {
 }
 
 // The highlights of the frame's lights on a smooth surface, with their shadows: as the smoothest surface the
-// G-buffer holds, so that a light the size of a point still shows.
+// G-buffer holds, so that a light the size of a point still shows. Emissive lights are left out: the
+// reflection ray shows them.
 float3 Highlights(FrameData frame, float3 position, float3 normal, float3 faceNormal, float3 view, inout uint random) {
     Receiver receiver;
     receiver.position = position;
@@ -77,6 +78,7 @@ float3 Highlights(FrameData frame, float3 position, float3 normal, float3 faceNo
     receiver.f0 = float3(0.04, 0.04, 0.04);
     receiver.roughness = 0.045;
     receiver.response = kRespondBsdf;
+    receiver.emissiveSpecular = false;
     return SampleDirectLight(frame, receiver, random, g_push.instanceBuffer, g_push.materialBuffer);
 }
 

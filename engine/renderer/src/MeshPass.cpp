@@ -14,6 +14,8 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <shaders/Composite.ps.spv.h>
 #include <shaders/Composite.vs.spv.h>
+#include <shaders/EmissiveAverage.cs.spv.h>
+#include <shaders/EmissiveTriangles.cs.spv.h>
 #include <shaders/GBuffer.ps.spv.h>
 #include <shaders/GBuffer.vs.spv.h>
 #include <shaders/Glass.ps.spv.h>
@@ -25,6 +27,7 @@
 #include <cstddef>
 #include <cstring>
 #include <format>
+#include <numbers>
 #include <utility>
 
 #include "RenderGraph.hpp"
@@ -67,6 +70,37 @@ struct SkinningPushConstants {
 };
 constexpr std::uint32_t kSkinningGroupSize = 64;
 
+// Match EmissiveAveragePushConstants and EmissiveTrianglesPushConstants in shaders/EmissiveAverage.slang and
+// shaders/EmissiveTriangles.slang.
+struct EmissiveAveragePushConstants {
+    std::uint32_t vertexBuffer;
+    std::uint32_t indexBuffer;
+    std::uint32_t materialBuffer;
+    std::uint32_t material;
+    std::uint32_t output;
+    std::uint32_t triangleCount;
+};
+struct EmissiveTrianglesPushConstants {
+    std::uint32_t instanceBuffer;
+    std::uint32_t instance;
+    std::uint32_t firstTriangle;
+    std::uint32_t triangleCount;
+    std::uint32_t emission;
+    std::uint32_t output;
+    std::uint32_t twoSided;
+    std::uint32_t padding;
+};
+constexpr std::uint32_t kEmissiveGroupSize = 64;
+
+// Match EmissiveDraw and EmissiveTriangle in shaders/Lights.slangh.
+struct EmissiveDrawData {
+    std::uint32_t firstTriangle;
+    std::uint32_t triangleCount;
+    std::uint32_t aliasTable;
+    std::uint32_t padding;
+};
+constexpr std::uint64_t kEmissiveTriangleSize = 64;
+
 struct FrameData {
     glm::mat4 viewProjection;
     glm::mat4 inverseViewProjection;
@@ -98,7 +132,8 @@ struct FrameData {
     float exposure;
     std::uint32_t emissiveTriangleBuffer;
     std::uint32_t emissiveTriangleCount;
-    std::array<std::uint32_t, 2> padding;
+    float sharpReflections;
+    std::uint32_t padding;
 };
 static_assert(sizeof(FrameData) == 400);
 
@@ -198,21 +233,40 @@ constexpr std::uint32_t kInitialMaterialCapacity = 64;
 constexpr std::uint64_t kInitialInstanceCapacity = 256;
 constexpr std::uint64_t kInitialJointCapacity = 256;
 constexpr std::uint64_t kInitialLightCapacity = 64;
-/// Grows an array of a frame slot to hold count elements, doubling, and never to zero.
+/// Grows an array of a frame slot to hold count elements, doubling, and never to zero. The CPU writes it,
+/// unless it is in GPU memory.
 core::Result<void> Reserve(rhi::Device& device, rhi::BufferHandle& buffer, std::uint64_t& capacity, std::uint64_t count,
-                           std::uint64_t initial, std::uint64_t elementSize, const char* name) {
+                           std::uint64_t initial, std::uint64_t elementSize, const char* name,
+                           rhi::MemoryLocation memory = rhi::MemoryLocation::CpuToGpu) {
     if (buffer && capacity >= count) {
         return {};
     }
     const std::uint64_t grown = std::max({initial, count, capacity * 2});
     DAI_TRY_ASSIGN(rhi::BufferHandle created, device.CreateBuffer({.size = grown * elementSize,
                                                                    .usage = rhi::BufferUsage::Storage,
-                                                                   .memory = rhi::MemoryLocation::CpuToGpu,
+                                                                   .memory = memory,
                                                                    .name = name}));
     device.DestroyBuffer(buffer);
     buffer = created;
     capacity = grown;
     return {};
+}
+
+std::uint64_t Packed(std::uint32_t index, std::uint32_t generation) {
+    return (std::uint64_t{generation} << 32U) | index;
+}
+
+/// What names an emissive draw from frame to frame: its id, its mesh and its material, apart from the names
+/// of analytic lights.
+std::uint64_t EmissiveDrawKey(SceneId id, std::uint32_t position, MeshHandle mesh, MaterialHandle material) {
+    std::uint64_t key = IdentityKey(id, position) ^ 0x5EEDE1155105ULL;
+    key = (key ^ Packed(mesh.Index(), mesh.Generation())) * 0x9E3779B97F4A7C15ULL;
+    return (key ^ Packed(material.Index(), material.Generation())) * 0xBF58476D1CE4E5B9ULL;
+}
+
+/// How much a world matrix scales areas: the cube of its volume scale, squared.
+float AreaScale(const glm::mat4& world) {
+    return std::pow(std::abs(glm::determinant(glm::mat3(world))), 2.0f / 3.0f);
 }
 
 } // namespace
@@ -230,7 +284,10 @@ MeshPass::MeshPass(MeshPass&& other) noexcept
       m_frameSlots(std::exchange(other.m_frameSlots, {})), m_nextFrameSlot(other.m_nextFrameSlot),
       m_skinned(std::exchange(other.m_skinned, {})), m_previousSkinned(std::exchange(other.m_previousSkinned, {})),
       m_skinnedCapacity(std::exchange(other.m_skinnedCapacity, 0)),
-      m_skinningPipeline(std::exchange(other.m_skinningPipeline, {})) {}
+      m_skinningPipeline(std::exchange(other.m_skinningPipeline, {})),
+      m_emissiveSources(std::exchange(other.m_emissiveSources, {})),
+      m_emissiveAverage(std::exchange(other.m_emissiveAverage, {})),
+      m_emissiveTriangles(std::exchange(other.m_emissiveTriangles, {})) {}
 
 MeshPass::~MeshPass() {
     DestroyPipelines(m_pipelines);
@@ -244,6 +301,11 @@ MeshPass::~MeshPass() {
     m_device->DestroyBuffer(m_skinned);
     m_device->DestroyBuffer(m_previousSkinned);
     m_device->DestroyPipeline(m_skinningPipeline);
+    m_device->DestroyPipeline(m_emissiveAverage);
+    m_device->DestroyPipeline(m_emissiveTriangles);
+    for (auto& [key, source] : m_emissiveSources) {
+        DestroyEmissiveSource(source);
+    }
     for (const FrameSlot& slot : m_frameSlots) {
         m_device->DestroyBuffer(slot.frame);
         m_device->DestroyBuffer(slot.instances);
@@ -251,6 +313,8 @@ MeshPass::~MeshPass() {
         m_device->DestroyBuffer(slot.lights);
         m_device->DestroyBuffer(slot.sources);
         m_device->DestroyBuffer(slot.lightMap);
+        m_device->DestroyBuffer(slot.emissiveDraws);
+        m_device->DestroyBuffer(slot.emissiveTriangles);
     }
 }
 
@@ -259,6 +323,11 @@ core::Result<MeshPass> MeshPass::Create(rhi::Device& device, rhi::Format colorFo
     DAI_TRY(pass.ReplaceShaders(rhi::ToSpirv(kGBufferVsSpirv), rhi::ToSpirv(kGBufferPsSpirv)));
     DAI_TRY_ASSIGN(pass.m_skinningPipeline,
                    device.CreateComputePipeline({.shader = rhi::ToSpirv(kSkinningCsSpirv), .name = "Skinning"}));
+    DAI_TRY_ASSIGN(pass.m_emissiveAverage, device.CreateComputePipeline({.shader = rhi::ToSpirv(kEmissiveAverageCsSpirv),
+                                                                        .name = "Emission of triangles"}));
+    DAI_TRY_ASSIGN(pass.m_emissiveTriangles,
+                   device.CreateComputePipeline(
+                       {.shader = rhi::ToSpirv(kEmissiveTrianglesCsSpirv), .name = "Emissive triangles"}));
     // Plain white plastic. glTF's default material is a metal, which looks black without reflections.
     DAI_TRY_ASSIGN(MaterialHandle defaultMaterial, pass.CreateMaterial({.metallicFactor = 0.0f}));
     pass.m_defaultMaterial = defaultMaterial;
@@ -432,6 +501,21 @@ void MeshPass::DestroyMesh(MeshHandle mesh) {
         m_device->DestroyBuffer(removed->skin);
         m_device->DestroyAccelerationStructure(removed->structure);
     }
+    const std::uint64_t packed = Packed(mesh.Index(), mesh.Generation());
+    std::erase_if(m_emissiveSources, [&](auto& entry) {
+        if (entry.first.first != packed) {
+            return false;
+        }
+        DestroyEmissiveSource(entry.second);
+        return true;
+    });
+}
+
+void MeshPass::DestroyEmissiveSource(EmissiveSource& source) {
+    m_device->DestroyBuffer(source.readback);
+    m_device->DestroyBuffer(source.emission);
+    m_device->DestroyBuffer(source.aliasTable);
+    source = {};
 }
 
 std::uint32_t MeshPass::TextureIndex(rhi::TextureHandle texture) const {
@@ -479,8 +563,10 @@ core::Result<MaterialHandle> MeshPass::CreateMaterial(const MaterialDesc& desc) 
         .emissiveLight = desc.emissiveLight ? 1U : 0U,
     };
 
-    const MaterialHandle material =
-        m_materials.Insert({desc.doubleSided, desc.alphaCutoff > 0.0f, desc.transmission > 0.0f});
+    const bool glass = desc.transmission > 0.0f;
+    const MaterialHandle material = m_materials.Insert(
+        {desc.doubleSided, desc.alphaCutoff > 0.0f, glass,
+         desc.emissiveLight && !glass && glm::any(glm::greaterThan(desc.emissiveFactor, glm::vec3(0.0f)))});
     if (core::Result<void> reserved = ReserveMaterialSlot(material.Index()); !reserved) {
         m_materials.Remove(material);
         return tl::unexpected(std::move(reserved.error()));
@@ -495,6 +581,14 @@ core::Result<MaterialHandle> MeshPass::CreateMaterial(const MaterialDesc& desc) 
 void MeshPass::DestroyMaterial(MaterialHandle material) {
     DAI_ASSERT(material != m_defaultMaterial, "The default material belongs to the pass");
     m_materials.Remove(material);
+    const std::uint64_t packed = Packed(material.Index(), material.Generation());
+    std::erase_if(m_emissiveSources, [&](auto& entry) {
+        if (entry.first.second != packed) {
+            return false;
+        }
+        DestroyEmissiveSource(entry.second);
+        return true;
+    });
 }
 
 core::Result<void> MeshPass::PrepareFrameSlot(FrameSlot& slot, const SceneView& view) {
@@ -511,37 +605,160 @@ core::Result<void> MeshPass::PrepareFrameSlot(FrameSlot& slot, const SceneView& 
                     sizeof(glm::mat4), "Joints"));
     DAI_TRY(reserve(slot.lights, slot.lightCapacity, view.lights.size(), kInitialLightCapacity, sizeof(LightData),
                     "Lights"));
-    DAI_TRY(reserve(slot.sources, slot.sourceCapacity, view.lights.size(), kInitialLightCapacity, sizeof(AliasEntry),
-                    "Light sources"));
-    // The last frame's lights, each mapped to this one's.
-    DAI_TRY(reserve(slot.lightMap, slot.lightMapCapacity, m_lightKeys.size(), kInitialLightCapacity,
-                    sizeof(std::uint32_t), "Light map"));
     return {};
 }
 
-void MeshPass::PrepareLights(FrameSlot& slot, const SceneView& view, float exposure) {
-    auto* lights = reinterpret_cast<LightData*>(m_device->Mapped(slot.lights).data());
-    std::vector<float> powers(view.lights.size());
-    for (std::size_t index = 0; index < view.lights.size(); ++index) {
-        lights[index] = ToGpu(view.lights[index], exposure);
-        powers[index] = LightPower(view.lights[index]);
+MeshPass::EmissiveSource* MeshPass::FindEmissiveSource(MeshHandle meshHandle, MaterialHandle material) {
+    const EmissiveKey key{Packed(meshHandle.Index(), meshHandle.Generation()),
+                          Packed(material.Index(), material.Generation())};
+    auto found = m_emissiveSources.find(key);
+    if (found == m_emissiveSources.end()) {
+        const Mesh& mesh = m_meshes.Get(meshHandle);
+        EmissiveSource source{.triangleCount = mesh.indexCount / 3};
+        core::Result<rhi::BufferHandle> readback =
+            m_device->CreateBuffer({.size = std::uint64_t{source.triangleCount} * sizeof(glm::vec4),
+                                    .usage = rhi::BufferUsage::Storage,
+                                    .memory = rhi::MemoryLocation::GpuToCpu,
+                                    .name = "Emission of triangles"});
+        if (!readback) {
+            return nullptr;
+        }
+        source.readback = *readback;
+        found = m_emissiveSources.emplace(key, source).first;
+        m_averageJobs.push_back({key, meshHandle, material});
     }
+    EmissiveSource& source = found->second;
+    if (source.ready || !source.averagedAt.has_value() || m_prepareCount < *source.averagedAt + rhi::kFramesInFlight) {
+        return &source;
+    }
+    // The GPU has written the emission: each triangle's, and its area, from which the triangles are drawn.
+    const std::span<const std::byte> bytes = m_device->Mapped(source.readback);
+    std::vector<glm::vec4> triangles(source.triangleCount);
+    std::memcpy(triangles.data(), bytes.data(), triangles.size() * sizeof(glm::vec4));
+    std::vector<float> powers(triangles.size());
+    source.power = 0.0f;
+    for (std::size_t index = 0; index < triangles.size(); ++index) {
+        powers[index] = std::max(Luminance(glm::vec3(triangles[index])), 0.0f) * triangles[index].w;
+        source.power += powers[index];
+    }
+    const std::vector<AliasEntry> table = BuildAliasTable(powers);
+    core::Result<void> made =
+        m_device
+            ->CreateBuffer({.size = triangles.size() * sizeof(glm::vec4),
+                            .usage = rhi::BufferUsage::Storage,
+                            .memory = rhi::MemoryLocation::CpuToGpu,
+                            .name = "Emission of triangles"})
+            .and_then([&](rhi::BufferHandle emission) {
+                source.emission = emission;
+                return m_device->CreateBuffer({.size = table.size() * sizeof(AliasEntry),
+                                               .usage = rhi::BufferUsage::Storage,
+                                               .memory = rhi::MemoryLocation::CpuToGpu,
+                                               .name = "Emissive triangles by power"});
+            })
+            .map([&](rhi::BufferHandle aliasTable) { source.aliasTable = aliasTable; });
+    if (!made) {
+        DestroyEmissiveSource(source);
+        m_emissiveSources.erase(found);
+        return nullptr;
+    }
+    std::memcpy(m_device->Mapped(source.emission).data(), triangles.data(), triangles.size() * sizeof(glm::vec4));
+    std::memcpy(m_device->Mapped(source.aliasTable).data(), table.data(), table.size() * sizeof(AliasEntry));
+    m_device->DestroyBuffer(source.readback);
+    source.readback = {};
+    source.ready = true;
+    return &source;
+}
+
+std::vector<glm::vec3> MeshPass::TriangleEmission(MeshHandle mesh, MaterialHandle material) const {
+    const auto found = m_emissiveSources.find(
+        {Packed(mesh.Index(), mesh.Generation()), Packed(material.Index(), material.Generation())});
+    if (found == m_emissiveSources.end() || !found->second.ready) {
+        return {};
+    }
+    const EmissiveSource& source = found->second;
+    std::vector<glm::vec4> triangles(source.triangleCount);
+    std::memcpy(triangles.data(), m_device->Mapped(source.emission).data(), triangles.size() * sizeof(glm::vec4));
+    std::vector<glm::vec3> emission;
+    emission.reserve(triangles.size());
+    for (const glm::vec4& triangle : triangles) {
+        emission.emplace_back(triangle);
+    }
+    return emission;
+}
+
+core::Result<MeshPass::FrameLights> MeshPass::PrepareLights(FrameSlot& slot, const SceneView& view, float exposure) {
+    // The analytic lights, each its own source.
+    const auto lightCount = static_cast<std::uint32_t>(view.lights.size());
+    auto* lights = reinterpret_cast<LightData*>(m_device->Mapped(slot.lights).data());
+    std::vector<float> powers;
+    std::vector<LightRange> ranges;
+    for (std::uint32_t index = 0; index < lightCount; ++index) {
+        lights[index] = ToGpu(view.lights[index], exposure);
+        powers.push_back(LightPower(view.lights[index]));
+        ranges.push_back({IdentityKey(view.lights[index].id, index), index, 1});
+    }
+
+    // Then the emissive draws, each a source of its triangles, once their emission is known (ADR-0044). The
+    // flux of a surface that sends the same light everywhere is its radiance times its area times pi.
+    std::vector<EmissiveDrawData> draws;
+    m_emissiveJobs.clear();
+    std::uint32_t triangleCount = 0;
+    for (std::uint32_t index = 0; index < m_sorted.size(); ++index) {
+        const SortedDraw& sorted = m_sorted[index];
+        const Material& material = m_materials.Get(sorted.material);
+        if (!material.emissive || sorted.glass) {
+            continue;
+        }
+        const EmissiveSource* source = FindEmissiveSource(sorted.mesh, sorted.material);
+        if (source == nullptr || !source->ready || source->power <= 0.0f) {
+            continue;
+        }
+        const DrawItem& draw = view.draws[sorted.draw];
+        const bool skinned = sorted.firstSkinnedVertex != kNotSkinned;
+        const float sides = material.doubleSided ? 2.0f : 1.0f;
+        powers.push_back(source->power * (skinned ? 1.0f : AreaScale(draw.world)) * std::numbers::pi_v<float> * sides);
+        ranges.push_back({EmissiveDrawKey(draw.id, sorted.draw, sorted.mesh, sorted.material),
+                          lightCount + triangleCount, source->triangleCount});
+        draws.push_back({triangleCount, source->triangleCount, m_device->StorageIndex(source->aliasTable), 0});
+        m_emissiveJobs.push_back({index, triangleCount, source->triangleCount, m_device->StorageIndex(source->emission),
+                                  material.doubleSided ? 1U : 0U});
+        triangleCount += source->triangleCount;
+    }
+
+    DAI_TRY(Reserve(*m_device, slot.sources, slot.sourceCapacity, powers.size(), kInitialLightCapacity,
+                    sizeof(AliasEntry), "Light sources"));
+    DAI_TRY(Reserve(*m_device, slot.emissiveDraws, slot.emissiveDrawCapacity, draws.size(), 16,
+                    sizeof(EmissiveDrawData), "Emissive draws"));
+    DAI_TRY(Reserve(*m_device, slot.emissiveTriangles, slot.emissiveTriangleCapacity, triangleCount, 256,
+                    kEmissiveTriangleSize, "Emissive triangles", rhi::MemoryLocation::GpuOnly));
+    // The last frame's lights, each mapped to this one's.
+    // Then, for each of this frame's lights, 1 if it is new.
+    DAI_TRY(Reserve(*m_device, slot.lightMap, slot.lightMapCapacity, m_lightCount + lightCount + triangleCount,
+                    kInitialLightCapacity, sizeof(std::uint32_t), "Light map"));
     const std::vector<AliasEntry> table = BuildAliasTable(powers);
     if (!table.empty()) {
         std::memcpy(m_device->Mapped(slot.sources).data(), table.data(), table.size() * sizeof(AliasEntry));
     }
-
-    // Each light keeps its name from frame to frame: the reservoirs that chose it follow it (ADR-0044).
-    m_previousLightKeys.swap(m_lightKeys);
-    m_lightKeys.clear();
-    for (std::uint32_t index = 0; index < view.lights.size(); ++index) {
-        m_lightKeys.push_back(IdentityKey(view.lights[index].id, index));
+    if (!draws.empty()) {
+        std::memcpy(m_device->Mapped(slot.emissiveDraws).data(), draws.data(), draws.size() * sizeof(EmissiveDrawData));
     }
-    const std::vector<std::uint32_t> map = MapIdentities(m_previousLightKeys, m_lightKeys);
-    m_previousLightCount = static_cast<std::uint32_t>(map.size());
+
+    // Each light keeps its name from frame to frame: the reservoirs that chose it follow it.
+    std::vector<std::uint32_t> map = MapLights(m_previousRanges, ranges, m_lightCount);
+    std::vector<std::uint32_t> fresh(std::size_t{lightCount} + triangleCount, 1);
+    for (const std::uint32_t current : map) {
+        if (current != kGone) {
+            fresh[current] = 0;
+        }
+    }
+    map.insert(map.end(), fresh.begin(), fresh.end());
     if (!map.empty()) {
         std::memcpy(m_device->Mapped(slot.lightMap).data(), map.data(), map.size() * sizeof(std::uint32_t));
     }
+    m_previousRanges = std::move(ranges);
+    m_mappedLightCount = m_lightCount;
+    m_lightCount = lightCount + triangleCount;
+    return FrameLights{.sourceCount = static_cast<std::uint32_t>(powers.size()), .emissiveTriangleCount = triangleCount};
 }
 
 core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& targets) {
@@ -564,7 +781,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     FrameSlot& slot = m_frameSlots[m_nextFrameSlot];
     m_nextFrameSlot = (m_nextFrameSlot + 1) % rhi::kFramesInFlight;
     DAI_TRY(PrepareFrameSlot(slot, view));
-    PrepareLights(slot, view, targets.exposure);
+    ++m_prepareCount;
 
     const glm::vec3 cameraPosition = glm::inverse(camera.view)[3];
     const glm::mat4 projection = math::PerspectiveReverseZ(verticalFov, aspect, camera.nearPlane, farPlane);
@@ -580,7 +797,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         m_previousViewProjection.has_value() && !view.cut ? *m_previousViewProjection : viewProjection;
     m_previousViewProjection = viewProjection;
     m_viewProjection = viewProjection;
-    const FrameData frame{jittered,
+    FrameData frame{jittered,
                           glm::inverse(jittered),
                           cameraPosition,
                           view.atmosphere.fogDensity,
@@ -596,7 +813,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                                     1.0f / static_cast<float>(std::max(targets.extent.height, 1U))),
                           camera.nearPlane,
                           static_cast<std::uint32_t>(view.lights.size()),
-                          m_device->StorageIndex(slot.sources),
+                          0, // The alias table: below, once the lights are known.
                           farPlane,
                           glm::normalize(-glm::vec3(glm::inverse(camera.view)[2])),
                           0,
@@ -611,8 +828,8 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                           targets.exposure,
                           0,
                           0,
-                          {}};
-    std::memcpy(m_device->Mapped(slot.frame).data(), &frame, sizeof(frame));
+                          targets.sharpReflections,
+                          0};
 
     if (!view.jointMatrices.empty()) {
         // Without previous joints, they stood still.
@@ -714,8 +931,16 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
             traced.structure = mesh.structure;
         }
     }
+    // The lights, emissive draws included, once the draws are sorted: their instances are known.
+    DAI_TRY_ASSIGN(const FrameLights frameLights, PrepareLights(slot, view, targets.exposure));
+    frame.sourceCount = frameLights.sourceCount;
+    frame.aliasBuffer = m_device->StorageIndex(slot.sources);
+    frame.emissiveDrawBuffer = m_device->StorageIndex(slot.emissiveDraws);
+    frame.emissiveTriangleBuffer = m_device->StorageIndex(slot.emissiveTriangles);
+    frame.emissiveTriangleCount = frameLights.emissiveTriangleCount;
+    std::memcpy(m_device->Mapped(slot.frame).data(), &frame, sizeof(frame));
     m_counts = {.draws = static_cast<std::uint32_t>(view.draws.size()),
-                .lights = static_cast<std::uint32_t>(view.lights.size())};
+                .lights = static_cast<std::uint32_t>(view.lights.size()) + frameLights.emissiveTriangleCount};
     m_hasGlass = false;
     for (const SortedDraw& sorted : m_sorted) {
         m_hasGlass = m_hasGlass || (sorted.visible && sorted.glass);
@@ -758,6 +983,71 @@ void MeshPass::AddSkinning(RenderGraph& graph) {
             commands.Push(SkinningPushConstants{job.source, job.skin, joints, job.firstJoint, target, job.firstVertex,
                                                 job.vertexCount, m_jointCount, previousTarget});
             commands.Dispatch((job.vertexCount + kSkinningGroupSize - 1) / kSkinningGroupSize);
+        }
+    });
+}
+
+void MeshPass::AddEmissiveLights(RenderGraph& graph) {
+    if (m_prepared == nullptr) {
+        return;
+    }
+    // The emission of each triangle of the meshes and materials drawn together for the first time, written
+    // where the CPU reads it a few frames later.
+    if (!m_averageJobs.empty()) {
+        PassDesc desc{.name = "Emission of triangles", .group = "Emissive lights"};
+        std::vector<EmissiveAveragePushConstants> pushes;
+        for (const AverageJob& job : m_averageJobs) {
+            const auto found = m_emissiveSources.find(job.key);
+            const Mesh* drawn = m_meshes.TryGet(job.mesh);
+            if (found == m_emissiveSources.end() || drawn == nullptr) {
+                continue;
+            }
+            EmissiveSource& source = found->second;
+            desc.buffers.push_back({source.readback, rhi::Access::ComputeShaderWrite});
+            desc.buffers.push_back({drawn->vertices, rhi::Access::ComputeShaderRead});
+            desc.buffers.push_back({drawn->indices, rhi::Access::ComputeShaderRead});
+            pushes.push_back({m_device->StorageIndex(drawn->vertices), m_device->StorageIndex(drawn->indices),
+                              m_device->StorageIndex(m_materialTable), job.material.Index(),
+                              m_device->StorageIndex(source.readback), source.triangleCount});
+            source.averagedAt = m_prepareCount;
+        }
+        m_averageJobs.clear();
+        if (!pushes.empty()) {
+            graph.AddPass(std::move(desc), [this, pushes = std::move(pushes)](rhi::CommandList& commands) {
+                DAI_PROFILE_SCOPE("renderer::MeshPass::EmissionOfTriangles");
+                commands.BindPipeline(m_emissiveAverage);
+                for (const EmissiveAveragePushConstants& push : pushes) {
+                    commands.Push(push);
+                    commands.Dispatch((push.triangleCount + kEmissiveGroupSize - 1) / kEmissiveGroupSize);
+                }
+            });
+        }
+    }
+    // The frame's emissive triangles, in world space: emissive draws that move stay lights.
+    if (m_emissiveJobs.empty()) {
+        return;
+    }
+    PassDesc desc{.name = "Emissive triangles",
+                  .group = "Emissive lights",
+                  .buffers = {{m_prepared->emissiveTriangles, rhi::Access::ComputeShaderWrite},
+                              {SkinnedVertices(), rhi::Access::ComputeShaderRead}}};
+    std::vector<EmissiveTrianglesPushConstants> pushes;
+    const std::uint32_t instances = m_device->StorageIndex(m_prepared->instances);
+    const std::uint32_t output = m_device->StorageIndex(m_prepared->emissiveTriangles);
+    for (const EmissiveJob& job : m_emissiveJobs) {
+        pushes.push_back({instances, job.instance, job.firstTriangle, job.triangleCount, job.emission, output,
+                          job.twoSided, 0});
+        const Mesh& mesh = m_meshes.Get(m_sorted[job.instance].mesh);
+        desc.buffers.push_back({mesh.vertices, rhi::Access::ComputeShaderRead});
+        desc.buffers.push_back({mesh.indices, rhi::Access::ComputeShaderRead});
+    }
+    graph.AddPass(std::move(desc), [this, pushes = std::move(pushes)](rhi::CommandList& commands) {
+        DAI_PROFILE_SCOPE("renderer::MeshPass::EmissiveTriangles");
+        commands.BindPipeline(m_emissiveTriangles);
+        // The draws write separate triangles: no dispatch waits for another.
+        for (const EmissiveTrianglesPushConstants& push : pushes) {
+            commands.Push(push);
+            commands.Dispatch((push.triangleCount + kEmissiveGroupSize - 1) / kEmissiveGroupSize);
         }
     });
 }

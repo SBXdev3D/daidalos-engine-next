@@ -103,6 +103,7 @@ ParticleOutput PSMain(VertexOutput input) {
         receiver.f0 = float3(0.0, 0.0, 0.0);
         receiver.roughness = 1.0;
         receiver.response = kRespondEverywhere;
+        receiver.emissiveSpecular = true;
         uint random = Pcg(uint(pixel.y) * 65521u + uint(pixel.x)) ^ Pcg(frame.frameIndex * 9781u + input.effect);
         light += SampleDirectLight(frame, receiver, random, g_particles.instanceBuffer, g_particles.materialBuffer);
         color *= light;

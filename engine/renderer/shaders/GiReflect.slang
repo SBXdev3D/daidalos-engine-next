@@ -11,7 +11,9 @@
 // - On a smooth surface, sharp enough to show what it reflects: what the ray hits, shaded with its whole
 //   BSDF, so that metals show: its emission, the light of one light chosen among a few, with a shadow ray,
 //   and the indirect light that reaches it, from one more ray into the cache, for its diffuse and its
-//   specular parts. A mirror-like hit reflects on instead, up to kMirrorBounces surfaces.
+//   specular parts. A mirror-like hit reflects on instead, up to kMirrorBounces surfaces. Emission shows,
+//   emissive lights included: the lighting of the pixel, and of a mirror that reflects on, leaves out their
+//   specular light (ADR-0044).
 // - On a rougher one, whose reflection is a blur: the light the cache holds where the ray hits. Many of
 //   these hits are out of view, where no path of the cache goes: a cell worth too few samples gets one, the
 //   hit shaded as above, so that reflections fill the cache where they need it (as SHaRC's paths do).
@@ -28,7 +30,8 @@ import Bsdf;
 
 [[vk::binding(4, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> g_storageImages[];
 
-// Below this roughness, the reflection is sharp enough that what it shows is shaded fully.
+// Below this roughness, the reflection is sharp enough that what it shows is shaded fully. Matches
+// GlobalIllumination::kSharpRoughness.
 static const float kSharpRoughness = 0.3;
 // Below this roughness, what a reflection ray hits is a mirror that reflects on.
 static const float kMirrorRoughness = 0.1;
@@ -62,10 +65,12 @@ float3 IndirectAt(FrameData frame, Surface surface, inout uint random) {
 }
 
 // The light of the frame's lights that a surface sends towards view, with its whole BSDF: one light chosen
-// among a few, the brighter the more likely, and one shadow ray (Lights.slangh).
-float3 DirectLight(Surface surface, float3 view, FrameData frame, inout uint random) {
-    return SampleDirectLight(frame, ReceiverOf(surface, view, kRespondBsdf), random, g_gi.instanceBuffer,
-                             g_gi.materialBuffer);
+// among a few, the brighter the more likely, and one shadow ray (Lights.slangh). A mirror that reflects on
+// leaves out the specular light of emissive lights, which the next ray shows.
+float3 DirectLight(Surface surface, float3 view, FrameData frame, bool emissiveSpecular, inout uint random) {
+    Receiver receiver = ReceiverOf(surface, view, kRespondBsdf);
+    receiver.emissiveSpecular = emissiveSpecular;
+    return SampleDirectLight(frame, receiver, random, g_gi.instanceBuffer, g_gi.materialBuffer);
 }
 
 [numthreads(8, 8, 1)]
@@ -122,8 +127,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             if (cached.a >= kKnownSamples) {
                 light += throughput * cached.rgb;
             } else {
-                const float3 sent = surface.emission + DirectDiffuseLight(surface, frame, random) +
-                                    surface.diffuseColor * IndirectAt(frame, surface, random);
+                // Emission adds nothing to the cache (ADR-0044).
+                const float3 sent =
+                    DirectDiffuseLight(surface, frame, random) + surface.diffuseColor * IndirectAt(frame, surface, random);
                 AddToCell(cell, sent);
                 light += throughput * sent;
             }
@@ -133,7 +139,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         const float3 specularAlbedo = SpecularAlbedo(surface.f0, surface.roughness, max(dot(surface.normal, hitView), 0.0));
         const bool mirror = surface.roughness < kMirrorRoughness;
         // A mirror's specular indirect light is what it reflects on: the next bounce.
-        light += throughput * (surface.emission + DirectLight(surface, hitView, frame, random) +
+        light += throughput * (surface.emission + DirectLight(surface, hitView, frame, !mirror, random) +
                                (surface.diffuseColor + (mirror ? 0.0 : specularAlbedo)) *
                                    IndirectAt(frame, surface, random));
         if (!mirror) {

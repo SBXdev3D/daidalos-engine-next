@@ -181,12 +181,13 @@ void DirectLighting::AddTo(RenderGraph& graph, const DirectLightingInputs& input
                                                {inputs.baseColor, rhi::Access::ComputeShaderRead},
                                                {inputs.emission, rhi::Access::ComputeShaderRead}};
     const rhi::BufferUse skinned{inputs.skinnedVertices, rhi::Access::ComputeShaderRead};
+    const rhi::BufferUse lights{inputs.emissiveTriangles, rhi::Access::ComputeShaderRead};
     const std::vector<rhi::AccelerationStructureUse> structures{{inputs.structure, rhi::Access::RayQueryRead}};
 
     PassDesc candidates{.name = "ReSTIR candidates",
                         .group = "Direct lighting",
                         .textures = gbuffer,
-                        .buffers = {{m_reservoirs, rhi::Access::ComputeShaderWrite}, skinned},
+                        .buffers = {{m_reservoirs, rhi::Access::ComputeShaderWrite}, skinned, lights},
                         .structures = structures};
     candidates.textures.push_back({m_guides[m_current], rhi::Access::ComputeShaderWrite, true});
     graph.AddPass(std::move(candidates), dispatch(m_candidates, push));
@@ -195,7 +196,7 @@ void DirectLighting::AddTo(RenderGraph& graph, const DirectLightingInputs& input
     PassDesc temporal{.name = "ReSTIR temporal reuse",
                       .group = "Direct lighting",
                       .textures = gbuffer,
-                      .buffers = {{m_reservoirs, rhi::Access::ComputeShaderWrite}, skinned},
+                      .buffers = {{m_reservoirs, rhi::Access::ComputeShaderWrite}, skinned, lights},
                       .structures = structures};
     temporal.textures.push_back({inputs.motion, rhi::Access::ComputeShaderRead});
     if (m_hasHistory) {
@@ -213,7 +214,8 @@ void DirectLighting::AddTo(RenderGraph& graph, const DirectLightingInputs& input
                    .textures = gbuffer,
                    .buffers = {{m_finalReservoirs, rhi::Access::ComputeShaderWrite},
                                {m_reservoirs, rhi::Access::ComputeShaderRead},
-                               skinned},
+                               skinned,
+                               lights},
                    .structures = structures},
                   dispatch(m_spatial, spatialPush));
 
@@ -222,7 +224,7 @@ void DirectLighting::AddTo(RenderGraph& graph, const DirectLightingInputs& input
     PassDesc shade{.name = "Lighting",
                    .group = "Direct lighting",
                    .textures = gbuffer,
-                   .buffers = {{m_finalReservoirs, rhi::Access::ComputeShaderWrite}, skinned},
+                   .buffers = {{m_finalReservoirs, rhi::Access::ComputeShaderWrite}, skinned, lights},
                    .structures = structures};
     shade.textures.push_back({inputs.diffuse, rhi::Access::ComputeShaderWrite, true});
     shade.textures.push_back({inputs.specular, rhi::Access::ComputeShaderWrite, true});

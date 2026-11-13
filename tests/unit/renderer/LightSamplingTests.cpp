@@ -105,21 +105,35 @@ TEST(LightPower, FollowsTheLuminanceOfTheColor) {
     EXPECT_GT(daidalos::renderer::LightPower(green), 9.0f * daidalos::renderer::LightPower(blue));
 }
 
-TEST(MapIdentities, FollowsLightsThatMoveInTheList) {
-    const std::array<std::uint64_t, 3> previous{10, 20, 30};
-    const std::array<std::uint64_t, 4> current{30, 40, 10, 20};
-    const std::vector<std::uint32_t> mapped = daidalos::renderer::MapIdentities(previous, current);
-    EXPECT_EQ(mapped, (std::vector<std::uint32_t>{2, 3, 0}));
+using daidalos::renderer::kGone;
+using daidalos::renderer::LightRange;
+
+TEST(MapLights, FollowsLightsThatMoveInTheList) {
+    const std::array<LightRange, 3> previous{{{10, 0, 1}, {20, 1, 1}, {30, 2, 1}}};
+    const std::array<LightRange, 4> current{{{30, 0, 1}, {40, 1, 1}, {10, 2, 1}, {20, 3, 1}}};
+    EXPECT_EQ(daidalos::renderer::MapLights(previous, current, 3), (std::vector<std::uint32_t>{2, 3, 0}));
 }
 
-TEST(MapIdentities, LightsThatAreGoneMapToNothing) {
-    const std::array<std::uint64_t, 3> previous{10, 20, 30};
-    const std::array<std::uint64_t, 1> current{20};
-    const std::vector<std::uint32_t> mapped = daidalos::renderer::MapIdentities(previous, current);
-    EXPECT_EQ(mapped, (std::vector<std::uint32_t>{daidalos::renderer::kGone, 0, daidalos::renderer::kGone}));
+TEST(MapLights, LightsThatAreGoneMapToNothing) {
+    const std::array<LightRange, 3> previous{{{10, 0, 1}, {20, 1, 1}, {30, 2, 1}}};
+    const std::array<LightRange, 1> current{{{20, 0, 1}}};
+    EXPECT_EQ(daidalos::renderer::MapLights(previous, current, 3), (std::vector<std::uint32_t>{kGone, 0, kGone}));
 }
 
-TEST(MapIdentities, LightsWithoutAnIdAreNamedByTheirPosition) {
+TEST(MapLights, TheTrianglesOfADrawFollowIt) {
+    // A lamp, then an emissive draw of three triangles; next frame, a new lamp comes first.
+    const std::array<LightRange, 2> previous{{{10, 0, 1}, {77, 1, 3}}};
+    const std::array<LightRange, 3> current{{{5, 0, 1}, {10, 1, 1}, {77, 2, 3}}};
+    EXPECT_EQ(daidalos::renderer::MapLights(previous, current, 4), (std::vector<std::uint32_t>{1, 2, 3, 4}));
+}
+
+TEST(MapLights, ADrawWhoseTrianglesChangedStartsOver) {
+    const std::array<LightRange, 1> previous{{{77, 0, 3}}};
+    const std::array<LightRange, 1> current{{{77, 0, 2}}};
+    EXPECT_EQ(daidalos::renderer::MapLights(previous, current, 3), (std::vector<std::uint32_t>(3, kGone)));
+}
+
+TEST(IdentityKey, LightsWithoutAnIdAreNamedByTheirPosition) {
     using daidalos::renderer::IdentityKey;
     EXPECT_EQ(IdentityKey(7, 3), 7U);
     EXPECT_EQ(IdentityKey(0, 3), IdentityKey(0, 3));

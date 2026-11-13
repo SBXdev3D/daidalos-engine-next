@@ -58,7 +58,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         const LightContact contact = ContactLight(frame, reservoir.light, reservoir.u, receiver.position);
         stochastic = stochastic || contact.soft;
         if (contact.valid && Unoccluded(frame, receiver, contact, g_restir.instanceBuffer, g_restir.materialBuffer)) {
-            const BsdfTerms terms = Respond(receiver, contact.toLight);
+            const BsdfTerms terms = LightTerms(receiver, contact);
             diffuseLight += contact.illuminance * terms.diffuse * reservoir.weight;
             specularLight += contact.illuminance * terms.specular * reservoir.weight;
         } else {

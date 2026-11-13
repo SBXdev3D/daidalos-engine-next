@@ -28,7 +28,8 @@ struct RestirPushConstants {
     uint height;
     uint reservoirs;         // What the pass writes, one uint4 per pixel.
     uint previousReservoirs; // What it reads: the last frame's, or the pass before's.
-    uint lightMap;           // For each of the last frame's lights, its index in this frame's, or kNoLight.
+    uint lightMap;           // For each of the last frame's lights, its index in this frame's, or kNoLight;
+                             // then, for each of this frame's, 1 if the last frame did not have it.
     uint previousLightCount;
     uint guides;         // Storage image: this frame's normal and linear depth, for the next frame.
     uint previousGuides; // The last frame's, sampled.

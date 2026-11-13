@@ -13,6 +13,7 @@
 
 #include <array>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
@@ -46,6 +47,10 @@ struct FrameTargets {
     /// What luminance in nits is multiplied by before tonemapping (ADR-0043): lights, emission and the sky
     /// reach the GPU multiplied by it, so that its targets hold values near those of the screen.
     float exposure = 1.0f;
+    /// Smoother surfaces trace sharp reflections, which show emissive lights (ADR-0044): with reflections,
+    /// the smaller of GlobalIllumination::kSharpRoughness and the roughness above which no reflection is
+    /// traced; 0 without.
+    float sharpReflections = 0.0f;
 };
 
 /// What the G-buffer holds of the material, and what the lighting pass writes (ADR-0039, ADR-0044), which
@@ -149,6 +154,20 @@ public:
     /// Adds the pass that skins the prepared frame's skinned draws, if it has any, as "Skinning". It must
     /// come before every pass that draws or traces them.
     void AddSkinning(RenderGraph& graph);
+    /// Adds the passes of the prepared frame's emissive lights, as "Emissive lights" (ADR-0044): the average
+    /// emission of each triangle of an emissive mesh and material drawn together for the first time, read
+    /// back a few frames later, and the frame's emissive triangles in world space. After AddSkinning, before
+    /// any pass that samples the frame's lights.
+    void AddEmissiveLights(RenderGraph& graph);
+    /// The emission of each triangle of a mesh drawn with an emissive material, in nits, averaged over its
+    /// texture: empty until it is read back, kFramesInFlight frames after the mesh and material were first
+    /// prepared together.
+    [[nodiscard]] std::vector<glm::vec3> TriangleEmission(MeshHandle mesh, MaterialHandle material) const;
+    /// The prepared frame's emissive triangles, which AddEmissiveLights writes: every pass that samples the
+    /// frame's lights reads it, and must say so. Null without a prepared frame.
+    [[nodiscard]] rhi::BufferHandle EmissiveTriangles() const {
+        return m_prepared != nullptr ? m_prepared->emissiveTriangles : rhi::BufferHandle{};
+    }
     /// The skinned vertices of the prepared frame, which the passes that draw meshes read as vertices. Null
     /// when the frame has no skinned draw.
     [[nodiscard]] rhi::BufferHandle SkinnedVertices() const {
@@ -182,9 +201,10 @@ public:
     /// The storage index of the prepared frame's FrameData, for the passes that read it.
     [[nodiscard]] std::uint32_t FrameDataIndex() const;
     /// Where each light of the frame prepared before this one is in this one's list (ADR-0044): the storage
-    /// index of a uint per light, kGone for a light that is gone, and the number of lights it maps.
+    /// index of a uint per light, kGone for a light that is gone, and the number of lights it maps. Then a
+    /// uint per light of the prepared frame: 1 for a light the frame before did not have.
     [[nodiscard]] std::uint32_t LightMapIndex() const;
-    [[nodiscard]] std::uint32_t PreviousLightCount() const { return m_previousLightCount; }
+    [[nodiscard]] std::uint32_t PreviousLightCount() const { return m_mappedLightCount; }
 
     /// Multiplies the tilt of every normal map, from the next Prepare.
     void SetNormalStrength(float strength) { m_normalStrength = strength; }
@@ -210,6 +230,32 @@ private:
         bool doubleSided = false;
         bool alphaTested = false;
         bool glass = false;
+        /// Its emission lights the scene (MaterialDesc::emissiveLight), and it has some.
+        bool emissive = false;
+    };
+    /// A mesh drawn with an emissive material, whose triangles are lights (ADR-0044).
+    struct EmissiveSource {
+        std::uint32_t triangleCount = 0;
+        /// Where the averaging pass writes each triangle's emission and area, which the CPU reads once.
+        rhi::BufferHandle readback;
+        /// The Prepare that recorded the averaging, which the GPU has finished kFramesInFlight Prepares later.
+        std::optional<std::uint64_t> averagedAt;
+        bool ready = false;
+        /// Once ready: each triangle's emission, in nits, which the frame's triangle pass reads, and the
+        /// alias table of the triangles by power.
+        rhi::BufferHandle emission;
+        rhi::BufferHandle aliasTable;
+        /// The luminance of the triangles times their area, in the mesh's space.
+        float power = 0.0f;
+    };
+    using EmissiveKey = std::pair<std::uint64_t, std::uint64_t>;
+    /// An emissive draw of the prepared frame: its instance, and where its triangles go.
+    struct EmissiveJob {
+        std::uint32_t instance;
+        std::uint32_t firstTriangle;
+        std::uint32_t triangleCount;
+        std::uint32_t emission;
+        std::uint32_t twoSided;
     };
     /// One skinned draw of the frame, for the skinning pass.
     struct SkinningJob {
@@ -235,6 +281,12 @@ private:
         /// LightMapIndex's buffer.
         rhi::BufferHandle lightMap;
         std::uint64_t lightMapCapacity = 0;
+        /// The emissive draws, the sources after the analytic lights, and their triangles in world space,
+        /// which the GPU writes.
+        rhi::BufferHandle emissiveDraws;
+        std::uint64_t emissiveDrawCapacity = 0;
+        rhi::BufferHandle emissiveTriangles;
+        std::uint64_t emissiveTriangleCapacity = 0;
     };
 
     MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
@@ -255,8 +307,17 @@ private:
     void RecordDraws(rhi::CommandList& commands, rhi::PipelineHandle oneSided, rhi::PipelineHandle doubleSided,
                      bool glass);
     [[nodiscard]] core::Result<void> PrepareFrameSlot(FrameSlot& slot, const SceneView& view);
-    /// Fills the frame slot's lights, their alias table and the map from the last frame's lights.
-    void PrepareLights(FrameSlot& slot, const SceneView& view, float exposure);
+    /// Fills the frame slot's lights and emissive draws, their alias table and the map from the last frame's
+    /// lights, and the frame's fields that name them. After the draws are sorted.
+    struct FrameLights {
+        std::uint32_t sourceCount = 0;
+        std::uint32_t emissiveTriangleCount = 0;
+    };
+    [[nodiscard]] core::Result<FrameLights> PrepareLights(FrameSlot& slot, const SceneView& view, float exposure);
+    /// The emissive source of a mesh and a material, made on first use, its emission read back if the GPU
+    /// has written it. Null if it cannot be made.
+    EmissiveSource* FindEmissiveSource(MeshHandle mesh, MaterialHandle material);
+    void DestroyEmissiveSource(EmissiveSource& source);
     /// Makes room for a material at this index of the table.
     [[nodiscard]] core::Result<void> ReserveMaterialSlot(std::uint32_t index);
     [[nodiscard]] std::uint32_t TextureIndex(rhi::TextureHandle texture) const;
@@ -302,10 +363,24 @@ private:
     FrameSlot* m_prepared = nullptr;
     Counts m_counts;
     float m_normalStrength = 1.0f;
-    /// What names each light of the last frame prepared, by index, and each of this one's (ADR-0044).
-    std::vector<std::uint64_t> m_previousLightKeys;
-    std::vector<std::uint64_t> m_lightKeys;
-    std::uint32_t m_previousLightCount = 0;
+    /// The light sources of the last frame prepared, which name its lights (ADR-0044), and its number of
+    /// lights, which the next frame maps; the number of lights the prepared frame's map holds.
+    std::vector<LightRange> m_previousRanges;
+    std::uint32_t m_lightCount = 0;
+    std::uint32_t m_mappedLightCount = 0;
+    /// Counts the frames prepared with a camera, which the readback of emission waits on.
+    std::uint64_t m_prepareCount = 0;
+    std::map<EmissiveKey, EmissiveSource> m_emissiveSources;
+    /// The sources whose emission the next AddEmissiveLights averages, and the frame's emissive draws.
+    struct AverageJob {
+        EmissiveKey key;
+        MeshHandle mesh;
+        MaterialHandle material;
+    };
+    std::vector<AverageJob> m_averageJobs;
+    std::vector<EmissiveJob> m_emissiveJobs;
+    rhi::PipelineHandle m_emissiveAverage;
+    rhi::PipelineHandle m_emissiveTriangles;
     /// Reused from frame to frame.
     std::vector<SortedDraw> m_sorted;
     /// The skinned vertices of the frame's skinned draws, in world space, written by the skinning pass.

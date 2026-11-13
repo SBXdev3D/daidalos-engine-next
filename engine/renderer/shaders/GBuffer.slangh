@@ -115,6 +115,7 @@ Receiver ReceiverOf(FrameData frame, GBufferSurface surface) {
     receiver.f0 = surface.f0;
     receiver.roughness = surface.roughness;
     receiver.response = kRespondBsdf;
+    receiver.emissiveSpecular = surface.roughness >= frame.sharpReflections;
     return receiver;
 }
 

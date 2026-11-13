@@ -105,6 +105,7 @@ struct LightContact {
     // or for a triangle its radiance times its cosine, its area and the inverse square of the distance, as
     // the point on it is drawn uniformly over its area.
     float3 illuminance;
+    bool emissive; // An emissive triangle.
     float3 target; // Where the shadow ray aims.
     float gap;     // How far short of its target the shadow ray stops.
     bool soft;     // A light with a size: its shadows are noisy.
@@ -115,6 +116,7 @@ LightContact ContactLight(FrameData frame, uint index, float2 u, float3 position
     contact.valid = false;
     contact.toLight = float3(0.0, 0.0, 1.0);
     contact.illuminance = float3(0.0, 0.0, 0.0);
+    contact.emissive = IsTriangleLight(frame, index);
     contact.target = position;
     contact.gap = 0.0;
     contact.soft = true;
@@ -184,6 +186,8 @@ struct Receiver {
     float3 f0;
     float roughness;
     uint response;
+    // The specular light of emissive triangles: false where a sharp reflection shows them (ADR-0044).
+    bool emissiveSpecular;
 };
 
 // The BSDF times the cosine, for light from toLight: per unit of diffuse color, and specular.
@@ -209,9 +213,18 @@ float3 Reflected(Receiver receiver, BsdfTerms terms) {
     return terms.diffuse * receiver.diffuseColor + terms.specular;
 }
 
+// The BSDF times the cosine for a light: its specular part left out where a sharp reflection shows it.
+BsdfTerms LightTerms(Receiver receiver, LightContact contact) {
+    BsdfTerms terms = Respond(receiver, contact.toLight);
+    if (contact.emissive && !receiver.emissiveSpecular) {
+        terms.specular = float3(0.0, 0.0, 0.0);
+    }
+    return terms;
+}
+
 // What resampling weighs a light by: the luminance of the light the receiver would send, unshadowed.
 float TargetValue(Receiver receiver, LightContact contact) {
-    return contact.valid ? Luminance(contact.illuminance * Reflected(receiver, Respond(receiver, contact.toLight))) : 0.0;
+    return contact.valid ? Luminance(contact.illuminance * Reflected(receiver, LightTerms(receiver, contact))) : 0.0;
 }
 
 // Whether nothing that casts shadows stands between the receiver and the light's point.
@@ -297,7 +310,7 @@ float3 SampleDirectLight(FrameData frame, Receiver receiver, inout uint random, 
     if (!Unoccluded(frame, receiver, contact, instanceBuffer, materialBuffer)) {
         return float3(0.0, 0.0, 0.0);
     }
-    return contact.illuminance * Reflected(receiver, Respond(receiver, contact.toLight)) * reservoir.weight;
+    return contact.illuminance * Reflected(receiver, LightTerms(receiver, contact)) * reservoir.weight;
 }
 
 // A receiver for a surface that rays hit (Surface, in RayQueries.slangh).
@@ -312,6 +325,7 @@ Receiver ReceiverOf(Surface surface, float3 view, uint response) {
     receiver.f0 = surface.f0;
     receiver.roughness = surface.roughness;
     receiver.response = response;
+    receiver.emissiveSpecular = true;
     return receiver;
 }
 

@@ -43,9 +43,18 @@ inline constexpr float kDirectionalReach = 10.0f;
 /// What names a light from one frame to the next: its id, or its position in the frame without one.
 [[nodiscard]] std::uint64_t IdentityKey(SceneId id, std::uint32_t position);
 
-/// Where each of the previous frame's identities is in this frame's, or kGone.
+/// The lights of one source of a frame, consecutive in its list: an analytic light, or the triangles of an
+/// emissive draw, and what names the source from frame to frame.
+struct LightRange {
+    std::uint64_t key = 0;
+    std::uint32_t first = 0;
+    std::uint32_t count = 0;
+};
+
+/// Where each light of the previous frame is in this frame's list, or kGone (ADR-0044): a source found
+/// again by its key keeps its lights if it has as many. lightCount is the previous frame's number of lights.
 inline constexpr std::uint32_t kGone = 0xFFFFFFFF;
-[[nodiscard]] std::vector<std::uint32_t> MapIdentities(std::span<const std::uint64_t> previous,
-                                                       std::span<const std::uint64_t> current);
+[[nodiscard]] std::vector<std::uint32_t> MapLights(std::span<const LightRange> previous,
+                                                   std::span<const LightRange> current, std::uint32_t lightCount);
 
 } // namespace daidalos::renderer

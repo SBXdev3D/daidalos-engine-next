@@ -23,6 +23,8 @@ struct DirectLightingInputs {
     /// The frame's top-level structure, built before, and the skinned vertices that rays read, or null.
     rhi::AccelerationStructureHandle structure;
     rhi::BufferHandle skinnedVertices;
+    /// The frame's emissive triangles (MeshPass::EmissiveTriangles), written before.
+    rhi::BufferHandle emissiveTriangles;
     /// The G-buffer.
     rhi::TextureHandle depth;
     rhi::TextureHandle normals;

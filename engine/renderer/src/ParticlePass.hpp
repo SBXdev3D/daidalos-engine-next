@@ -54,6 +54,8 @@ public:
         std::uint32_t instanceBuffer = 0;
         std::uint32_t materialBuffer = 0;
         rhi::BufferHandle skinnedVertices;
+        /// The frame's emissive triangles, which light sampling reads.
+        rhi::BufferHandle emissiveTriangles;
     };
     /// Adds the pass that draws the particles over target, as "Particles", and their coverage into
     /// reactive, which it clears. They read depth themselves, to fade softly where they meet surfaces.

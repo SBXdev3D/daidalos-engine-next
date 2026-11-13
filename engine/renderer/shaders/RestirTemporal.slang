@@ -6,8 +6,9 @@
 // vector, where the last frame's normal and depth agree, and combines its new reservoir with the one kept
 // there, its light mapped to this frame's list. The history stands for at most kMaxHistory frames, so that
 // the past fades. Both reservoirs belong to the same surface, so they are weighed by their confidence alone
-// (generalized RIS, Lin et al. 2022). Biased about visibility by default, as the spatial reuse is: a history
-// that holds no light is passed over.
+// (generalized RIS, Lin et al. 2022), but for lights that are new this frame, which only the new reservoir can
+// have found. Biased about visibility by default, as the spatial reuse is: a history that holds no light is
+// passed over.
 
 #include "Restir.slangh"
 
@@ -50,10 +51,13 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     uint random = Pcg(PixelIndex(pixel) * 7919u + g_restir.seed * 104729u + 2u);
     const float total = current.count + history.count;
     Reservoir combined = EmptyReservoir();
-    // The new sample was tested for visibility already.
+    // The new sample was tested for visibility already. A light the last frame did not have, the history
+    // could not have found: the new sample takes its whole share, and a light that comes on shows at once.
     const float currentTarget = TargetAt(frame, receiver, current.light, current.u, false);
-    Stream(combined, current.light, current.u, current.count / total * currentTarget * current.weight, currentTarget,
-           Random(random));
+    const bool fresh =
+        current.light != kNoLight && g_lightMaps[g_restir.lightMap][g_restir.previousLightCount + current.light] != 0;
+    Stream(combined, current.light, current.u, (fresh ? 1.0 : current.count / total) * currentTarget * current.weight,
+           currentTarget, Random(random));
     const float historyTarget = TargetAt(frame, receiver, history.light, history.u, unbiased);
     Stream(combined, history.light, history.u, history.count / total * historyTarget * history.weight, historyTarget,
            Random(random));

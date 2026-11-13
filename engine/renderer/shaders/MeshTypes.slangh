@@ -50,8 +50,10 @@ struct FrameData {
     float exposure;
     uint emissiveTriangleBuffer; // The triangles of the emissive draws, in world space.
     uint emissiveTriangleCount;
-    uint framePadding0;
-    uint framePadding1;
+    // Smoother surfaces trace a sharp reflection, which shows emissive lights: light sampling leaves out their
+    // specular light there, so that each is counted once (ADR-0044). 0 without reflections.
+    float sharpReflections;
+    uint framePadding;
 };
 
 // Where a point of clip space is on the screen, in texture coordinates: y goes down (CONVENTIONS.md,

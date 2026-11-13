@@ -479,7 +479,9 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                        .reflections = reflections,
                        .background = impl.background,
                        .depth = impl.depth,
-                       .exposure = ExposureScale(view.atmosphere.ev100 - impl.exposureCompensation)});
+                       .exposure = ExposureScale(view.atmosphere.ev100 - impl.exposureCompensation),
+                       .sharpReflections =
+                           reflect ? std::min(GlobalIllumination::kSharpRoughness, impl.reflectionRoughness) : 0.0f});
         });
         impl.particleSpawns = static_cast<std::uint32_t>(view.particleSpawns.size());
     }
@@ -492,6 +494,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     if (status && hasFrame) {
         impl.meshPass->AddSkinning(graph);
         impl.rayTracing->AddBuild(graph);
+        impl.meshPass->AddEmissiveLights(graph);
     }
     if (status) {
         graph.AddPass(
@@ -512,6 +515,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                         .materialBuffer = impl.meshPass->MaterialDataIndex(),
                                         .structure = impl.rayTracing->Structure(),
                                         .skinnedVertices = impl.meshPass->SkinnedVertices(),
+                                        .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
                                         .depth = impl.depth,
                                         .normals = impl.normals,
                                         .frameIndex = frameIndex,
@@ -541,6 +545,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                     .materialBuffer = impl.meshPass->MaterialDataIndex(),
                                     .structure = impl.rayTracing->Structure(),
                                     .skinnedVertices = impl.meshPass->SkinnedVertices(),
+                                    .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
                                     .depth = impl.depth,
                                     .normals = impl.normals,
                                     .motion = impl.motion,
@@ -586,7 +591,8 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                    {.structure = impl.rayTracing->Structure(),
                                     .instanceBuffer = impl.meshPass->InstanceDataIndex(),
                                     .materialBuffer = impl.meshPass->MaterialDataIndex(),
-                                    .skinnedVertices = impl.meshPass->SkinnedVertices()});
+                                    .skinnedVertices = impl.meshPass->SkinnedVertices(),
+                                    .emissiveTriangles = impl.meshPass->EmissiveTriangles()});
     }
     // Glass, over everything else, which it reads from a copy of the frame (ADR-0042).
     if (status && hasFrame && impl.meshPass->HasGlass()) {
@@ -601,7 +607,9 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                        .textures = {{impl.hdr, rhi::Access::ColorTarget},
                                     {impl.background, rhi::Access::FragmentShaderRead},
                                     {impl.depth, rhi::Access::FragmentShaderRead}},
-                       .buffers = {skinnedVertices, {skinnedVertices.buffer, rhi::Access::FragmentShaderRead}},
+                       .buffers = {skinnedVertices,
+                                   {skinnedVertices.buffer, rhi::Access::FragmentShaderRead},
+                                   {impl.meshPass->EmissiveTriangles(), rhi::Access::FragmentShaderRead}},
                        .structures = {{impl.rayTracing->Structure(), rhi::Access::RayQueryRead}}},
                       [&impl](rhi::CommandList& commands) { impl.meshPass->RecordGlass(commands); });
     }

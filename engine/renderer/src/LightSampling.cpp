@@ -95,17 +95,21 @@ std::uint64_t IdentityKey(SceneId id, std::uint32_t position) {
     return id != 0 ? id : (kPositional | position);
 }
 
-std::vector<std::uint32_t> MapIdentities(std::span<const std::uint64_t> previous,
-                                         std::span<const std::uint64_t> current) {
-    std::unordered_map<std::uint64_t, std::uint32_t> where;
+std::vector<std::uint32_t> MapLights(std::span<const LightRange> previous, std::span<const LightRange> current,
+                                     std::uint32_t lightCount) {
+    std::unordered_map<std::uint64_t, const LightRange*> where;
     where.reserve(current.size());
-    for (std::uint32_t index = 0; index < current.size(); ++index) {
-        where.emplace(current[index], index);
+    for (const LightRange& range : current) {
+        where.emplace(range.key, &range);
     }
-    std::vector<std::uint32_t> mapped(previous.size(), kGone);
-    for (std::size_t index = 0; index < previous.size(); ++index) {
-        if (const auto found = where.find(previous[index]); found != where.end()) {
-            mapped[index] = found->second;
+    std::vector<std::uint32_t> mapped(lightCount, kGone);
+    for (const LightRange& range : previous) {
+        const auto found = where.find(range.key);
+        if (found == where.end() || found->second->count != range.count) {
+            continue;
+        }
+        for (std::uint32_t light = 0; light < range.count && range.first + light < lightCount; ++light) {
+            mapped[range.first + light] = found->second->first + light;
         }
     }
     return mapped;

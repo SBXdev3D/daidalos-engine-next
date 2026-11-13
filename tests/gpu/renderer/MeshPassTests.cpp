@@ -198,6 +198,7 @@ protected:
                         ASSERT_TRUE(m_scene->Prepare(m_pass->TracedDraws()).has_value());
                         m_scene->AddBuild(graph);
                         traced = m_scene->Structure();
+                        m_pass->AddEmissiveLights(graph);
                     }
                     const rhi::BufferUse skinned{m_pass->SkinnedVertices(), rhi::Access::VertexInputRead};
                     graph.AddPass(
@@ -212,6 +213,7 @@ protected:
                                            .materialBuffer = m_pass->MaterialDataIndex(),
                                            .structure = traced,
                                            .skinnedVertices = m_pass->SkinnedVertices(),
+                                           .emissiveTriangles = m_pass->EmissiveTriangles(),
                                            .depth = m_depth,
                                            .normals = m_normals,
                                            .motion = m_motion,
@@ -883,6 +885,49 @@ TEST_F(MeshPassTest, BaseColorTextureIsSampledWithTheMeshUvs) {
     EXPECT_LT(Pixel(21, 32).b, 16); // Only the white reflection of a dielectric.
     EXPECT_GT(Pixel(43, 32).b, 0);
     EXPECT_LT(Pixel(43, 32).g, 16); // Only the white reflection of a dielectric.
+    Device().DestroyTexture(*texture);
+}
+
+TEST_F(MeshPassTest, TheEmissionOfATriangleIsAveragedFromItsTexture) {
+    // Left half red, right half green, times 10 nits. The quad's first triangle covers mostly the right half,
+    // its second mostly the left (ADR-0044).
+    constexpr std::uint32_t kWidth = 64;
+    std::vector<std::uint32_t> pixels(kWidth);
+    for (std::uint32_t x = 0; x < kWidth; ++x) {
+        pixels[x] = x < kWidth / 2 ? 0xFF0000FF : 0xFF00FF00;
+    }
+    resources::ImageData image;
+    image.width = kWidth;
+    image.height = 1;
+    image.format = resources::PixelFormat::Rgba8Unorm;
+    image.pixels.resize(pixels.size() * sizeof(std::uint32_t));
+    std::memcpy(image.pixels.data(), pixels.data(), image.pixels.size());
+    const core::Result<rhi::TextureHandle> texture = renderer::CreateTexture(Device(), image, "Glow");
+    ASSERT_TRUE(texture.has_value()) << core::Format(texture.error());
+    MaterialDesc desc;
+    desc.emissiveFactor = glm::vec3(10.0f);
+    desc.emissiveTexture = *texture;
+    const core::Result<MaterialHandle> material = m_pass->CreateMaterial(desc);
+    ASSERT_TRUE(material.has_value());
+    const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
+
+    // Read back once the GPU has finished the frame that averaged it.
+    for (std::uint32_t frame = 0; frame <= rhi::kFramesInFlight; ++frame) {
+        EXPECT_TRUE(m_pass->TriangleEmission(mesh, *material).empty()) << "frame " << frame;
+        Render({TestCamera(), {{mesh, glm::mat4(1.0f), *material}}});
+    }
+    Render({TestCamera(), {{mesh, glm::mat4(1.0f), *material}}});
+    const std::vector<glm::vec3> emission = m_pass->TriangleEmission(mesh, *material);
+    ASSERT_EQ(emission.size(), 2U);
+    // A quarter of the first triangle is on the red half, three quarters of the second.
+    EXPECT_NEAR(emission[0].r, 2.5f, 0.5f);
+    EXPECT_NEAR(emission[0].g, 7.5f, 0.5f);
+    EXPECT_NEAR(emission[1].r, 7.5f, 0.5f);
+    EXPECT_NEAR(emission[1].g, 2.5f, 0.5f);
+    for (const glm::vec3& triangle : emission) {
+        EXPECT_NEAR(triangle.r + triangle.g, 10.0f, 0.2f) << "the texture's average, times the factor";
+        EXPECT_EQ(triangle.b, 0.0f);
+    }
     Device().DestroyTexture(*texture);
 }
 

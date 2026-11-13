@@ -400,7 +400,8 @@ void ParticlePass::AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::T
          .buffers = {{m_particles, rhi::Access::VertexShaderRead},
                      {m_keys, rhi::Access::VertexShaderRead},
                      {m_arguments, rhi::Access::IndirectRead},
-                     {shadows.skinnedVertices, rhi::Access::FragmentShaderRead}},
+                     {shadows.skinnedVertices, rhi::Access::FragmentShaderRead},
+                     {shadows.emissiveTriangles, rhi::Access::FragmentShaderRead}},
          .structures = {{shadows.structure, rhi::Access::RayQueryRead}}},
         [this, push](rhi::CommandList& commands) {
             DAI_PROFILE_SCOPE("renderer::ParticlePass::Draw");
