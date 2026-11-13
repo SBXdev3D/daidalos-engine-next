@@ -38,6 +38,11 @@ struct CameraView {
 /// Marks a draw that is not skinned.
 inline constexpr std::uint32_t kNoJoints = 0xFFFFFFFF;
 
+/// Names what is drawn or lights from one frame to the next, such as its entity: the samples of lights that
+/// a pixel keeps from frame to frame follow it (ADR-0044). 0 names nothing, and the position in the view
+/// stands in for it.
+using SceneId = std::uint64_t;
+
 struct DrawItem {
     MeshHandle mesh;
     glm::mat4 world{1.0f};
@@ -50,6 +55,8 @@ struct DrawItem {
     /// Where the draw was in the previous frame drawn, for motion vectors (ADR-0037). Without one, it
     /// stood still.
     std::optional<glm::mat4> previousWorld;
+    /// The same from frame to frame, if its material is an emissive light.
+    SceneId id = 0;
 };
 
 /// Distance fog and the sky: surfaces fade into the fog color, and where nothing is drawn, the sky shows,
@@ -87,7 +94,7 @@ struct Light {
     glm::vec3 direction{0.0f, 0.0f, -1.0f};
     /// Linear color, already multiplied by the intensity: candela, or lux for a directional light.
     glm::vec3 color{1.0f};
-    /// Meters: the light fades to zero there. Lights are assigned to the clusters it reaches.
+    /// Meters: the light fades to zero there.
     float range = 10.0f;
     /// Spot lights: radians from the axis, full light inside the inner angle, none outside the outer.
     float innerAngle = 0.0f;
@@ -98,6 +105,8 @@ struct Light {
     /// Directional lights: radians from the center of the disk the light comes from to its edge, which
     /// softens the shadows as radius does. The moon is 0.0045.
     float angularRadius = 0.0f;
+    /// The same from frame to frame.
+    SceneId id = 0;
 };
 
 /// What the renderer draws in one frame. It holds copies, so that rendering never touches the ECS

@@ -206,6 +206,8 @@ def main():
         "emissiveFactor": [1, 0.5, 0],
         "extensions": {"KHR_materials_emissive_strength": {"emissiveStrength": 40}},
     }
+    # A sign that glows but lights nothing (ADR-0044).
+    lamp["materials"].append({"name": "Sign", "emissiveFactor": [0, 1, 0], "extras": {"light": False}})
     lamp["nodes"][0]["children"] = [1, 2]
     lamp["nodes"].append({"name": "Glow", "translation": [0, -1, 0],
                           "extensions": {"KHR_lights_punctual": {"light": 1}}})

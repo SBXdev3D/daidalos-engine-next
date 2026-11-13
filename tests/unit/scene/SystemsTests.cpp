@@ -237,6 +237,28 @@ TEST(ExtractScene, LightsTakeTheirPlaceAndDirectionFromTheirEntity) {
     EXPECT_EQ(light.radius, 0.1f);
 }
 
+TEST(ExtractScene, LightsAndDrawsAreNamedByTheirEntity) {
+    ecs::World world;
+    const ecs::Entity lamp = AddAt(world, {});
+    world.Add<scene::Light>(lamp, scene::Light{});
+    const ecs::Entity panel = AddAt(world, {});
+    world.Add<MeshRenderer>(panel, MeshHandle(1, 1), renderer::MaterialHandle(1, 1));
+    ecs::PropagateTransforms(world);
+
+    SceneView view;
+    scene::ExtractScene(world, view);
+    ASSERT_EQ(view.lights.size(), 1U);
+    ASSERT_EQ(view.draws.size(), 1U);
+    EXPECT_NE(view.lights[0].id, 0U);
+    EXPECT_NE(view.draws[0].id, 0U);
+    EXPECT_NE(view.lights[0].id, view.draws[0].id);
+    // Another extraction names them the same.
+    SceneView again;
+    scene::ExtractScene(world, again);
+    EXPECT_EQ(again.lights[0].id, view.lights[0].id);
+    EXPECT_EQ(again.draws[0].id, view.draws[0].id);
+}
+
 TEST(ExtractScene, ATemperatureColorsTheLightButKeepsItsBrightness) {
     // A warm bulb (ADR-0043): its color times the black body's at 2700 K, whose luminance is 1.
     ecs::World world;

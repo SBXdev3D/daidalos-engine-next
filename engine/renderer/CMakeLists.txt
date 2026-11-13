@@ -22,6 +22,8 @@ dai_add_module(NAME renderer
         src/GlobalIllumination.hpp
         src/LightClusters.cpp
         src/LightClusters.hpp
+        src/LightSampling.cpp
+        src/LightSampling.hpp
         src/Material.cpp
         src/MeshPass.cpp
         src/MeshPass.hpp

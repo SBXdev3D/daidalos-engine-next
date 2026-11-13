@@ -22,6 +22,9 @@ namespace daidalos::renderer {
 struct MaterialDesc {
     glm::vec4 baseColorFactor{1.0f};
     glm::vec3 emissiveFactor{0.0f};
+    /// The emission is a light (ADR-0044): its triangles light the scene, as lamps do. Otherwise it is only
+    /// seen, by the camera and by reflections.
+    bool emissiveLight = true;
     float metallicFactor = 1.0f;
     float roughnessFactor = 1.0f;
     float normalScale = 1.0f;

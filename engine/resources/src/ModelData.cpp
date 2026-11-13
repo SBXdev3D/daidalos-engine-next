@@ -14,11 +14,13 @@
 #include <glm/geometric.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/vec4.hpp>
+#include <simdjson.h>
 
 #include <algorithm>
 #include <format>
 #include <limits>
 #include <map>
+#include <set>
 #include <span>
 #include <string_view>
 #include <utility>
@@ -30,13 +32,31 @@ namespace {
 
 constexpr std::string_view kModule = "resources";
 
+// What a glTF file's extras say, which fastgltf leaves to the application.
+struct Extras {
+    // Materials whose extras hold {"light": false}: their emission lights nothing (ADR-0044).
+    std::set<std::size_t> unlitMaterials;
+};
+
+void ReadExtras(simdjson::dom::object* extras, std::size_t objectIndex, fastgltf::Category objectType,
+                void* userPointer) {
+    if (objectType != fastgltf::Category::Materials || extras == nullptr) {
+        return;
+    }
+    bool light = true;
+    if ((*extras)["light"].get_bool().get(light) == simdjson::SUCCESS && !light) {
+        static_cast<Extras*>(userPointer)->unlitMaterials.insert(objectIndex);
+    }
+}
+
 // One image can be used in several ways, and each one is a separate decoded texture.
 using ImageKey = std::pair<std::size_t, TextureUse>;
 
 class ModelBuilder {
 public:
-    ModelBuilder(const fastgltf::Asset& asset, std::filesystem::path directory, std::string fileName)
-        : m_asset(asset), m_directory(std::move(directory)), m_fileName(std::move(fileName)) {}
+    ModelBuilder(const fastgltf::Asset& asset, std::filesystem::path directory, std::string fileName, Extras extras)
+        : m_asset(asset), m_directory(std::move(directory)), m_fileName(std::move(fileName)),
+          m_extras(std::move(extras)) {}
 
     core::Result<ModelData> Build();
 
@@ -59,6 +79,7 @@ private:
     const fastgltf::Asset& m_asset;
     std::filesystem::path m_directory;
     std::string m_fileName;
+    Extras m_extras;
     ModelData m_model;
     std::map<ImageKey, std::uint32_t> m_images;
     // For each glTF mesh, its primitives in the model.
@@ -122,9 +143,11 @@ core::Result<std::optional<std::uint32_t>> ModelBuilder::AddTexture(std::size_t 
 
 core::Result<void> ModelBuilder::AddMaterials() {
     m_model.materials.reserve(m_asset.materials.size());
-    for (const fastgltf::Material& material : m_asset.materials) {
+    for (std::size_t index = 0; index < m_asset.materials.size(); ++index) {
+        const fastgltf::Material& material = m_asset.materials[index];
         MaterialData data;
         data.name = material.name;
+        data.emissiveLight = !m_extras.unlitMaterials.contains(index);
         const auto& pbr = material.pbrData;
         data.baseColorFactor = {pbr.baseColorFactor[0], pbr.baseColorFactor[1], pbr.baseColorFactor[2],
                                 pbr.baseColorFactor[3]};
@@ -538,6 +561,9 @@ core::Result<ModelData> LoadModelFile(const std::filesystem::path& path) {
         fastgltf::Extensions::KHR_texture_basisu | fastgltf::Extensions::KHR_materials_transmission |
         fastgltf::Extensions::KHR_materials_volume | fastgltf::Extensions::KHR_materials_ior |
         fastgltf::Extensions::KHR_materials_emissive_strength | fastgltf::Extensions::KHR_lights_punctual);
+    Extras extras;
+    parser.setUserPointer(&extras);
+    parser.setExtrasParseCallback(&ReadExtras);
     constexpr fastgltf::Options kOptions = fastgltf::Options::LoadExternalBuffers |
                                            fastgltf::Options::DecomposeNodeMatrices |
                                            fastgltf::Options::GenerateMeshIndices;
@@ -546,7 +572,7 @@ core::Result<ModelData> LoadModelFile(const std::filesystem::path& path) {
         return core::MakeError(core::ErrorCode::ParseError, kModule,
                                std::format("Model '{}': {}", fileName, fastgltf::getErrorMessage(asset.error())));
     }
-    return ModelBuilder(asset.get(), path.parent_path(), fileName).Build();
+    return ModelBuilder(asset.get(), path.parent_path(), fileName, std::move(extras)).Build();
 }
 
 } // namespace daidalos::resources

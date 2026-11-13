@@ -21,9 +21,14 @@ namespace daidalos::scene {
 
 namespace {
 
+/// An entity's index and generation, plus one, since 0 names nothing: what names it as long as it lives.
+renderer::SceneId SceneIdOf(ecs::Entity entity) {
+    return ((std::uint64_t{entity.Generation()} << 32U) | entity.Index()) + 1;
+}
+
 void ExtractLights(ecs::World& world, renderer::SceneView& view) {
     world.Each<ecs::WorldTransform, Light>(
-        [&](ecs::Entity /*entity*/, const ecs::WorldTransform& transform, const Light& light) {
+        [&](ecs::Entity entity, const ecs::WorldTransform& transform, const Light& light) {
             if (!light.enabled || light.intensity <= 0.0f || light.range <= 0.0f) {
                 return;
             }
@@ -38,7 +43,8 @@ void ExtractLights(ecs::World& world, renderer::SceneView& view) {
                  .innerAngle = light.innerAngle,
                  .outerAngle = light.outerAngle,
                  .radius = light.radius,
-                 .angularRadius = light.angularRadius});
+                 .angularRadius = light.angularRadius,
+                 .id = SceneIdOf(entity)});
         });
 }
 
@@ -100,7 +106,8 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
                                   .world = transform.matrix,
                                   .material = component.material,
                                   .castsShadows = component.castsShadows,
-                                  .previousWorld = drawn.Previous(entity, transform.matrix)});
+                                  .previousWorld = drawn.Previous(entity, transform.matrix),
+                                  .id = SceneIdOf(entity)});
         });
 
     world.Each<ecs::WorldTransform, SkinnedMeshRenderer>(
@@ -125,7 +132,8 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
                                   .material = component.material,
                                   .firstJoint = component.joints.empty() ? renderer::kNoJoints : firstJoint,
                                   .castsShadows = component.castsShadows,
-                                  .previousWorld = previousWorld});
+                                  .previousWorld = previousWorld,
+                                  .id = SceneIdOf(entity)});
         });
     drawn.Keep();
     ExtractLights(world, view);

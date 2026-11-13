@@ -64,6 +64,9 @@ struct MaterialData {
     glm::vec4 baseColorFactor{1.0f};
     /// Nits, times the emissive texture, with KHR_materials_emissive_strength applied (ADR-0043).
     glm::vec3 emissiveFactor{0.0f};
+    /// The emission lights the scene (ADR-0044). The material's glTF extras {"light": false} make it only
+    /// seen.
+    bool emissiveLight = true;
     float metallicFactor = 1.0f;
     float roughnessFactor = 1.0f;
     float normalScale = 1.0f;

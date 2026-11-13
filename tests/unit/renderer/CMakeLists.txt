@@ -3,6 +3,7 @@ dai_add_test(NAME daidalos_renderer_tests
         CanvasTests.cpp
         ContextTests.cpp
         LightClustersTests.cpp
+        LightSamplingTests.cpp
         LightUnitsTests.cpp
         JitterTests.cpp
         PrimitivesTests.cpp
