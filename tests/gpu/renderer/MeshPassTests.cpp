@@ -718,21 +718,21 @@ protected:
     // Renders the meshes of the view, then simulates and draws the particles over them.
     void RenderWithParticles(const SceneView& view, std::span<const renderer::ParticleSpawn> spawns, float step) {
         Render(view);
-        ASSERT_TRUE(
-            Device()
-                .Submit([&](rhi::CommandList& commands) {
-                    renderer::RenderGraph graph;
-                    EXPECT_TRUE(
-                        m_particles->AddSimulation(graph, spawns, step, m_pass->FrameDataIndex(), m_depth, m_normals)
-                            .has_value());
-                    m_particles->AddDraw(graph, m_pass->FrameDataIndex(), m_depth, m_color, m_reactive,
-                                         glm::vec3(1, 0, 0), glm::vec3(0, 1, 0), {});
+        ASSERT_TRUE(Device()
+                        .Submit([&](rhi::CommandList& commands) {
+                            renderer::RenderGraph graph;
+                            EXPECT_TRUE(m_particles
+                                            ->AddSimulation(graph, spawns, step, m_pass->FrameDataIndex(), m_depth,
+                                                            m_normals, {})
+                                            .has_value());
+                            m_particles->AddDraw(graph, m_pass->FrameDataIndex(), m_depth, m_color, m_reactive,
+                                                 glm::vec3(1, 0, 0), glm::vec3(0, 1, 0));
 
-                    graph.Execute(commands);
-                    commands.Transition(m_color, rhi::TextureState::TransferSrc);
-                    commands.CopyTextureToBuffer(m_color, m_readback);
-                })
-                .has_value());
+                            graph.Execute(commands);
+                            commands.Transition(m_color, rhi::TextureState::TransferSrc);
+                            commands.CopyTextureToBuffer(m_color, m_readback);
+                        })
+                        .has_value());
     }
 
     // Particles fade in over the first tenth of their life: a step past it shows them whole.

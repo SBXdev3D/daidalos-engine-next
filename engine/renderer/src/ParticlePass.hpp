@@ -39,14 +39,6 @@ public:
     /// Adds the passes that emit the spawns, move every particle by timeStep and sort them, in the group
     /// "Simulation". depth and normals come from the G-buffer; frameBuffer is the storage index of the
     /// frame's FrameData. Spawns of destroyed effects are skipped.
-    [[nodiscard]] core::Result<void> AddSimulation(RenderGraph& graph, std::span<const ParticleSpawn> spawns,
-                                                   float timeStep, std::uint32_t frameBuffer, rhi::TextureHandle depth,
-                                                   rhi::TextureHandle normals);
-
-    /// What the particles leave in their second target, the reactive mask of temporal antialiasing
-    /// (ADR-0037): how much they cover each pixel, where the history is not to be trusted.
-    static constexpr rhi::Format kReactiveFormat = rhi::Format::R8Unorm;
-
     /// What lit particles cast their shadow rays against (ADR-0044): the frame's structure, built before,
     /// the storage indices of its instances and materials, and the skinned vertices that rays read, or null.
     struct Shadows {
@@ -57,11 +49,19 @@ public:
         /// The frame's emissive triangles, which light sampling reads.
         rhi::BufferHandle emissiveTriangles;
     };
+    /// The simulation also lights lit particles, a few sampled lights each, with their shadows (ADR-0044).
+    [[nodiscard]] core::Result<void> AddSimulation(RenderGraph& graph, std::span<const ParticleSpawn> spawns,
+                                                   float timeStep, std::uint32_t frameBuffer, rhi::TextureHandle depth,
+                                                   rhi::TextureHandle normals, const Shadows& shadows);
+
+    /// What the particles leave in their second target, the reactive mask of temporal antialiasing
+    /// (ADR-0037): how much they cover each pixel, where the history is not to be trusted.
+    static constexpr rhi::Format kReactiveFormat = rhi::Format::R8Unorm;
+
     /// Adds the pass that draws the particles over target, as "Particles", and their coverage into
     /// reactive, which it clears. They read depth themselves, to fade softly where they meet surfaces.
     void AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::TextureHandle depth, rhi::TextureHandle target,
-                 rhi::TextureHandle reactive, const glm::vec3& cameraRight, const glm::vec3& cameraUp,
-                 const Shadows& shadows);
+                 rhi::TextureHandle reactive, const glm::vec3& cameraRight, const glm::vec3& cameraUp);
 
     [[nodiscard]] std::size_t EffectCount() const { return m_effects.Size(); }
 

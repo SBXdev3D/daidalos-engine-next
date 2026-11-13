@@ -3,14 +3,12 @@
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
 // Draws the sorted particles as quads facing the camera, back to front (ADR-0025). They fade where they
-// meet what is behind them (soft particles), are lit by the frame's lights unless they glow, one light
-// sampled per pixel with its shadow ray (ADR-0044), and fade into the fog. The output is premultiplied: an additive particle has an alpha of 0, so one blend
-// mode draws both kinds.
+// meet what is behind them (soft particles), are lit by the frame's lights unless they glow, with the light
+// the simulation keeps for each particle (ADR-0044), and fade into the fog. The output is premultiplied: an
+// additive particle has an alpha of 0, so one blend mode draws both kinds.
 
 #define DAI_PARTICLES_READ_ONLY
 #include "Particles.slangh"
-#include "RayQueries.slangh"
-#include "Lights.slangh"
 
 struct VertexOutput {
     float4 clipPosition : SV_Position;
@@ -18,6 +16,7 @@ struct VertexOutput {
     [[vk::location(1)]] float4 color : COLOR;
     [[vk::location(2)]] float3 worldPosition : POSITION;
     [[vk::location(3)]] nointerpolation uint effect : EFFECT;
+    [[vk::location(4)]] nointerpolation float3 light : LIGHT;
 };
 
 VertexOutput VSMain(uint vertexId : SV_VulkanVertexID, uint instance : SV_VulkanInstanceID) {
@@ -48,6 +47,7 @@ VertexOutput VSMain(uint vertexId : SV_VulkanVertexID, uint instance : SV_Vulkan
     output.color.a *= saturate(life * 10.0);
     output.worldPosition = world;
     output.effect = particle.effect;
+    output.light = particle.light;
     return output;
 }
 
@@ -81,10 +81,10 @@ ParticleOutput PSMain(VertexOutput input) {
 
     float3 color = input.color.rgb * texel.rgb;
     if ((effect.flags & kEffectLit) != 0) {
-        // Smoke takes the light around it, from every side, as a white matte surface facing each light: its
-        // illuminance over pi (ADR-0043), with shadows. The indirect light is that of the surfaces behind it,
-        // averaged over a few pixels around, which also smooths its noise (ADR-0040).
-        float3 light = float3(0.0, 0.0, 0.0);
+        // Smoke takes the light around it, from every side: the frame's lights, as the simulation found them
+        // at the particle (ADR-0044), and the indirect light of the surfaces behind it, averaged over a few
+        // pixels around, which also smooths its noise (ADR-0040).
+        float3 light = input.light;
         const int2 pixel = int2(input.clipPosition.xy);
         if (frame.indirectTexture != kNoTexture) {
             const int2 last = int2(1.0 / frame.screenTexel) - 1;
@@ -93,19 +93,6 @@ ParticleOutput PSMain(VertexOutput input) {
                 light += g_textures[frame.indirectTexture].Load(int3(clamp(pixel + offset, int2(0, 0), last), 0)).rgb * 0.25;
             }
         }
-        Receiver receiver;
-        receiver.position = input.worldPosition;
-        receiver.origin = input.worldPosition;
-        receiver.faceNormal = -frame.cameraForward;
-        receiver.normal = receiver.faceNormal;
-        receiver.view = receiver.faceNormal;
-        receiver.diffuseColor = float3(1.0, 1.0, 1.0);
-        receiver.f0 = float3(0.0, 0.0, 0.0);
-        receiver.roughness = 1.0;
-        receiver.response = kRespondEverywhere;
-        receiver.emissiveSpecular = true;
-        uint random = Pcg(uint(pixel.y) * 65521u + uint(pixel.x)) ^ Pcg(frame.frameIndex * 9781u + input.effect);
-        light += SampleDirectLight(frame, receiver, random, g_particles.instanceBuffer, g_particles.materialBuffer);
         color *= light;
     }
 

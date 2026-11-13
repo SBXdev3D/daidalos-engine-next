@@ -527,7 +527,12 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     impl.illuminated = illuminate;
     if (hasFrame) {
         status = impl.particlePass->AddSimulation(graph, view.particleSpawns, view.timeStep,
-                                                  impl.meshPass->FrameDataIndex(), impl.depth, impl.normals);
+                                                  impl.meshPass->FrameDataIndex(), impl.depth, impl.normals,
+                                                  {.structure = impl.rayTracing->Structure(),
+                                                   .instanceBuffer = impl.meshPass->InstanceDataIndex(),
+                                                   .materialBuffer = impl.meshPass->MaterialDataIndex(),
+                                                   .skinnedVertices = impl.meshPass->SkinnedVertices(),
+                                                   .emissiveTriangles = impl.meshPass->EmissiveTriangles()});
     }
     // The light of the frame's lights, and the indirect light, at each pixel of the G-buffer (ADR-0044). A
     // frame that does not follow the last one lit reuses nothing from it.
@@ -587,12 +592,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     if (status && hasFrame) {
         const glm::mat4 cameraWorld = glm::inverse(view.camera->view);
         impl.particlePass->AddDraw(graph, impl.meshPass->FrameDataIndex(), impl.depth, impl.hdr, impl.reactive,
-                                   glm::vec3(cameraWorld[0]), glm::vec3(cameraWorld[1]),
-                                   {.structure = impl.rayTracing->Structure(),
-                                    .instanceBuffer = impl.meshPass->InstanceDataIndex(),
-                                    .materialBuffer = impl.meshPass->MaterialDataIndex(),
-                                    .skinnedVertices = impl.meshPass->SkinnedVertices(),
-                                    .emissiveTriangles = impl.meshPass->EmissiveTriangles()});
+                                   glm::vec3(cameraWorld[0]), glm::vec3(cameraWorld[1]));
     }
     // Glass, over everything else, which it reads from a copy of the frame (ADR-0042).
     if (status && hasFrame && impl.meshPass->HasGlass()) {

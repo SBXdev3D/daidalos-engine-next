@@ -39,8 +39,10 @@ struct GpuParticle {
     float rotation;
     float rotationSpeed;
     std::uint32_t effect;
+    glm::vec3 light;
+    float lightSamples;
 };
-static_assert(sizeof(GpuParticle) == 48);
+static_assert(sizeof(GpuParticle) == 64);
 
 constexpr std::uint32_t kEffectLit = 1;
 constexpr std::uint32_t kEffectCollides = 2;
@@ -268,7 +270,7 @@ void ParticlePass::DestroyEffect(ParticleEffectHandle effect) {
 
 core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, std::span<const ParticleSpawn> spawns,
                                                float timeStep, std::uint32_t frameBuffer, rhi::TextureHandle depth,
-                                               rhi::TextureHandle normals) {
+                                               rhi::TextureHandle normals, const Shadows& shadows) {
     DAI_PROFILE_SCOPE("renderer::ParticlePass::AddSimulation");
     FrameSlot& slot = m_frameSlots[m_nextFrameSlot];
     m_nextFrameSlot = (m_nextFrameSlot + 1) % rhi::kFramesInFlight;
@@ -324,6 +326,8 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, std::span<con
     push.depthTexture = m_device->BindlessIndex(depth);
     push.normalTexture = m_device->BindlessIndex(normals);
     push.capacity = kMaxParticles;
+    push.instanceBuffer = shadows.instanceBuffer;
+    push.materialBuffer = shadows.materialBuffer;
 
     // Emission, simulation and finish read and write most of the pool's buffers.
     const std::vector<rhi::BufferUse> pool{{m_particles, rhi::Access::ComputeShaderWrite},
@@ -344,11 +348,15 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, std::span<con
         graph.AddPass({.name = "Particle emission", .group = "Simulation", .buffers = pool},
                       dispatch(m_emit, (emitted + kGroupSize - 1) / kGroupSize));
     }
+    // Particles bounce off the G-buffer's surfaces, and lit ones cast shadow rays.
+    std::vector<rhi::BufferUse> simulated = pool;
+    simulated.push_back({shadows.skinnedVertices, rhi::Access::ComputeShaderRead});
+    simulated.push_back({shadows.emissiveTriangles, rhi::Access::ComputeShaderRead});
     graph.AddPass({.name = "Particle simulation",
                    .group = "Simulation",
-                   // Particles bounce off the G-buffer's surfaces.
                    .textures = {{depth, rhi::Access::ComputeShaderRead}, {normals, rhi::Access::ComputeShaderRead}},
-                   .buffers = pool},
+                   .buffers = std::move(simulated),
+                   .structures = {{shadows.structure, rhi::Access::RayQueryRead}}},
                   dispatch(m_simulate, kGroups));
     graph.AddPass({.name = "Particle finish", .group = "Simulation", .buffers = pool}, dispatch(m_finish, kGroups));
 
@@ -380,7 +388,7 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, std::span<con
 
 void ParticlePass::AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::TextureHandle depth,
                            rhi::TextureHandle target, rhi::TextureHandle reactive, const glm::vec3& cameraRight,
-                           const glm::vec3& cameraUp, const Shadows& shadows) {
+                           const glm::vec3& cameraUp) {
     ParticlePushConstants push{};
     push.particles = m_device->StorageIndex(m_particles);
     push.keys = m_device->StorageIndex(m_keys);
@@ -390,8 +398,6 @@ void ParticlePass::AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::T
     push.capacity = kMaxParticles;
     push.cameraRight = cameraRight;
     push.cameraUp = cameraUp;
-    push.instanceBuffer = shadows.instanceBuffer;
-    push.materialBuffer = shadows.materialBuffer;
     // Over the meshes, back to front; they read the depth to fade into surfaces.
     graph.AddPass(
         {.name = "Particles",
@@ -399,10 +405,7 @@ void ParticlePass::AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::T
          .textures = {{depth, rhi::Access::FragmentShaderRead}},
          .buffers = {{m_particles, rhi::Access::VertexShaderRead},
                      {m_keys, rhi::Access::VertexShaderRead},
-                     {m_arguments, rhi::Access::IndirectRead},
-                     {shadows.skinnedVertices, rhi::Access::FragmentShaderRead},
-                     {shadows.emissiveTriangles, rhi::Access::FragmentShaderRead}},
-         .structures = {{shadows.structure, rhi::Access::RayQueryRead}}},
+                     {m_arguments, rhi::Access::IndirectRead}}},
         [this, push](rhi::CommandList& commands) {
             DAI_PROFILE_SCOPE("renderer::ParticlePass::Draw");
             commands.BindPipeline(m_draw);

@@ -5,11 +5,41 @@
 // Moves every alive particle by one frame (ADR-0025): gravity, drag, and bounces off what the G-buffer
 // drew. Particles at the end of their life go back to the dead list; the others go to the next alive
 // list, with their depth as the key of the sort.
+// It also lights lit particles (ADR-0044): a few lights sampled at the particle's center, with their shadow
+// rays, blended with what the particle held, so that its light is smooth across its quad and from frame to
+// frame, as a pixel's sampled light, which smoke does not denoise, would not be.
 
 #include "Particles.slangh"
+#include "RayQueries.slangh"
+#include "Lights.slangh"
 
 // Meters behind a surface where a particle still counts as touching it: farther, it is behind something.
 static const float kCollisionThickness = 0.5;
+// Lights sampled per particle and frame, and how much of its light a frame's samples replace.
+static const uint kLightSamples = 4;
+static const float kLightBlend = 0.15;
+
+// The light of the frame's lights at a point of smoke: from every side, as a white matte surface facing each
+// light, its illuminance over pi (ADR-0043), with shadows.
+float3 SmokeLight(FrameData frame, float3 position, uint seed) {
+    Receiver receiver;
+    receiver.position = position;
+    receiver.origin = position;
+    receiver.faceNormal = -frame.cameraForward;
+    receiver.normal = receiver.faceNormal;
+    receiver.view = receiver.faceNormal;
+    receiver.diffuseColor = float3(1.0, 1.0, 1.0);
+    receiver.f0 = float3(0.0, 0.0, 0.0);
+    receiver.roughness = 1.0;
+    receiver.response = kRespondEverywhere;
+    receiver.emissiveSpecular = true;
+    uint random = Pcg(seed);
+    float3 light = float3(0.0, 0.0, 0.0);
+    for (uint sample = 0; sample < kLightSamples; ++sample) {
+        light += SampleDirectLight(frame, receiver, random, g_particles.instanceBuffer, g_particles.materialBuffer);
+    }
+    return light / float(kLightSamples);
+}
 
 [numthreads(64, 1, 1)]
 void CSMain(uint3 id : SV_DispatchThreadID) {
@@ -52,6 +82,11 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
                 particle.position += normal * (depth - sceneDepth);
             }
         }
+    }
+    if ((effect.flags & kEffectLit) != 0) {
+        const float3 sampled = SmokeLight(frame, particle.position, index * 9781u + g_particles.seed * 26699u);
+        particle.light = particle.lightSamples > 0.0 ? lerp(particle.light, sampled, kLightBlend) : sampled;
+        particle.lightSamples = min(particle.lightSamples + 1.0, 1.0 / kLightBlend);
     }
     g_particleData[g_particles.particles][index] = particle;
 
