@@ -27,8 +27,8 @@ std::vector<AliasEntry> BuildAliasTable(std::span<const float> weights) {
     std::vector<double> scaled(count);
     for (std::size_t index = 0; index < count; ++index) {
         const float weight = weights[index];
-        const double probability =
-            total > 0.0 ? (std::isfinite(weight) && weight > 0.0f ? weight / total : 0.0) : 1.0 / static_cast<double>(count);
+        const double probability = total > 0.0 ? (std::isfinite(weight) && weight > 0.0f ? weight / total : 0.0)
+                                               : 1.0 / static_cast<double>(count);
         table[index].probability = static_cast<float>(probability);
         scaled[index] = probability * static_cast<double>(count);
     }

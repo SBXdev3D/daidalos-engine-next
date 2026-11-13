@@ -64,8 +64,8 @@ constexpr rhi::Format kGuideFormat = rhi::Format::Rgba16Float;
 DirectLighting::DirectLighting(DirectLighting&& other) noexcept
     : m_device(other.m_device), m_candidates(std::exchange(other.m_candidates, {})),
       m_temporal(std::exchange(other.m_temporal, {})), m_spatial(std::exchange(other.m_spatial, {})),
-      m_spatialUnbiased(std::exchange(other.m_spatialUnbiased, {})),
-      m_shade(std::exchange(other.m_shade, {})), m_reservoirs(std::exchange(other.m_reservoirs, {})),
+      m_spatialUnbiased(std::exchange(other.m_spatialUnbiased, {})), m_shade(std::exchange(other.m_shade, {})),
+      m_reservoirs(std::exchange(other.m_reservoirs, {})),
       m_finalReservoirs(std::exchange(other.m_finalReservoirs, {})), m_guides(std::exchange(other.m_guides, {})),
       m_debug(std::exchange(other.m_debug, {})), m_current(other.m_current), m_extent(other.m_extent),
       m_hasHistory(other.m_hasHistory) {}
@@ -119,10 +119,11 @@ core::Result<void> DirectLighting::Resize(rhi::Extent extent) {
         return {};
     };
     const auto texture = [&](rhi::TextureHandle& created, rhi::Format format, const char* name) -> core::Result<void> {
-        DAI_TRY_ASSIGN(created, m_device->CreateTexture({.extent = extent,
-                                                         .format = format,
-                                                         .usage = rhi::TextureUsage::Storage | rhi::TextureUsage::Sampled,
-                                                         .name = name}));
+        DAI_TRY_ASSIGN(created,
+                       m_device->CreateTexture({.extent = extent,
+                                                .format = format,
+                                                .usage = rhi::TextureUsage::Storage | rhi::TextureUsage::Sampled,
+                                                .name = name}));
         return {};
     };
     core::Result<void> created = buffer(m_reservoirs, "Reservoirs")

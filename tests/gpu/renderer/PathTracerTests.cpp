@@ -234,8 +234,8 @@ protected:
                                            .background = background,
                                            .depth = depth,
                                            .exposure = renderer::ExposureScale(animated.atmosphere.ev100),
-                                           .sharpReflections = reflections ? renderer::GlobalIllumination::kSharpRoughness
-                                                                           : 0.0f})
+                                           .sharpReflections =
+                                               reflections ? renderer::GlobalIllumination::kSharpRoughness : 0.0f})
                                 .has_value());
                         ASSERT_TRUE(m_scene->Prepare(m_pass->TracedDraws()).has_value());
                         renderer::RenderGraph graph;
@@ -256,26 +256,25 @@ protected:
                                                     .frameIndex = frame,
                                                     .reflections = options.reflections});
                         }
-                        lighting->AddTo(
-                            graph,
-                            {.frameBuffer = m_pass->FrameDataIndex(),
-                             .instanceBuffer = m_pass->InstanceDataIndex(),
-                             .materialBuffer = m_pass->MaterialDataIndex(),
-                             .structure = m_scene->Structure(),
-                             .emissiveTriangles = m_pass->EmissiveTriangles(),
-                             .depth = depth,
-                             .normals = normals,
-                             .motion = motion,
-                             .baseColor = shading->baseColor,
-                             .emission = shading->emission,
-                             .indirect = indirect != nullptr ? indirect->Output() : rhi::TextureHandle{},
-                             .reflections = reflections,
-                             .diffuse = shading->diffuse,
-                             .specular = shading->specular,
-                             .lightMap = m_pass->LightMapIndex(),
-                             .previousLightCount = m_pass->PreviousLightCount(),
-                             .frameIndex = frame},
-                            options.restir);
+                        lighting->AddTo(graph,
+                                        {.frameBuffer = m_pass->FrameDataIndex(),
+                                         .instanceBuffer = m_pass->InstanceDataIndex(),
+                                         .materialBuffer = m_pass->MaterialDataIndex(),
+                                         .structure = m_scene->Structure(),
+                                         .emissiveTriangles = m_pass->EmissiveTriangles(),
+                                         .depth = depth,
+                                         .normals = normals,
+                                         .motion = motion,
+                                         .baseColor = shading->baseColor,
+                                         .emission = shading->emission,
+                                         .indirect = indirect != nullptr ? indirect->Output() : rhi::TextureHandle{},
+                                         .reflections = reflections,
+                                         .diffuse = shading->diffuse,
+                                         .specular = shading->specular,
+                                         .lightMap = m_pass->LightMapIndex(),
+                                         .previousLightCount = m_pass->PreviousLightCount(),
+                                         .frameIndex = frame},
+                                        options.restir);
                         if (denoiser.has_value()) {
                             denoiser->AddTo(
                                 graph,
@@ -732,7 +731,8 @@ namespace {
 
 // The Cornell box without its lamp, lit by a panel that glows under most of its ceiling (ADR-0044): large, so
 // that the path tracer's rays find it often.
-SceneView CornellBoxWithPanel(renderer::MeshHandle cube, const std::function<renderer::MaterialHandle(const MaterialDesc&)>& material,
+SceneView CornellBoxWithPanel(renderer::MeshHandle cube,
+                              const std::function<renderer::MaterialHandle(const MaterialDesc&)>& material,
                               bool light) {
     const renderer::CornellBox box = renderer::MakeCornellBox();
     SceneView view;
@@ -790,9 +790,8 @@ TEST_F(PathTracerTest, EmissionThatIsNotALightIsOnlySeen) {
     }
     ASSERT_GT(panel, 1.0f) << "the panel shows";
     const auto litPixels = [&](const Image& image) {
-        return std::ranges::count_if(image, [&](const glm::vec4& pixel) {
-            return Luminance(pixel) > 0.01f && Luminance(pixel) < 0.5f * panel;
-        });
+        return std::ranges::count_if(
+            image, [&](const glm::vec4& pixel) { return Luminance(pixel) > 0.01f && Luminance(pixel) < 0.5f * panel; });
     };
     EXPECT_GT(litPixels(lit), 1000) << "a light lights the room";
     EXPECT_EQ(litPixels(seen), 0) << "only the panel shows";
@@ -802,7 +801,8 @@ namespace {
 
 // A room six meters across lit by a thousand small lamps of random colors, and two panels that glow on its
 // side walls, the right one no light (ADR-0044).
-SceneView RoomOfLights(renderer::MeshHandle cube, const std::function<renderer::MaterialHandle(const MaterialDesc&)>& material) {
+SceneView RoomOfLights(renderer::MeshHandle cube,
+                       const std::function<renderer::MaterialHandle(const MaterialDesc&)>& material) {
     MaterialDesc matte;
     matte.baseColorFactor = glm::vec4(0.7f, 0.7f, 0.7f, 1.0f);
     matte.metallicFactor = 0.0f;
@@ -814,9 +814,10 @@ SceneView RoomOfLights(renderer::MeshHandle cube, const std::function<renderer::
     SceneView view;
     view.camera = LookAt({0.0f, 1.6f, 2.6f}, {0.0f, 1.2f, -3.0f}, glm::radians(70.0f));
     view.atmosphere = Dark();
-    view.draws = {slab({0.0f, -0.05f, 0.0f}, {6.2f, 0.1f, 6.2f}, walls), slab({0.0f, 3.05f, 0.0f}, {6.2f, 0.1f, 6.2f}, walls),
-                  slab({-3.05f, 1.5f, 0.0f}, {0.1f, 3.0f, 6.2f}, walls), slab({3.05f, 1.5f, 0.0f}, {0.1f, 3.0f, 6.2f}, walls),
-                  slab({0.0f, 1.5f, -3.05f}, {6.0f, 3.0f, 0.1f}, walls), slab({0.0f, 1.5f, 3.05f}, {6.0f, 3.0f, 0.1f}, walls)};
+    view.draws = {
+        slab({0.0f, -0.05f, 0.0f}, {6.2f, 0.1f, 6.2f}, walls), slab({0.0f, 3.05f, 0.0f}, {6.2f, 0.1f, 6.2f}, walls),
+        slab({-3.05f, 1.5f, 0.0f}, {0.1f, 3.0f, 6.2f}, walls), slab({3.05f, 1.5f, 0.0f}, {0.1f, 3.0f, 6.2f}, walls),
+        slab({0.0f, 1.5f, -3.05f}, {6.0f, 3.0f, 0.1f}, walls), slab({0.0f, 1.5f, 3.05f}, {6.0f, 3.0f, 0.1f}, walls)};
     MaterialDesc glow;
     glow.baseColorFactor = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
     glow.metallicFactor = 0.0f;
@@ -844,8 +845,7 @@ TEST_F(PathTracerTest, ARoomOfAThousandLightsMatchesThePathTracer) {
     // Testing the reused samples for shadows, unbiased, changes little.
     const SceneView view = RoomOfLights(m_cube, [this](const MaterialDesc& desc) { return Material(desc); });
     constexpr rhi::Extent kExtent{64, 64};
-    const Image traced =
-        Trace(view, kExtent, {.maxBounces = 2, .seed = 31, .jitter = false, .directOnly = true}, 256);
+    const Image traced = Trace(view, kExtent, {.maxBounces = 2, .seed = 31, .jitter = false, .directOnly = true}, 256);
     const auto denoised = [&](renderer::DirectLightingSettings restir) {
         return Rasterize(view, kExtent, {.frames = 32, .denoise = true, .warmup = 4, .restir = restir});
     };
@@ -858,9 +858,8 @@ TEST_F(PathTracerTest, ARoomOfAThousandLightsMatchesThePathTracer) {
     const float noisyFlip = Flip(traced, Rasterize(view, kExtent, {.warmup = 8}), kExtent);
     const float noisyWithoutSpatialFlip =
         Flip(traced, Rasterize(view, kExtent, {.warmup = 8, .restir = {.spatial = false}}), kExtent);
-    const float referenceFlip =
-        Flip(traced, Trace(view, kExtent, {.maxBounces = 2, .seed = 37, .jitter = false, .directOnly = true}, 256),
-             kExtent);
+    const float referenceFlip = Flip(
+        traced, Trace(view, kExtent, {.maxBounces = 2, .seed = 37, .jitter = false, .directOnly = true}, 256), kExtent);
     RecordProperty("flip", std::to_string(biasedFlip));
     RecordProperty("flipWithoutSpatialReuse", std::to_string(withoutSpatialFlip));
     RecordProperty("flipUnbiased", std::to_string(unbiasedFlip));

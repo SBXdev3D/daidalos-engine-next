@@ -242,10 +242,10 @@ core::Result<void> Reserve(rhi::Device& device, rhi::BufferHandle& buffer, std::
         return {};
     }
     const std::uint64_t grown = std::max({initial, count, capacity * 2});
-    DAI_TRY_ASSIGN(rhi::BufferHandle created, device.CreateBuffer({.size = grown * elementSize,
-                                                                   .usage = rhi::BufferUsage::Storage,
-                                                                   .memory = memory,
-                                                                   .name = name}));
+    DAI_TRY_ASSIGN(
+        rhi::BufferHandle created,
+        device.CreateBuffer(
+            {.size = grown * elementSize, .usage = rhi::BufferUsage::Storage, .memory = memory, .name = name}));
     device.DestroyBuffer(buffer);
     buffer = created;
     capacity = grown;
@@ -323,8 +323,9 @@ core::Result<MeshPass> MeshPass::Create(rhi::Device& device, rhi::Format colorFo
     DAI_TRY(pass.ReplaceShaders(rhi::ToSpirv(kGBufferVsSpirv), rhi::ToSpirv(kGBufferPsSpirv)));
     DAI_TRY_ASSIGN(pass.m_skinningPipeline,
                    device.CreateComputePipeline({.shader = rhi::ToSpirv(kSkinningCsSpirv), .name = "Skinning"}));
-    DAI_TRY_ASSIGN(pass.m_emissiveAverage, device.CreateComputePipeline({.shader = rhi::ToSpirv(kEmissiveAverageCsSpirv),
-                                                                        .name = "Emission of triangles"}));
+    DAI_TRY_ASSIGN(pass.m_emissiveAverage,
+                   device.CreateComputePipeline(
+                       {.shader = rhi::ToSpirv(kEmissiveAverageCsSpirv), .name = "Emission of triangles"}));
     DAI_TRY_ASSIGN(pass.m_emissiveTriangles,
                    device.CreateComputePipeline(
                        {.shader = rhi::ToSpirv(kEmissiveTrianglesCsSpirv), .name = "Emissive triangles"}));
@@ -642,20 +643,19 @@ MeshPass::EmissiveSource* MeshPass::FindEmissiveSource(MeshHandle meshHandle, Ma
         source.power += powers[index];
     }
     const std::vector<AliasEntry> table = BuildAliasTable(powers);
-    core::Result<void> made =
-        m_device
-            ->CreateBuffer({.size = triangles.size() * sizeof(glm::vec4),
-                            .usage = rhi::BufferUsage::Storage,
-                            .memory = rhi::MemoryLocation::CpuToGpu,
-                            .name = "Emission of triangles"})
-            .and_then([&](rhi::BufferHandle emission) {
-                source.emission = emission;
-                return m_device->CreateBuffer({.size = table.size() * sizeof(AliasEntry),
-                                               .usage = rhi::BufferUsage::Storage,
-                                               .memory = rhi::MemoryLocation::CpuToGpu,
-                                               .name = "Emissive triangles by power"});
-            })
-            .map([&](rhi::BufferHandle aliasTable) { source.aliasTable = aliasTable; });
+    core::Result<void> made = m_device
+                                  ->CreateBuffer({.size = triangles.size() * sizeof(glm::vec4),
+                                                  .usage = rhi::BufferUsage::Storage,
+                                                  .memory = rhi::MemoryLocation::CpuToGpu,
+                                                  .name = "Emission of triangles"})
+                                  .and_then([&](rhi::BufferHandle emission) {
+                                      source.emission = emission;
+                                      return m_device->CreateBuffer({.size = table.size() * sizeof(AliasEntry),
+                                                                     .usage = rhi::BufferUsage::Storage,
+                                                                     .memory = rhi::MemoryLocation::CpuToGpu,
+                                                                     .name = "Emissive triangles by power"});
+                                  })
+                                  .map([&](rhi::BufferHandle aliasTable) { source.aliasTable = aliasTable; });
     if (!made) {
         DestroyEmissiveSource(source);
         m_emissiveSources.erase(found);
@@ -758,7 +758,8 @@ core::Result<MeshPass::FrameLights> MeshPass::PrepareLights(FrameSlot& slot, con
     m_previousRanges = std::move(ranges);
     m_mappedLightCount = m_lightCount;
     m_lightCount = lightCount + triangleCount;
-    return FrameLights{.sourceCount = static_cast<std::uint32_t>(powers.size()), .emissiveTriangleCount = triangleCount};
+    return FrameLights{.sourceCount = static_cast<std::uint32_t>(powers.size()),
+                       .emissiveTriangleCount = triangleCount};
 }
 
 core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& targets) {
@@ -798,38 +799,38 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     m_previousViewProjection = viewProjection;
     m_viewProjection = viewProjection;
     FrameData frame{jittered,
-                          glm::inverse(jittered),
-                          cameraPosition,
-                          view.atmosphere.fogDensity,
-                          view.atmosphere.fogColor,
-                          static_cast<std::uint32_t>(view.lights.size()),
-                          m_device->StorageIndex(slot.lights),
-                          view.atmosphere.sky ? m_device->BindlessIndex(view.atmosphere.sky) : kNoTexture,
-                          view.atmosphere.skyIntensity * targets.exposure,
-                          targets.frameIndex,
-                          m_normalStrength,
-                          targets.indirect ? m_device->BindlessIndex(targets.indirect) : kNoTexture,
-                          glm::vec2(1.0f / static_cast<float>(std::max(targets.extent.width, 1U)),
-                                    1.0f / static_cast<float>(std::max(targets.extent.height, 1U))),
-                          camera.nearPlane,
-                          static_cast<std::uint32_t>(view.lights.size()),
-                          0, // The alias table: below, once the lights are known.
-                          farPlane,
-                          glm::normalize(-glm::vec3(glm::inverse(camera.view)[2])),
-                          0,
-                          targets.accelerationStructure,
-                          view.atmosphere.skyYaw,
-                          jitter,
-                          viewProjection,
-                          previousViewProjection,
-                          targets.reflections ? m_device->BindlessIndex(targets.reflections) : kNoTexture,
-                          targets.background ? m_device->BindlessIndex(targets.background) : kNoTexture,
-                          targets.depth ? m_device->BindlessIndex(targets.depth) : kNoTexture,
-                          targets.exposure,
-                          0,
-                          0,
-                          targets.sharpReflections,
-                          0};
+                    glm::inverse(jittered),
+                    cameraPosition,
+                    view.atmosphere.fogDensity,
+                    view.atmosphere.fogColor,
+                    static_cast<std::uint32_t>(view.lights.size()),
+                    m_device->StorageIndex(slot.lights),
+                    view.atmosphere.sky ? m_device->BindlessIndex(view.atmosphere.sky) : kNoTexture,
+                    view.atmosphere.skyIntensity * targets.exposure,
+                    targets.frameIndex,
+                    m_normalStrength,
+                    targets.indirect ? m_device->BindlessIndex(targets.indirect) : kNoTexture,
+                    glm::vec2(1.0f / static_cast<float>(std::max(targets.extent.width, 1U)),
+                              1.0f / static_cast<float>(std::max(targets.extent.height, 1U))),
+                    camera.nearPlane,
+                    static_cast<std::uint32_t>(view.lights.size()),
+                    0, // The alias table: below, once the lights are known.
+                    farPlane,
+                    glm::normalize(-glm::vec3(glm::inverse(camera.view)[2])),
+                    0,
+                    targets.accelerationStructure,
+                    view.atmosphere.skyYaw,
+                    jitter,
+                    viewProjection,
+                    previousViewProjection,
+                    targets.reflections ? m_device->BindlessIndex(targets.reflections) : kNoTexture,
+                    targets.background ? m_device->BindlessIndex(targets.background) : kNoTexture,
+                    targets.depth ? m_device->BindlessIndex(targets.depth) : kNoTexture,
+                    targets.exposure,
+                    0,
+                    0,
+                    targets.sharpReflections,
+                    0};
 
     if (!view.jointMatrices.empty()) {
         // Without previous joints, they stood still.
@@ -1035,8 +1036,8 @@ void MeshPass::AddEmissiveLights(RenderGraph& graph) {
     const std::uint32_t instances = m_device->StorageIndex(m_prepared->instances);
     const std::uint32_t output = m_device->StorageIndex(m_prepared->emissiveTriangles);
     for (const EmissiveJob& job : m_emissiveJobs) {
-        pushes.push_back({instances, job.instance, job.firstTriangle, job.triangleCount, job.emission, output,
-                          job.twoSided, 0});
+        pushes.push_back(
+            {instances, job.instance, job.firstTriangle, job.triangleCount, job.emission, output, job.twoSided, 0});
         const Mesh& mesh = m_meshes.Get(m_sorted[job.instance].mesh);
         desc.buffers.push_back({mesh.vertices, rhi::Access::ComputeShaderRead});
         desc.buffers.push_back({mesh.indices, rhi::Access::ComputeShaderRead});
@@ -1083,11 +1084,11 @@ core::Result<ShadingTargets> MeshPass::CreateShadingTargets(rhi::Extent extent) 
     ShadingTargets targets;
     const auto create = [&](rhi::TextureHandle& texture, rhi::Format format, rhi::TextureUsage written,
                             const char* name) -> core::Result<void> {
-        DAI_TRY_ASSIGN(texture, m_device->CreateTexture({.extent = extent,
-                                                         .format = format,
-                                                         .usage = written | rhi::TextureUsage::Sampled |
-                                                                  rhi::TextureUsage::TransferSrc,
-                                                         .name = name}));
+        DAI_TRY_ASSIGN(texture, m_device->CreateTexture(
+                                    {.extent = extent,
+                                     .format = format,
+                                     .usage = written | rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferSrc,
+                                     .name = name}));
         return {};
     };
     using enum rhi::TextureUsage;

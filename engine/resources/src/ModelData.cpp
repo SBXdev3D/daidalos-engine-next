@@ -14,6 +14,7 @@
 #include <glm/geometric.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/vec4.hpp>
+
 #include <simdjson.h>
 
 #include <algorithm>

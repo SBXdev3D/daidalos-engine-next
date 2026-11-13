@@ -75,7 +75,8 @@ renderer::DebugView DebugViewMode(const core::CVar<std::string>& cvar) {
     if (name != "off" && name != warned) {
         warned = name;
         DAI_LOG_WARNING(
-            kModule, "Unknown debug view '{}': use off, rays, path, motion, indirect, radiance_cache, reflections or lights",
+            kModule,
+            "Unknown debug view '{}': use off, rays, path, motion, indirect, radiance_cache, reflections or lights",
             name);
     }
 
@@ -251,8 +252,9 @@ core::Result<void> Application::LoadConfiguration() {
         m_reflectionRoughness = m_cvars.Register<double>(
             "renderer.reflection_roughness", 0.6,
             "Surfaces rougher than this, from 0 to 1, trace no reflection: the indirect light stands in for it");
-        m_restirSpatial = m_cvars.Register<bool>(
-            "renderer.restir_spatial", true, "Pixels reuse the lights their neighbours chose; off, only their own past");
+        m_restirSpatial =
+            m_cvars.Register<bool>("renderer.restir_spatial", true,
+                                   "Pixels reuse the lights their neighbours chose; off, only their own past");
         m_restirUnbiased = m_cvars.Register<bool>(
             "renderer.restir_unbiased", false,
             "Test every reused light for shadows, to compare with the path tracer: twice the rays");
