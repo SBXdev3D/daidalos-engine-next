@@ -3,12 +3,14 @@
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
 // Draws the sorted particles as quads facing the camera, back to front (ADR-0025). They fade where they
-// meet what is behind them (soft particles), are lit by the lights of their cluster unless they glow, and
-// fade into the fog. The output is premultiplied: an additive particle has an alpha of 0, so one blend
+// meet what is behind them (soft particles), are lit by the frame's lights unless they glow, one light
+// sampled per pixel with its shadow ray (ADR-0044), and fade into the fog. The output is premultiplied: an additive particle has an alpha of 0, so one blend
 // mode draws both kinds.
 
 #define DAI_PARTICLES_READ_ONLY
 #include "Particles.slangh"
+#include "RayQueries.slangh"
+#include "Lights.slangh"
 
 struct VertexOutput {
     float4 clipPosition : SV_Position;
@@ -79,31 +81,30 @@ ParticleOutput PSMain(VertexOutput input) {
 
     float3 color = input.color.rgb * texel.rgb;
     if ((effect.flags & kEffectLit) != 0) {
-        // Smoke takes the light around it, from every side: no normal, no shadow. Directional lights are left
-        // out: without shadows, the moon would light smoke deep indoors. The indirect light is that of the
-        // surfaces behind it, averaged over a few pixels around, which also smooths its noise (ADR-0040).
+        // Smoke takes the light around it, from every side, as a white matte surface facing each light: its
+        // illuminance over pi (ADR-0043), with shadows. The indirect light is that of the surfaces behind it,
+        // averaged over a few pixels around, which also smooths its noise (ADR-0040).
         float3 light = float3(0.0, 0.0, 0.0);
+        const int2 pixel = int2(input.clipPosition.xy);
         if (frame.indirectTexture != kNoTexture) {
-            const int2 pixel = int2(input.clipPosition.xy);
             const int2 last = int2(1.0 / frame.screenTexel) - 1;
             for (int tap = 0; tap < 4; ++tap) {
                 const int2 offset = int2((tap & 1) != 0 ? 6 : -6, (tap & 2) != 0 ? 6 : -6);
                 light += g_textures[frame.indirectTexture].Load(int3(clamp(pixel + offset, int2(0, 0), last), 0)).rgb * 0.25;
             }
         }
-        const uint2 cluster = g_clusters[frame.clusterBuffer][ClusterOf(frame, input.clipPosition.xy, input.worldPosition)];
-        for (uint entry = 0; entry < cluster.y; ++entry) {
-            const LightData lamp = g_lights[frame.lightBuffer][g_clusterLights[frame.clusterLightBuffer][cluster.x + entry]];
-            if (lamp.kind == kLightDirectional) {
-                continue;
-            }
-            const float3 offset = lamp.position - input.worldPosition;
-            const float distanceToLight = length(offset);
-            if (distanceToLight < lamp.range) {
-                // A white matte surface facing the light: its illuminance over pi (ADR-0043).
-                light += lamp.color * Attenuation(lamp, distanceToLight, offset / max(distanceToLight, 0.0001)) / 3.14159265;
-            }
-        }
+        Receiver receiver;
+        receiver.position = input.worldPosition;
+        receiver.origin = input.worldPosition;
+        receiver.faceNormal = -frame.cameraForward;
+        receiver.normal = receiver.faceNormal;
+        receiver.view = receiver.faceNormal;
+        receiver.diffuseColor = float3(1.0, 1.0, 1.0);
+        receiver.f0 = float3(0.0, 0.0, 0.0);
+        receiver.roughness = 1.0;
+        receiver.response = kRespondEverywhere;
+        uint random = Pcg(uint(pixel.y) * 65521u + uint(pixel.x)) ^ Pcg(frame.frameIndex * 9781u + input.effect);
+        light += SampleDirectLight(frame, receiver, random, g_particles.instanceBuffer, g_particles.materialBuffer);
         color *= light;
     }
 

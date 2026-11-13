@@ -62,53 +62,10 @@ float3 IndirectAt(FrameData frame, Surface surface, inout uint random) {
 }
 
 // The light of the frame's lights that a surface sends towards view, with its whole BSDF: one light chosen
-// among a few at random, the brighter the more likely, and one shadow ray, as DirectDiffuseLight does.
+// among a few, the brighter the more likely, and one shadow ray (Lights.slangh).
 float3 DirectLight(Surface surface, float3 view, FrameData frame, inout uint random) {
-    if (frame.lightCount == 0) {
-        return float3(0.0, 0.0, 0.0);
-    }
-    static const uint kCandidates = 8;
-    float weightSum = 0.0;
-    float3 chosenLight = float3(0.0, 0.0, 0.0);
-    float chosenWeight = 0.0;
-    LightData chosen = g_lights[frame.lightBuffer][0];
-    for (uint candidate = 0; candidate < kCandidates; ++candidate) {
-        const uint index = min(uint(Random(random) * float(frame.lightCount)), frame.lightCount - 1);
-        const LightData light = LightAt(g_lights[frame.lightBuffer][index], surface.position);
-        const float3 offset = light.position - surface.position;
-        const float distanceToLight = length(offset);
-        if (distanceToLight >= light.range) {
-            continue;
-        }
-        const float3 toLight = offset / max(distanceToLight, 0.0001);
-        if (dot(surface.faceNormal, toLight) <= 0.0) {
-            continue;
-        }
-        // The illuminance the light makes, times the BSDF and the cosine (ADR-0043).
-        const float3 reflected = light.color * Attenuation(light, distanceToLight, toLight) *
-                                 EvaluateBsdf(surface.normal, view, toLight, surface.diffuseColor, surface.f0, surface.roughness);
-        const float weight = Luminance(reflected);
-        if (weight <= 0.0) {
-            continue;
-        }
-        weightSum += weight;
-        if (Random(random) * weightSum < weight) {
-            chosen = light;
-            chosenLight = reflected;
-            chosenWeight = weight;
-        }
-    }
-    if (weightSum <= 0.0) {
-        return float3(0.0, 0.0, 0.0);
-    }
-    const float2 u = float2(Random(random), Random(random));
-    const float3 toPoint = SampleLightPoint(chosen.position, chosen.radius, surface.position, u) - surface.position;
-    const float distanceToPoint = length(toPoint);
-    if (!LightReaches(surface.position, surface.faceNormal, toPoint / max(distanceToPoint, 0.0001), distanceToPoint,
-                      chosen.range, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer)) {
-        return float3(0.0, 0.0, 0.0);
-    }
-    return chosenLight / chosenWeight * (weightSum / float(kCandidates)) * float(frame.lightCount);
+    return SampleDirectLight(frame, ReceiverOf(surface, view, kRespondBsdf), random, g_gi.instanceBuffer,
+                             g_gi.materialBuffer);
 }
 
 [numthreads(8, 8, 1)]

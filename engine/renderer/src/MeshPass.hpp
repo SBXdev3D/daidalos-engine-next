@@ -18,7 +18,7 @@
 #include <string>
 #include <vector>
 
-#include "LightClusters.hpp"
+#include "LightSampling.hpp"
 
 namespace daidalos::renderer {
 
@@ -27,7 +27,7 @@ class RenderGraph;
 /// The targets of a frame that the mesh pass needs to know about.
 struct FrameTargets {
     rhi::Extent extent;
-    /// The indirect diffuse light of the frame, per unit of diffuse color (ADR-0040), which the mesh pass
+    /// The indirect diffuse light of the frame, per unit of diffuse color (ADR-0040), which the lighting pass
     /// adds to its lights' light. Null for none: direct light only.
     rhi::TextureHandle indirect;
     /// Index of the top-level acceleration structure the frame traces, for FrameData.
@@ -37,8 +37,8 @@ struct FrameTargets {
     glm::vec2 jitter{0.0f};
     /// Counts the frames: the noise of soft shadows changes with it (ADR-0039).
     std::uint32_t frameIndex = 0;
-    /// The light that each pixel's specular lobe reflects (GlobalIllumination::Reflections), which the mesh
-    /// pass multiplies by the specular albedo (ADR-0042). Null: the indirect light stands in for it.
+    /// The light that each pixel's specular lobe reflects (GlobalIllumination::Reflections), which the
+    /// lighting pass multiplies by the specular albedo (ADR-0042). Null: the indirect light stands in for it.
     rhi::TextureHandle reflections;
     /// What the glass pass reads: a copy of the frame before glass, and the pre-pass's depth (ADR-0042).
     rhi::TextureHandle background;
@@ -48,16 +48,17 @@ struct FrameTargets {
     float exposure = 1.0f;
 };
 
-/// The targets the mesh pass shades into (ADR-0039), which the composite pass puts back together.
+/// What the G-buffer holds of the material, and what the lighting pass writes (ADR-0039, ADR-0044), which
+/// the composite pass puts back together. The G-buffer's normals and motion vectors are the renderer's.
 struct ShadingTargets {
-    /// Emission and the sky, in the mesh pass's color format.
-    rhi::TextureHandle base;
-    /// The diffuse light, direct and indirect, per unit of diffuse color (MeshPass::kDiffuseFormat).
+    /// The base color, and the metalness in alpha (MeshPass::kBaseColorFormat).
+    rhi::TextureHandle baseColor;
+    /// The emission in nits times the exposure, and the occlusion in alpha (MeshPass::kEmissionFormat).
+    rhi::TextureHandle emission;
+    /// Storage images: the diffuse light, direct and indirect, per unit of diffuse color, and the specular
+    /// light per unit of specular albedo, with the albedo in alpha (MeshPass::kLightFormat).
     rhi::TextureHandle diffuse;
-    /// The specular light per unit of specular albedo, and the albedo in alpha (MeshPass::kSpecularFormat).
     rhi::TextureHandle specular;
-    /// The diffuse color (MeshPass::kAlbedoFormat).
-    rhi::TextureHandle albedo;
 };
 
 /// What the composite pass reads.
@@ -85,8 +86,9 @@ struct TracedDraw {
     bool glass = false;
 };
 
-/// Owns the meshes, the materials and the pipelines that draw them. It works on any target, so that
-/// tests can run it without a window. The Device must outlive it.
+/// Owns the meshes, the materials, the frame's lights and the pipelines that draw meshes: the G-buffer, glass
+/// and the composite. It works on any target, so that tests can run it without a window. The Device must
+/// outlive it.
 class MeshPass {
 public:
     static core::Result<MeshPass> Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
@@ -103,26 +105,28 @@ public:
     [[nodiscard]] core::Result<MaterialHandle> CreateMaterial(const MaterialDesc& desc);
     void DestroyMaterial(MaterialHandle material);
 
-    /// Normals of the pre-pass: world normals, times 0.5 plus 0.5.
-    static constexpr rhi::Format kNormalFormat = rhi::Format::Rgba8Unorm;
-    /// Motion vectors of the pre-pass, its second target: where each pixel's surface was in the previous
-    /// frame minus where it is, in texture coordinates (ADR-0037).
+    /// The G-buffer's first target: world normals, times 0.5 plus 0.5, and the roughness. Half floats: in 8
+    /// bits, shading from the G-buffer's normals differs visibly from the path tracer's (ADR-0044).
+    static constexpr rhi::Format kNormalFormat = rhi::Format::Rgba16Float;
+    /// Its second: where each pixel's surface was in the previous frame minus where it is, in texture
+    /// coordinates (ADR-0037).
     static constexpr rhi::Format kMotionFormat = rhi::Format::Rg16Float;
-    /// The light of the mesh pass's lights, apart from the rest, for the denoiser (ADR-0039).
-    static constexpr rhi::Format kDiffuseFormat = rhi::Format::Rgba16Float;
-    static constexpr rhi::Format kSpecularFormat = rhi::Format::Rgba16Float;
-    /// sRGB, for precision in the dark colors.
-    static constexpr rhi::Format kAlbedoFormat = rhi::Format::Rgba8Srgb;
+    /// Its third: sRGB applies to the color, for precision in the dark ones; the metalness stays linear.
+    static constexpr rhi::Format kBaseColorFormat = rhi::Format::Rgba8Srgb;
+    /// Its fourth.
+    static constexpr rhi::Format kEmissionFormat = rhi::Format::Rgba16Float;
+    /// The lighting pass's diffuse and specular light, for the denoiser (ADR-0039).
+    static constexpr rhi::Format kLightFormat = rhi::Format::Rgba16Float;
 
-    /// The targets of Record, at this size, sampled by the passes after it.
+    /// The G-buffer's material targets and the lighting pass's, at this size.
     [[nodiscard]] core::Result<ShadingTargets> CreateShadingTargets(rhi::Extent extent) const;
     void DestroyShadingTargets(ShadingTargets& targets) const;
-    /// The rendering of Record into these targets, over the pre-pass's depth. The base is cleared to
-    /// clearColor, which stays where nothing is drawn; the others are cleared to zero.
-    [[nodiscard]] static rhi::RenderingDesc ShadingRendering(const ShadingTargets& targets, rhi::TextureHandle depth,
-                                                             const glm::vec4& clearColor);
+    /// The rendering of RecordGBuffer: normals (kNormalFormat), motion vectors (kMotionFormat), the material
+    /// targets and the depth, all cleared.
+    [[nodiscard]] static rhi::RenderingDesc GBufferRendering(const ShadingTargets& targets, rhi::TextureHandle normals,
+                                                             rhi::TextureHandle motion, rhi::TextureHandle depth);
 
-    /// Replaces the shaders of the mesh pass. The pre-pass uses the same vertex shader, so that both
+    /// Replaces the shaders of the G-buffer. The glass pass uses the same vertex shader, so that both
     /// compute the same depth. On failure the current pipelines stay in use.
     [[nodiscard]] core::Result<void> ReplaceShaders(std::span<const std::uint32_t> vertexShader,
                                                     std::span<const std::uint32_t> fragmentShader);
@@ -131,7 +135,8 @@ public:
     /// rendering scope. Draws whose mesh has been destroyed are skipped, and draws whose material has been
     /// use the default one. Without a camera, or after a failure to allocate, the frame draws nothing.
     [[nodiscard]] core::Result<void> Prepare(const SceneView& view, const FrameTargets& targets);
-    /// What the last Prepare chose to draw: FrameStats' draw, triangle and light counts.
+    /// What the last Prepare chose to draw: FrameStats' draw, triangle and light counts. Lights counts the
+    /// analytic lights and the emissive triangles that light.
     struct Counts {
         std::uint32_t draws = 0;
         std::uint32_t drawnDraws = 0;
@@ -162,24 +167,24 @@ public:
     [[nodiscard]] const glm::mat4& ViewProjection() const { return m_viewProjection; }
     /// The storage index of the material table.
     [[nodiscard]] std::uint32_t MaterialDataIndex() const { return m_device->StorageIndex(m_materialTable); }
-    /// Writes depth, normals and motion vectors, inside a rendering scope with a kNormalFormat target, a
-    /// kMotionFormat target and a cleared depth. Skinned draws read PreviousSkinnedPositions.
-    void RecordPrepass(rhi::CommandList& commands);
-    /// Shades the prepared frame inside a ShadingRendering scope, whose depth holds the pre-pass's: each
-    /// pixel is shaded once, where its depth equals the pre-pass's. Then draws the sky where nothing was
-    /// drawn, if the frame has one.
-    void Record(rhi::CommandList& commands);
+    /// Writes the G-buffer of the opaque draws, inside a GBufferRendering scope. Skinned draws read
+    /// PreviousSkinnedPositions.
+    void RecordGBuffer(rhi::CommandList& commands);
     /// Draws the prepared frame's glass over the frame (ADR-0042), inside a rendering scope with a target of the
-    /// mesh pass's color format and no depth: it reads the pre-pass's depth and the background of FrameTargets.
+    /// mesh pass's color format and no depth: it reads the G-buffer's depth and the background of FrameTargets.
     void RecordGlass(rhi::CommandList& commands);
     /// The prepared frame has glass to draw.
     [[nodiscard]] bool HasGlass() const { return m_prepared != nullptr && m_hasGlass; }
-    /// Adds the pass that puts the shading targets back together into target, with the fog, as
+    /// Adds the pass that puts the shading targets back together into target, with the fog and the sky, as
     /// "Composite" (ADR-0039). target has the mesh pass's color format and is written whole.
     void AddComposite(RenderGraph& graph, rhi::TextureHandle target, const CompositeInputs& inputs);
 
     /// The storage index of the prepared frame's FrameData, for the passes that read it.
     [[nodiscard]] std::uint32_t FrameDataIndex() const;
+    /// Where each light of the frame prepared before this one is in this one's list (ADR-0044): the storage
+    /// index of a uint per light, kGone for a light that is gone, and the number of lights it maps.
+    [[nodiscard]] std::uint32_t LightMapIndex() const;
+    [[nodiscard]] std::uint32_t PreviousLightCount() const { return m_previousLightCount; }
 
     /// Multiplies the tilt of every normal map, from the next Prepare.
     void SetNormalStrength(float strength) { m_normalStrength = strength; }
@@ -224,33 +229,34 @@ private:
         std::uint64_t jointCapacity = 0;
         rhi::BufferHandle lights;
         std::uint64_t lightCapacity = 0;
-        rhi::BufferHandle clusters;
-        rhi::BufferHandle clusterLights;
-        std::uint64_t clusterLightCapacity = 0;
+        /// The alias table of the light sources, by power.
+        rhi::BufferHandle sources;
+        std::uint64_t sourceCapacity = 0;
+        /// LightMapIndex's buffer.
+        rhi::BufferHandle lightMap;
+        std::uint64_t lightMapCapacity = 0;
     };
 
     MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
 
-    [[nodiscard]] core::Result<void> CreateClusterBuffers();
-    /// The pipelines of the pre-pass and the mesh pass, one-sided and double-sided.
+    /// The pipelines of the G-buffer and of glass, one-sided and double-sided.
     struct Pipelines {
-        rhi::PipelineHandle prepass;
-        rhi::PipelineHandle prepassDoubleSided;
-        rhi::PipelineHandle mesh;
-        rhi::PipelineHandle meshDoubleSided;
-        rhi::PipelineHandle sky;
+        rhi::PipelineHandle gbuffer;
+        rhi::PipelineHandle gbufferDoubleSided;
         rhi::PipelineHandle composite;
         rhi::PipelineHandle glass;
         rhi::PipelineHandle glassDoubleSided;
     };
     [[nodiscard]] core::Result<rhi::PipelineHandle> BuildPipeline(std::span<const std::uint32_t> vertexShader,
                                                                   std::span<const std::uint32_t> fragmentShader,
-                                                                  rhi::CullMode cull, bool prepass);
+                                                                  rhi::CullMode cull);
     void DestroyPipelines(Pipelines& pipelines);
     /// Draws the sorted draws of glass, or the others, with these pipelines, one-sided and double-sided.
     void RecordDraws(rhi::CommandList& commands, rhi::PipelineHandle oneSided, rhi::PipelineHandle doubleSided,
                      bool glass);
     [[nodiscard]] core::Result<void> PrepareFrameSlot(FrameSlot& slot, const SceneView& view);
+    /// Fills the frame slot's lights, their alias table and the map from the last frame's lights.
+    void PrepareLights(FrameSlot& slot, const SceneView& view, float exposure);
     /// Makes room for a material at this index of the table.
     [[nodiscard]] core::Result<void> ReserveMaterialSlot(std::uint32_t index);
     [[nodiscard]] std::uint32_t TextureIndex(rhi::TextureHandle texture) const;
@@ -259,7 +265,7 @@ private:
     rhi::Format m_colorFormat;
     rhi::Format m_depthFormat;
     Pipelines m_pipelines;
-    /// The shaders of the mesh pass, to rebuild its pipelines.
+    /// The shaders of the G-buffer, to rebuild its pipelines.
     std::vector<std::uint32_t> m_vertexShader;
     std::vector<std::uint32_t> m_fragmentShader;
     float m_fieldOfView = glm::radians(90.0f);
@@ -285,7 +291,7 @@ private:
         bool visible;
         /// Where its skinned vertices start in m_skinned, or kNotSkinned.
         std::uint32_t firstSkinnedVertex;
-        /// Drawn by the glass pass, not by the pre-pass and the mesh pass.
+        /// Drawn by the glass pass, not by the G-buffer.
         bool glass;
     };
     static constexpr std::uint32_t kNotSkinned = 0xFFFFFFFF;
@@ -296,8 +302,10 @@ private:
     FrameSlot* m_prepared = nullptr;
     Counts m_counts;
     float m_normalStrength = 1.0f;
-    /// Reused from frame to frame.
-    LightClusters m_clusters;
+    /// What names each light of the last frame prepared, by index, and each of this one's (ADR-0044).
+    std::vector<std::uint64_t> m_previousLightKeys;
+    std::vector<std::uint64_t> m_lightKeys;
+    std::uint32_t m_previousLightCount = 0;
     /// Reused from frame to frame.
     std::vector<SortedDraw> m_sorted;
     /// The skinned vertices of the frame's skinned draws, in world space, written by the skinning pass.
@@ -313,7 +321,6 @@ private:
     glm::mat4 m_viewProjection{1.0f};
     /// Of the last frame prepared, for its successor's motion vectors.
     std::optional<glm::mat4> m_previousViewProjection;
-    bool m_hasSky = false;
     bool m_hasGlass = false;
 };
 

@@ -1,0 +1,88 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+
+// ReSTIR DI's spatial reuse (ADR-0044): each pixel combines its reservoir with those of a few neighbours
+// on the same surface, by generalized RIS with pairwise MIS weights (Lin et al. 2022; Wyman et al., "A
+// Gentle Introduction to ReSTIR", 2023, section 7): the pixel's own reservoir is the canonical one, and each
+// neighbour shares each sample with it in proportion to how likely each would have made it. Biased about
+// visibility by default: a neighbour's light is not tested from the pixel; with kRestirUnbiased, it is, and
+// the pixel's light from the neighbour.
+// Without kRestirSpatial, the reservoir goes through unchanged.
+
+#include "Restir.slangh"
+
+static const uint kNeighbours = 5;
+static const float kRadius = 30.0; // Pixels.
+static const float kRoughnessTolerance = 0.25;
+
+// The share of a sample that one of two techniques gets, from their confidences times their target values.
+float Pairwise(float mine, float other) {
+    const float total = mine + other;
+    return total > 0.0 ? mine / total : 0.0;
+}
+
+[numthreads(8, 8, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID) {
+    if (any(id.xy >= uint2(g_restir.width, g_restir.height))) {
+        return;
+    }
+    const FrameData frame = g_frames[g_restir.frameBuffer][0];
+    const int2 pixel = int2(id.xy);
+    const uint4 packed = g_reservoirs[g_restir.previousReservoirs][PixelIndex(pixel)];
+    const GBufferSurface surface = ReadGBuffer(frame, Textures(), pixel);
+    if (!surface.found || (g_restir.flags & kRestirSpatial) == 0) {
+        g_reservoirs[g_restir.reservoirs][PixelIndex(pixel)] = packed;
+        return;
+    }
+    const Receiver receiver = ReceiverOf(frame, surface);
+    const Reservoir canonical = Unpack(packed);
+    const bool unbiased = (g_restir.flags & kRestirUnbiased) != 0;
+    const float depth = ViewDepth(frame, surface.position);
+    uint random = Pcg(PixelIndex(pixel) * 6271u + g_restir.seed * 9781u + 3u);
+
+    const float canonicalTarget = TargetAt(frame, receiver, canonical.light, canonical.u, false);
+    float canonicalShare = 1.0;
+    float count = canonical.count;
+    uint techniques = 1;
+    Reservoir combined = EmptyReservoir();
+    for (uint neighbour = 0; neighbour < kNeighbours; ++neighbour) {
+        const float radius = kRadius * sqrt(Random(random));
+        const float angle = 6.28318531 * Random(random);
+        const int2 other = pixel + int2(round(float2(cos(angle), sin(angle)) * radius));
+        if (any(other < 0) || any(other >= int2(g_restir.width, g_restir.height)) || all(other == pixel)) {
+            continue;
+        }
+        const GBufferSurface otherSurface = ReadGBuffer(frame, Textures(), other);
+        if (!otherSurface.found ||
+            !SameSurface(depth, surface.normal, ViewDepth(frame, otherSurface.position), otherSurface.normal) ||
+            abs(otherSurface.roughness - surface.roughness) > kRoughnessTolerance) {
+            continue;
+        }
+        const Reservoir sample = Unpack(g_reservoirs[g_restir.previousReservoirs][PixelIndex(other)]);
+        // A neighbour whose light was hidden has nothing to give. Biased, it is passed over: were it weighed,
+        // the pixel's light would lose the share that the neighbour could not have found, behind its shadow.
+        // Unbiased, it is weighed, and its target value includes its visibility, which gives that share back.
+        if (sample.light == kNoLight && !unbiased) {
+            continue;
+        }
+        const Receiver otherReceiver = ReceiverOf(frame, otherSurface);
+        ++techniques;
+        count += sample.count;
+        // The neighbour's sample, where it was found and here; the pixel's sample, there.
+        const float targetThere = TargetAt(frame, otherReceiver, sample.light, sample.u, false);
+        const float targetHere = TargetAt(frame, receiver, sample.light, sample.u, unbiased);
+        const float canonicalThere = TargetAt(frame, otherReceiver, canonical.light, canonical.u, unbiased);
+        const float share = Pairwise(sample.count * targetThere, canonical.count * targetHere);
+        canonicalShare += 1.0 - Pairwise(sample.count * canonicalThere, canonical.count * canonicalTarget);
+        Stream(combined, sample.light, sample.u, share * targetHere * sample.weight, targetHere, Random(random));
+    }
+    Stream(combined, canonical.light, canonical.u, canonicalShare * canonicalTarget * canonical.weight, canonicalTarget,
+           Random(random));
+    combined.count = count;
+    combined.weight = combined.target > 0.0 ? combined.weightSum / (combined.target * float(techniques)) : 0.0;
+    if (combined.weight <= 0.0) {
+        combined.light = kNoLight;
+    }
+    g_reservoirs[g_restir.reservoirs][PixelIndex(pixel)] = Pack(combined);
+}

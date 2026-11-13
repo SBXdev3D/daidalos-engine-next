@@ -10,6 +10,7 @@
 #define DAI_NO_MESH_PUSH_CONSTANTS
 #include "MeshTypes.slangh"
 #include "RayQueries.slangh"
+#include "Random.slangh"
 import Bsdf;
 
 struct PathTracerPushConstants {
@@ -33,16 +34,6 @@ struct PathTracerPushConstants {
 [[vk::binding(4, 0)]] [[vk::image_format("rgba32f")]] RWTexture2D<float4> g_storageImages[];
 
 static const float kPi = 3.14159265;
-// PCG (O'Neill 2014): a small, good random number generator.
-uint NextRandom(inout uint state) {
-    state = state * 747796405u + 2891336453u;
-    const uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-    return (word >> 22u) ^ word;
-}
-
-float Random(inout uint state) {
-    return float(NextRandom(state) >> 8) * (1.0 / 16777216.0);
-}
 
 // Light that reaches the surface straight from the frame's lights and leaves towards view: their
 // illuminance, with the mesh pass's falloff (ADR-0043), times the BSDF.

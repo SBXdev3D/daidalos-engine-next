@@ -2,7 +2,7 @@ dai_add_test(NAME daidalos_renderer_tests
     SOURCES
         CanvasTests.cpp
         ContextTests.cpp
-        LightClustersTests.cpp
+
         LightSamplingTests.cpp
         LightUnitsTests.cpp
         JitterTests.cpp

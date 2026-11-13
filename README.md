@@ -113,6 +113,8 @@ sandbox.exe +window.fullscreen true +renderer.antialiasing off
 | `renderer.indirect_light` | true | Light that bounces off surfaces; off leaves direct light only |
 | `renderer.reflections` | true | Ray-traced reflections; off, the indirect light stands in for them |
 | `renderer.reflection_roughness` | 0.6 | Surfaces rougher than this trace no reflection |
+| `renderer.restir_spatial` | true | Pixels reuse the lights their neighbours chose, as well as their own past |
+| `renderer.restir_unbiased` | false | Test every reused light for shadows, to compare with the path tracer |
 | `renderer.antialiasing` | `taa` | `taa` or `off` |
 | `renderer.validation` | true in Debug | Enable the Vulkan validation layers, if installed |
 | `view.fov` | 90 | Degrees across the screen, from 30 to 150 |

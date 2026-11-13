@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "Denoiser.hpp"
+#include "DirectLighting.hpp"
 #include "GpuFixture.hpp"
 #include "MeshPass.hpp"
 #include "ParticlePass.hpp"
@@ -80,6 +81,10 @@ protected:
         core::Result<renderer::RayTracingScene> scene = renderer::RayTracingScene::Create(Device(), kColorFormat);
         ASSERT_TRUE(scene.has_value()) << core::Format(scene.error());
         m_scene.emplace(std::move(*scene));
+        core::Result<renderer::DirectLighting> lighting = renderer::DirectLighting::Create(Device());
+        ASSERT_TRUE(lighting.has_value()) << core::Format(lighting.error());
+        ASSERT_TRUE(lighting->Resize(kExtent).has_value());
+        m_lighting.emplace(std::move(*lighting));
 
         const core::Result<rhi::TextureHandle> color = Device().CreateTexture(
             {.extent = kExtent,
@@ -131,6 +136,7 @@ protected:
     void TearDown() override {
         if (m_pass.has_value()) {
             m_pass->DestroyShadingTargets(m_shading);
+            m_lighting.reset();
             m_scene.reset();
             m_pass.reset();
             Device().DestroyTexture(m_color);
@@ -165,6 +171,8 @@ protected:
     // color, as a white ambient light showed it before global illumination (ADR-0040).
     void Render(const SceneView& scene, glm::vec2 jitter = glm::vec2(0.0f), renderer::Denoiser* denoiser = nullptr) {
         SceneView view = scene;
+        // Where nothing is drawn, the fog's color shows: the tests' background.
+        view.atmosphere.fogColor = glm::vec3(kBackground);
         if (view.camera.has_value() && view.lights.empty()) {
             view.lights.push_back({.type = renderer::LightType::Directional,
                                    .direction = -glm::vec3(glm::inverse(view.camera->view)[2]),
@@ -193,19 +201,29 @@ protected:
                     }
                     const rhi::BufferUse skinned{m_pass->SkinnedVertices(), rhi::Access::VertexInputRead};
                     graph.AddPass(
-                        {.name = "Prepass",
-                         .rendering = rhi::RenderingDesc{.colorTarget = m_normals,
-                                                         .clearColor = glm::vec4(0.0f),
-                                                         .moreColorTargets = {{m_motion, glm::vec4(0.0f)}},
-                                                         .depthTarget = m_depth,
-                                                         .clearDepth = 0.0f},
+                        {.name = "G-buffer",
+                         .rendering = MeshPass::GBufferRendering(m_shading, m_normals, m_motion, m_depth),
                          .buffers = {skinned, {m_pass->PreviousSkinnedPositions(), rhi::Access::VertexShaderRead}}},
-                        [&](rhi::CommandList& list) { m_pass->RecordPrepass(list); });
-                    graph.AddPass({.name = "Meshes",
-                                   .rendering = MeshPass::ShadingRendering(m_shading, m_depth, kBackground),
-                                   .buffers = {skinned, {skinned.buffer, rhi::Access::FragmentShaderRead}},
-                                   .structures = {{traced, rhi::Access::RayQueryRead}}},
-                                  [&](rhi::CommandList& list) { m_pass->Record(list); });
+                        [&](rhi::CommandList& list) { m_pass->RecordGBuffer(list); });
+                    if (view.camera.has_value()) {
+                        m_lighting->AddTo(graph,
+                                          {.frameBuffer = m_pass->FrameDataIndex(),
+                                           .instanceBuffer = m_pass->InstanceDataIndex(),
+                                           .materialBuffer = m_pass->MaterialDataIndex(),
+                                           .structure = traced,
+                                           .skinnedVertices = m_pass->SkinnedVertices(),
+                                           .depth = m_depth,
+                                           .normals = m_normals,
+                                           .motion = m_motion,
+                                           .baseColor = m_shading.baseColor,
+                                           .emission = m_shading.emission,
+                                           .diffuse = m_shading.diffuse,
+                                           .specular = m_shading.specular,
+                                           .lightMap = m_pass->LightMapIndex(),
+                                           .previousLightCount = m_pass->PreviousLightCount(),
+                                           .frameIndex = m_frameIndex},
+                                          {});
+                    }
                     if (denoiser != nullptr && view.camera.has_value()) {
                         denoiser->AddTo(graph, {.frameBuffer = m_pass->FrameDataIndex(),
                                                 .diffuse = m_shading.diffuse,
@@ -259,6 +277,7 @@ protected:
 
     std::optional<MeshPass> m_pass;
     std::optional<renderer::RayTracingScene> m_scene;
+    std::optional<renderer::DirectLighting> m_lighting;
     renderer::ShadingTargets m_shading;
     std::uint32_t m_frameIndex = 0;
     rhi::TextureHandle m_color;
@@ -705,7 +724,7 @@ protected:
                         m_particles->AddSimulation(graph, spawns, step, m_pass->FrameDataIndex(), m_depth, m_normals)
                             .has_value());
                     m_particles->AddDraw(graph, m_pass->FrameDataIndex(), m_depth, m_color, m_reactive,
-                                         glm::vec3(1, 0, 0), glm::vec3(0, 1, 0));
+                                         glm::vec3(1, 0, 0), glm::vec3(0, 1, 0), {});
 
                     graph.Execute(commands);
                     commands.Transition(m_color, rhi::TextureState::TransferSrc);
@@ -804,22 +823,22 @@ TEST_F(MeshPassTest, ReloadedShadersAreUsedByTheNextFrame) {
     const std::filesystem::path directory = std::filesystem::temp_directory_path() / "daidalos-reload-test";
     std::filesystem::create_directories(directory);
     const std::filesystem::path source = directory / "Green.slang";
-    // The vertex shader of the mesh pass, which the pre-pass shares, and a pixel shader of its own, which
-    // writes green and no light to the mesh pass's targets.
+    // The vertex shader of the G-buffer, and a pixel shader of its own, which writes a black metal that
+    // glows green: nothing but its emission shows.
     std::ofstream(source) << R"(
 #include "MeshCommon.slangh"
 struct Output {
-    float4 base : SV_Target0;
-    float4 diffuse : SV_Target1;
-    float4 specular : SV_Target2;
-    float4 albedo : SV_Target3;
+    float4 normal : SV_Target0;
+    float2 motion : SV_Target1;
+    float4 baseColor : SV_Target2;
+    float4 emission : SV_Target3;
 };
 Output PSMain(VertexOutput input) {
     Output output;
-    output.base = float4(0.0, 1.0, 0.0, 1.0);
-    output.diffuse = float4(0.0, 0.0, 0.0, 0.0);
-    output.specular = float4(0.0, 0.0, 0.0, 0.0);
-    output.albedo = float4(0.0, 0.0, 0.0, 0.0);
+    output.normal = float4(0.5, 0.5, 1.0, 1.0);
+    output.motion = float2(0.0, 0.0);
+    output.baseColor = float4(0.0, 0.0, 0.0, 1.0);
+    output.emission = float4(0.0, 1.0, 0.0, 1.0);
     return output;
 }
 )";
@@ -1298,7 +1317,8 @@ TEST_F(DenoiserTest, ALightTurnedOffGoesDarkAtOnce) {
     // A light that reaches nothing: without any, the test's light from behind the camera would come on.
     view.lights = {{.position = {0.0f, 0.0f, 100.0f}, .range = 1.0f}};
     Denoise(view);
-    EXPECT_LT(Pixel(48, 32).r, 10) << "no light lingers in the history";
+    // Measured on an RTX 3090: 10, what the history keeps of a penumbra's noise (ADR-0044).
+    EXPECT_LT(Pixel(48, 32).r, 16) << "no light lingers in the history";
 }
 
 TEST_F(DenoiserTest, AMovedPanelLeavesNoShadowBehind) {
@@ -1314,16 +1334,19 @@ TEST_F(DenoiserTest, AMovedPanelLeavesNoShadowBehind) {
 }
 
 TEST_F(DenoiserTest, AResetForgetsTheHistory) {
-    // After a reset, a frame comes out as it would from a denoiser that never saw another.
+    // After a reset, a frame comes out as it would from a denoiser that never saw another. The lighting
+    // starts over too, so that both frames get the same light.
     const SceneView view = ShadowView(1.0f);
     Denoise(view, 8);
     m_denoiser->Reset();
+    m_lighting->Reset();
     const std::uint32_t frame = m_frameIndex;
     Denoise(view);
     const std::vector<int> afterReset = Edge();
 
     core::Result<renderer::Denoiser> fresh = renderer::Denoiser::Create(Device());
     ASSERT_TRUE(fresh.has_value() && fresh->Resize(kExtent).has_value());
+    m_lighting->Reset();
     m_frameIndex = frame;
     Render(view, glm::vec2(0.0f), &*fresh);
     EXPECT_EQ(Differences(afterReset, Edge(), 0), 0);

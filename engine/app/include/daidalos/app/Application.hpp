@@ -191,6 +191,8 @@ private:
     std::optional<core::CVar<bool>> m_denoiser;
     std::optional<core::CVar<bool>> m_reflections;
     std::optional<core::CVar<double>> m_reflectionRoughness;
+    std::optional<core::CVar<bool>> m_restirSpatial;
+    std::optional<core::CVar<bool>> m_restirUnbiased;
     std::optional<core::CVar<bool>> m_validation;
     std::optional<core::CVar<bool>> m_syncValidation;
     std::optional<core::CVar<std::string>> m_debugView;

@@ -43,6 +43,8 @@ enum class DebugView {
     RadianceCache,
     /// The light each pixel's specular lobe reflects, as its ray found it, before the denoiser (ADR-0042).
     Reflections,
+    /// The light each pixel's reservoir chose, one hue per light (ADR-0044); black where none.
+    Lights,
 };
 
 struct RendererConfig {
@@ -67,6 +69,11 @@ struct RendererConfig {
     bool reflections = true;
     /// Surfaces rougher than this trace no reflection, from 0 (none do) to 1 (all do).
     float reflectionRoughness = 0.6f;
+    /// ReSTIR DI (ADR-0044): pixels reuse the lights their neighbours chose, as well as their own past.
+    bool restirSpatial = true;
+    /// ReSTIR DI tests every sample it reuses for visibility, for comparisons with the path tracer: twice the
+    /// rays.
+    bool restirUnbiased = false;
     /// Radians across the view, for cameras that set no field of view of their own.
     float fieldOfView = glm::radians(90.0f);
     /// Meters: farther, nothing is drawn or lit.
@@ -141,6 +148,8 @@ public:
     void SetDenoiser(bool enabled);
     void SetReflections(bool enabled);
     void SetReflectionRoughness(float roughness);
+    /// See RendererConfig::restirSpatial and restirUnbiased.
+    void SetRestir(bool spatial, bool unbiased);
     /// From the next frame; see RendererConfig.
     void SetFieldOfView(float radians);
     void SetViewDistance(float meters);

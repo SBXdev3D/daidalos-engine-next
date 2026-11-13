@@ -102,9 +102,9 @@ struct ParticlePushConstants {
     std::uint32_t sortBlock;
     std::uint32_t sortStep;
     std::uint32_t capacity;
-    std::uint32_t padding;
+    std::uint32_t instanceBuffer;
     glm::vec3 cameraRight;
-    float padding2;
+    std::uint32_t materialBuffer;
     glm::vec3 cameraUp;
     float padding3;
 };
@@ -380,7 +380,7 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, std::span<con
 
 void ParticlePass::AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::TextureHandle depth,
                            rhi::TextureHandle target, rhi::TextureHandle reactive, const glm::vec3& cameraRight,
-                           const glm::vec3& cameraUp) {
+                           const glm::vec3& cameraUp, const Shadows& shadows) {
     ParticlePushConstants push{};
     push.particles = m_device->StorageIndex(m_particles);
     push.keys = m_device->StorageIndex(m_keys);
@@ -390,6 +390,8 @@ void ParticlePass::AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::T
     push.capacity = kMaxParticles;
     push.cameraRight = cameraRight;
     push.cameraUp = cameraUp;
+    push.instanceBuffer = shadows.instanceBuffer;
+    push.materialBuffer = shadows.materialBuffer;
     // Over the meshes, back to front; they read the depth to fade into surfaces.
     graph.AddPass(
         {.name = "Particles",
@@ -397,7 +399,9 @@ void ParticlePass::AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::T
          .textures = {{depth, rhi::Access::FragmentShaderRead}},
          .buffers = {{m_particles, rhi::Access::VertexShaderRead},
                      {m_keys, rhi::Access::VertexShaderRead},
-                     {m_arguments, rhi::Access::IndirectRead}}},
+                     {m_arguments, rhi::Access::IndirectRead},
+                     {shadows.skinnedVertices, rhi::Access::FragmentShaderRead}},
+         .structures = {{shadows.structure, rhi::Access::RayQueryRead}}},
         [this, push](rhi::CommandList& commands) {
             DAI_PROFILE_SCOPE("renderer::ParticlePass::Draw");
             commands.BindPipeline(m_draw);

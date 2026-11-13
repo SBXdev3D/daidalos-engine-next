@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "Denoiser.hpp"
+#include "DirectLighting.hpp"
 #include "GlobalIllumination.hpp"
 #include "GpuFixture.hpp"
 #include "MeshPass.hpp"
@@ -163,6 +164,8 @@ protected:
         bool reprojectReflections = true;
         /// Changes the view before each frame is drawn, warmup included.
         std::function<void(SceneView&, std::uint32_t)> animate;
+        /// How ReSTIR DI reuses its samples (ADR-0044).
+        renderer::DirectLightingSettings restir;
     };
 
     // What the mesh pass draws of the view, in linear HDR. The view is drawn frames times, each with the
@@ -195,6 +198,12 @@ protected:
         SceneView animated = view;
         core::Result<renderer::ShadingTargets> shading = m_pass->CreateShadingTargets(extent);
         EXPECT_TRUE(shading.has_value());
+        std::optional<renderer::DirectLighting> lighting;
+        if (core::Result<renderer::DirectLighting> made = renderer::DirectLighting::Create(Device());
+            made.has_value() && made->Resize(extent).has_value()) {
+            lighting.emplace(std::move(*made));
+        }
+        EXPECT_TRUE(lighting.has_value());
         std::optional<renderer::Denoiser> denoiser;
         if (denoise) {
             core::Result<renderer::Denoiser> made = renderer::Denoiser::Create(Device());
@@ -228,13 +237,9 @@ protected:
                         renderer::RenderGraph graph;
                         m_pass->AddSkinning(graph);
                         m_scene->AddBuild(graph);
-                        graph.AddPass({.name = "Prepass",
-                                       .rendering = rhi::RenderingDesc{.colorTarget = normals,
-                                                                       .clearColor = glm::vec4(0.0f),
-                                                                       .moreColorTargets = {{motion, glm::vec4(0.0f)}},
-                                                                       .depthTarget = depth,
-                                                                       .clearDepth = 0.0f}},
-                                      [&](rhi::CommandList& list) { m_pass->RecordPrepass(list); });
+                        graph.AddPass({.name = "G-buffer",
+                                       .rendering = MeshPass::GBufferRendering(*shading, normals, motion, depth)},
+                                      [&](rhi::CommandList& list) { m_pass->RecordGBuffer(list); });
                         if (indirect != nullptr) {
                             indirect->AddTo(graph, {.frameBuffer = m_pass->FrameDataIndex(),
                                                     .instanceBuffer = m_pass->InstanceDataIndex(),
@@ -245,13 +250,25 @@ protected:
                                                     .frameIndex = frame,
                                                     .reflections = options.reflections});
                         }
-                        graph.AddPass({.name = "Meshes",
-                                       .rendering = MeshPass::ShadingRendering(*shading, depth, glm::vec4(0.0f)),
-                                       .textures = {{indirect != nullptr ? indirect->Output() : rhi::TextureHandle{},
-                                                     rhi::Access::FragmentShaderRead},
-                                                    {reflections, rhi::Access::FragmentShaderRead}},
-                                       .structures = {{m_scene->Structure(), rhi::Access::RayQueryRead}}},
-                                      [&](rhi::CommandList& list) { m_pass->Record(list); });
+                        lighting->AddTo(
+                            graph,
+                            {.frameBuffer = m_pass->FrameDataIndex(),
+                             .instanceBuffer = m_pass->InstanceDataIndex(),
+                             .materialBuffer = m_pass->MaterialDataIndex(),
+                             .structure = m_scene->Structure(),
+                             .depth = depth,
+                             .normals = normals,
+                             .motion = motion,
+                             .baseColor = shading->baseColor,
+                             .emission = shading->emission,
+                             .indirect = indirect != nullptr ? indirect->Output() : rhi::TextureHandle{},
+                             .reflections = reflections,
+                             .diffuse = shading->diffuse,
+                             .specular = shading->specular,
+                             .lightMap = m_pass->LightMapIndex(),
+                             .previousLightCount = m_pass->PreviousLightCount(),
+                             .frameIndex = frame},
+                            options.restir);
                         if (denoiser.has_value()) {
                             denoiser->AddTo(
                                 graph,
@@ -295,6 +312,7 @@ protected:
             }
         }
         denoiser.reset();
+        lighting.reset();
         m_pass->DestroyShadingTargets(*shading);
         Device().DestroyTexture(color);
         Device().DestroyTexture(depth);
@@ -414,30 +432,36 @@ TEST_F(PathTracerTest, WhiteMetalInAWhiteSkyKeepsItsEnergy) {
     ExpectFurnace(image, 0.95f);
 }
 
-TEST_F(PathTracerTest, DirectLightMatchesTheMeshPass) {
-    // A glossy dielectric lit by a point light and a spot light, without shadows or anything else: one
-    // bounce of the path tracer is the mesh pass's lighting, with the same BSDF and the same falloff.
+class DirectLightTest : public PathTracerTest, public ::testing::WithParamInterface<renderer::LightType> {};
+
+TEST_P(DirectLightTest, DirectLightMatchesThePathTracer) {
+    // A glossy dielectric lit by one light, without shadows or anything else: one bounce of the path tracer is
+    // the lighting pass's, with the same BSDF and the same falloff. With one light, ReSTIR always chooses it,
+    // and its weight is exactly one (ADR-0044): the light is as exact as when every light was summed.
     MaterialDesc glossy;
     glossy.baseColorFactor = glm::vec4(0.8f, 0.5f, 0.3f, 1.0f);
     glossy.metallicFactor = 0.0f;
     glossy.roughnessFactor = 0.4f;
     SceneView view = CubeInFront(Material(glossy));
-    view.lights.push_back({.type = renderer::LightType::Point,
-                           .position = {1.5f, 1.0f, 2.0f},
-                           .color = glm::vec3(1.0f, 0.9f, 0.8f) * 200.0f,
-                           .range = 6.0f});
-    view.lights.push_back({.type = renderer::LightType::Spot,
-                           .position = {-1.5f, 1.5f, 1.5f},
-                           .direction = glm::normalize(glm::vec3(1.5f, -1.5f, -1.5f)),
-                           .color = glm::vec3(0.3f, 0.5f, 1.0f) * 200.0f,
-                           .range = 6.0f,
-                           .innerAngle = glm::radians(20.0f),
-                           .outerAngle = glm::radians(35.0f)});
+    if (GetParam() == renderer::LightType::Point) {
+        view.lights.push_back({.type = renderer::LightType::Point,
+                               .position = {1.5f, 1.0f, 2.0f},
+                               .color = glm::vec3(1.0f, 0.9f, 0.8f) * 200.0f,
+                               .range = 6.0f});
+    } else {
+        view.lights.push_back({.type = renderer::LightType::Spot,
+                               .position = {-1.5f, 1.5f, 1.5f},
+                               .direction = glm::normalize(glm::vec3(1.5f, -1.5f, -1.5f)),
+                               .color = glm::vec3(0.3f, 0.5f, 1.0f) * 200.0f,
+                               .range = 6.0f,
+                               .innerAngle = glm::radians(20.0f),
+                               .outerAngle = glm::radians(35.0f)});
+    }
     constexpr rhi::Extent kExtent{64, 64};
     const Image raster = Rasterize(view, kExtent);
     const Image traced = Trace(view, kExtent, {.maxBounces = 1, .seed = 7}, 64);
 
-    // The path tracer averages light over each pixel, and the mesh pass shades its center: they differ
+    // The path tracer averages light over each pixel, and the lighting pass shades its center: they differ
     // where a pixel spans two faces or the silhouette. Pixels whose neighbors are all lit must agree.
     const auto lit = [&](std::uint32_t x, std::uint32_t y) { return Luminance(raster[y * kExtent.width + x]) > 0.02f; };
     double rasterTotal = 0.0;
@@ -456,7 +480,7 @@ TEST_F(PathTracerTest, DirectLightMatchesTheMeshPass) {
             errors.push_back(std::abs(actual - expected) / expected);
         }
     }
-    ASSERT_GT(errors.size(), 500U) << "The cube covers much of the view";
+    ASSERT_GT(errors.size(), 300U) << "The light covers much of the cube";
     std::ranges::sort(errors);
     // The path tracer averages each pixel, the mesh pass shades its center: with the inverse square of the
     // distance (ADR-0043), light changes faster across a pixel, and the two differ by about half a percent.
@@ -464,6 +488,13 @@ TEST_F(PathTracerTest, DirectLightMatchesTheMeshPass) {
     EXPECT_LT(errors[errors.size() / 2], 0.01f) << "Median relative difference";
     EXPECT_LT(errors[errors.size() * 9 / 10], 0.05f) << "90th percentile of the relative differences";
 }
+
+INSTANTIATE_TEST_SUITE_P(EachKind, DirectLightTest,
+                         ::testing::Values(renderer::LightType::Point, renderer::LightType::Spot),
+                         [](const ::testing::TestParamInfo<renderer::LightType>& info) {
+                             return info.param == renderer::LightType::Point ? std::string("Point")
+                                                                             : std::string("Spot");
+                         });
 
 TEST_F(PathTracerTest, CornellBoxMatchesItsReference) {
     // A regression test: the path tracer's Cornell box, compared with an image it made before. After a
@@ -558,16 +589,17 @@ TEST_F(PathTracerTest, RayTracedShadowsMatchThePathTracer) {
     const float withoutShadows = Flip(tracedWithoutShadows, raster, kExtent);
     RecordProperty("flip", std::to_string(withShadows));
     RecordProperty("flipWithoutShadows", std::to_string(withoutShadows));
-    // Measured on an RTX 3090: 0.009, and 0.108 without shadows.
+    // Measured on an RTX 3090: 0.014, and 0.112 without shadows.
     EXPECT_LT(withShadows, 0.03f);
     EXPECT_GT(withoutShadows, 4.0f * withShadows);
 }
 
 TEST_F(PathTracerTest, DenoisedSoftShadowsMatchThePathTracer) {
     // The Cornell box's direct light, from a light of 30 cm radius: the blocks' shadows are soft. The path
-    // tracer averages many points of the light; the mesh pass aims at one per frame (ADR-0039). The average
-    // of its frames is the path tracer's image, and the denoiser comes near it from a few frames. The hard
-    // shadows of a point light are far from it.
+    // tracer averages many points of the light; the lighting pass aims at one per frame (ADR-0039). The
+    // average of its frames, unbiased (ADR-0044), is the path tracer's image, and the denoiser comes near it
+    // from a few frames: nearer unbiased, since ReSTIR's default reuses its neighbours' points of the light
+    // without testing them for shadows. The hard shadows of a point light are far from it.
     const renderer::CornellBox box = renderer::MakeCornellBox();
     SceneView view;
     view.camera = LookAt(box.eye, box.target, box.verticalFov);
@@ -579,8 +611,10 @@ TEST_F(PathTracerTest, DenoisedSoftShadowsMatchThePathTracer) {
     }
     constexpr rhi::Extent kExtent{96, 96};
     const Image traced = Trace(view, kExtent, {.maxBounces = 1, .seed = 13, .jitter = false}, 256);
-    const Image averaged = Rasterize(view, kExtent, {.frames = 256});
+    const Image averaged = Rasterize(view, kExtent, {.frames = 256, .restir = {.unbiased = true}});
     const Image denoised = Rasterize(view, kExtent, {.frames = 32, .denoise = true});
+    const Image denoisedUnbiased =
+        Rasterize(view, kExtent, {.frames = 32, .denoise = true, .restir = {.unbiased = true}});
     const Image noisy = Rasterize(view, kExtent);
     SceneView hard = view;
     hard.lights.back().radius = 0.0f;
@@ -588,16 +622,21 @@ TEST_F(PathTracerTest, DenoisedSoftShadowsMatchThePathTracer) {
 
     const float averagedFlip = Flip(traced, averaged, kExtent);
     const float denoisedFlip = Flip(traced, denoised, kExtent);
+    const float unbiasedFlip = Flip(traced, denoisedUnbiased, kExtent);
     const float noisyFlip = Flip(traced, noisy, kExtent);
     const float hardFlip = Flip(traced, hardShadows, kExtent);
     RecordProperty("flipAveraged", std::to_string(averagedFlip));
     RecordProperty("flip", std::to_string(denoisedFlip));
+    RecordProperty("flipUnbiased", std::to_string(unbiasedFlip));
     RecordProperty("flipNoisy", std::to_string(noisyFlip));
     RecordProperty("flipHard", std::to_string(hardFlip));
-    // Measured on an RTX 3090: 0.014 for the average, 0.022 denoised, 0.069 for one frame, 0.066 for hard
-    // shadows. The average still differs where a pixel's center falls on the seam of two walls.
+    // Measured on an RTX 3090: 0.020 for the average, 0.040 denoised, 0.030 denoised unbiased, 0.066 for one
+    // frame, 0.070 for hard shadows. The average still differs where a pixel's center falls on the seam of
+    // two walls.
     EXPECT_LT(averagedFlip, 0.03f);
-    EXPECT_LT(denoisedFlip, 0.04f);
+    EXPECT_LT(denoisedFlip, 0.05f);
+    EXPECT_LT(unbiasedFlip, 0.04f);
+    EXPECT_LT(unbiasedFlip, denoisedFlip);
     EXPECT_LT(denoisedFlip, noisyFlip);
     EXPECT_LT(denoisedFlip, hardFlip);
 }

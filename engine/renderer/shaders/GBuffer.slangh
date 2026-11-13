@@ -1,0 +1,121 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+
+#ifndef DAIDALOS_GBUFFER_SLANGH
+#define DAIDALOS_GBUFFER_SLANGH
+
+// Reading the G-buffer (GBuffer.slang) in compute passes: the surface behind a pixel, as lighting needs it
+// (ADR-0044). Include after MeshTypes.slangh, RayQueries.slangh and Lights.slangh.
+
+import Bsdf;
+
+// The G-buffer's targets, by bindless index, and its size.
+struct GBufferTextures {
+    uint depth;
+    uint normals;
+    uint baseColor;
+    uint emission;
+    int2 size;
+};
+
+// The surface behind a pixel, in world space, from its reverse-Z depth.
+float3 PositionAt(FrameData frame, uint depthTexture, int2 pixel, int2 size) {
+    const int2 clamped = clamp(pixel, int2(0, 0), size - 1);
+    const float depth = g_textures[depthTexture].Load(int3(clamped, 0)).r;
+    return WorldPosition(frame, (float2(clamped) + 0.5) * frame.screenTexel, depth);
+}
+
+// The surface's own orientation, from the positions of the neighbours on the side closest in depth, so as
+// not to take it across an edge; towards the camera. At the edges of the image, from the side that is there.
+float3 FaceNormalAt(FrameData frame, uint depthTexture, int2 pixel, int2 size, float3 position) {
+    const float3 left = PositionAt(frame, depthTexture, pixel - int2(1, 0), size);
+    const float3 right = PositionAt(frame, depthTexture, pixel + int2(1, 0), size);
+    const float3 up = PositionAt(frame, depthTexture, pixel - int2(0, 1), size);
+    const float3 down = PositionAt(frame, depthTexture, pixel + int2(0, 1), size);
+    const bool useLeft = pixel.x > 0 && (pixel.x + 1 >= size.x || distance(left, position) < distance(right, position));
+    const bool useUp = pixel.y > 0 && (pixel.y + 1 >= size.y || distance(up, position) < distance(down, position));
+    const float3 across = useLeft ? position - left : right - position;
+    const float3 along = useUp ? position - up : down - position;
+    const float3 perpendicular = cross(along, across);
+    const float3 toCamera = frame.cameraPosition - position;
+    // A surface seen exactly edge-on, or an image a pixel wide: the camera's direction stands in.
+    float3 normal = dot(perpendicular, perpendicular) > 1e-20 ? normalize(perpendicular) : normalize(toCamera);
+    if (dot(normal, toCamera) < 0.0) {
+        normal = -normal;
+    }
+    return normal;
+}
+
+// Where rays leave a surface found from depth: a position from depth is less precise than a hit's, so they
+// start farther off it, the farther it is.
+float3 RayOriginAt(FrameData frame, float3 position, float3 faceNormal) {
+    return OffsetOrigin(position, faceNormal) + faceNormal * (0.0002 * distance(position, frame.cameraPosition));
+}
+
+// What the G-buffer holds of one pixel.
+struct GBufferSurface {
+    bool found; // Something was drawn there; otherwise the sky shows.
+    float depth;
+    float3 position;
+    float3 faceNormal;
+    float3 normal;
+    float roughness;
+    float3 baseColor;
+    float metallic;
+    float3 diffuseColor;
+    float3 f0;
+    float3 view;
+    float3 emission;
+    float occlusion;
+};
+
+GBufferSurface ReadGBuffer(FrameData frame, GBufferTextures textures, int2 pixel) {
+    GBufferSurface surface;
+    surface.depth = g_textures[textures.depth].Load(int3(pixel, 0)).r;
+    surface.found = surface.depth > 0.0;
+    surface.position = WorldPosition(frame, (float2(pixel) + 0.5) * frame.screenTexel, surface.depth);
+    surface.faceNormal = float3(0.0, 1.0, 0.0);
+    surface.view = normalize(frame.cameraPosition - surface.position);
+    if (!surface.found) {
+        surface.normal = surface.faceNormal;
+        surface.roughness = 1.0;
+        surface.baseColor = float3(0.0, 0.0, 0.0);
+        surface.metallic = 0.0;
+        surface.diffuseColor = float3(0.0, 0.0, 0.0);
+        surface.f0 = float3(0.0, 0.0, 0.0);
+        surface.emission = float3(0.0, 0.0, 0.0);
+        surface.occlusion = 1.0;
+        return surface;
+    }
+    surface.faceNormal = FaceNormalAt(frame, textures.depth, pixel, textures.size, surface.position);
+    const float4 normalRoughness = g_textures[textures.normals].Load(int3(pixel, 0));
+    surface.normal = normalize(normalRoughness.xyz * 2.0 - 1.0);
+    surface.roughness = normalRoughness.a;
+    const float4 baseMetallic = g_textures[textures.baseColor].Load(int3(pixel, 0));
+    surface.baseColor = baseMetallic.rgb;
+    surface.metallic = baseMetallic.a;
+    surface.diffuseColor = baseMetallic.rgb * (1.0 - baseMetallic.a);
+    surface.f0 = lerp(float3(0.04, 0.04, 0.04), baseMetallic.rgb, baseMetallic.a);
+    const float4 emissionOcclusion = g_textures[textures.emission].Load(int3(pixel, 0));
+    surface.emission = emissionOcclusion.rgb;
+    surface.occlusion = emissionOcclusion.a;
+    return surface;
+}
+
+// The surface as a receiver of light, with its whole BSDF.
+Receiver ReceiverOf(FrameData frame, GBufferSurface surface) {
+    Receiver receiver;
+    receiver.position = surface.position;
+    receiver.origin = RayOriginAt(frame, surface.position, surface.faceNormal);
+    receiver.faceNormal = surface.faceNormal;
+    receiver.normal = surface.normal;
+    receiver.view = surface.view;
+    receiver.diffuseColor = surface.diffuseColor;
+    receiver.f0 = surface.f0;
+    receiver.roughness = surface.roughness;
+    receiver.response = kRespondBsdf;
+    return receiver;
+}
+
+#endif

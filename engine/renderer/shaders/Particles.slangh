@@ -10,6 +10,7 @@
 
 #define DAI_NO_MESH_PUSH_CONSTANTS
 #include "MeshTypes.slangh"
+#include "Random.slangh"
 
 struct Particle {
     float3 position;
@@ -81,9 +82,9 @@ struct ParticlePushConstants {
     uint sortBlock;
     uint sortStep;
     uint capacity;
-    uint padding;
+    uint instanceBuffer; // The draw: the frame's instances and materials, for the alpha test of shadow rays.
     float3 cameraRight;
-    float padding2;
+    uint materialBuffer;
     float3 cameraUp;
     float padding3;
 };
@@ -110,12 +111,6 @@ uint Hash(uint value) {
     const uint state = value * 747796405u + 2891336453u;
     const uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
     return (word >> 22u) ^ word;
-}
-
-// Random numbers from 0 to 1, each call moving the seed on.
-float Random(inout uint seed) {
-    seed = Hash(seed);
-    return float(seed) / 4294967295.0;
 }
 
 float3 Rotate(float4 q, float3 v) {

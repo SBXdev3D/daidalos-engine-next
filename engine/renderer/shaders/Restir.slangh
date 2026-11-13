@@ -1,0 +1,117 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+
+#ifndef DAIDALOS_RESTIR_SLANGH
+#define DAIDALOS_RESTIR_SLANGH
+
+// What the passes of ReSTIR DI share (ADR-0044; Bitterli et al. 2020, Wyman et al. 2023): each pixel keeps
+// a reservoir, one light and a point on it with the weight that makes it an estimate of every light, and
+// reuses the reservoirs of its own past and of its neighbours on the same surface. Matches DirectLighting.cpp.
+
+#define DAI_NO_MESH_PUSH_CONSTANTS
+#include "MeshTypes.slangh"
+#include "RayQueries.slangh"
+#include "Lights.slangh"
+#include "GBuffer.slangh"
+
+struct RestirPushConstants {
+    uint frameBuffer;
+    uint instanceBuffer;
+    uint materialBuffer;
+    uint depth;
+    uint normals;
+    uint baseColor;
+    uint emission;
+    uint motion;
+    uint width;
+    uint height;
+    uint reservoirs;         // What the pass writes, one uint4 per pixel.
+    uint previousReservoirs; // What it reads: the last frame's, or the pass before's.
+    uint lightMap;           // For each of the last frame's lights, its index in this frame's, or kNoLight.
+    uint previousLightCount;
+    uint guides;         // Storage image: this frame's normal and linear depth, for the next frame.
+    uint previousGuides; // The last frame's, sampled.
+    uint diffuse;        // Storage images that the shading writes.
+    uint specular;
+    uint debug;
+    uint seed;   // Changes every frame.
+    uint flags;  // kRestir*.
+    uint padding;
+};
+
+[[vk::push_constant]] RestirPushConstants g_restir;
+[[vk::binding(2, 0)]] RWStructuredBuffer<uint4> g_reservoirs[];
+[[vk::binding(2, 0)]] StructuredBuffer<uint> g_lightMaps[];
+[[vk::binding(4, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> g_storageImages[];
+
+// Match DirectLighting.cpp.
+static const uint kRestirTemporal = 1;  // The last frame's reservoirs follow from this one's.
+static const uint kRestirSpatial = 2;   // Neighbours are reused.
+static const uint kRestirUnbiased = 4;  // Samples are tested for visibility wherever they are weighed.
+static const uint kRestirDebug = 8;     // The shading also shows each pixel's light.
+static const uint kRestirIndirect = 16; // Indirect light is added.
+
+// How much of the past a pixel keeps: its history stands for at most this many frames.
+static const float kMaxHistory = 20.0;
+
+GBufferTextures Textures() {
+    GBufferTextures textures;
+    textures.depth = g_restir.depth;
+    textures.normals = g_restir.normals;
+    textures.baseColor = g_restir.baseColor;
+    textures.emission = g_restir.emission;
+    textures.size = int2(g_restir.width, g_restir.height);
+    return textures;
+}
+
+uint PixelIndex(int2 pixel) {
+    return uint(pixel.y) * g_restir.width + uint(pixel.x);
+}
+
+// A reservoir as it is stored: the light, the point's two numbers in 16 bits each, the weight and the
+// confidence.
+uint4 Pack(Reservoir reservoir) {
+    const uint2 u = uint2(saturate(reservoir.u) * 65535.0 + 0.5);
+    return uint4(reservoir.light, u.x | (u.y << 16), asuint(reservoir.weight), asuint(reservoir.count));
+}
+
+Reservoir Unpack(uint4 packed) {
+    Reservoir reservoir = EmptyReservoir();
+    reservoir.light = packed.x;
+    reservoir.u = float2(packed.y & 0xFFFF, packed.y >> 16) / 65535.0;
+    reservoir.weight = asfloat(packed.z);
+    reservoir.count = asfloat(packed.w);
+    if (reservoir.light == kNoLight || !(reservoir.weight > 0.0)) {
+        reservoir.light = kNoLight;
+        reservoir.weight = 0.0;
+    }
+    return reservoir;
+}
+
+// Two pixels show the same surface: close in depth, facing the same way, as rough.
+bool SameSurface(float depth, float3 normal, float otherDepth, float3 otherNormal) {
+    return otherDepth > 0.0 && abs(otherDepth - depth) < 0.1 * depth && dot(normal, otherNormal) > 0.9;
+}
+
+// Meters in front of the camera.
+float ViewDepth(FrameData frame, float3 position) {
+    return dot(position - frame.cameraPosition, frame.cameraForward);
+}
+
+// The target value of a sample at a receiver: what it would send, unshadowed; or shadowed, if visibility
+// is asked for.
+float TargetAt(FrameData frame, Receiver receiver, uint light, float2 u, bool visibility) {
+    if (light == kNoLight) {
+        return 0.0;
+    }
+    const LightContact contact = ContactLight(frame, light, u, receiver.position);
+    const float target = TargetValue(receiver, contact);
+    if (target > 0.0 && visibility &&
+        !Unoccluded(frame, receiver, contact, g_restir.instanceBuffer, g_restir.materialBuffer)) {
+        return 0.0;
+    }
+    return target;
+}
+
+#endif
