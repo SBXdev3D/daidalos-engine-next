@@ -268,13 +268,13 @@ Particles live on the GPU, in one pool of 16,384 (ADR-0025). The CPU only sends 
 flowchart LR
     E["ParticleEmitter entities,<br/>Scene::SpawnParticles"] -->|"Extract"| V["SceneView::particleSpawns"]
     V --> EM["Emit<br/>slots from the dead list"]
-    EM --> SI["Simulate<br/>gravity, drag, bounces<br/>off the G-buffer"]
+    EM --> SI["Simulate<br/>gravity, drag, bounces<br/>off the G-buffer, light"]
     SI --> FI["Finish<br/>draw arguments"]
     FI --> SO["Bitonic sort<br/>back to front"]
-    SO --> D["Indirect draw<br/>soft, lit by one sampled<br/>light, premultiplied"]
+    SO --> D["Indirect draw<br/>soft, premultiplied"]
 ```
 
-Effects are created on the Renderer from a `ParticleEffectDesc`; `AssetLibrary::CreateParticleEffect` owns them with the level's other assets. Particles hide behind meshes and fade into them, lit ones take the light of one light sampled per pixel, with its shadow, and additive ones glow in the same draw as the smoke.
+Effects are created on the Renderer from a `ParticleEffectDesc`; `AssetLibrary::CreateParticleEffect` owns them with the level's other assets. Particles hide behind meshes and fade into them, lit ones take the light the simulation keeps for each of them, a few lights sampled each frame with their shadows, and additive ones glow in the same draw as the smoke.
 
 ## Tests
 
@@ -293,7 +293,7 @@ A tag `vX.Y.Z` runs the Release workflow (ADR-0038): it builds the `*-shipping` 
 - Particles only collide with what is on screen.
 - Particles are lit evenly from every side, and cast no shadow: their indirect light is that of the surfaces behind them.
 - Indirect light lags a few frames behind a moving light, and starts over after a cut while the cache fills.
-- The factory is lit only where its lamps are: the route has 13 of them since ADR-0040, it has no emissive surface yet, and the underground stays dark until the flashlight is found.
+- The factory is lit only where its lamps are: the route has 13 of them since ADR-0040, its glowing door lights light their doorways (ADR-0044), and the underground stays dark until the flashlight is found.
 - ReSTIR DI takes 1.1 ms at 1080p on an RTX 3090 in the factory and 2.2 ms in a room of 1,000 lights, over its budget of 1 ms (ADR-0044).
 - The denoiser reprojects the highlights of lights with the surface's motion: one that moves across a surface as the camera turns lags behind until the clamp to its neighbours catches it. Reflections have a reprojection of their own on smooth surfaces.
 - The view distance cuts the scene sharply where fog does not hide it, and a wide field of view stretches the weapon held in front of the camera, which has no field of view of its own.
