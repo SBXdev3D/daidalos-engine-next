@@ -274,7 +274,7 @@ flowchart LR
     SO --> D["Indirect draw<br/>soft, premultiplied"]
 ```
 
-Effects are created on the Renderer from a `ParticleEffectDesc`; `AssetLibrary::CreateParticleEffect` owns them with the level's other assets. Particles hide behind meshes and fade into them, lit ones take the light the simulation keeps for each of them, a few lights sampled each frame with their shadows, and additive ones glow in the same draw as the smoke.
+Effects are created on the Renderer from a `ParticleEffectDesc`; `AssetLibrary::CreateParticleEffect` owns them with the level's other assets. Particles hide behind meshes and fade into them, lit ones take the light the simulation keeps for each of them: each particle keeps the light it chose, as ReSTIR does for pixels, tested for shadows, and additive ones glow in the same draw as the smoke.
 
 ## Tests
 

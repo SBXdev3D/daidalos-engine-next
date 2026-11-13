@@ -55,7 +55,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     const uint index = PixelIndex(pixel);
     Reservoir reservoir = Unpack(g_reservoirs[g_restir.reservoirs][index]);
     if (reservoir.light != kNoLight) {
-        const LightContact contact = ContactLight(frame, reservoir.light, reservoir.u, receiver.position);
+        const LightContact contact = ContactLight(frame, reservoir.light, reservoir.u, receiver);
         stochastic = stochastic || contact.soft;
         if (contact.valid && Unoccluded(frame, receiver, contact, g_restir.instanceBuffer, g_restir.materialBuffer)) {
             const BsdfTerms terms = LightTerms(receiver, contact);

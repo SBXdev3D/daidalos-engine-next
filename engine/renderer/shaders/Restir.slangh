@@ -43,7 +43,6 @@ struct RestirPushConstants {
 
 [[vk::push_constant]] RestirPushConstants g_restir;
 [[vk::binding(2, 0)]] RWStructuredBuffer<uint4> g_reservoirs[];
-[[vk::binding(2, 0)]] StructuredBuffer<uint> g_lightMaps[];
 [[vk::binding(4, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> g_storageImages[];
 
 // Match DirectLighting.cpp.
@@ -53,8 +52,6 @@ static const uint kRestirUnbiased = 4;  // Samples are tested for visibility whe
 static const uint kRestirDebug = 8;     // The shading also shows each pixel's light.
 static const uint kRestirIndirect = 16; // Indirect light is added.
 
-// How much of the past a pixel keeps: its history stands for at most this many frames.
-static const float kMaxHistory = 20.0;
 
 GBufferTextures Textures() {
     GBufferTextures textures;
@@ -68,26 +65,6 @@ GBufferTextures Textures() {
 
 uint PixelIndex(int2 pixel) {
     return uint(pixel.y) * g_restir.width + uint(pixel.x);
-}
-
-// A reservoir as it is stored: the light, the point's two numbers in 16 bits each, the weight and the
-// confidence.
-uint4 Pack(Reservoir reservoir) {
-    const uint2 u = uint2(saturate(reservoir.u) * 65535.0 + 0.5);
-    return uint4(reservoir.light, u.x | (u.y << 16), asuint(reservoir.weight), asuint(reservoir.count));
-}
-
-Reservoir Unpack(uint4 packed) {
-    Reservoir reservoir = EmptyReservoir();
-    reservoir.light = packed.x;
-    reservoir.u = float2(packed.y & 0xFFFF, packed.y >> 16) / 65535.0;
-    reservoir.weight = asfloat(packed.z);
-    reservoir.count = asfloat(packed.w);
-    if (reservoir.light == kNoLight || !(reservoir.weight > 0.0)) {
-        reservoir.light = kNoLight;
-        reservoir.weight = 0.0;
-    }
-    return reservoir;
 }
 
 // Two pixels show the same surface: close in depth, facing the same way, as rough.
@@ -106,7 +83,7 @@ float TargetAt(FrameData frame, Receiver receiver, uint light, float2 u, bool vi
     if (light == kNoLight) {
         return 0.0;
     }
-    const LightContact contact = ContactLight(frame, light, u, receiver.position);
+    const LightContact contact = ContactLight(frame, light, u, receiver);
     const float target = TargetValue(receiver, contact);
     if (target > 0.0 && visibility &&
         !Unoccluded(frame, receiver, contact, g_restir.instanceBuffer, g_restir.materialBuffer)) {

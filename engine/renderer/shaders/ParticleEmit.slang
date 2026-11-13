@@ -54,6 +54,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     particle.effect = spawn.effect;
     particle.light = float3(0.0, 0.0, 0.0);
     particle.lightSamples = 0.0;
+    particle.reservoir = uint4(0xFFFFFFFF, 0, 0, 0);
     g_particleData[g_particles.particles][index] = particle;
 
     uint slot;

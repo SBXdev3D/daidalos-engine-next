@@ -27,7 +27,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     uint random = Pcg(PixelIndex(pixel) * 9781u + g_restir.seed * 26699u + 1u);
     Reservoir reservoir = DrawCandidates(frame, receiver, random);
     if (reservoir.light != kNoLight &&
-        !Unoccluded(frame, receiver, ContactLight(frame, reservoir.light, reservoir.u, receiver.position),
+        !Unoccluded(frame, receiver, ContactLight(frame, reservoir.light, reservoir.u, receiver),
                     g_restir.instanceBuffer, g_restir.materialBuffer)) {
         reservoir.light = kNoLight;
         reservoir.weight = 0.0;

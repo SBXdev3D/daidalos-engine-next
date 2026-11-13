@@ -41,8 +41,9 @@ struct GpuParticle {
     std::uint32_t effect;
     glm::vec3 light;
     float lightSamples;
+    std::array<std::uint32_t, 4> reservoir;
 };
-static_assert(sizeof(GpuParticle) == 64);
+static_assert(sizeof(GpuParticle) == 80);
 
 constexpr std::uint32_t kEffectLit = 1;
 constexpr std::uint32_t kEffectCollides = 2;
@@ -109,6 +110,8 @@ struct ParticlePushConstants {
     std::uint32_t materialBuffer;
     glm::vec3 cameraUp;
     float padding3;
+    std::uint32_t lightMap;
+    std::uint32_t previousLightCount;
 };
 static_assert(sizeof(ParticlePushConstants) <= rhi::kMaxPushConstantSize);
 
@@ -328,6 +331,8 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, std::span<con
     push.capacity = kMaxParticles;
     push.instanceBuffer = shadows.instanceBuffer;
     push.materialBuffer = shadows.materialBuffer;
+    push.lightMap = shadows.lightMap;
+    push.previousLightCount = shadows.previousLightCount;
 
     // Emission, simulation and finish read and write most of the pool's buffers.
     const std::vector<rhi::BufferUse> pool{{m_particles, rhi::Access::ComputeShaderWrite},

@@ -79,6 +79,7 @@ float3 Highlights(FrameData frame, float3 position, float3 normal, float3 faceNo
     receiver.roughness = 0.045;
     receiver.response = kRespondBsdf;
     receiver.emissiveSpecular = false;
+    receiver.nearest = kNearestLight;
     return SampleDirectLight(frame, receiver, random, g_push.instanceBuffer, g_push.materialBuffer);
 }
 

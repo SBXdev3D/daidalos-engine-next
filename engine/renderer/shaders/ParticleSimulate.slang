@@ -5,9 +5,11 @@
 // Moves every alive particle by one frame (ADR-0025): gravity, drag, and bounces off what the G-buffer
 // drew. Particles at the end of their life go back to the dead list; the others go to the next alive
 // list, with their depth as the key of the sort.
-// It also lights lit particles (ADR-0044): a few lights sampled at the particle's center, with their shadow
-// rays, blended with what the particle held, so that its light is smooth across its quad and from frame to
-// frame, as a pixel's sampled light, which smoke does not denoise, would not be.
+// It also lights lit particles (ADR-0044). Each keeps a reservoir, as a pixel does in ReSTIR DI: the light it
+// chose, combined each frame with a few new candidates, so that a puff learns which light matters to it,
+// such as a small lamp beside it that power alone rarely draws. One shadow ray tests the light, and what it
+// sends is blended with what the particle held, smooth across its quad and from frame to frame: smoke has
+// no denoiser.
 
 #include "Particles.slangh"
 #include "RayQueries.slangh"
@@ -15,13 +17,16 @@
 
 // Meters behind a surface where a particle still counts as touching it: farther, it is behind something.
 static const float kCollisionThickness = 0.5;
-// Lights sampled per particle and frame, and how much of its light a frame's samples replace.
-static const uint kLightSamples = 4;
+// Reservoirs of new candidates a particle draws on its first frame, and on the others; how much of its light
+// a frame replaces.
+static const uint kFirstDraws = 4;
+static const uint kDraws = 1;
 static const float kLightBlend = 0.15;
 
-// The light of the frame's lights at a point of smoke: from every side, as a white matte surface facing each
-// light, its illuminance over pi (ADR-0043), with shadows.
-float3 SmokeLight(FrameData frame, float3 position, uint seed) {
+// A puff of smoke of this radius as a receiver of light, from its center: from every side, as a white matte
+// surface facing each light, its illuminance over pi (ADR-0043). No light counts as nearer than the
+// radius: a puff is lit as a whole.
+Receiver SmokeReceiver(FrameData frame, float3 position, float radius) {
     Receiver receiver;
     receiver.position = position;
     receiver.origin = position;
@@ -33,12 +38,59 @@ float3 SmokeLight(FrameData frame, float3 position, uint seed) {
     receiver.roughness = 1.0;
     receiver.response = kRespondEverywhere;
     receiver.emissiveSpecular = true;
+    receiver.nearest = max(radius, kNearestLight);
+    return receiver;
+}
+
+// Adds a reservoir to another, both of the same receiver, weighed by their confidence; target is the
+// receiver's target value of what it holds.
+void Merge(inout Reservoir combined, Reservoir added, float target, float share, float pick) {
+    Stream(combined, added.light, added.u, share * target * added.weight, target, pick);
+}
+
+// The particle's reservoir after this frame, and the light it sends.
+float3 LightSmoke(FrameData frame, Receiver receiver, inout uint4 stored, bool first, uint seed) {
     uint random = Pcg(seed);
-    float3 light = float3(0.0, 0.0, 0.0);
-    for (uint sample = 0; sample < kLightSamples; ++sample) {
-        light += SampleDirectLight(frame, receiver, random, g_particles.instanceBuffer, g_particles.materialBuffer);
+    Reservoir history = Unpack(stored);
+    history.count = first ? 0.0 : min(history.count, kMaxHistory);
+    if (history.light != kNoLight) {
+        history.light = history.light < g_particles.previousLightCount ? g_lightMaps[g_particles.lightMap][history.light]
+                                                                       : kNoLight;
     }
-    return light / float(kLightSamples);
+    // The new candidates, then the history, weighed by confidence; a light the last frame did not have, only
+    // the new candidates can have found.
+    const uint draws = first ? kFirstDraws : kDraws;
+    const float total = float(draws) + history.count;
+    Reservoir combined = EmptyReservoir();
+    for (uint draw = 0; draw < draws; ++draw) {
+        const Reservoir fresh = DrawCandidates(frame, receiver, random);
+        const bool isNew = fresh.light != kNoLight &&
+                           g_lightMaps[g_particles.lightMap][g_particles.previousLightCount + fresh.light] != 0;
+        const float target = TargetValue(receiver, ContactLight(frame, fresh.light, fresh.u, receiver));
+        Merge(combined, fresh, target, isNew ? 1.0 / float(draws) : 1.0 / total, Random(random));
+    }
+    if (history.light != kNoLight) {
+        const float target = TargetValue(receiver, ContactLight(frame, history.light, history.u, receiver));
+        Merge(combined, history, target, history.count / total, Random(random));
+    }
+    combined.count = total;
+    combined.weight = combined.target > 0.0 ? combined.weightSum / combined.target : 0.0;
+    if (combined.weight <= 0.0) {
+        combined.light = kNoLight;
+    }
+    float3 light = float3(0.0, 0.0, 0.0);
+    if (combined.light != kNoLight) {
+        const LightContact contact = ContactLight(frame, combined.light, combined.u, receiver);
+        if (Unoccluded(frame, receiver, contact, g_particles.instanceBuffer, g_particles.materialBuffer)) {
+            light = contact.illuminance * Reflected(receiver, LightTerms(receiver, contact)) * combined.weight;
+        } else {
+            // Hidden: the next frame does not keep it.
+            combined.light = kNoLight;
+            combined.weight = 0.0;
+        }
+    }
+    stored = Pack(combined);
+    return light;
 }
 
 [numthreads(64, 1, 1)]
@@ -84,8 +136,11 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         }
     }
     if ((effect.flags & kEffectLit) != 0) {
-        const float3 sampled = SmokeLight(frame, particle.position, index * 9781u + g_particles.seed * 26699u);
-        particle.light = particle.lightSamples > 0.0 ? lerp(particle.light, sampled, kLightBlend) : sampled;
+        const bool first = particle.lightSamples <= 0.0;
+        const float radius = particle.size * lerp(1.0, effect.growth, saturate(particle.age / particle.lifetime)) * 0.5;
+        const float3 sampled = LightSmoke(frame, SmokeReceiver(frame, particle.position, radius), particle.reservoir,
+                                          first, index * 9781u + g_particles.seed * 26699u);
+        particle.light = first ? sampled : lerp(particle.light, sampled, kLightBlend);
         particle.lightSamples = min(particle.lightSamples + 1.0, 1.0 / kLightBlend);
     }
     g_particleData[g_particles.particles][index] = particle;

@@ -532,7 +532,9 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                                    .instanceBuffer = impl.meshPass->InstanceDataIndex(),
                                                    .materialBuffer = impl.meshPass->MaterialDataIndex(),
                                                    .skinnedVertices = impl.meshPass->SkinnedVertices(),
-                                                   .emissiveTriangles = impl.meshPass->EmissiveTriangles()});
+                                                   .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
+                                                   .lightMap = impl.meshPass->LightMapIndex(),
+                                                   .previousLightCount = impl.meshPass->PreviousLightCount()});
     }
     // The light of the frame's lights, and the indirect light, at each pixel of the G-buffer (ADR-0044). A
     // frame that does not follow the last one lit reuses nothing from it.

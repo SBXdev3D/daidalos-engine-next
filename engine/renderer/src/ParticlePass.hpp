@@ -48,8 +48,12 @@ public:
         rhi::BufferHandle skinnedVertices;
         /// The frame's emissive triangles, which light sampling reads.
         rhi::BufferHandle emissiveTriangles;
+        /// Where the last frame's lights are in this frame's list (MeshPass::LightMapIndex): particles keep
+        /// the light they chose.
+        std::uint32_t lightMap = 0;
+        std::uint32_t previousLightCount = 0;
     };
-    /// The simulation also lights lit particles, a few sampled lights each, with their shadows (ADR-0044).
+    /// The simulation also lights lit particles, each keeping the light it chose, with its shadows (ADR-0044).
     [[nodiscard]] core::Result<void> AddSimulation(RenderGraph& graph, std::span<const ParticleSpawn> spawns,
                                                    float timeStep, std::uint32_t frameBuffer, rhi::TextureHandle depth,
                                                    rhi::TextureHandle normals, const Shadows& shadows);

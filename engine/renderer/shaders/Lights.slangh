@@ -51,6 +51,9 @@ struct EmissiveTriangle {
 [[vk::binding(2, 0)]] StructuredBuffer<AliasEntry> g_aliasTables[];
 [[vk::binding(2, 0)]] StructuredBuffer<EmissiveDraw> g_emissiveDraws[];
 [[vk::binding(2, 0)]] StructuredBuffer<EmissiveTriangle> g_emissiveTriangles[];
+// For each of the last frame's lights, its index in this frame's, or kNoLight; then, for each of this frame's,
+// 1 if the last frame did not have it (MeshPass::LightMapIndex).
+[[vk::binding(2, 0)]] StructuredBuffer<uint> g_lightMaps[];
 
 static const uint kNoLight = 0xFFFFFFFF;
 // Lights a point weighs before it keeps one.
@@ -115,7 +118,12 @@ struct LightContact {
     bool soft;     // A light with a size: its shadows are noisy.
 };
 
-LightContact ContactLight(FrameData frame, uint index, float2 u, float3 position) {
+// Surfaces are never nearer a light than this, in meters: an analytic light's sphere, if larger, and a
+// centimeter from an emissive triangle.
+static const float kNearestLight = 0.01;
+
+// position receives the light, never nearer to it than nearest.
+LightContact ContactLight(FrameData frame, uint index, float2 u, float3 position, float nearest) {
     LightContact contact;
     contact.valid = false;
     contact.toLight = float3(0.0, 0.0, 1.0);
@@ -131,19 +139,21 @@ LightContact ContactLight(FrameData frame, uint index, float2 u, float3 position
     }
     if (!IsTriangleLight(frame, index)) {
         // Shaded from its center; its shadow ray aims at a point of its disk (ADR-0039).
-        const LightData light = LightAt(g_lights[frame.lightBuffer][index], position);
+        LightData light = LightAt(g_lights[frame.lightBuffer][index], position);
         const float3 offset = light.position - position;
         const float distanceToLight = length(offset);
         if (distanceToLight >= light.range) {
             return contact;
         }
         contact.toLight = offset / max(distanceToLight, 0.0001);
-        contact.illuminance = light.color * Attenuation(light, distanceToLight, contact.toLight);
         contact.target = light.position;
         contact.radius = light.radius;
+        // Attenuation never goes nearer than the light's sphere, nor than the receiver allows.
+        light.radius = max(light.radius, nearest);
+        contact.illuminance = light.color * Attenuation(light, distanceToLight, contact.toLight);
         // Nothing this close to a light shadows it (ADR-0035).
         contact.gap = min(kShadowNearPlane, light.range * 0.5);
-        contact.soft = light.radius > 0.0;
+        contact.soft = contact.radius > 0.0;
         contact.valid = any(contact.illuminance > 0.0);
         return contact;
     }
@@ -167,9 +177,8 @@ LightContact ContactLight(FrameData frame, uint index, float2 u, float3 position
     if (cosine <= 0.0) {
         return contact;
     }
-    // Never nearer than a centimeter, as analytic lights are never nearer than their sphere.
     contact.illuminance =
-        triangle.emission * frame.exposure * (cosine * 0.5 * doubleArea / max(distance2, 1e-4));
+        triangle.emission * frame.exposure * (cosine * 0.5 * doubleArea / max(distance2, nearest * nearest));
     contact.target = point;
     contact.gap = 1e-3 * (1.0 + distanceToLight);
     contact.valid = any(contact.illuminance > 0.0);
@@ -195,7 +204,14 @@ struct Receiver {
     uint response;
     // The specular light of emissive triangles: false where a sharp reflection shows them (ADR-0044).
     bool emissiveSpecular;
+    // Meters it is never nearer a light than: kNearestLight for a surface; for a puff of smoke, lit as a
+    // whole from its center, its radius, so that a puff that passes a light does not blaze.
+    float nearest;
 };
+
+LightContact ContactLight(FrameData frame, uint index, float2 u, Receiver receiver) {
+    return ContactLight(frame, index, u, receiver.position, receiver.nearest);
+}
 
 // The BSDF times the cosine, for light from toLight: per unit of diffuse color, and specular.
 BsdfTerms Respond(Receiver receiver, float3 toLight) {
@@ -234,6 +250,10 @@ float TargetValue(Receiver receiver, LightContact contact) {
     return contact.valid ? Luminance(contact.illuminance * Reflected(receiver, LightTerms(receiver, contact))) : 0.0;
 }
 
+// Smoke has no surface to start its shadow rays off: they skip their first centimeters, so that a particle
+// that touches the floor is not shadowed by it.
+static const float kSmokeShadowStart = 0.05;
+
 // Whether nothing that casts shadows stands between the receiver and the light's point.
 bool Unoccluded(FrameData frame, Receiver receiver, LightContact contact, uint instanceBuffer, uint materialBuffer) {
     const float3 target =
@@ -243,7 +263,7 @@ bool Unoccluded(FrameData frame, Receiver receiver, LightContact contact, uint i
     RayDesc ray;
     ray.Origin = receiver.origin;
     ray.Direction = offset / max(distanceToTarget, 0.0001);
-    ray.TMin = 0.0;
+    ray.TMin = receiver.response == kRespondEverywhere ? min(kSmokeShadowStart, distanceToTarget * 0.5) : 0.0;
     ray.TMax = max(distanceToTarget - contact.gap, 0.0);
     return !Occluded(ray, frame.accelerationStructure, instanceBuffer, materialBuffer);
 }
@@ -287,6 +307,29 @@ bool Stream(inout Reservoir reservoir, uint light, float2 u, float weight, float
     return false;
 }
 
+// A reservoir as it is stored: the light, the point's two numbers in 16 bits each, the weight and the
+// confidence.
+uint4 Pack(Reservoir reservoir) {
+    const uint2 u = uint2(saturate(reservoir.u) * 65535.0 + 0.5);
+    return uint4(reservoir.light, u.x | (u.y << 16), asuint(reservoir.weight), asuint(reservoir.count));
+}
+
+Reservoir Unpack(uint4 packed) {
+    Reservoir reservoir = EmptyReservoir();
+    reservoir.light = packed.x;
+    reservoir.u = float2(packed.y & 0xFFFF, packed.y >> 16) / 65535.0;
+    reservoir.weight = asfloat(packed.z);
+    reservoir.count = asfloat(packed.w);
+    if (reservoir.light == kNoLight || !(reservoir.weight > 0.0)) {
+        reservoir.light = kNoLight;
+        reservoir.weight = 0.0;
+    }
+    return reservoir;
+}
+
+// How much of the past a reservoir keeps: its history stands for at most this many frames.
+static const float kMaxHistory = 20.0;
+
 // kLightCandidates lights drawn by power, each with a point on it, and one kept in proportion to the light
 // the receiver would send, unshadowed: resampled importance sampling. Its confidence is 1.
 Reservoir DrawCandidates(FrameData frame, Receiver receiver, inout uint random) {
@@ -297,7 +340,7 @@ Reservoir DrawCandidates(FrameData frame, Receiver receiver, inout uint random) 
         if (choice.index == kNoLight) {
             break;
         }
-        const float target = TargetValue(receiver, ContactLight(frame, choice.index, u, receiver.position));
+        const float target = TargetValue(receiver, ContactLight(frame, choice.index, u, receiver));
         Stream(reservoir, choice.index, u, target / choice.probability, target, Random(random));
     }
     reservoir.count = 1.0;
@@ -315,7 +358,7 @@ float3 SampleDirectLight(FrameData frame, Receiver receiver, inout uint random, 
     if (reservoir.light == kNoLight) {
         return float3(0.0, 0.0, 0.0);
     }
-    const LightContact contact = ContactLight(frame, reservoir.light, reservoir.u, receiver.position);
+    const LightContact contact = ContactLight(frame, reservoir.light, reservoir.u, receiver);
     if (!Unoccluded(frame, receiver, contact, instanceBuffer, materialBuffer)) {
         return float3(0.0, 0.0, 0.0);
     }
@@ -335,6 +378,7 @@ Receiver ReceiverOf(Surface surface, float3 view, uint response) {
     receiver.roughness = surface.roughness;
     receiver.response = response;
     receiver.emissiveSpecular = true;
+    receiver.nearest = kNearestLight;
     return receiver;
 }
 

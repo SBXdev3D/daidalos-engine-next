@@ -25,6 +25,7 @@ struct Particle {
     // simulation adds a few samples each frame (ADR-0044).
     float3 light;
     float lightSamples; // Frames of samples it holds; 0 until it is first lit.
+    uint4 reservoir;    // The light it keeps choosing (Lights.slangh, Pack).
 };
 
 static const uint kEffectLit = 1;
@@ -91,6 +92,8 @@ struct ParticlePushConstants {
     uint materialBuffer;
     float3 cameraUp;
     float padding3;
+    uint lightMap; // The simulation: for each of the last frame's lights, its index in this frame's (ADR-0044).
+    uint previousLightCount;
 };
 
 [[vk::push_constant]] ParticlePushConstants g_particles;

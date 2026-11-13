@@ -55,7 +55,7 @@ Four compute passes at full resolution, after the G-buffer:
 
 ### Every other place that lights a point
 
-The radiance cache's paths, reflections, glass and particles draw their candidates from the same alias table instead of uniformly, still eight candidates and one shadow ray, with one shared function (`Lights.slangh`). Glass loses its loop over every light, particles their clusters. Particles are lit once per frame at their center by the simulation, four lights sampled with their shadow rays, blended into a light each particle keeps (15% new each frame): sampled per pixel, as first built, smoke was full of noise, since nothing denoises it. Directional lights now light them.
+The radiance cache's paths, reflections, glass and particles draw their candidates from the same alias table instead of uniformly, still eight candidates and one shadow ray, with one shared function (`Lights.slangh`). Glass loses its loop over every light, particles their clusters. Particles are lit once per frame at their center by the simulation, and each keeps a reservoir, as a pixel does: the light it chose, combined each frame with new candidates, tested with one shadow ray, and blended into a light the particle keeps (15% new each frame). Sampled per pixel, as first built, smoke was full of noise, since nothing denoises it; sampled anew each frame, a puff beside a small emissive light flickered, power rarely drawing that light. Smoke's shadow rays skip their first 5 cm, so that a puff touching the floor is not shadowed by it, and no light counts as nearer than a puff's radius. Directional lights now light them.
 
 ### Emission is counted once
 
