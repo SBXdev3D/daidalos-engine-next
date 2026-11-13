@@ -80,6 +80,36 @@ TEST(LoadModelFile, ReadsGlassFromTheTransmissionIorAndVolumeExtensions) {
     EXPECT_FLOAT_EQ(material.attenuationDistance, 0.3f);
 }
 
+TEST(LoadModelFile, EmissionIsInNitsWithItsStrength) {
+    const core::Result<ModelData> model = resources::LoadModelFile(kAssets / "lamp.gltf");
+    ASSERT_TRUE(model.has_value()) << core::Format(model.error());
+    EXPECT_EQ(model->materials[0].emissiveFactor, glm::vec3(40.0f, 20.0f, 0.0f));
+}
+
+TEST(LoadModelFile, ReadsTheLightsOfKhrLightsPunctual) {
+    const core::Result<ModelData> model = resources::LoadModelFile(kAssets / "lamp.gltf");
+    ASSERT_TRUE(model.has_value()) << core::Format(model.error());
+    ASSERT_EQ(model->lights.size(), 2U);
+    const resources::LightSource& spot = model->lights[0];
+    EXPECT_EQ(spot.name, "Spot");
+    EXPECT_EQ(spot.kind, resources::LightKind::Spot);
+    EXPECT_EQ(spot.color, glm::vec3(1.0f, 0.8f, 0.6f));
+    EXPECT_FLOAT_EQ(spot.intensity, 250.0f);
+    ASSERT_TRUE(spot.range.has_value());
+    EXPECT_FLOAT_EQ(*spot.range, 9.0f);
+    EXPECT_FLOAT_EQ(spot.innerConeAngle, 0.2f);
+    EXPECT_FLOAT_EQ(spot.outerConeAngle, 0.5f);
+    const resources::LightSource& point = model->lights[1];
+    EXPECT_EQ(point.kind, resources::LightKind::Point);
+    EXPECT_FALSE(point.range.has_value());
+    // The nodes that hold them: the quad's, and a child of the parent.
+    EXPECT_EQ(model->nodes[1].light, 0U);
+    ASSERT_EQ(model->nodes.size(), 3U);
+    EXPECT_EQ(model->nodes[2].name, "Glow");
+    EXPECT_EQ(model->nodes[2].light, 1U);
+    EXPECT_FALSE(model->nodes[0].light.has_value());
+}
+
 TEST(LoadModelFile, ImagesAreNotDecodedButLocated) {
     const core::Result<ModelData> model = resources::LoadModelFile(kAssets / "quad.gltf");
     ASSERT_TRUE(model.has_value());

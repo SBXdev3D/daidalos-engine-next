@@ -391,10 +391,15 @@ private:
             const ecs::Entity light = world.Create();
             ecs::LocalTransform lightTransform;
             lightTransform.translation = lamp.position;
+            // Lights shine down their entity's -Z.
+            lightTransform.rotation = glm::quat(glm::vec3(0.0f, 0.0f, -1.0f), glm::normalize(lamp.direction));
             world.Add<ecs::LocalTransform>(light, lightTransform);
-            world.Add<scene::Light>(
-                light,
-                scene::Light{.type = lamp.type, .color = lamp.color, .range = lamp.range, .falloff = lamp.falloff});
+            // The test rooms' colors are in candela already (ADR-0043).
+            world.Add<scene::Light>(light, scene::Light{.type = lamp.type,
+                                                        .color = lamp.color,
+                                                        .range = lamp.range,
+                                                        .innerAngle = lamp.innerAngle,
+                                                        .outerAngle = lamp.outerAngle});
         }
         // Something to stand on, inside the room and in front of it.
         const std::array<glm::vec3, 4> corners{glm::vec3(-half, 0.0f, -half), glm::vec3(-half, 0.0f, 12.0f),

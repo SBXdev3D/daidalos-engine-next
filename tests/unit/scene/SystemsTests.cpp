@@ -237,6 +237,20 @@ TEST(ExtractScene, LightsTakeTheirPlaceAndDirectionFromTheirEntity) {
     EXPECT_EQ(light.radius, 0.1f);
 }
 
+TEST(ExtractScene, ATemperatureColorsTheLightButKeepsItsBrightness) {
+    // A warm bulb (ADR-0043): its color times the black body's at 2700 K, whose luminance is 1.
+    ecs::World world;
+    world.Add<scene::Light>(AddAt(world, {}), scene::Light{.intensity = 100.0f, .temperature = 2700.0f});
+    ecs::PropagateTransforms(world);
+    SceneView view;
+    scene::ExtractScene(world, view);
+    ASSERT_EQ(view.lights.size(), 1U);
+    const glm::vec3 color = view.lights[0].color;
+    EXPECT_GT(color.r, color.g);
+    EXPECT_GT(color.g, color.b);
+    EXPECT_NEAR(0.2126f * color.r + 0.7152f * color.g + 0.0722f * color.b, 100.0f, 0.01f);
+}
+
 TEST(ExtractScene, LightsAreTheSizeOfABulbUnlessToldOtherwise) {
     ecs::World world;
     world.Add<scene::Light>(AddAt(world, {}), scene::Light{});

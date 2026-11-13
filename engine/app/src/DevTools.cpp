@@ -148,7 +148,8 @@ void DevTools::AddEngineInspectors() {
                                                            : "Point light");
         ImGui::Checkbox("Enabled", &light.enabled);
         ImGui::ColorEdit3("Color", &light.color.x, ImGuiColorEditFlags_Float);
-        ImGui::DragFloat("Intensity", &light.intensity, 0.01f, 0.0f, 100.0f);
+        ImGui::DragFloat(directional ? "Illuminance (lux)" : "Intensity (cd)", &light.intensity, 0.5f, 0.0f, 100000.0f);
+        ImGui::DragFloat("Temperature (K)", &light.temperature, 10.0f, 0.0f, 40000.0f);
         if (directional) {
             float angle = glm::degrees(light.angularRadius);
             if (ImGui::SliderFloat("Angular radius", &angle, 0.0f, 10.0f)) {
@@ -157,7 +158,6 @@ void DevTools::AddEngineInspectors() {
             return;
         }
         ImGui::DragFloat("Range", &light.range, 0.05f, 0.0f, 500.0f);
-        ImGui::SliderFloat("Falloff", &light.falloff, 0.0f, 1.0f);
         ImGui::DragFloat("Radius", &light.radius, 0.005f, 0.0f, 2.0f);
         if (light.type == renderer::LightType::Spot) {
             float inner = glm::degrees(light.innerAngle);

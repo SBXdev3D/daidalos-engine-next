@@ -44,8 +44,8 @@ float Random(inout uint state) {
     return float(NextRandom(state) >> 8) * (1.0 / 16777216.0);
 }
 
-// Light that reaches the surface straight from the frame's lights and leaves towards view, with the
-// mesh pass's falloff and its convention that a light's color is what a white surface facing it reflects.
+// Light that reaches the surface straight from the frame's lights and leaves towards view: their
+// illuminance, with the mesh pass's falloff (ADR-0043), times the BSDF.
 // Like the mesh pass, it shades with the light's center and aims its shadow ray at a random point of the
 // light's sphere (ADR-0039).
 float3 DirectLight(Surface surface, float3 view, FrameData frame, inout uint random) {
@@ -62,7 +62,7 @@ float3 DirectLight(Surface surface, float3 view, FrameData frame, inout uint ran
         if (attenuation <= 0.0 || dot(surface.faceNormal, toLight) <= 0.0) {
             continue;
         }
-        const float3 reflected = light.color * attenuation * kPi *
+        const float3 reflected = light.color * attenuation *
                                  EvaluateBsdf(surface.normal, view, toLight, surface.diffuseColor, surface.f0, surface.roughness);
         if (all(reflected <= 0.0)) {
             continue;

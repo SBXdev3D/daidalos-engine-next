@@ -14,7 +14,8 @@ namespace daidalos::renderer {
 /// The test scene of reflections and glass (ADR-0042): a room 6 m wide and 3 m high, open at the front, lit
 /// by two lamps. A mirror covers most of its back wall; its floor is polished stone, and a block of brushed
 /// gold stands on it. In front of a white block stand a window pane, thin glass, and a block of thick
-/// blue-green glass. Its interior spans x and z from -3 to 3, and y from 0 to 3.
+/// blue-green glass. Its interior spans x and z from -3 to 3, and y from 0 to 3. Its lights are made for
+/// EV100 3 (ADR-0043).
 struct MirrorRoom {
     /// Every part is a MakeCube.
     std::vector<CornellPart> parts;

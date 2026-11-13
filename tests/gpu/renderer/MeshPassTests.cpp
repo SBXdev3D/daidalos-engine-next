@@ -168,7 +168,8 @@ protected:
         if (view.camera.has_value() && view.lights.empty()) {
             view.lights.push_back({.type = renderer::LightType::Directional,
                                    .direction = -glm::vec3(glm::inverse(view.camera->view)[2]),
-                                   .color = glm::vec3(1.0f)});
+                                   // Pi lux: a white matte surface facing it reflects 1 nit (ADR-0043).
+                                   .color = glm::vec3(glm::pi<float>())});
         }
         ASSERT_TRUE(
             Device()
@@ -358,7 +359,7 @@ TEST_F(MeshPassTest, NormalsFollowTheWorldRotation) {
     // Lit from above: the same quad turned to face up receives more light.
     const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
     const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
-    const renderer::Light above{.position = {0.0f, 5.0f, 2.0f}, .range = 50.0f, .falloff = 1.0f};
+    const renderer::Light above{.position = {0.0f, 5.0f, 2.0f}, .color = glm::vec3(90.0f), .range = 50.0f};
     Render(LitView(TestCamera(), {mesh, glm::mat4(1.0f), white}, above));
     const int facingCamera = Pixel(32, 32).r;
 
@@ -370,14 +371,14 @@ TEST_F(MeshPassTest, NormalsFollowTheWorldRotation) {
 TEST_F(MeshPassTest, SpotLightOnlyLightsItsCone) {
     const MeshHandle mesh = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
     const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
-    // A light of color 1 makes a white surface facing it white.
+    // 25 pi candela, 5 m away: pi lux, which a white matte surface facing the light reflects as 1 nit
+    // (ADR-0043). The fixture's exposure is 1.
     Render(LitView(TestCamera(), {mesh, glm::mat4(1.0f), white},
                    {.type = renderer::LightType::Spot,
                     .position = {0.0f, 0.0f, 5.0f},
                     .direction = {0.0f, 0.0f, -1.0f},
-                    .color = glm::vec3(1.0f),
+                    .color = glm::vec3(25.0f * glm::pi<float>()),
                     .range = 20.0f,
-                    .falloff = 1.0f,
                     .innerAngle = glm::radians(5.0f),
                     .outerAngle = glm::radians(10.0f)}));
     EXPECT_GT(Pixel(32, 32).r, 230);
@@ -385,14 +386,36 @@ TEST_F(MeshPassTest, SpotLightOnlyLightsItsCone) {
     EXPECT_EQ(Pixel(32, 4), glm::ivec3(0));
 }
 
-TEST_F(MeshPassTest, PointLightReachesZeroAtItsRange) {
+TEST_F(MeshPassTest, PointLightFadesToZeroAtItsRange) {
     const MeshHandle mesh = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
     const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
-    // 1 m in front of the quad: full light to 1.25 m, nothing beyond 2.5 m.
+    // 1 m in front of the quad: pi candela is pi lux there, white; nothing beyond 2.5 m.
     Render(LitView(TestCamera(), {mesh, glm::mat4(1.0f), white},
-                   {.position = {0.0f, 0.0f, 1.0f}, .range = 2.5f, .falloff = 0.5f}));
+                   {.position = {0.0f, 0.0f, 1.0f}, .color = glm::vec3(glm::pi<float>()), .range = 2.5f}));
     EXPECT_GT(Pixel(32, 32).r, 200);
     EXPECT_EQ(Pixel(1, 32), glm::ivec3(0)); // About 3 m from the light.
+}
+
+TEST_F(MeshPassTest, LightFallsOffWithTheSquareOfTheDistance) {
+    // Physical units (ADR-0043): 2 pi candela, 2 m in front of a white matte quad, make pi / 2 lux, which
+    // it reflects as half a nit, less the little that its specular lobe takes; twice as far, four times
+    // less. The range is far, so that its window changes almost nothing.
+    const MeshHandle mesh = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
+    MaterialDesc matte;
+    matte.metallicFactor = 0.0f;
+    matte.roughnessFactor = 1.0f;
+    const core::Result<MaterialHandle> material = m_pass->CreateMaterial(matte);
+    ASSERT_TRUE(material.has_value());
+    const auto centerAt = [&](float distance) {
+        Render(LitView(
+            TestCamera(), {mesh, glm::mat4(1.0f), *material},
+            {.position = {0.0f, 0.0f, distance}, .color = glm::vec3(2.0f * glm::pi<float>()), .range = 100.0f}));
+        return static_cast<float>(Pixel(32, 32).r);
+    };
+    const float near = centerAt(2.0f);
+    const float far = centerAt(4.0f);
+    EXPECT_NEAR(near, 0.5f * 255.0f, 8.0f);
+    EXPECT_NEAR(near / far, 4.0f, 0.3f);
 }
 
 TEST_F(MeshPassTest, NormalMapTiltsTheSurface) {
@@ -416,7 +439,7 @@ TEST_F(MeshPassTest, NormalMapTiltsTheSurface) {
         return std::pair{texture.value_or(rhi::TextureHandle{}), material.value_or(MaterialHandle{})};
     };
     const MeshHandle mesh = Mesh(MakeQuad(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f));
-    const renderer::Light right{.position = {6.0f, 0.0f, 1.0f}, .range = 50.0f, .falloff = 1.0f};
+    const renderer::Light right{.position = {6.0f, 0.0f, 1.0f}, .color = glm::vec3(116.0f), .range = 50.0f};
 
     Render(LitView(TestCamera(), {mesh, glm::mat4(1.0f), Material({1.0f, 1.0f, 1.0f})}, right));
     const int flat = Pixel(32, 32).r;
@@ -440,8 +463,8 @@ renderer::Light ShadowTestLight() {
     return {.type = renderer::LightType::Spot,
             .position = {3.0f, 0.0f, 5.0f},
             .direction = glm::normalize(glm::vec3(-3.0f, 0.0f, -5.0f)),
+            .color = glm::vec3(107.0f), // About as bright as 1 nit on the floor, facing it, 5.8 m away.
             .range = 20.0f,
-            .falloff = 1.0f,
             .innerAngle = glm::radians(40.0f),
             .outerAngle = glm::radians(45.0f)};
 }
@@ -486,15 +509,15 @@ TEST_F(MeshPassTest, PointLightCastsShadowsToo) {
 }
 
 TEST_F(MeshPassTest, DirectionalLightLightsEverywhereAtTheSameStrength) {
-    // Straight at the floor, from as far as it can be: the whole floor gets the light's color, wherever the
-    // light's position says, and whatever its range.
+    // Straight at the floor, from as far as it can be: the whole floor gets the light's illuminance, wherever
+    // the light's position says, and whatever its range. Half of pi lux is half a nit off white (ADR-0043).
     const MeshHandle floor = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
     const MaterialHandle white = Material({1.0f, 1.0f, 1.0f});
     Render(LitView(TestCamera(), {floor, glm::mat4(1.0f), white},
                    {.type = renderer::LightType::Directional,
                     .position = {0.0f, 0.0f, -100.0f},
                     .direction = {0.0f, 0.0f, -1.0f},
-                    .color = glm::vec3(0.5f),
+                    .color = glm::vec3(0.5f * glm::pi<float>()),
                     .range = 0.1f}));
     EXPECT_NEAR(Pixel(32, 32).r, Pixel(4, 4).r, 2);
     // 0.5 of light, in the 8-bit target, less what the dielectric reflects instead of diffusing.
@@ -511,7 +534,7 @@ TEST_F(MeshPassTest, DirectionalLightCastsParallelShadows) {
     SceneView view = LitView(TestCamera(), {floor, glm::mat4(1.0f), white},
                              {.type = renderer::LightType::Directional,
                               .direction = glm::normalize(glm::vec3(-3.0f, 0.0f, -5.0f)),
-                              .color = glm::vec3(1.0f)});
+                              .color = glm::vec3(glm::pi<float>())});
     view.draws.push_back({.mesh = panel, .material = white});
     Render(view);
     // The shadow runs from x = -1.1 to -0.1 on the floor.

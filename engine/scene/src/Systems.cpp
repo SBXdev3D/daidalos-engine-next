@@ -4,6 +4,7 @@
 
 #include <daidalos/core/Profile.hpp>
 #include <daidalos/ecs/Transform.hpp>
+#include <daidalos/renderer/LightUnits.hpp>
 #include <daidalos/scene/Components.hpp>
 #include <daidalos/scene/Systems.hpp>
 
@@ -26,16 +27,18 @@ void ExtractLights(ecs::World& world, renderer::SceneView& view) {
             if (!light.enabled || light.intensity <= 0.0f || light.range <= 0.0f) {
                 return;
             }
-            view.lights.push_back({.type = light.type,
-                                   .position = glm::vec3(transform.matrix[3]),
-                                   .direction = glm::normalize(-glm::vec3(transform.matrix[2])),
-                                   .color = light.color * light.intensity,
-                                   .range = light.range,
-                                   .falloff = light.falloff,
-                                   .innerAngle = light.innerAngle,
-                                   .outerAngle = light.outerAngle,
-                                   .radius = light.radius,
-                                   .angularRadius = light.angularRadius});
+            view.lights.push_back(
+                {.type = light.type,
+                 .position = glm::vec3(transform.matrix[3]),
+                 .direction = glm::normalize(-glm::vec3(transform.matrix[2])),
+                 .color = light.color *
+                          (light.temperature > 0.0f ? renderer::ColorTemperature(light.temperature) : glm::vec3(1.0f)) *
+                          light.intensity,
+                 .range = light.range,
+                 .innerAngle = light.innerAngle,
+                 .outerAngle = light.outerAngle,
+                 .radius = light.radius,
+                 .angularRadius = light.angularRadius});
         });
 }
 

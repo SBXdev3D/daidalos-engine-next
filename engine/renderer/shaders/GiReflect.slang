@@ -84,8 +84,8 @@ float3 DirectLight(Surface surface, float3 view, FrameData frame, inout uint ran
         if (dot(surface.faceNormal, toLight) <= 0.0) {
             continue;
         }
-        // A light's color is what a white surface facing it reflects (ADR-0022).
-        const float3 reflected = light.color * Attenuation(light, distanceToLight, toLight) * kPi *
+        // The illuminance the light makes, times the BSDF and the cosine (ADR-0043).
+        const float3 reflected = light.color * Attenuation(light, distanceToLight, toLight) *
                                  EvaluateBsdf(surface.normal, view, toLight, surface.diffuseColor, surface.f0, surface.roughness);
         const float weight = Luminance(reflected);
         if (weight <= 0.0) {

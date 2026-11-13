@@ -1,6 +1,7 @@
 dai_add_module(NAME renderer
     SOURCES
         include/daidalos/renderer/CornellBox.hpp
+        include/daidalos/renderer/LightUnits.hpp
         include/daidalos/renderer/MirrorRoom.hpp
         include/daidalos/renderer/Material.hpp
         include/daidalos/renderer/Particles.hpp
@@ -13,6 +14,7 @@ dai_add_module(NAME renderer
         src/Canvas.cpp
         src/Context.cpp
         src/CornellBox.cpp
+        src/LightUnits.cpp
         src/MirrorRoom.cpp
         src/Denoiser.cpp
         src/Denoiser.hpp

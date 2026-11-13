@@ -56,8 +56,9 @@ ShadingOutput PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) {
     const float roughness = clamp(material.roughnessFactor * metallicRoughness.g, 0.045, 1.0);
     const float occlusion =
         lerp(1.0, SampleTexture(material.occlusionTexture, input.uv, float4(1.0, 1.0, 1.0, 1.0)).r, material.occlusionStrength);
-    const float3 emission =
-        material.emissiveFactor * SampleTexture(material.emissiveTexture, input.uv, float4(1.0, 1.0, 1.0, 1.0)).rgb;
+    // Nits, times the frame's exposure (ADR-0043).
+    const float3 emission = material.emissiveFactor *
+                            SampleTexture(material.emissiveTexture, input.uv, float4(1.0, 1.0, 1.0, 1.0)).rgb * frame.exposure;
 
     const float3 normal = SurfaceNormal(input, isFrontFace, material, frame.normalStrength);
 
@@ -103,10 +104,10 @@ ShadingOutput PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) {
         if (attenuation <= 0.0) {
             continue;
         }
-        // The BSDF times pi, so that a light's color is what a white surface facing it reflects (ADR-0022).
+        // The illuminance the light makes, times the BSDF and the cosine (ADR-0043).
         const BsdfTerms terms = EvaluateBsdfTerms(normal, view, toLight, f0, roughness);
-        const float3 diffuse = light.color * attenuation * kPi * terms.diffuse;
-        const float3 specular = light.color * attenuation * kPi * terms.specular;
+        const float3 diffuse = light.color * attenuation * terms.diffuse;
+        const float3 specular = light.color * attenuation * terms.specular;
         // Only light that would add something is worth a ray.
         if (all(diffuse * diffuseColor + specular <= 0.0)) {
             continue;

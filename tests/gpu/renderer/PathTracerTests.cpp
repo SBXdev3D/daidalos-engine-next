@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
 #include <daidalos/renderer/CornellBox.hpp>
+#include <daidalos/renderer/LightUnits.hpp>
 #include <daidalos/renderer/Material.hpp>
 #include <daidalos/renderer/MirrorRoom.hpp>
 #include <daidalos/renderer/Primitives.hpp>
@@ -55,9 +56,10 @@ renderer::CameraView LookAt(const glm::vec3& eye, const glm::vec3& target, float
     return {glm::lookAtRH(eye, target, glm::vec3(0.0f, 1.0f, 0.0f)), verticalFov, 0.1f};
 }
 
-// Light only from the frame's lights: no fog.
+// Light only from the frame's lights: no fog. Exposed as a dim interior, for which the Cornell box and the
+// mirror room are lit (ADR-0043).
 renderer::Atmosphere Dark() {
-    return {.fogColor = glm::vec3(0.0f), .fogDensity = 0.0f};
+    return {.fogColor = glm::vec3(0.0f), .fogDensity = 0.0f, .ev100 = 3.0f};
 }
 
 class PathTracerTest : public GpuTest {
@@ -119,27 +121,30 @@ protected:
         EXPECT_TRUE(m_tracer->Resize(extent).has_value());
         m_tracer->Reset();
         for (std::uint32_t sample = 0; sample < samples; ++sample) {
-            EXPECT_TRUE(
-                Device()
-                    .Submit([&](rhi::CommandList& commands) {
-                        const core::Result<std::uint32_t> structure = m_scene->Reserve(0, view.draws.size());
-                        ASSERT_TRUE(structure.has_value());
-                        ASSERT_TRUE(
-                            m_pass->Prepare(view, {.extent = extent, .accelerationStructure = *structure}).has_value());
-                        ASSERT_TRUE(m_scene->Prepare(m_pass->TracedDraws()).has_value());
-                        renderer::RenderGraph graph;
-                        m_pass->AddSkinning(graph);
-                        m_scene->AddBuild(graph);
-                        m_tracer->AddTo(graph,
-                                        {.frameBuffer = m_pass->FrameDataIndex(),
-                                         .instanceBuffer = m_pass->InstanceDataIndex(),
-                                         .materialBuffer = m_pass->MaterialDataIndex(),
-                                         .structure = m_scene->Structure(),
-                                         .skinnedVertices = m_pass->SkinnedVertices()},
-                                        settings);
-                        graph.Execute(commands);
-                    })
-                    .has_value());
+            EXPECT_TRUE(Device()
+                            .Submit([&](rhi::CommandList& commands) {
+                                const core::Result<std::uint32_t> structure = m_scene->Reserve(0, view.draws.size());
+                                ASSERT_TRUE(structure.has_value());
+                                ASSERT_TRUE(
+                                    m_pass
+                                        ->Prepare(view, {.extent = extent,
+                                                         .accelerationStructure = *structure,
+                                                         .exposure = renderer::ExposureScale(view.atmosphere.ev100)})
+                                        .has_value());
+                                ASSERT_TRUE(m_scene->Prepare(m_pass->TracedDraws()).has_value());
+                                renderer::RenderGraph graph;
+                                m_pass->AddSkinning(graph);
+                                m_scene->AddBuild(graph);
+                                m_tracer->AddTo(graph,
+                                                {.frameBuffer = m_pass->FrameDataIndex(),
+                                                 .instanceBuffer = m_pass->InstanceDataIndex(),
+                                                 .materialBuffer = m_pass->MaterialDataIndex(),
+                                                 .structure = m_scene->Structure(),
+                                                 .skinnedVertices = m_pass->SkinnedVertices()},
+                                                settings);
+                                graph.Execute(commands);
+                            })
+                            .has_value());
         }
         EXPECT_EQ(m_tracer->Samples(), samples);
         return Read(m_tracer->Output(), extent);
@@ -207,16 +212,18 @@ protected:
                     .Submit([&](rhi::CommandList& commands) {
                         const core::Result<std::uint32_t> structure = m_scene->Reserve(0, animated.draws.size());
                         ASSERT_TRUE(structure.has_value());
-                        ASSERT_TRUE(m_pass
-                                        ->Prepare(animated, {.extent = extent,
-                                                             .indirect = indirect != nullptr ? indirect->Output()
-                                                                                             : rhi::TextureHandle{},
-                                                             .accelerationStructure = *structure,
-                                                             .frameIndex = frame,
-                                                             .reflections = reflections,
-                                                             .background = background,
-                                                             .depth = depth})
-                                        .has_value());
+                        ASSERT_TRUE(
+                            m_pass
+                                ->Prepare(animated,
+                                          {.extent = extent,
+                                           .indirect = indirect != nullptr ? indirect->Output() : rhi::TextureHandle{},
+                                           .accelerationStructure = *structure,
+                                           .frameIndex = frame,
+                                           .reflections = reflections,
+                                           .background = background,
+                                           .depth = depth,
+                                           .exposure = renderer::ExposureScale(animated.atmosphere.ev100)})
+                                .has_value());
                         ASSERT_TRUE(m_scene->Prepare(m_pass->TracedDraws()).has_value());
                         renderer::RenderGraph graph;
                         m_pass->AddSkinning(graph);
@@ -391,6 +398,8 @@ TEST_F(PathTracerTest, SkyLightsWhatItSurrounds) {
     ASSERT_TRUE(sky.has_value()) << core::Format(sky.error());
     SceneView view = CubeInFront(Material(matte));
     view.atmosphere.sky = *sky;
+    // 9.6 nits at EV100 3: 1 on the screen, as the white background of the other furnaces (ADR-0043).
+    view.atmosphere.skyIntensity = 9.6f;
     const Image image = Trace(view, kSmall, {.maxBounces = 8, .seed = 3}, 256);
     ExpectFurnace(image, 0.88f);
     Device().DestroyTexture(*sky);
@@ -415,15 +424,13 @@ TEST_F(PathTracerTest, DirectLightMatchesTheMeshPass) {
     SceneView view = CubeInFront(Material(glossy));
     view.lights.push_back({.type = renderer::LightType::Point,
                            .position = {1.5f, 1.0f, 2.0f},
-                           .color = {1.0f, 0.9f, 0.8f},
-                           .range = 6.0f,
-                           .falloff = 0.3f});
+                           .color = glm::vec3(1.0f, 0.9f, 0.8f) * 200.0f,
+                           .range = 6.0f});
     view.lights.push_back({.type = renderer::LightType::Spot,
                            .position = {-1.5f, 1.5f, 1.5f},
                            .direction = glm::normalize(glm::vec3(1.5f, -1.5f, -1.5f)),
-                           .color = {0.3f, 0.5f, 1.0f},
+                           .color = glm::vec3(0.3f, 0.5f, 1.0f) * 200.0f,
                            .range = 6.0f,
-                           .falloff = 0.5f,
                            .innerAngle = glm::radians(20.0f),
                            .outerAngle = glm::radians(35.0f)});
     constexpr rhi::Extent kExtent{64, 64};
@@ -451,7 +458,9 @@ TEST_F(PathTracerTest, DirectLightMatchesTheMeshPass) {
     }
     ASSERT_GT(errors.size(), 500U) << "The cube covers much of the view";
     std::ranges::sort(errors);
-    EXPECT_NEAR(tracedTotal / rasterTotal, 1.0, 0.005);
+    // The path tracer averages each pixel, the mesh pass shades its center: with the inverse square of the
+    // distance (ADR-0043), light changes faster across a pixel, and the two differ by about half a percent.
+    EXPECT_NEAR(tracedTotal / rasterTotal, 1.0, 0.01);
     EXPECT_LT(errors[errors.size() / 2], 0.01f) << "Median relative difference";
     EXPECT_LT(errors[errors.size() * 9 / 10], 0.05f) << "90th percentile of the relative differences";
 }
@@ -549,7 +558,7 @@ TEST_F(PathTracerTest, RayTracedShadowsMatchThePathTracer) {
     const float withoutShadows = Flip(tracedWithoutShadows, raster, kExtent);
     RecordProperty("flip", std::to_string(withShadows));
     RecordProperty("flipWithoutShadows", std::to_string(withoutShadows));
-    // Measured on an RTX 3090: 0.014, and 0.113 without shadows.
+    // Measured on an RTX 3090: 0.009, and 0.108 without shadows.
     EXPECT_LT(withShadows, 0.03f);
     EXPECT_GT(withoutShadows, 4.0f * withShadows);
 }
@@ -585,7 +594,7 @@ TEST_F(PathTracerTest, DenoisedSoftShadowsMatchThePathTracer) {
     RecordProperty("flip", std::to_string(denoisedFlip));
     RecordProperty("flipNoisy", std::to_string(noisyFlip));
     RecordProperty("flipHard", std::to_string(hardFlip));
-    // Measured on an RTX 3090: 0.025 for the average, 0.032 denoised, 0.084 for one frame, 0.083 for hard
+    // Measured on an RTX 3090: 0.014 for the average, 0.022 denoised, 0.069 for one frame, 0.066 for hard
     // shadows. The average still differs where a pixel's center falls on the seam of two walls.
     EXPECT_LT(averagedFlip, 0.03f);
     EXPECT_LT(denoisedFlip, 0.04f);
@@ -634,7 +643,7 @@ TEST_F(PathTracerTest, IndirectLightMatchesThePathTracerInTheCornellBox) {
     RecordProperty("flipAveraged", std::to_string(averagedFlip));
     RecordProperty("flip", std::to_string(denoisedFlip));
     RecordProperty("flipDirect", std::to_string(directFlip));
-    // Measured on an RTX 3090: brightness 0.995, FLIP 0.145 averaged, 0.15 denoised, 0.59 direct light only.
+    // Measured on an RTX 3090: brightness 1.000, FLIP 0.165 averaged, 0.175 denoised, 0.68 direct light only.
     EXPECT_NEAR(brightness, 1.0, 0.1);
     EXPECT_LT(averagedFlip, 0.5f * directFlip);
     EXPECT_LT(denoisedFlip, 0.5f * directFlip);
@@ -664,7 +673,7 @@ TwoRooms MakeTwoRooms(renderer::MeshHandle cube, renderer::MaterialHandle white)
                    slab({-2.05f, 1.0f, 0.0f}, {0.1f, 2.2f, 2.4f}), slab({2.05f, 1.0f, 0.0f}, {0.1f, 2.2f, 2.4f}),
                    slab({0.0f, 1.0f, -1.05f}, {4.2f, 2.2f, 0.1f}), slab({0.0f, 1.0f, 1.05f}, {4.2f, 2.2f, 0.1f}),
                    slab({0.03f, 1.0f, 0.0f}, {0.02f, 2.2f, 2.2f})};
-    rooms.light = {.position = {-1.0f, 1.5f, 0.0f}, .color = glm::vec3(2.0f), .range = 6.0f, .falloff = 0.0f};
+    rooms.light = {.position = {-1.0f, 1.5f, 0.0f}, .color = glm::vec3(100.0f), .range = 6.0f};
     return rooms;
 }
 
@@ -725,7 +734,7 @@ TEST_F(PathTracerTest, IndirectLightFollowsALightTurnedOff) {
     view.lights = {{.position = {0.0f, 100.0f, 0.0f}, .range = 1.0f}};
     const double after = TotalLuminance(Rasterize(view, kExtent, {.frames = 1, .indirect = &indirect, .warmup = 30}));
     RecordProperty("remaining", std::to_string(after / lit));
-    // Measured on an RTX 3090: 0.045.
+    // Measured on an RTX 3090: 0.048.
     EXPECT_LT(after, 0.08 * lit);
 }
 
@@ -799,10 +808,11 @@ TEST_F(PathTracerTest, ReflectionsMatchThePathTracerInTheMirrorRoom) {
     RecordProperty("flipAveraged", std::to_string(reflectedFlip));
     RecordProperty("flip", std::to_string(denoisedFlip));
     RecordProperty("flipWithoutReflections", std::to_string(unreflectedFlip));
-    // Measured on an RTX 3090: 0.183 averaged, 0.192 denoised, 0.269 without reflections. What remains is
-    // mostly the indirect light's, as in the Cornell box.
-    EXPECT_LT(reflectedFlip, 0.21f);
-    EXPECT_LT(denoisedFlip, 0.22f);
+    // Measured on an RTX 3090: 0.247 averaged, 0.255 denoised, 0.333 without reflections. What remains is
+    // mostly the indirect light's, as in the Cornell box: the lamps shine down, and the ceiling has only
+    // the light that bounces up (ADR-0043).
+    EXPECT_LT(reflectedFlip, 0.27f);
+    EXPECT_LT(denoisedFlip, 0.28f);
     EXPECT_LT(reflectedFlip, 0.8f * unreflectedFlip);
 }
 
@@ -827,8 +837,8 @@ TEST_F(PathTracerTest, GlassMatchesThePathTracerInTheMirrorRoom) {
     const float bareFlip = Flip(traced, bare, kExtent);
     RecordProperty("flip", std::to_string(glassFlip));
     RecordProperty("flipWithoutGlass", std::to_string(bareFlip));
-    // Measured on an RTX 3090: 0.187, and 0.198 without the glass, which covers a small part of the image.
-    EXPECT_LT(glassFlip, 0.21f);
+    // Measured on an RTX 3090: 0.253, and 0.263 without the glass, which covers a small part of the image.
+    EXPECT_LT(glassFlip, 0.28f);
     EXPECT_LT(glassFlip, bareFlip);
 }
 
@@ -847,7 +857,7 @@ TEST_F(PathTracerTest, ReflectionsKnowHowFarWhatTheyReflectIs) {
     SceneView view;
     view.atmosphere = Dark();
     view.camera = LookAt({0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, glm::radians(30.0f));
-    view.lights.push_back({.position = {0.0f, 3.0f, -2.0f}, .range = 20.0f});
+    view.lights.push_back({.position = {0.0f, 3.0f, -2.0f}, .color = glm::vec3(100.0f), .range = 20.0f});
     view.draws.push_back({.mesh = m_cube, .world = floor, .material = Material(mirror)});
     view.draws.push_back({.mesh = m_cube, .world = wall, .material = Material(matte)});
     core::Result<renderer::GlobalIllumination> created = renderer::GlobalIllumination::Create(Device());
@@ -882,7 +892,7 @@ TEST_F(PathTracerTest, DenoisedReflectionsFollowTheReflectedPoint) {
     MaterialDesc panelMaterial;
     panelMaterial.metallicFactor = 0.0f;
     panelMaterial.baseColorFactor = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
-    panelMaterial.emissiveFactor = glm::vec3(4.0f);
+    panelMaterial.emissiveFactor = glm::vec3(38.4f); // Nits: 4 on the screen at EV100 3 (ADR-0043).
     const glm::mat4 floor = glm::scale(glm::translate(glm::mat4(1.0f), {0.0f, -0.05f, 0.0f}), {20.0f, 0.1f, 20.0f});
     const glm::mat4 panel = glm::scale(glm::translate(glm::mat4(1.0f), {0.0f, 1.5f, -5.0f}), {1.0f, 3.0f, 0.1f});
     SceneView view;

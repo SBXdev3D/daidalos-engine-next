@@ -54,11 +54,17 @@ CornellBox MakeCornellBox() {
         Box("Tall block", {-0.95f, 1.65f, -0.75f}, {1.65f, 3.3f, 1.65f}, 17.0f, white),
         Box("Short block", {0.95f, 0.825f, 0.75f}, {1.65f, 1.65f, 1.65f}, -17.0f, white),
     };
-    box.light = {.type = LightType::Point,
+    // A spot shining down, as the panel of the original does: a light that also shone up would make, 25 cm
+    // from the ceiling, a small patch much brighter than the rest of the room, which one ray per pixel finds
+    // too rarely for its bounce to be smooth. 500 candela: at EV100 3, the image is about as bright as
+    // before physical units (ADR-0043).
+    box.light = {.type = LightType::Spot,
                  .position = {0.0f, kSize - 0.25f, 0.0f},
-                 .color = glm::vec3(1.0f),
+                 .direction = {0.0f, -1.0f, 0.0f},
+                 .color = glm::vec3(500.0f),
                  .range = 12.0f,
-                 .falloff = 0.0f};
+                 .innerAngle = glm::radians(60.0f),
+                 .outerAngle = glm::radians(85.0f)};
     box.eye = {0.0f, kHalf, 10.0f};
     box.target = {0.0f, kHalf, 0.0f};
     box.verticalFov = glm::radians(42.0f);

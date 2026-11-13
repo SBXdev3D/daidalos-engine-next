@@ -5,6 +5,7 @@
 #include <daidalos/core/Assert.hpp>
 #include <daidalos/core/Profile.hpp>
 #include <daidalos/logging/Log.hpp>
+#include <daidalos/renderer/LightUnits.hpp>
 #include <daidalos/renderer/Renderer.hpp>
 #include <daidalos/rhi/Spirv.hpp>
 #include <daidalos/rhi/Swapchain.hpp>
@@ -144,7 +145,8 @@ struct Renderer::Impl {
     rhi::TextureHandle reactive;
     rhi::Extent targetExtent;
     bool vsync;
-    float exposure = 1.0f;
+    /// Stops added to the scene's exposure (ADR-0043).
+    float exposureCompensation = 0.0f;
     RenderGraph graph;
     /// The timed groups of the frame recorded in each slot, in the order of their timestamps.
     std::array<std::vector<std::string_view>, rhi::kFramesInFlight> timedGroups;
@@ -268,7 +270,7 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
                        {{size.width, size.height}, config.vsync}));
 
     auto impl = std::make_unique<Impl>(window, std::move(device), std::move(swapchain), config.vsync);
-    impl->exposure = config.exposure;
+    impl->exposureCompensation = config.exposureCompensation;
     DAI_TRY_ASSIGN(impl->tonemap, impl->device.CreatePipeline({
                                       .vertexShader = rhi::ToSpirv(kTonemapVsSpirv),
                                       .fragmentShader = rhi::ToSpirv(kTonemapPsSpirv),
@@ -354,8 +356,8 @@ void Renderer::SetVsync(bool vsync) {
     m_impl->vsync = vsync;
 }
 
-void Renderer::SetExposure(float exposure) {
-    m_impl->exposure = exposure;
+void Renderer::SetExposureCompensation(float stops) {
+    m_impl->exposureCompensation = stops;
 }
 
 void Renderer::SetIndirectLight(bool enabled) {
@@ -451,14 +453,16 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     const std::uint32_t frameIndex = impl.frameIndex++;
     if (status) {
         status = impl.rayTracing->Reserve(frame.slot, view.draws.size()).and_then([&](std::uint32_t structure) {
-            return impl.meshPass->Prepare(view, {.extent = frame.extent,
-                                                 .indirect = indirect,
-                                                 .accelerationStructure = structure,
-                                                 .jitter = taa ? Jitter(impl.frameNumber) : glm::vec2(0.0f),
-                                                 .frameIndex = frameIndex,
-                                                 .reflections = reflections,
-                                                 .background = impl.background,
-                                                 .depth = impl.depth});
+            return impl.meshPass->Prepare(
+                view, {.extent = frame.extent,
+                       .indirect = indirect,
+                       .accelerationStructure = structure,
+                       .jitter = taa ? Jitter(impl.frameNumber) : glm::vec2(0.0f),
+                       .frameIndex = frameIndex,
+                       .reflections = reflections,
+                       .background = impl.background,
+                       .depth = impl.depth,
+                       .exposure = ExposureScale(view.atmosphere.ev100 - impl.exposureCompensation)});
         });
         impl.particleSpawns = static_cast<std::uint32_t>(view.particleSpawns.size());
     }
@@ -637,9 +641,10 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                        .rendering = rhi::RenderingDesc{.colorTarget = frame.backBuffer},
                        .textures = {{frame.backBuffer, rhi::Access::ColorTarget, true},
                                     {source, rhi::Access::FragmentShaderRead}}},
-                      [&impl, source, exposure = impl.exposure * view.atmosphere.exposure](rhi::CommandList& commands) {
+                      // The frame is exposed already (ADR-0043).
+                      [&impl, source](rhi::CommandList& commands) {
                           commands.BindPipeline(impl.tonemap);
-                          commands.Push(TonemapPushConstants{impl.device.BindlessIndex(source), exposure});
+                          commands.Push(TonemapPushConstants{impl.device.BindlessIndex(source), 1.0f});
                           commands.Draw(3);
                       });
     }

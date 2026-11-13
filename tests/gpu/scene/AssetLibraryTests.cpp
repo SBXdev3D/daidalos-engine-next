@@ -10,8 +10,10 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <optional>
 #include <string>
+#include <vector>
 
 using namespace daidalos;
 using scene::AssetLibrary;
@@ -175,6 +177,28 @@ TEST(Instantiate, BuildsTheHierarchyWithOneEntityPerExtraPart) {
 
     EXPECT_TRUE(world.Destroy(*root));
     EXPECT_EQ(world.Count<scene::MeshRenderer>(), 0U);
+}
+
+TEST_F(AssetLibraryTest, LightsOfAModelBecomeLightsOfItsEntities) {
+    // KHR_lights_punctual (ADR-0043): a spot with its own range, and a point light without one, which gets
+    // the range where it falls to 0.05 lux, 20 m for 20 candela.
+    AssetLibrary library(*m_renderer, kAssets);
+    const core::Result<const Model*> model = library.LoadModel("lamp.gltf");
+    ASSERT_TRUE(model.has_value()) << core::Format(model.error());
+    ecs::World world;
+    ASSERT_TRUE(scene::Instantiate(world, **model).has_value());
+    std::vector<scene::Light> lights;
+    world.Each<scene::Light>([&](ecs::Entity /*entity*/, const scene::Light& light) { lights.push_back(light); });
+    ASSERT_EQ(lights.size(), 2U);
+    std::ranges::sort(lights, {}, &scene::Light::intensity);
+    EXPECT_EQ(lights[0].type, renderer::LightType::Point);
+    EXPECT_FLOAT_EQ(lights[0].intensity, 20.0f);
+    EXPECT_NEAR(lights[0].range, 20.0f, 1e-4f);
+    EXPECT_EQ(lights[1].type, renderer::LightType::Spot);
+    EXPECT_FLOAT_EQ(lights[1].intensity, 250.0f);
+    EXPECT_FLOAT_EQ(lights[1].range, 9.0f);
+    EXPECT_FLOAT_EQ(lights[1].innerAngle, 0.2f);
+    EXPECT_FLOAT_EQ(lights[1].outerAngle, 0.5f);
 }
 
 TEST_F(AssetLibraryTest, SkinnedModelIsAnimatedAndDrawn) {

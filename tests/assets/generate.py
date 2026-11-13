@@ -199,6 +199,24 @@ def main():
     }
     glass["extensionsUsed"] = ["KHR_materials_transmission", "KHR_materials_ior", "KHR_materials_volume"]
     save("glass.gltf", glass)
+    # A glowing quad hanging from a lamp, with two lights of KHR_lights_punctual (ADR-0043).
+    lamp = quad_gltf()
+    lamp["materials"][0] = {
+        "name": "Bulb",
+        "emissiveFactor": [1, 0.5, 0],
+        "extensions": {"KHR_materials_emissive_strength": {"emissiveStrength": 40}},
+    }
+    lamp["nodes"][0]["children"] = [1, 2]
+    lamp["nodes"].append({"name": "Glow", "translation": [0, -1, 0],
+                          "extensions": {"KHR_lights_punctual": {"light": 1}}})
+    lamp["nodes"][1]["extensions"] = {"KHR_lights_punctual": {"light": 0}}
+    lamp["extensions"] = {"KHR_lights_punctual": {"lights": [
+        {"name": "Spot", "type": "spot", "color": [1, 0.8, 0.6], "intensity": 250, "range": 9,
+         "spot": {"innerConeAngle": 0.2, "outerConeAngle": 0.5}},
+        {"name": "Point", "type": "point", "intensity": 20},
+    ]}}
+    lamp["extensionsUsed"] = ["KHR_materials_emissive_strength", "KHR_lights_punctual"]
+    save("lamp.gltf", lamp)
     (HERE / "broken.gltf").write_text("{ this is not JSON\n", encoding="utf-8")
 
 
