@@ -2,7 +2,7 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
-// Moves every alive particle by one frame (ADR-0025): gravity, drag, and bounces off what the pre-pass
+// Moves every alive particle by one frame (ADR-0025): gravity, drag, and bounces off what the G-buffer
 // drew. Particles at the end of their life go back to the dead list; the others go to the next alive
 // list, with their depth as the key of the sort.
 

@@ -70,7 +70,9 @@ struct GBufferSurface {
     float occlusion;
 };
 
-GBufferSurface ReadGBuffer(FrameData frame, GBufferTextures textures, int2 pixel) {
+// The surface of a pixel, its face normal known already, or computed when faceNormal is null; without its
+// emission and occlusion unless all.
+GBufferSurface ReadGBuffer(FrameData frame, GBufferTextures textures, int2 pixel, float3 faceNormal, bool all) {
     GBufferSurface surface;
     surface.depth = g_textures[textures.depth].Load(int3(pixel, 0)).r;
     surface.found = surface.depth > 0.0;
@@ -88,7 +90,8 @@ GBufferSurface ReadGBuffer(FrameData frame, GBufferTextures textures, int2 pixel
         surface.occlusion = 1.0;
         return surface;
     }
-    surface.faceNormal = FaceNormalAt(frame, textures.depth, pixel, textures.size, surface.position);
+    surface.faceNormal = any(faceNormal != 0.0) ? faceNormal
+                                                : FaceNormalAt(frame, textures.depth, pixel, textures.size, surface.position);
     const float4 normalRoughness = g_textures[textures.normals].Load(int3(pixel, 0));
     surface.normal = normalize(normalRoughness.xyz * 2.0 - 1.0);
     surface.roughness = normalRoughness.a;
@@ -97,10 +100,19 @@ GBufferSurface ReadGBuffer(FrameData frame, GBufferTextures textures, int2 pixel
     surface.metallic = baseMetallic.a;
     surface.diffuseColor = baseMetallic.rgb * (1.0 - baseMetallic.a);
     surface.f0 = lerp(float3(0.04, 0.04, 0.04), baseMetallic.rgb, baseMetallic.a);
-    const float4 emissionOcclusion = g_textures[textures.emission].Load(int3(pixel, 0));
-    surface.emission = emissionOcclusion.rgb;
-    surface.occlusion = emissionOcclusion.a;
+    surface.emission = float3(0.0, 0.0, 0.0);
+    surface.occlusion = 1.0;
+    if (all) {
+        const float4 emissionOcclusion = g_textures[textures.emission].Load(int3(pixel, 0));
+        surface.emission = emissionOcclusion.rgb;
+        surface.occlusion = emissionOcclusion.a;
+    }
     return surface;
+}
+
+// The whole surface of a pixel.
+GBufferSurface ReadGBuffer(FrameData frame, GBufferTextures textures, int2 pixel) {
+    return ReadGBuffer(frame, textures, pixel, float3(0.0, 0.0, 0.0), true);
 }
 
 // The surface as a receiver of light, with its whole BSDF.

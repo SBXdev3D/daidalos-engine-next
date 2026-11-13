@@ -2,10 +2,10 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
-// The light each pixel's specular lobe reflects (ADR-0042): one ray from the pre-pass's surface, in a
+// The light each pixel's specular lobe reflects (ADR-0042): one ray from the G-buffer's surface, in a
 // direction drawn from the visible normals of its GGX lobe (SampleSpecularDirection), and the light that
 // comes back along it. Averaged, and multiplied by the surface's specular albedo, rays in that distribution
-// give its specular reflection; the mesh pass does the multiplying, and the denoiser the averaging.
+// give its specular reflection; the lighting pass does the multiplying, and the denoiser the averaging.
 //
 // What comes back:
 // - On a smooth surface, sharp enough to show what it reflects: what the ray hits, shaded with its whole

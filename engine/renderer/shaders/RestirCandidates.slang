@@ -5,7 +5,8 @@
 // ReSTIR DI's first pass (ADR-0044): each pixel draws a few lights by power, keeps one in proportion to
 // what it would send (DrawCandidates), and tests it with a shadow ray before anything reuses it: indoors,
 // most lights are behind a wall, and an occluded sample would spread to the neighbours. It also writes the
-// pixel's normal and depth, which the next frame's temporal reuse compares its own with.
+// pixel's face normal and depth, which the spatial reuse reads its neighbours' from, and the next frame's
+// temporal reuse compares its own with.
 
 #include "Restir.slangh"
 
@@ -32,5 +33,5 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         reservoir.weight = 0.0;
     }
     g_reservoirs[g_restir.reservoirs][PixelIndex(pixel)] = Pack(reservoir);
-    g_storageImages[g_restir.guides][id.xy] = float4(surface.normal, ViewDepth(frame, surface.position));
+    g_storageImages[g_restir.guides][id.xy] = float4(surface.faceNormal, ViewDepth(frame, surface.position));
 }

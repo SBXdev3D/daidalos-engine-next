@@ -346,7 +346,7 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, std::span<con
     }
     graph.AddPass({.name = "Particle simulation",
                    .group = "Simulation",
-                   // Particles bounce off the pre-pass's surfaces.
+                   // Particles bounce off the G-buffer's surfaces.
                    .textures = {{depth, rhi::Access::ComputeShaderRead}, {normals, rhi::Access::ComputeShaderRead}},
                    .buffers = pool},
                   dispatch(m_simulate, kGroups));

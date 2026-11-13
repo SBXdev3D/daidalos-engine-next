@@ -44,7 +44,7 @@ struct FrameData {
     float4x4 previousViewProjection;
     uint reflectionTexture; // The light each pixel's specular lobe reflects (ADR-0042), or kNoTexture.
     uint backgroundTexture; // The glass pass's copy of the frame before glass (ADR-0042).
-    uint depthTexture;      // The pre-pass's depth, for the glass pass.
+    uint depthTexture;      // The G-buffer's depth, for the glass pass.
     // What luminance in nits is multiplied by on the GPU (ADR-0043): lights and the sky come multiplied
     // already, emission is multiplied by it where it is read.
     float exposure;

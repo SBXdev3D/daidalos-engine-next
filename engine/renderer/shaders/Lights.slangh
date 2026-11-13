@@ -106,8 +106,12 @@ struct LightContact {
     // the point on it is drawn uniformly over its area.
     float3 illuminance;
     bool emissive; // An emissive triangle.
-    float3 target; // Where the shadow ray aims.
-    float gap;     // How far short of its target the shadow ray stops.
+    // Where the shadow ray aims: a triangle's point, or an analytic light's center, which the shadow ray
+    // moves to a point of its disk of this radius, placed by u (ADR-0039).
+    float3 target;
+    float radius;
+    float2 u;
+    float gap; // How far short of its target the shadow ray stops.
     bool soft;     // A light with a size: its shadows are noisy.
 };
 
@@ -118,6 +122,8 @@ LightContact ContactLight(FrameData frame, uint index, float2 u, float3 position
     contact.illuminance = float3(0.0, 0.0, 0.0);
     contact.emissive = IsTriangleLight(frame, index);
     contact.target = position;
+    contact.radius = 0.0;
+    contact.u = u;
     contact.gap = 0.0;
     contact.soft = true;
     if (index == kNoLight) {
@@ -133,7 +139,8 @@ LightContact ContactLight(FrameData frame, uint index, float2 u, float3 position
         }
         contact.toLight = offset / max(distanceToLight, 0.0001);
         contact.illuminance = light.color * Attenuation(light, distanceToLight, contact.toLight);
-        contact.target = SampleLightPoint(light.position, light.radius, position, u);
+        contact.target = light.position;
+        contact.radius = light.radius;
         // Nothing this close to a light shadows it (ADR-0035).
         contact.gap = min(kShadowNearPlane, light.range * 0.5);
         contact.soft = light.radius > 0.0;
@@ -229,7 +236,9 @@ float TargetValue(Receiver receiver, LightContact contact) {
 
 // Whether nothing that casts shadows stands between the receiver and the light's point.
 bool Unoccluded(FrameData frame, Receiver receiver, LightContact contact, uint instanceBuffer, uint materialBuffer) {
-    const float3 offset = contact.target - receiver.origin;
+    const float3 target =
+        contact.radius > 0.0 ? SampleLightPoint(contact.target, contact.radius, receiver.position, contact.u) : contact.target;
+    const float3 offset = target - receiver.origin;
     const float distanceToTarget = length(offset);
     RayDesc ray;
     ray.Origin = receiver.origin;

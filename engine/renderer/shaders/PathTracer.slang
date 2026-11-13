@@ -3,15 +3,22 @@
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
 // The reference path tracer (ADR-0034): one path per pixel per frame, averaged with the paths of earlier
-// frames until the view changes. It shades hits with the materials and lights of the mesh pass and its
+// frames until the view changes. It shades hits with the materials and lights of the G-buffer and its
 // BSDF (Bsdf.slang): it is the image that real-time techniques are compared with. It has no fog: light
 // bounces as far as the paths go. A path that leaves the scene sees the background radiance.
+// Analytic lights are counted by sampling them at each surface, emissive surfaces only when a ray hits
+// them: each light is counted by one strategy. Emission that is not a light is only seen, as the engine
+// shows it (ADR-0044): by the camera, through glass, and in sharp reflections.
 
 #define DAI_NO_MESH_PUSH_CONSTANTS
 #include "MeshTypes.slangh"
 #include "RayQueries.slangh"
 #include "Random.slangh"
 import Bsdf;
+
+// Smoother surfaces show emission that is not a light in their reflections, as the engine's sharp
+// reflections do. Matches GlobalIllumination::kSharpRoughness.
+static const float kSharpReflection = 0.3;
 
 struct PathTracerPushConstants {
     uint frameBuffer;
@@ -24,7 +31,7 @@ struct PathTracerPushConstants {
     uint width;
     uint height;
     uint jitter; // 1 to spread the paths over the pixel, 0 to send them all through its center.
-    uint padding1;
+    uint directOnly; // 1: lights are sampled at the first surface only, and emission is all that counts after.
     uint padding2;
     float3 background;
     float padding3;
@@ -36,8 +43,8 @@ struct PathTracerPushConstants {
 static const float kPi = 3.14159265;
 
 // Light that reaches the surface straight from the frame's lights and leaves towards view: their
-// illuminance, with the mesh pass's falloff (ADR-0043), times the BSDF.
-// Like the mesh pass, it shades with the light's center and aims its shadow ray at a random point of the
+// illuminance, with the lighting's falloff (ADR-0043), times the BSDF.
+// As the lighting does, it shades with the light's center and aims its shadow ray at a random point of the
 // light's sphere (ADR-0039).
 float3 DirectLight(Surface surface, float3 view, FrameData frame, inout uint random) {
     float3 total = float3(0.0, 0.0, 0.0);
@@ -92,6 +99,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
 
     float3 radiance = float3(0.0, 0.0, 0.0);
     float3 throughput = float3(1.0, 1.0, 1.0);
+    // The path came straight from the camera, through glass or off a sharp reflection: it sees emission that
+    // is not a light.
+    bool seen = true;
     for (uint bounce = 0; bounce < g_path.maxBounces; ++bounce) {
         const Hit hit =
             TraceClosest(ray, frame.accelerationStructure, g_path.instanceBuffer, g_path.materialBuffer, kMaskAll);
@@ -106,7 +116,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             // Smooth glass (ADR-0042): reflected or let through, as Fresnel says. Light that crossed thick
             // glass loses some of each color on the way; what goes in is tinted by the base color, and only
             // the transmission's share of it goes through. Lights shine through glass, unshaded, as their
-            // shadow rays go through it in the mesh pass.
+            // shadow rays go through it in the lighting.
             if (bounce + 1 >= g_path.maxBounces) {
                 break;
             }
@@ -131,7 +141,12 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             ray.TMax = 1e6;
             continue;
         }
-        radiance += throughput * (surface.emission + DirectLight(surface, view, frame, random));
+        if (seen || surface.emissiveLight) {
+            radiance += throughput * surface.emission;
+        }
+        if (g_path.directOnly == 0 || bounce == 0) {
+            radiance += throughput * DirectLight(surface, view, frame, random);
+        }
         if (bounce + 1 >= g_path.maxBounces) {
             break;
         }
@@ -142,6 +157,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             break;
         }
         throughput *= next.weight;
+        seen = surface.roughness < kSharpReflection;
         // Russian roulette: dim paths end early, and the ones that go on count for those that stopped.
         if (bounce >= 2) {
             const float keep = clamp(max(throughput.r, max(throughput.g, throughput.b)), 0.05, 0.95);

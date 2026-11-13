@@ -37,7 +37,7 @@ public:
     void DestroyEffect(ParticleEffectHandle effect);
 
     /// Adds the passes that emit the spawns, move every particle by timeStep and sort them, in the group
-    /// "Simulation". depth and normals come from the pre-pass; frameBuffer is the storage index of the
+    /// "Simulation". depth and normals come from the G-buffer; frameBuffer is the storage index of the
     /// frame's FrameData. Spawns of destroyed effects are skipped.
     [[nodiscard]] core::Result<void> AddSimulation(RenderGraph& graph, std::span<const ParticleSpawn> spawns,
                                                    float timeStep, std::uint32_t frameBuffer, rhi::TextureHandle depth,

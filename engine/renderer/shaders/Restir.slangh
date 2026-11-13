@@ -31,14 +31,14 @@ struct RestirPushConstants {
     uint lightMap;           // For each of the last frame's lights, its index in this frame's, or kNoLight;
                              // then, for each of this frame's, 1 if the last frame did not have it.
     uint previousLightCount;
-    uint guides;         // Storage image: this frame's normal and linear depth, for the next frame.
+    uint guides;         // Storage image: this frame's face normals and linear depth, for the next frame.
     uint previousGuides; // The last frame's, sampled.
     uint diffuse;        // Storage images that the shading writes.
     uint specular;
     uint debug;
     uint seed;   // Changes every frame.
     uint flags;  // kRestir*.
-    uint padding;
+    uint currentGuides; // This frame's guides, sampled, once the candidates have written them.
 };
 
 [[vk::push_constant]] RestirPushConstants g_restir;

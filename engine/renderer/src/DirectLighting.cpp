@@ -10,6 +10,7 @@
 #include <shaders/RestirCandidates.cs.spv.h>
 #include <shaders/RestirShade.cs.spv.h>
 #include <shaders/RestirSpatial.cs.spv.h>
+#include <shaders/RestirSpatialUnbiased.cs.spv.h>
 #include <shaders/RestirTemporal.cs.spv.h>
 
 #include <utility>
@@ -44,7 +45,7 @@ struct RestirPushConstants {
     std::uint32_t debug;
     std::uint32_t seed;
     std::uint32_t flags;
-    std::uint32_t padding;
+    std::uint32_t currentGuides;
 };
 static_assert(sizeof(RestirPushConstants) <= rhi::kMaxPushConstantSize);
 
@@ -63,13 +64,14 @@ constexpr rhi::Format kGuideFormat = rhi::Format::Rgba16Float;
 DirectLighting::DirectLighting(DirectLighting&& other) noexcept
     : m_device(other.m_device), m_candidates(std::exchange(other.m_candidates, {})),
       m_temporal(std::exchange(other.m_temporal, {})), m_spatial(std::exchange(other.m_spatial, {})),
+      m_spatialUnbiased(std::exchange(other.m_spatialUnbiased, {})),
       m_shade(std::exchange(other.m_shade, {})), m_reservoirs(std::exchange(other.m_reservoirs, {})),
       m_finalReservoirs(std::exchange(other.m_finalReservoirs, {})), m_guides(std::exchange(other.m_guides, {})),
       m_debug(std::exchange(other.m_debug, {})), m_current(other.m_current), m_extent(other.m_extent),
       m_hasHistory(other.m_hasHistory) {}
 
 DirectLighting::~DirectLighting() {
-    for (const rhi::PipelineHandle pipeline : {m_candidates, m_temporal, m_spatial, m_shade}) {
+    for (const rhi::PipelineHandle pipeline : {m_candidates, m_temporal, m_spatial, m_spatialUnbiased, m_shade}) {
         m_device->DestroyPipeline(pipeline);
     }
     DestroyResources();
@@ -98,6 +100,8 @@ core::Result<DirectLighting> DirectLighting::Create(rhi::Device& device) {
     DAI_TRY(create(lighting.m_candidates, rhi::ToSpirv(kRestirCandidatesCsSpirv), "ReSTIR candidates"));
     DAI_TRY(create(lighting.m_temporal, rhi::ToSpirv(kRestirTemporalCsSpirv), "ReSTIR temporal reuse"));
     DAI_TRY(create(lighting.m_spatial, rhi::ToSpirv(kRestirSpatialCsSpirv), "ReSTIR spatial reuse"));
+    DAI_TRY(create(lighting.m_spatialUnbiased, rhi::ToSpirv(kRestirSpatialUnbiasedCsSpirv),
+                   "ReSTIR spatial reuse, unbiased"));
     DAI_TRY(create(lighting.m_shade, rhi::ToSpirv(kRestirShadeCsSpirv), "Lighting"));
     return lighting;
 }
@@ -164,7 +168,7 @@ void DirectLighting::AddTo(RenderGraph& graph, const DirectLightingInputs& input
                              storage(m_debug),
                              inputs.frameIndex,
                              flags,
-                             0};
+                             sampled(m_guides[m_current])};
     const std::uint32_t groupsX = (m_extent.width + kGroupSize - 1) / kGroupSize;
     const std::uint32_t groupsY = (m_extent.height + kGroupSize - 1) / kGroupSize;
     const auto dispatch = [this, groupsX, groupsY](rhi::PipelineHandle pipeline, const RestirPushConstants& constants) {
@@ -209,15 +213,16 @@ void DirectLighting::AddTo(RenderGraph& graph, const DirectLightingInputs& input
     RestirPushConstants spatialPush = push;
     spatialPush.reservoirs = m_device->StorageIndex(m_finalReservoirs);
     spatialPush.previousReservoirs = m_device->StorageIndex(m_reservoirs);
-    graph.AddPass({.name = "ReSTIR spatial reuse",
-                   .group = "Direct lighting",
-                   .textures = gbuffer,
-                   .buffers = {{m_finalReservoirs, rhi::Access::ComputeShaderWrite},
-                               {m_reservoirs, rhi::Access::ComputeShaderRead},
-                               skinned,
-                               lights},
-                   .structures = structures},
-                  dispatch(m_spatial, spatialPush));
+    PassDesc spatial{.name = "ReSTIR spatial reuse",
+                     .group = "Direct lighting",
+                     .textures = gbuffer,
+                     .buffers = {{m_finalReservoirs, rhi::Access::ComputeShaderWrite},
+                                 {m_reservoirs, rhi::Access::ComputeShaderRead},
+                                 skinned,
+                                 lights},
+                     .structures = structures};
+    spatial.textures.push_back({m_guides[m_current], rhi::Access::ComputeShaderRead});
+    graph.AddPass(std::move(spatial), dispatch(settings.unbiased ? m_spatialUnbiased : m_spatial, spatialPush));
 
     RestirPushConstants shadePush = push;
     shadePush.reservoirs = m_device->StorageIndex(m_finalReservoirs);

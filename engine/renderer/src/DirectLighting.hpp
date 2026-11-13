@@ -93,6 +93,7 @@ private:
     rhi::PipelineHandle m_candidates;
     rhi::PipelineHandle m_temporal;
     rhi::PipelineHandle m_spatial;
+    rhi::PipelineHandle m_spatialUnbiased;
     rhi::PipelineHandle m_shade;
     /// The reservoirs of the candidates and temporal passes, and those the spatial pass makes of them, which
     /// the shading uses and the next frame's temporal pass reads.

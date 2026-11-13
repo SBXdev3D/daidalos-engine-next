@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
 // What every shader that traces rays shares (ADR-0034, ADR-0035): reading the triangle and the material of
-// a hit, the alpha test, and the shadow ray, so that the mesh pass and the path tracer agree by
+// a hit, the alpha test, and the shadow ray, so that the lighting and the path tracer agree by
 // construction. Include after MeshTypes.slangh.
 
 #ifndef DAIDALOS_RAY_QUERIES_SLANGH
@@ -71,7 +71,7 @@ float4 SampleLevelZero(uint texture, float2 uv, float4 fallback) {
     return texture != kNoTexture ? g_textures[texture].SampleLevel(g_samplers[kSamplerLinearRepeat], uv, 0.0) : fallback;
 }
 
-// The alpha test of the mesh pass, for a candidate hit on a surface that is not opaque. The buffers are
+// The alpha test of the G-buffer, for a candidate hit on a surface that is not opaque. The buffers are
 // the storage indices of the frame's instances and of the material table.
 bool PassesAlphaTest(uint instanceBuffer, uint materialBuffer, uint instanceIndex, uint primitive, float2 barycentrics) {
     const InstanceData instance = g_instances[instanceBuffer][instanceIndex];
@@ -123,8 +123,8 @@ bool Occluded(RayDesc ray, uint structure, uint instanceBuffer, uint materialBuf
     return query.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
 }
 
-// The surface at a hit, as the mesh pass shades it: its material, read at full detail, and its normal,
-// with the normal map, turned towards the ray as the mesh pass does for the back of double-sided surfaces.
+// The surface at a hit, as the G-buffer holds it: its material, read at full detail, and its normal,
+// with the normal map, turned towards the ray as the G-buffer does for the back of double-sided surfaces.
 struct Surface {
     float3 position;
     float3 faceNormal;
@@ -133,6 +133,7 @@ struct Surface {
     float3 f0;
     float roughness;
     float3 emission;
+    bool emissiveLight; // The emission is a light (ADR-0044).
     // Glass (ADR-0042): transmission above zero. The ray hit the face its normal points out of.
     float transmission;
     float ior;
@@ -178,6 +179,7 @@ Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame, uint instanceBuf
     // Nits, times the frame's exposure (ADR-0043).
     surface.emission = material.emissiveFactor *
                        SampleLevelZero(material.emissiveTexture, vertex.uv, float4(1.0, 1.0, 1.0, 1.0)).rgb * frame.exposure;
+    surface.emissiveLight = material.emissiveLight != 0;
 
     surface.transmission = material.transmission;
     surface.ior = material.ior;

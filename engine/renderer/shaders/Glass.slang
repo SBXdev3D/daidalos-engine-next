@@ -2,8 +2,8 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
-// Glass (ADR-0042), drawn over the finished frame, which it reads as its background: the pre-pass and the
-// mesh pass leave glass out. A pixel of glass is what its surface reflects, as much as Fresnel says, plus
+// Glass (ADR-0042), drawn over the finished frame, which it reads as its background: the G-buffer
+// leaves glass out. A pixel of glass is what its surface reflects, as much as Fresnel says, plus
 // what goes through it, tinted by its base color:
 // - thin glass, such as a window, bends nothing: what goes through is the frame behind the pixel;
 // - thick glass is a closed mesh: a ray bends where it enters, crosses the glass to its far side, losing
@@ -13,7 +13,7 @@
 // it counts, since glass reflects little but at grazing angles. The frame's lights shine on the glass
 // itself, as on any surface, which makes highlights. Lights are sampled (Lights.slangh): one among a few,
 // with one shadow ray, for what a ray finds and for the highlights.
-// The glass tests the pre-pass's depth itself, since it reads it: it has no depth target.
+// The glass tests the G-buffer's depth itself, since it reads it: it has no depth target.
 
 #include "MeshCommon.slangh"
 #include "RayQueries.slangh"
@@ -124,7 +124,7 @@ float3 ThroughVolume(FrameData frame, MaterialData material, float3 position, fl
 
 float4 PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target {
     const FrameData frame = g_frames[g_push.frameBuffer][0];
-    // Behind what the pre-pass drew: hidden. Reverse-Z: nearer is larger.
+    // Behind what the G-buffer drew: hidden. Reverse-Z: nearer is larger.
     const int2 pixel = int2(input.clipPosition.xy);
     if (input.clipPosition.z < g_textures[frame.depthTexture].Load(int3(pixel, 0)).r) {
         discard;

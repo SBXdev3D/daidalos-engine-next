@@ -18,15 +18,15 @@ class RenderGraph;
 struct DenoiserInputs {
     /// Storage index of the frame's FrameData.
     std::uint32_t frameBuffer = 0;
-    /// The mesh pass's diffuse light per unit of diffuse color, with 1 in alpha where it may be noisy
-    /// (MeshPass::kDiffuseFormat).
+    /// The lighting pass's diffuse light per unit of diffuse color, with 1 in alpha where it may be noisy
+    /// (MeshPass::kLightFormat).
     rhi::TextureHandle diffuse;
-    /// The mesh pass's specular light per unit of specular albedo (MeshPass::kSpecularFormat).
+    /// The lighting pass's specular light per unit of specular albedo (MeshPass::kLightFormat).
     rhi::TextureHandle specular;
     rhi::TextureHandle depth;
-    /// The pre-pass's normals and roughness.
+    /// The G-buffer's normals and roughness.
     rhi::TextureHandle normals;
-    /// The pre-pass's motion vectors.
+    /// The G-buffer's motion vectors.
     rhi::TextureHandle motion;
     /// The reflections, whose hit distance in alpha moves the specular history of smooth surfaces with the
     /// reflected point (GlobalIllumination::Reflections, ADR-0042). Null: it moves with the surface.
@@ -34,7 +34,7 @@ struct DenoiserInputs {
 };
 
 /// The engine's own spatiotemporal denoiser (ADR-0039): it filters the diffuse and the specular light of
-/// the mesh pass, averaging each pixel with its history, then with its neighbours on the same surface, as
+/// the lighting pass, averaging each pixel with its history, then with its neighbours on the same surface, as
 /// much as its noise asks. Light that is not noisy goes through unchanged. A concrete class: another
 /// denoiser would take the same inputs and give the same outputs. The Device must outlive it.
 class Denoiser {

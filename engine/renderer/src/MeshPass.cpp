@@ -374,7 +374,7 @@ core::Result<void> MeshPass::ReplaceShaders(std::span<const std::uint32_t> verte
         build(built.gbuffer, rhi::CullMode::Back)
             .and_then([&] { return build(built.gbufferDoubleSided, rhi::CullMode::None); })
             .and_then([&]() -> core::Result<void> {
-                // Glass tests the pre-pass's depth itself, which it also reads: no depth target (ADR-0042).
+                // Glass tests the G-buffer's depth itself, which it also reads: no depth target (ADR-0042).
                 const std::vector<std::uint32_t> glassShader = rhi::ToSpirv(kGlassPsSpirv);
                 using resources::Vertex;
                 for (const auto& [pipeline, cull] : {std::pair{&built.glass, rhi::CullMode::Back},
@@ -842,7 +842,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     m_jointCount = static_cast<std::uint32_t>(view.jointMatrices.size());
 
     // Sorted, so that the pipeline and the buffers change as rarely as possible. Instance i is the i-th
-    // sorted draw, for the pre-pass, the meshes and rays alike.
+    // sorted draw, for the G-buffer, glass and rays alike.
     for (std::uint32_t index = 0; index < view.draws.size(); ++index) {
         const DrawItem& draw = view.draws[index];
         if (m_meshes.TryGet(draw.mesh) == nullptr) {

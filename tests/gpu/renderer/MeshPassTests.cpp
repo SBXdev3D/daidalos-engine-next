@@ -565,7 +565,7 @@ TEST_F(MeshPassTest, DirectionalLightCastsParallelShadows) {
 }
 
 TEST_F(MeshPassTest, AlphaTestedSurfaceLetsLightThroughWhereItIsCut) {
-    // The panel's alpha is below its cutoff everywhere: the mesh pass does not draw it, and shadow rays go
+    // The panel's alpha is below its cutoff everywhere: the G-buffer does not hold it, and shadow rays go
     // through it as well.
     const MeshHandle floor = Mesh(MakeQuad(-4.0f, 4.0f, -4.0f, 4.0f, 0.0f));
     const MeshHandle panel = Mesh(MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 1.0f));
@@ -664,7 +664,7 @@ TEST_F(MeshPassTest, CameraWithoutAFieldOfViewUsesTheRenderersAcrossTheView) {
 
 namespace {
 
-// A particle pass drawing over the mesh pass's frame, with a plain white texture.
+// A particle pass drawing over the lit frame, with a plain white texture.
 class ParticleTest : public MeshPassTest {
 protected:
     void SetUp() override {
@@ -1091,7 +1091,7 @@ TEST_F(MeshPassTest, ASkinnedDrawMovesWithItsPreviousJoints) {
 
 namespace {
 
-// The mesh pass's frames, resolved by temporal antialiasing (ADR-0037).
+// The lit frames, resolved by temporal antialiasing (ADR-0037).
 class TemporalTest : public MeshPassTest {
 protected:
     void SetUp() override {
@@ -1234,7 +1234,7 @@ TEST_F(TemporalTest, AMovedObjectLeavesNoTrail) {
 
 namespace {
 
-// The mesh pass's frames, through the denoiser (ADR-0039). The scene of the shadow tests, with a spot light
+// The lit frames, through the denoiser (ADR-0039). The scene of the shadow tests, with a spot light
 // of a meter's radius: the panel's shadow on the floor, left of the panel, has a wide, soft edge.
 class DenoiserTest : public MeshPassTest {
 protected:

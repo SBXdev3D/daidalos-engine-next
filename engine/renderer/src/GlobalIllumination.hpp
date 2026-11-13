@@ -25,7 +25,7 @@ struct GlobalIlluminationInputs {
     rhi::BufferHandle skinnedVertices;
     /// The frame's emissive triangles, which light sampling reads (MeshPass::EmissiveTriangles).
     rhi::BufferHandle emissiveTriangles;
-    /// The pre-pass's depth and normals.
+    /// The G-buffer's depth and normals.
     rhi::TextureHandle depth;
     rhi::TextureHandle normals;
     /// Counts the frames: the paths change with it.

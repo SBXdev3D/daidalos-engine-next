@@ -57,10 +57,11 @@ dai_add_shaders(TARGET daidalos_renderer
     COMPUTE shaders/PathTracer.slang shaders/Skinning.slang shaders/TemporalResolve.slang shaders/ParticleEmit.slang shaders/ParticleSimulate.slang
         shaders/ParticleFinish.slang shaders/ParticleSort.slang shaders/DenoiseTemporal.slang shaders/DenoiseSpatial.slang
         shaders/GiUpdate.slang shaders/GiResolve.slang shaders/GiTrace.slang shaders/GiReflect.slang
-        shaders/RestirCandidates.slang shaders/RestirTemporal.slang shaders/RestirSpatial.slang shaders/RestirShade.slang
+        shaders/RestirCandidates.slang shaders/RestirTemporal.slang shaders/RestirSpatial.slang
+        shaders/RestirSpatialUnbiased.slang shaders/RestirShade.slang
         shaders/EmissiveAverage.slang shaders/EmissiveTriangles.slang
     INCLUDES shaders/Bsdf.slang shaders/RayQueries.slangh shaders/GlobalIllumination.slangh shaders/MeshCommon.slangh shaders/MeshTypes.slangh shaders/Particles.slangh
-        shaders/Denoiser.slangh shaders/Random.slangh shaders/Lights.slangh shaders/GBuffer.slangh shaders/Restir.slangh)
+        shaders/Denoiser.slangh shaders/Random.slangh shaders/Lights.slangh shaders/GBuffer.slangh shaders/Restir.slangh shaders/RestirSpatial.slangh)
 
 target_compile_definitions(daidalos_renderer
     PUBLIC DAI_DEV_TOOLS=$<BOOL:${DAI_ENABLE_DEV_TOOLS}>

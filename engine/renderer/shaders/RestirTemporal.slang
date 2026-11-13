@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
 // ReSTIR DI's temporal reuse (ADR-0044): each pixel finds its surface in the last frame, through its motion
-// vector, where the last frame's normal and depth agree, and combines its new reservoir with the one kept
+// vector, where the last frame's face normal and depth agree, and combines its new reservoir with the one kept
 // there, its light mapped to this frame's list. The history stands for at most kMaxHistory frames, so that
 // the past fades. Both reservoirs belong to the same surface, so they are weighed by their confidence alone
 // (generalized RIS, Lin et al. 2022), but for lights that are new this frame, which only the new reservoir can
@@ -30,7 +30,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     }
     const int2 previous = int2(previousUv * float2(g_restir.width, g_restir.height));
     const float4 guide = g_textures[g_restir.previousGuides].Load(int3(previous, 0));
-    if (!SameSurface(ViewDepth(frame, surface.position), surface.normal, guide.w, guide.xyz)) {
+    if (!SameSurface(ViewDepth(frame, surface.position), surface.faceNormal, guide.w, guide.xyz)) {
         return;
     }
     Reservoir history = Unpack(g_reservoirs[g_restir.previousReservoirs][PixelIndex(previous)]);

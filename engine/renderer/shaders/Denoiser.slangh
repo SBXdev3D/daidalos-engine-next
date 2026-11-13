@@ -34,7 +34,7 @@ float3 DecodeNormal(float2 encoded) {
     return normalize(normal);
 }
 
-// The pre-pass's normal and roughness of a pixel.
+// The G-buffer's normal and roughness of a pixel.
 float4 LoadNormalRoughness(uint texture, int2 pixel) {
     const float4 texel = g_textures[texture].Load(int3(pixel, 0));
     return float4(normalize(texel.xyz * 2.0 - 1.0), texel.a);

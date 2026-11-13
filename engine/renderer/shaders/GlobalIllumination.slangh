@@ -27,8 +27,8 @@ struct GiPushConstants {
     uint radiance;     // Per cell: the light it sends, and the samples it is worth.
     uint ages;         // Per cell: frames since a path last went through it.
     uint anchors;      // Per cell: the point that made it, off its surface, and 1 once written.
-    uint depth;        // Of the pre-pass.
-    uint normals;      // Of the pre-pass.
+    uint depth;        // Of the G-buffer.
+    uint normals;      // Of the G-buffer.
     uint output;       // Storage image: the indirect light of each pixel.
     uint width;
     uint height;

@@ -35,7 +35,7 @@ enum class DebugView {
     Rays,
     /// The reference path tracer (ADR-0034), which averages a path per pixel per frame while the view stays.
     Path,
-    /// The motion vectors of the pre-pass, in color (ADR-0037): grey where nothing moved.
+    /// The motion vectors of the G-buffer, in color (ADR-0037): grey where nothing moved.
     Motion,
     /// The indirect diffuse light of each pixel, as its ray found it, before the denoiser (ADR-0040).
     Indirect,
@@ -92,8 +92,9 @@ struct FrameStats {
     /// Draws in the view, and those within the view distance.
     std::uint32_t draws = 0;
     std::uint32_t drawnDraws = 0;
-    /// Triangles of the drawn draws, once each: the pre-pass draws them again.
+    /// Triangles of the drawn draws, once each.
     std::uint64_t triangles = 0;
+    /// Analytic lights and emissive triangles that light (ADR-0044).
     std::uint32_t lights = 0;
     std::uint32_t particleSpawns = 0;
     /// Instances of the frame's acceleration structure, and how many skinned draws had one built.

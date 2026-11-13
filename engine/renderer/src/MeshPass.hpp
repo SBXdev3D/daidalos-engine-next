@@ -25,7 +25,7 @@ namespace daidalos::renderer {
 
 class RenderGraph;
 
-/// The targets of a frame that the mesh pass needs to know about.
+/// The targets of a frame that MeshPass needs to know about.
 struct FrameTargets {
     rhi::Extent extent;
     /// The indirect diffuse light of the frame, per unit of diffuse color (ADR-0040), which the lighting pass
@@ -41,7 +41,7 @@ struct FrameTargets {
     /// The light that each pixel's specular lobe reflects (GlobalIllumination::Reflections), which the
     /// lighting pass multiplies by the specular albedo (ADR-0042). Null: the indirect light stands in for it.
     rhi::TextureHandle reflections;
-    /// What the glass pass reads: a copy of the frame before glass, and the pre-pass's depth (ADR-0042).
+    /// What the glass pass reads: a copy of the frame before glass, and the G-buffer's depth (ADR-0042).
     rhi::TextureHandle background;
     rhi::TextureHandle depth;
     /// What luminance in nits is multiplied by before tonemapping (ADR-0043): lights, emission and the sky
@@ -173,7 +173,7 @@ public:
     [[nodiscard]] rhi::BufferHandle SkinnedVertices() const {
         return m_skinningJobs.empty() ? rhi::BufferHandle{} : m_skinned;
     }
-    /// Where the skinned vertices were in the previous frame, which the pre-pass reads for motion vectors.
+    /// Where the skinned vertices were in the previous frame, which the G-buffer reads for motion vectors.
     /// Null when the frame has no skinned draw.
     [[nodiscard]] rhi::BufferHandle PreviousSkinnedPositions() const {
         return m_skinningJobs.empty() ? rhi::BufferHandle{} : m_previousSkinned;
@@ -190,12 +190,12 @@ public:
     /// PreviousSkinnedPositions.
     void RecordGBuffer(rhi::CommandList& commands);
     /// Draws the prepared frame's glass over the frame (ADR-0042), inside a rendering scope with a target of the
-    /// mesh pass's color format and no depth: it reads the G-buffer's depth and the background of FrameTargets.
+    /// pass's color format and no depth: it reads the G-buffer's depth and the background of FrameTargets.
     void RecordGlass(rhi::CommandList& commands);
     /// The prepared frame has glass to draw.
     [[nodiscard]] bool HasGlass() const { return m_prepared != nullptr && m_hasGlass; }
     /// Adds the pass that puts the shading targets back together into target, with the fog and the sky, as
-    /// "Composite" (ADR-0039). target has the mesh pass's color format and is written whole.
+    /// "Composite" (ADR-0039). target has the pass's color format and is written whole.
     void AddComposite(RenderGraph& graph, rhi::TextureHandle target, const CompositeInputs& inputs);
 
     /// The storage index of the prepared frame's FrameData, for the passes that read it.
