@@ -31,7 +31,7 @@ struct TemporalResolveInputs {
     /// HDR color, rendered with the jitter.
     rhi::TextureHandle color;
     rhi::TextureHandle depth;
-    /// The pre-pass's motion vectors.
+    /// The G-buffer's motion vectors.
     rhi::TextureHandle motion;
     /// How little to trust the history, from 0 to 1 (ParticlePass::kReactiveFormat).
     rhi::TextureHandle reactive;

@@ -23,6 +23,7 @@
 #include <utility>
 
 #include "Denoiser.hpp"
+#include "DirectLighting.hpp"
 #include "GlobalIllumination.hpp"
 #include "MeshPass.hpp"
 #include "ParticlePass.hpp"
@@ -71,6 +72,7 @@ struct Renderer::Impl {
         pathTracer.reset();
         temporalResolve.reset();
         denoiser.reset();
+        directLighting.reset();
         if (meshPass.has_value()) {
             meshPass->DestroyShadingTargets(shading);
         }
@@ -104,6 +106,10 @@ struct Renderer::Impl {
     std::optional<UiPass> uiPass;
     std::optional<TemporalResolvePass> temporalResolve;
     std::optional<Denoiser> denoiser;
+    std::optional<DirectLighting> directLighting;
+    DirectLightingSettings restir;
+    /// The last frame was lit: its reservoirs can be reused.
+    bool lit = false;
     /// Counts the frames, for the jitter of temporal antialiasing.
     std::uint64_t frameNumber = 0;
     /// Counts every frame drawn, for the noise of soft shadows.
@@ -131,15 +137,16 @@ struct Renderer::Impl {
     bool pathShown = false;
     rhi::PipelineHandle tonemap;
     rhi::PipelineHandle motionDebug;
-    /// What the mesh pass shades into, which the composite puts together into hdr (ADR-0039).
+    /// The G-buffer's material and what the lighting writes, which the composite puts together into hdr
+    /// (ADR-0039, ADR-0044).
     ShadingTargets shading;
     rhi::TextureHandle hdr;
     /// A copy of hdr before glass, which the glass pass reads (ADR-0042).
     rhi::TextureHandle background;
     rhi::TextureHandle depth;
-    /// World normals of the pre-pass.
+    /// World normals and roughness of the G-buffer.
     rhi::TextureHandle normals;
-    /// Motion vectors of the pre-pass (ADR-0037).
+    /// Motion vectors of the G-buffer (ADR-0037).
     rhi::TextureHandle motion;
     /// The particles' coverage, where temporal antialiasing trusts its history less.
     rhi::TextureHandle reactive;
@@ -177,6 +184,7 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
     background = {};
     DAI_TRY(temporalResolve->Resize(extent));
     DAI_TRY(denoiser->Resize(extent));
+    DAI_TRY(directLighting->Resize(extent));
     DAI_TRY_ASSIGN(shading, meshPass->CreateShadingTargets(extent));
     DAI_TRY_ASSIGN(reactive, device.CreateTexture({.extent = extent,
                                                    .format = ParticlePass::kReactiveFormat,
@@ -234,7 +242,7 @@ void Renderer::Impl::ReloadShaders() {
     }
 
     DAI_PROFILE_SCOPE("renderer::ReloadShaders");
-    const std::filesystem::path source = std::filesystem::path(DAI_SHADER_SOURCE_DIR) / "Mesh.slang";
+    const std::filesystem::path source = std::filesystem::path(DAI_SHADER_SOURCE_DIR) / "GBuffer.slang";
     core::Result<void> reloaded = CompileShader(DAI_SLANGC_PATH, source, ShaderStage::Vertex)
                                       .and_then([&](std::vector<std::uint32_t> vertexShader) {
                                           return CompileShader(DAI_SLANGC_PATH, source, ShaderStage::Pixel)
@@ -306,6 +314,10 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     impl->temporalResolve.emplace(std::move(temporalResolve));
     DAI_TRY_ASSIGN(Denoiser denoiser, Denoiser::Create(impl->device));
     impl->denoiser.emplace(std::move(denoiser));
+    DAI_TRY_ASSIGN(DirectLighting directLighting, DirectLighting::Create(impl->device));
+    impl->directLighting.emplace(std::move(directLighting));
+    impl->restir.spatial = config.restirSpatial;
+    impl->restir.unbiased = config.restirUnbiased;
     impl->denoise = config.denoiser;
     impl->reflections = config.reflections;
     impl->reflectionRoughness = config.reflectionRoughness;
@@ -374,6 +386,11 @@ void Renderer::SetReflections(bool enabled) {
 
 void Renderer::SetReflectionRoughness(float roughness) {
     m_impl->reflectionRoughness = roughness;
+}
+
+void Renderer::SetRestir(bool spatial, bool unbiased) {
+    m_impl->restir.spatial = spatial;
+    m_impl->restir.unbiased = unbiased;
 }
 
 void Renderer::SetFieldOfView(float radians) {
@@ -462,7 +479,9 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                        .reflections = reflections,
                        .background = impl.background,
                        .depth = impl.depth,
-                       .exposure = ExposureScale(view.atmosphere.ev100 - impl.exposureCompensation)});
+                       .exposure = ExposureScale(view.atmosphere.ev100 - impl.exposureCompensation),
+                       .sharpReflections =
+                           reflect ? std::min(GlobalIllumination::kSharpRoughness, impl.reflectionRoughness) : 0.0f});
         });
         impl.particleSpawns = static_cast<std::uint32_t>(view.particleSpawns.size());
     }
@@ -475,18 +494,14 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     if (status && hasFrame) {
         impl.meshPass->AddSkinning(graph);
         impl.rayTracing->AddBuild(graph);
+        impl.meshPass->AddEmissiveLights(graph);
     }
     if (status) {
-        // Where nothing is drawn, nothing moved: the sky's motion comes from the camera alone.
         graph.AddPass(
-            {.name = "Prepass",
-             .rendering = rhi::RenderingDesc{.colorTarget = impl.normals,
-                                             .clearColor = glm::vec4(0.5f, 1.0f, 0.5f, 1.0f),
-                                             .moreColorTargets = {{impl.motion, glm::vec4(0.0f)}},
-                                             .depthTarget = impl.depth,
-                                             .clearDepth = 0.0f},
+            {.name = "G-buffer",
+             .rendering = MeshPass::GBufferRendering(impl.shading, impl.normals, impl.motion, impl.depth),
              .buffers = {skinnedVertices, {impl.meshPass->PreviousSkinnedPositions(), rhi::Access::VertexShaderRead}}},
-            [&impl](rhi::CommandList& commands) { impl.meshPass->RecordPrepass(commands); });
+            [&impl](rhi::CommandList& commands) { impl.meshPass->RecordGBuffer(commands); });
     }
     // Indirect light: the cache forgets the last scene after a cut, and whatever it held while it was off.
     const bool illuminate = status && hasFrame && indirectLight;
@@ -500,6 +515,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                         .materialBuffer = impl.meshPass->MaterialDataIndex(),
                                         .structure = impl.rayTracing->Structure(),
                                         .skinnedVertices = impl.meshPass->SkinnedVertices(),
+                                        .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
                                         .depth = impl.depth,
                                         .normals = impl.normals,
                                         .frameIndex = frameIndex,
@@ -511,20 +527,47 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     impl.illuminated = illuminate;
     if (hasFrame) {
         status = impl.particlePass->AddSimulation(graph, view.particleSpawns, view.timeStep,
-                                                  impl.meshPass->FrameDataIndex(), impl.depth, impl.normals);
+                                                  impl.meshPass->FrameDataIndex(), impl.depth, impl.normals,
+                                                  {.structure = impl.rayTracing->Structure(),
+                                                   .instanceBuffer = impl.meshPass->InstanceDataIndex(),
+                                                   .materialBuffer = impl.meshPass->MaterialDataIndex(),
+                                                   .skinnedVertices = impl.meshPass->SkinnedVertices(),
+                                                   .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
+                                                   .lightMap = impl.meshPass->LightMapIndex(),
+                                                   .previousLightCount = impl.meshPass->PreviousLightCount()});
     }
-    if (status) {
-        graph.AddPass({.name = "Meshes",
-                       .rendering = MeshPass::ShadingRendering(impl.shading, impl.depth,
-                                                               glm::vec4(view.atmosphere.fogColor, 1.0f)),
-                       .textures = {{illuminate ? indirect : rhi::TextureHandle{}, rhi::Access::FragmentShaderRead},
-                                    {illuminate ? reflections : rhi::TextureHandle{}, rhi::Access::FragmentShaderRead}},
-                       // Shadow rays: the frame's structure, and the vertices of the skinned draws they test for alpha.
-                       .buffers = {skinnedVertices, {skinnedVertices.buffer, rhi::Access::FragmentShaderRead}},
-                       .structures = {{hasFrame ? impl.rayTracing->Structure() : rhi::AccelerationStructureHandle{},
-                                       rhi::Access::RayQueryRead}}},
-                      [&impl](rhi::CommandList& commands) { impl.meshPass->Record(commands); });
+    // The light of the frame's lights, and the indirect light, at each pixel of the G-buffer (ADR-0044). A
+    // frame that does not follow the last one lit reuses nothing from it.
+    const bool lightsView = impl.debugView == DebugView::Lights;
+    const bool light = status && hasFrame;
+    if (light) {
+        if (!impl.lit || view.cut) {
+            impl.directLighting->Reset();
+        }
+        DirectLightingSettings settings = impl.restir;
+        settings.debug = lightsView;
+        impl.directLighting->AddTo(graph,
+                                   {.frameBuffer = impl.meshPass->FrameDataIndex(),
+                                    .instanceBuffer = impl.meshPass->InstanceDataIndex(),
+                                    .materialBuffer = impl.meshPass->MaterialDataIndex(),
+                                    .structure = impl.rayTracing->Structure(),
+                                    .skinnedVertices = impl.meshPass->SkinnedVertices(),
+                                    .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
+                                    .depth = impl.depth,
+                                    .normals = impl.normals,
+                                    .motion = impl.motion,
+                                    .baseColor = impl.shading.baseColor,
+                                    .emission = impl.shading.emission,
+                                    .indirect = illuminate ? indirect : rhi::TextureHandle{},
+                                    .reflections = illuminate ? reflections : rhi::TextureHandle{},
+                                    .diffuse = impl.shading.diffuse,
+                                    .specular = impl.shading.specular,
+                                    .lightMap = impl.meshPass->LightMapIndex(),
+                                    .previousLightCount = impl.meshPass->PreviousLightCount(),
+                                    .frameIndex = frameIndex},
+                                   settings);
     }
+    impl.lit = light;
     // The lights' light, denoised, then put back together with the rest (ADR-0039). A frame that does not
     // follow the last one denoised starts the history over.
     const bool denoise = status && hasFrame && impl.denoise;
@@ -566,7 +609,9 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                        .textures = {{impl.hdr, rhi::Access::ColorTarget},
                                     {impl.background, rhi::Access::FragmentShaderRead},
                                     {impl.depth, rhi::Access::FragmentShaderRead}},
-                       .buffers = {skinnedVertices, {skinnedVertices.buffer, rhi::Access::FragmentShaderRead}},
+                       .buffers = {skinnedVertices,
+                                   {skinnedVertices.buffer, rhi::Access::FragmentShaderRead},
+                                   {impl.meshPass->EmissiveTriangles(), rhi::Access::FragmentShaderRead}},
                        .structures = {{impl.rayTracing->Structure(), rhi::Access::RayQueryRead}}},
                       [&impl](rhi::CommandList& commands) { impl.meshPass->RecordGlass(commands); });
     }
@@ -628,14 +673,20 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     }
     impl.pathShown = path;
 
+    if (status && !hasFrame) {
+        // Nothing to draw: the fog's color.
+        graph.AddPass({.name = "Clear",
+                       .rendering = rhi::RenderingDesc{.colorTarget = impl.hdr,
+                                                       .clearColor = glm::vec4(view.atmosphere.fogColor, 1.0f)}},
+                      [](rhi::CommandList& /*commands*/) {});
+    }
     if (status) {
-        // Without a camera, the mesh pass only cleared its base to the fog's color.
         const rhi::TextureHandle source = path                           ? impl.pathTracer->Output()
                                           : illuminate && reflectionView ? impl.globalIllumination->Reflections()
                                           : illuminate && indirectView   ? impl.globalIllumination->Output()
+                                          : light && lightsView          ? impl.directLighting->DebugOutput()
                                           : resolve                      ? impl.temporalResolve->Output()
-                                          : hasFrame                     ? impl.hdr
-                                                                         : impl.shading.base;
+                                                                         : impl.hdr;
 
         graph.AddPass({.name = "Tonemap",
                        .rendering = rhi::RenderingDesc{.colorTarget = frame.backBuffer},

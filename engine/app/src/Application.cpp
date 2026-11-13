@@ -68,12 +68,16 @@ renderer::DebugView DebugViewMode(const core::CVar<std::string>& cvar) {
     if (name == "reflections") {
         return renderer::DebugView::Reflections;
     }
+    if (name == "lights") {
+        return renderer::DebugView::Lights;
+    }
     static std::string warned;
     if (name != "off" && name != warned) {
         warned = name;
-        DAI_LOG_WARNING(kModule,
-                        "Unknown debug view '{}': use off, rays, path, motion, indirect, radiance_cache or reflections",
-                        name);
+        DAI_LOG_WARNING(
+            kModule,
+            "Unknown debug view '{}': use off, rays, path, motion, indirect, radiance_cache, reflections or lights",
+            name);
     }
 
     return renderer::DebugView::Off;
@@ -248,6 +252,12 @@ core::Result<void> Application::LoadConfiguration() {
         m_reflectionRoughness = m_cvars.Register<double>(
             "renderer.reflection_roughness", 0.6,
             "Surfaces rougher than this, from 0 to 1, trace no reflection: the indirect light stands in for it");
+        m_restirSpatial =
+            m_cvars.Register<bool>("renderer.restir_spatial", true,
+                                   "Pixels reuse the lights their neighbours chose; off, only their own past");
+        m_restirUnbiased = m_cvars.Register<bool>(
+            "renderer.restir_unbiased", false,
+            "Test every reused light for shadows, to compare with the path tracer: twice the rays");
         m_normalStrength = m_cvars.Register<double>(
             "renderer.normal_strength", 1.0, "Multiplies the relief of normal maps: 0 flattens them, 1 as authored");
         m_fieldOfView = m_cvars.Register<double>(
@@ -260,8 +270,8 @@ core::Result<void> Application::LoadConfiguration() {
                                               "Enable the Vulkan validation layers, read at startup");
         m_debugView = m_cvars.Register<std::string>(
             "renderer.debug_view", "off",
-            "Shows a debug view instead of the lit scene: off, rays, path, motion, indirect, radiance_cache or "
-            "reflections");
+            "Shows a debug view instead of the lit scene: off, rays, path, motion, indirect, radiance_cache, "
+            "reflections or lights");
         m_pathBounces = m_cvars.Register<std::int64_t>(
             "renderer.path_bounces", 4, "Surfaces a path of the path tracer meets at most; 1 is direct light only");
         m_pathSamples = m_cvars.Register<std::int64_t>(
@@ -425,6 +435,8 @@ core::Result<void> Application::CreateRenderer() {
              .denoiser = m_denoiser->Get(),
              .reflections = m_reflections->Get(),
              .reflectionRoughness = ReflectionRoughness(*m_reflectionRoughness),
+             .restirSpatial = m_restirSpatial->Get(),
+             .restirUnbiased = m_restirUnbiased->Get(),
              .fieldOfView = FieldOfViewRadians(*m_fieldOfView),
              .viewDistance = ViewDistanceMeters(*m_viewDistance),
              .antialiasing = AntialiasingMode(*m_antialiasing),
@@ -476,6 +488,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_renderer->SetDenoiser(m_denoiser->Get());
     m_renderer->SetReflections(m_reflections->Get());
     m_renderer->SetReflectionRoughness(ReflectionRoughness(*m_reflectionRoughness));
+    m_renderer->SetRestir(m_restirSpatial->Get(), m_restirUnbiased->Get());
     m_renderer->SetFieldOfView(FieldOfViewRadians(*m_fieldOfView));
     m_renderer->SetViewDistance(ViewDistanceMeters(*m_viewDistance));
     m_renderer->SetAntialiasing(AntialiasingMode(*m_antialiasing));

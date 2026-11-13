@@ -2,7 +2,7 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
-// The indirect diffuse light of each pixel (ADR-0040): one ray from the pre-pass's surface in a random
+// The indirect diffuse light of each pixel (ADR-0040): one ray from the G-buffer's surface in a random
 // direction, more often near its normal, and the light that comes back along it: the light the radiance
 // cache holds where the ray hits, or the sky where it leaves. Rays in that distribution, averaged, give
 // the light per unit of diffuse color; one per pixel is noisy, which the denoiser filters.

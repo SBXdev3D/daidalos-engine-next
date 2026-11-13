@@ -18,10 +18,10 @@
 
 struct TemporalPushConstants {
     uint frameBuffer;
-    uint diffuse;  // This frame's light, from the mesh pass.
+    uint diffuse;  // This frame's light, from the lighting pass.
     uint specular;
     uint depth;
-    uint normals;  // The pre-pass's normals and roughness.
+    uint normals;  // The G-buffer's normals and roughness.
     uint motion;
     uint previousGuides;   // Last frame's guides, moments and histories, sampled.
     uint previousMoments;

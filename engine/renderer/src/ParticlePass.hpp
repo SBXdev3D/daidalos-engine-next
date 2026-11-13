@@ -37,11 +37,26 @@ public:
     void DestroyEffect(ParticleEffectHandle effect);
 
     /// Adds the passes that emit the spawns, move every particle by timeStep and sort them, in the group
-    /// "Simulation". depth and normals come from the pre-pass; frameBuffer is the storage index of the
+    /// "Simulation". depth and normals come from the G-buffer; frameBuffer is the storage index of the
     /// frame's FrameData. Spawns of destroyed effects are skipped.
+    /// What lit particles cast their shadow rays against (ADR-0044): the frame's structure, built before,
+    /// the storage indices of its instances and materials, and the skinned vertices that rays read, or null.
+    struct Shadows {
+        rhi::AccelerationStructureHandle structure;
+        std::uint32_t instanceBuffer = 0;
+        std::uint32_t materialBuffer = 0;
+        rhi::BufferHandle skinnedVertices;
+        /// The frame's emissive triangles, which light sampling reads.
+        rhi::BufferHandle emissiveTriangles;
+        /// Where the last frame's lights are in this frame's list (MeshPass::LightMapIndex): particles keep
+        /// the light they chose.
+        std::uint32_t lightMap = 0;
+        std::uint32_t previousLightCount = 0;
+    };
+    /// The simulation also lights lit particles, each keeping the light it chose, with its shadows (ADR-0044).
     [[nodiscard]] core::Result<void> AddSimulation(RenderGraph& graph, std::span<const ParticleSpawn> spawns,
                                                    float timeStep, std::uint32_t frameBuffer, rhi::TextureHandle depth,
-                                                   rhi::TextureHandle normals);
+                                                   rhi::TextureHandle normals, const Shadows& shadows);
 
     /// What the particles leave in their second target, the reactive mask of temporal antialiasing
     /// (ADR-0037): how much they cover each pixel, where the history is not to be trusted.

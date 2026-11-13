@@ -994,7 +994,7 @@ AO must be treated as a rendering enhancement rather than a substitute for corre
 
 ## 10.10. Clustered forward rendering
 
-Clustered forward rendering (Forward+) is the intended lighting architecture (ADR-0008). It supports many lights, as indoor scenes require, while keeping transparency, MSAA, and per-material shading models in a single pipeline, without the memory bandwidth and layout constraints of a G-buffer.
+Superseded in Phase 9.12 by deferred lighting with ReSTIR DI (ADR-0044); kept for the record. Clustered forward rendering (Forward+) was the intended lighting architecture (ADR-0008). It supports many lights, as indoor scenes require, while keeping transparency, MSAA, and per-material shading models in a single pipeline, without the memory bandwidth and layout constraints of a G-buffer.
 
 The planned pass sequence is:
 
@@ -1057,7 +1057,7 @@ This separation allows gameplay logic and scene organization to evolve independe
 
 ## 10.13. Ray-traced rendering
 
-From Phase 9 the renderer requires hardware ray tracing (ADR-0028). Rasterization keeps drawing the depth and normal prepass and the forward pass; ray queries and a reference path tracer provide shadows, indirect light, reflections and volumetric shadows. Lighting is fully dynamic, with no baking. The denoiser, radiance cache and ReSTIR samplers are the engine's own, written from the published papers.
+From Phase 9 the renderer requires hardware ray tracing (ADR-0028). Rasterization draws a thin G-buffer, which compute passes light (ADR-0044); ray queries and a reference path tracer provide shadows, indirect light, reflections and volumetric shadows. Lighting is fully dynamic, with no baking. The denoiser, radiance cache and ReSTIR samplers are the engine's own, written from the published papers.
 
 The plan in `docs/daidalos-engine-next-rendering-plan.md` describes the long-term target, including techniques deferred until measurements or content justify them. The owner's engine technical spec widens it to a horror game; ADR-0041 records what of it joins the roadmap.
 
@@ -1948,10 +1948,11 @@ Hardware ray tracing is mandatory and no raster fallback is kept: each step dele
 9. Diffuse global illumination: an own hash-grid radiance cache and a ray-traced bounce, replacing SSAO and the ambient term; directional lights, for the moon (done, ADR-0040).
 10. Ray-traced reflections below a roughness threshold, recursive on mirrors; reflection motion vectors for the denoiser; glass (thin for windows, thick with absorption for bottles); a mirror-room test scene. Replaces the ambient specular term (done, ADR-0042).
 11. Physical units (ADR-0041): lights in lumens and candela with inverse-square falloff, color temperature in kelvin, emission in nits, exposure in EV. Replaces the legacy intensity and range (ADR-0022); the factory's lights are retuned (done, ADR-0043).
-12. ReSTIR DI over every light and emissive triangle, and ReSTIR GI with two to three bounces ending in the radiance cache, replacing CPU light clustering. An emissive mesh is either the light or seen only by camera and reflection rays, never both. Radiance is clamped on indirect bounces only. Test scenes: a dark corridor lit only by the flashlight, which validates low-light quality before anything builds on it, and a room of 1,000 lights.
-13. FSR 2 upscaling with dynamic resolution (a frame-time target of 30, 60 or 120 fps, with hysteresis; the denoiser's history survives a resolution change), auto-exposure in EV with slow dark adaptation, bloom without threshold, AgX tone mapping, HDR output, a brightness calibration screen.
-14. Froxel volumetric fog with ray-traced shadows and local volumes (a dusty room, a steam pipe), replacing exponential fog.
-15. Quality presets and no stutter (ADR-0041): Low, Medium, High and Ultra set the cost of every feature, chosen at first launch from the GPU; the pipeline cache persists on disk and is rebuilt after a driver or GPU change; a pipeline created during gameplay is logged as a bug; VRAM use against `VK_EXT_memory_budget` in the statistics; each feature has its debug view.
+12. ReSTIR DI over every light and emissive triangle, replacing CPU light clustering, and deferred lighting: the pre-pass becomes a thin G-buffer, direct light moves to a compute pass and the forward mesh pass goes (ADR-0044). An emissive mesh is either a light or seen only by camera and reflection rays, never both. Test scene: a room of 1,000 lights and emissive panels (done, ADR-0044; 1.1 ms at 1080p in the factory, over its 1 ms budget).
+13. ReSTIR GI, with a measured number of bounces before the radiance cache, replacing the per-pixel indirect ray; radiance clamped on indirect bounces only (ADR-0045). Test scene: a dark corridor lit only by the flashlight, which validates low-light quality before anything builds on it.
+14. FSR 2 upscaling with dynamic resolution (a frame-time target of 30, 60 or 120 fps, with hysteresis; the denoiser's history survives a resolution change), auto-exposure in EV with slow dark adaptation, bloom without threshold, AgX tone mapping, HDR output, a brightness calibration screen.
+15. Froxel volumetric fog with ray-traced shadows and local volumes (a dusty room, a steam pipe), replacing exponential fog.
+16. Quality presets and no stutter (ADR-0041): Low, Medium, High and Ultra set the cost of every feature, chosen at first launch from the GPU; the pipeline cache persists on disk and is rebuilt after a driver or GPU change; a pipeline created during gameplay is logged as a bug; VRAM use against `VK_EXT_memory_budget` in the statistics; each feature has its debug view.
 
 Deferred until measurements justify them: meshlets, mesh shaders, the visibility buffer, Hi-Z occlusion, LODs, portals, async compute, resource aliasing, `VK_EXT_descriptor_heap`, opacity micromaps, shader execution reordering, adaptive ray budgets. Deferred until content needs them: ReSTIR PT, subsurface scattering. Out of scope: the neural rendering tier and NVIDIA's RTX SDKs (licence, see ADR-0028 and ADR-0041).
 

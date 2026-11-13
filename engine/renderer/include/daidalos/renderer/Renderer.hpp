@@ -35,7 +35,7 @@ enum class DebugView {
     Rays,
     /// The reference path tracer (ADR-0034), which averages a path per pixel per frame while the view stays.
     Path,
-    /// The motion vectors of the pre-pass, in color (ADR-0037): grey where nothing moved.
+    /// The motion vectors of the G-buffer, in color (ADR-0037): grey where nothing moved.
     Motion,
     /// The indirect diffuse light of each pixel, as its ray found it, before the denoiser (ADR-0040).
     Indirect,
@@ -43,6 +43,8 @@ enum class DebugView {
     RadianceCache,
     /// The light each pixel's specular lobe reflects, as its ray found it, before the denoiser (ADR-0042).
     Reflections,
+    /// The light each pixel's reservoir chose, one hue per light (ADR-0044); black where none.
+    Lights,
 };
 
 struct RendererConfig {
@@ -67,6 +69,11 @@ struct RendererConfig {
     bool reflections = true;
     /// Surfaces rougher than this trace no reflection, from 0 (none do) to 1 (all do).
     float reflectionRoughness = 0.6f;
+    /// ReSTIR DI (ADR-0044): pixels reuse the lights their neighbours chose, as well as their own past.
+    bool restirSpatial = true;
+    /// ReSTIR DI tests every sample it reuses for visibility, for comparisons with the path tracer: twice the
+    /// rays.
+    bool restirUnbiased = false;
     /// Radians across the view, for cameras that set no field of view of their own.
     float fieldOfView = glm::radians(90.0f);
     /// Meters: farther, nothing is drawn or lit.
@@ -85,8 +92,9 @@ struct FrameStats {
     /// Draws in the view, and those within the view distance.
     std::uint32_t draws = 0;
     std::uint32_t drawnDraws = 0;
-    /// Triangles of the drawn draws, once each: the pre-pass draws them again.
+    /// Triangles of the drawn draws, once each.
     std::uint64_t triangles = 0;
+    /// Analytic lights and emissive triangles that light (ADR-0044).
     std::uint32_t lights = 0;
     std::uint32_t particleSpawns = 0;
     /// Instances of the frame's acceleration structure, and how many skinned draws had one built.
@@ -141,6 +149,8 @@ public:
     void SetDenoiser(bool enabled);
     void SetReflections(bool enabled);
     void SetReflectionRoughness(float roughness);
+    /// See RendererConfig::restirSpatial and restirUnbiased.
+    void SetRestir(bool spatial, bool unbiased);
     /// From the next frame; see RendererConfig.
     void SetFieldOfView(float radians);
     void SetViewDistance(float meters);

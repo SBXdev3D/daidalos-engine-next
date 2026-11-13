@@ -120,6 +120,7 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
         renderer::MaterialDesc desc;
         desc.baseColorFactor = material.baseColorFactor;
         desc.emissiveFactor = material.emissiveFactor;
+        desc.emissiveLight = material.emissiveLight;
         desc.metallicFactor = material.metallicFactor;
         desc.roughnessFactor = material.roughnessFactor;
         desc.normalScale = material.normalScale;

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
 // The one BSDF of the engine (ADR-0028, ADR-0034): Cook-Torrance with the GGX distribution,
-// height-correlated Smith visibility and Schlick's Fresnel, over a Lambert diffuse. The mesh pass
+// height-correlated Smith visibility and Schlick's Fresnel, over a Lambert diffuse. The lighting
 // evaluates it for each light, the path tracer evaluates and samples it.
 
 module Bsdf;

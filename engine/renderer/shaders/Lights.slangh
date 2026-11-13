@@ -1,0 +1,385 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+
+#ifndef DAIDALOS_LIGHTS_SLANGH
+#define DAIDALOS_LIGHTS_SLANGH
+
+// The frame's lights, as everything that lights a point samples them (ADR-0044): lamps, analytic lights,
+// and the triangles of emissive draws, in one list. A light is drawn by its power from an alias table,
+// with a point on it, and lights are weighed by what they would send to the point (resampled importance
+// sampling, Talbot et al. 2005): ReSTIR's passes keep and share these samples, the other passes use one
+// directly, with one shadow ray.
+//
+// A light's index counts the analytic lights first, then the emissive triangles: frame.lightCount of the
+// first, frame.emissiveTriangleCount of the others. The alias table draws a source, an analytic light or
+// an emissive draw, whose own alias table then draws one of its triangles.
+// Include after MeshTypes.slangh and RayQueries.slangh.
+
+#include "Random.slangh"
+import Bsdf;
+
+// Matches AliasEntry in renderer/src/LightSampling.hpp.
+struct AliasEntry {
+    float keep;
+    uint alias;
+    float probability;
+    uint padding;
+};
+
+// One emissive draw of the frame. Matches its twin in renderer/src/MeshPass.cpp.
+struct EmissiveDraw {
+    uint firstTriangle; // In the frame's emissive triangles.
+    uint triangleCount;
+    uint aliasTable; // Storage index of the alias table of its triangles, by power.
+    uint padding;
+};
+
+// One triangle of an emissive draw, in world space, written each frame (ADR-0044). Matches its twin in
+// renderer/src/MeshPass.cpp.
+struct EmissiveTriangle {
+    float3 a;
+    uint twoSided; // 1: it sends light from both faces.
+    float3 b;
+    uint padding0;
+    float3 c;
+    uint padding1;
+    float3 emission; // Its emission, averaged over its texture, in nits: multiplied by the exposure when read.
+    uint padding2;
+};
+
+[[vk::binding(2, 0)]] StructuredBuffer<AliasEntry> g_aliasTables[];
+[[vk::binding(2, 0)]] StructuredBuffer<EmissiveDraw> g_emissiveDraws[];
+[[vk::binding(2, 0)]] StructuredBuffer<EmissiveTriangle> g_emissiveTriangles[];
+// For each of the last frame's lights, its index in this frame's, or kNoLight; then, for each of this frame's,
+// 1 if the last frame did not have it (MeshPass::LightMapIndex).
+[[vk::binding(2, 0)]] StructuredBuffer<uint> g_lightMaps[];
+
+static const uint kNoLight = 0xFFFFFFFF;
+// Lights a point weighs before it keeps one.
+static const uint kLightCandidates = 8;
+
+float Luminance(float3 color) {
+    return dot(color, float3(0.2126, 0.7152, 0.0722));
+}
+
+// The entry of an alias table that two numbers in [0, 1) draw.
+uint SampleAlias(uint table, uint count, float pick, float keep) {
+    const uint entry = min(uint(pick * float(count)), count - 1);
+    const AliasEntry drawn = g_aliasTables[table][entry];
+    return keep < drawn.keep ? entry : drawn.alias;
+}
+
+// A light drawn by power, and the probability of drawing it.
+struct LightChoice {
+    uint index; // kNoLight when the frame has no light.
+    float probability;
+};
+
+LightChoice ChooseLight(FrameData frame, float4 u) {
+    LightChoice choice;
+    choice.index = kNoLight;
+    choice.probability = 0.0;
+    if (frame.sourceCount == 0) {
+        return choice;
+    }
+    const uint source = SampleAlias(frame.aliasBuffer, frame.sourceCount, u.x, u.y);
+    choice.probability = g_aliasTables[frame.aliasBuffer][source].probability;
+    if (source < frame.lightCount) {
+        choice.index = source;
+        return choice;
+    }
+    const EmissiveDraw draw = g_emissiveDraws[frame.emissiveDrawBuffer][source - frame.lightCount];
+    const uint triangle = SampleAlias(draw.aliasTable, draw.triangleCount, u.z, u.w);
+    choice.probability *= g_aliasTables[draw.aliasTable][triangle].probability;
+    choice.index = frame.lightCount + draw.firstTriangle + triangle;
+    return choice;
+}
+
+bool IsTriangleLight(FrameData frame, uint light) {
+    return light >= frame.lightCount;
+}
+
+// What a light sends to a point, for a point on the light placed by two numbers in [0, 1).
+struct LightContact {
+    bool valid; // The light reaches the point at all.
+    float3 toLight; // Unit vector from the point towards the light.
+    // Times the BSDF and the cosine, the light the point sends: the illuminance an analytic light makes,
+    // or for a triangle its radiance times its cosine, its area and the inverse square of the distance, as
+    // the point on it is drawn uniformly over its area.
+    float3 illuminance;
+    bool emissive; // An emissive triangle.
+    // Where the shadow ray aims: a triangle's point, or an analytic light's center, which the shadow ray
+    // moves to a point of its disk of this radius, placed by u (ADR-0039).
+    float3 target;
+    float radius;
+    float2 u;
+    float gap; // How far short of its target the shadow ray stops.
+    bool soft;     // A light with a size: its shadows are noisy.
+};
+
+// Surfaces are never nearer a light than this, in meters: an analytic light's sphere, if larger, and a
+// centimeter from an emissive triangle.
+static const float kNearestLight = 0.01;
+
+// position receives the light, never nearer to it than nearest.
+LightContact ContactLight(FrameData frame, uint index, float2 u, float3 position, float nearest) {
+    LightContact contact;
+    contact.valid = false;
+    contact.toLight = float3(0.0, 0.0, 1.0);
+    contact.illuminance = float3(0.0, 0.0, 0.0);
+    contact.emissive = IsTriangleLight(frame, index);
+    contact.target = position;
+    contact.radius = 0.0;
+    contact.u = u;
+    contact.gap = 0.0;
+    contact.soft = true;
+    if (index == kNoLight) {
+        return contact;
+    }
+    if (!IsTriangleLight(frame, index)) {
+        // Shaded from its center; its shadow ray aims at a point of its disk (ADR-0039).
+        LightData light = LightAt(g_lights[frame.lightBuffer][index], position);
+        const float3 offset = light.position - position;
+        const float distanceToLight = length(offset);
+        if (distanceToLight >= light.range) {
+            return contact;
+        }
+        contact.toLight = offset / max(distanceToLight, 0.0001);
+        contact.target = light.position;
+        contact.radius = light.radius;
+        // Attenuation never goes nearer than the light's sphere, nor than the receiver allows.
+        light.radius = max(light.radius, nearest);
+        contact.illuminance = light.color * Attenuation(light, distanceToLight, contact.toLight);
+        // Nothing this close to a light shadows it (ADR-0035).
+        contact.gap = min(kShadowNearPlane, light.range * 0.5);
+        contact.soft = contact.radius > 0.0;
+        contact.valid = any(contact.illuminance > 0.0);
+        return contact;
+    }
+    const EmissiveTriangle triangle = g_emissiveTriangles[frame.emissiveTriangleBuffer][index - frame.lightCount];
+    // Uniform over the triangle's area.
+    const float root = sqrt(u.x);
+    const float3 point = triangle.a * (1.0 - root) + triangle.b * (root * (1.0 - u.y)) + triangle.c * (root * u.y);
+    const float3 side = cross(triangle.b - triangle.a, triangle.c - triangle.a);
+    const float doubleArea = length(side);
+    const float3 offset = point - position;
+    const float distance2 = dot(offset, offset);
+    if (doubleArea <= 0.0 || distance2 <= 1e-8) {
+        return contact;
+    }
+    const float distanceToLight = sqrt(distance2);
+    contact.toLight = offset / distanceToLight;
+    float cosine = -dot(side / doubleArea, contact.toLight);
+    if (triangle.twoSided != 0) {
+        cosine = abs(cosine);
+    }
+    if (cosine <= 0.0) {
+        return contact;
+    }
+    contact.illuminance =
+        triangle.emission * frame.exposure * (cosine * 0.5 * doubleArea / max(distance2, nearest * nearest));
+    contact.target = point;
+    contact.gap = 1e-3 * (1.0 + distanceToLight);
+    contact.valid = any(contact.illuminance > 0.0);
+    return contact;
+}
+
+// How a point responds to light: a surface with its BSDF, a matte surface, or what scatters light the same
+// way whatever its direction, as smoke.
+static const uint kRespondBsdf = 0;
+static const uint kRespondDiffuse = 1;
+static const uint kRespondEverywhere = 2;
+
+// What receives light: a point and how it responds.
+struct Receiver {
+    float3 position;
+    float3 origin;     // Where its shadow rays start: off the surface.
+    float3 faceNormal; // The face's own normal, towards the viewer: no light comes from behind it.
+    float3 normal;
+    float3 view;
+    float3 diffuseColor;
+    float3 f0;
+    float roughness;
+    uint response;
+    // The specular light of emissive triangles: false where a sharp reflection shows them (ADR-0044).
+    bool emissiveSpecular;
+    // Meters it is never nearer a light than: kNearestLight for a surface; for a puff of smoke, lit as a
+    // whole from its center, its radius, so that a puff that passes a light does not blaze.
+    float nearest;
+};
+
+LightContact ContactLight(FrameData frame, uint index, float2 u, Receiver receiver) {
+    return ContactLight(frame, index, u, receiver.position, receiver.nearest);
+}
+
+// The BSDF times the cosine, for light from toLight: per unit of diffuse color, and specular.
+BsdfTerms Respond(Receiver receiver, float3 toLight) {
+    BsdfTerms terms;
+    terms.diffuse = float3(0.0, 0.0, 0.0);
+    terms.specular = float3(0.0, 0.0, 0.0);
+    if (receiver.response == kRespondEverywhere) {
+        terms.diffuse = float3(0.31830989, 0.31830989, 0.31830989);
+        return terms;
+    }
+    if (dot(receiver.faceNormal, toLight) <= 0.0) {
+        return terms;
+    }
+    if (receiver.response == kRespondDiffuse) {
+        terms.diffuse = saturate(dot(receiver.normal, toLight)) * 0.31830989;
+        return terms;
+    }
+    return EvaluateBsdfTerms(receiver.normal, receiver.view, toLight, receiver.f0, receiver.roughness);
+}
+
+float3 Reflected(Receiver receiver, BsdfTerms terms) {
+    return terms.diffuse * receiver.diffuseColor + terms.specular;
+}
+
+// The BSDF times the cosine for a light: its specular part left out where a sharp reflection shows it.
+BsdfTerms LightTerms(Receiver receiver, LightContact contact) {
+    BsdfTerms terms = Respond(receiver, contact.toLight);
+    if (contact.emissive && !receiver.emissiveSpecular) {
+        terms.specular = float3(0.0, 0.0, 0.0);
+    }
+    return terms;
+}
+
+// What resampling weighs a light by: the luminance of the light the receiver would send, unshadowed.
+float TargetValue(Receiver receiver, LightContact contact) {
+    return contact.valid ? Luminance(contact.illuminance * Reflected(receiver, LightTerms(receiver, contact))) : 0.0;
+}
+
+// Smoke has no surface to start its shadow rays off: they skip their first centimeters, so that a particle
+// that touches the floor is not shadowed by it.
+static const float kSmokeShadowStart = 0.05;
+
+// Whether nothing that casts shadows stands between the receiver and the light's point.
+bool Unoccluded(FrameData frame, Receiver receiver, LightContact contact, uint instanceBuffer, uint materialBuffer) {
+    const float3 target =
+        contact.radius > 0.0 ? SampleLightPoint(contact.target, contact.radius, receiver.position, contact.u) : contact.target;
+    const float3 offset = target - receiver.origin;
+    const float distanceToTarget = length(offset);
+    RayDesc ray;
+    ray.Origin = receiver.origin;
+    ray.Direction = offset / max(distanceToTarget, 0.0001);
+    ray.TMin = receiver.response == kRespondEverywhere ? min(kSmokeShadowStart, distanceToTarget * 0.5) : 0.0;
+    ray.TMax = max(distanceToTarget - contact.gap, 0.0);
+    return !Occluded(ray, frame.accelerationStructure, instanceBuffer, materialBuffer);
+}
+
+// A sample of the frame's lights for one receiver: a light, the point on it, and what it is worth (Bitterli
+// et al. 2020). weight is the unbiased contribution weight: the light it sends times weight estimates the
+// light of every light. count is the confidence: how many samples it stands for.
+struct Reservoir {
+    uint light;
+    float2 u;
+    float weight;
+    float count;
+    // While it is built: the sum of the resampling weights, and the target value of the light kept.
+    float weightSum;
+    float target;
+};
+
+Reservoir EmptyReservoir() {
+    Reservoir reservoir;
+    reservoir.light = kNoLight;
+    reservoir.u = float2(0.0, 0.0);
+    reservoir.weight = 0.0;
+    reservoir.count = 0.0;
+    reservoir.weightSum = 0.0;
+    reservoir.target = 0.0;
+    return reservoir;
+}
+
+// Weighs one more sample: kept with the probability of its weight among the weights so far.
+bool Stream(inout Reservoir reservoir, uint light, float2 u, float weight, float target, float pick) {
+    if (!(weight > 0.0)) {
+        return false;
+    }
+    reservoir.weightSum += weight;
+    if (pick * reservoir.weightSum < weight) {
+        reservoir.light = light;
+        reservoir.u = u;
+        reservoir.target = target;
+        return true;
+    }
+    return false;
+}
+
+// A reservoir as it is stored: the light, the point's two numbers in 16 bits each, the weight and the
+// confidence.
+uint4 Pack(Reservoir reservoir) {
+    const uint2 u = uint2(saturate(reservoir.u) * 65535.0 + 0.5);
+    return uint4(reservoir.light, u.x | (u.y << 16), asuint(reservoir.weight), asuint(reservoir.count));
+}
+
+Reservoir Unpack(uint4 packed) {
+    Reservoir reservoir = EmptyReservoir();
+    reservoir.light = packed.x;
+    reservoir.u = float2(packed.y & 0xFFFF, packed.y >> 16) / 65535.0;
+    reservoir.weight = asfloat(packed.z);
+    reservoir.count = asfloat(packed.w);
+    if (reservoir.light == kNoLight || !(reservoir.weight > 0.0)) {
+        reservoir.light = kNoLight;
+        reservoir.weight = 0.0;
+    }
+    return reservoir;
+}
+
+// How much of the past a reservoir keeps: its history stands for at most this many frames.
+static const float kMaxHistory = 20.0;
+
+// kLightCandidates lights drawn by power, each with a point on it, and one kept in proportion to the light
+// the receiver would send, unshadowed: resampled importance sampling. Its confidence is 1.
+Reservoir DrawCandidates(FrameData frame, Receiver receiver, inout uint random) {
+    Reservoir reservoir = EmptyReservoir();
+    for (uint candidate = 0; candidate < kLightCandidates; ++candidate) {
+        const LightChoice choice = ChooseLight(frame, float4(Random(random), Random(random), Random(random), Random(random)));
+        const float2 u = float2(Random(random), Random(random));
+        if (choice.index == kNoLight) {
+            break;
+        }
+        const float target = TargetValue(receiver, ContactLight(frame, choice.index, u, receiver));
+        Stream(reservoir, choice.index, u, target / choice.probability, target, Random(random));
+    }
+    reservoir.count = 1.0;
+    reservoir.weight = reservoir.target > 0.0 ? reservoir.weightSum / (float(kLightCandidates) * reservoir.target) : 0.0;
+    if (reservoir.weight <= 0.0) {
+        reservoir.light = kNoLight;
+    }
+    return reservoir;
+}
+
+// The light of the frame's lights that the receiver sends, from one light chosen among kLightCandidates and
+// one shadow ray: unbiased, on average the light of every light (ADR-0044).
+float3 SampleDirectLight(FrameData frame, Receiver receiver, inout uint random, uint instanceBuffer, uint materialBuffer) {
+    const Reservoir reservoir = DrawCandidates(frame, receiver, random);
+    if (reservoir.light == kNoLight) {
+        return float3(0.0, 0.0, 0.0);
+    }
+    const LightContact contact = ContactLight(frame, reservoir.light, reservoir.u, receiver);
+    if (!Unoccluded(frame, receiver, contact, instanceBuffer, materialBuffer)) {
+        return float3(0.0, 0.0, 0.0);
+    }
+    return contact.illuminance * Reflected(receiver, LightTerms(receiver, contact)) * reservoir.weight;
+}
+
+// A receiver for a surface that rays hit (Surface, in RayQueries.slangh).
+Receiver ReceiverOf(Surface surface, float3 view, uint response) {
+    Receiver receiver;
+    receiver.position = surface.position;
+    receiver.origin = OffsetOrigin(surface.position, surface.faceNormal);
+    receiver.faceNormal = surface.faceNormal;
+    receiver.normal = surface.normal;
+    receiver.view = view;
+    receiver.diffuseColor = surface.diffuseColor;
+    receiver.f0 = surface.f0;
+    receiver.roughness = surface.roughness;
+    receiver.response = response;
+    receiver.emissiveSpecular = true;
+    receiver.nearest = kNearestLight;
+    return receiver;
+}
+
+#endif

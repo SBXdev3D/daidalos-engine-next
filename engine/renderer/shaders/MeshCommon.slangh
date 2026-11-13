@@ -5,8 +5,8 @@
 #ifndef DAIDALOS_MESH_COMMON_SLANGH
 #define DAIDALOS_MESH_COMMON_SLANGH
 
-// What the depth pre-pass and the mesh pass share: the vertex shader, compiled once and used by both
-// pipelines so that their depths match exactly, and the surface of a pixel (ADR-0024).
+// What the G-buffer and the glass pass share: the vertex shader, compiled once and used by both pipelines
+// so that their depths match exactly, and the surface of a pixel (ADR-0024, ADR-0044).
 
 #include "MeshTypes.slangh"
 

@@ -1,6 +1,6 @@
 # ADR-0041: The engine technical spec
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by ADR-0044 (ReSTIR DI and ReSTIR GI are two steps, 9.12 and 9.13; the steps after them move up by one)
 - **Date:** 2026-11-12
 
 ## Context

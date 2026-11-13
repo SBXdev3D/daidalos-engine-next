@@ -22,7 +22,7 @@ struct FrameData {
     float3 cameraPosition;
     float fogDensity;
     float3 fogColor;
-    uint lightCount;
+    uint lightCount;      // Analytic lights, in lightBuffer; the emissive triangles come after them (ADR-0044).
     uint lightBuffer;
     uint skyTexture;      // Index in g_cubeTextures, or kNoTexture for no sky.
     float skyIntensity;   // Multiplies the sky's colors: their luminance in nits, times the exposure.
@@ -31,11 +31,11 @@ struct FrameData {
     uint indirectTexture; // Indirect diffuse light per unit of diffuse color (ADR-0040), or kNoTexture.
     float2 screenTexel;   // One pixel of the frame, in texture coordinates.
     float nearPlane;      // Of the camera: LinearDepth turns a depth into meters.
-    uint clusterBuffer;   // For each cluster, the first of its lights in clusterLightBuffer, and their count.
-    uint clusterLightBuffer; // Indices into lightBuffer.
-    float farPlane;          // Nothing is drawn beyond it: the view distance.
+    uint sourceCount;     // What the alias table draws: the analytic lights, then the emissive draws.
+    uint aliasBuffer;     // The alias table of the sources, by power (Lights.slangh).
+    float farPlane;       // Nothing is drawn beyond it: the view distance.
     float3 cameraForward;
-    float clusterSliceScale;    // A depth's slice is log(depth / nearPlane) * clusterSliceScale.
+    uint emissiveDrawBuffer;    // The emissive draws, the sources after the analytic lights.
     uint accelerationStructure; // The frame's top-level structure in g_accelerationStructures.
     float skyYaw;               // Radians the sky is turned about +Y (ADR-0040).
     float2 jitter; // Where each pixel samples the scene, relative to its center, in texture coordinates.
@@ -44,10 +44,16 @@ struct FrameData {
     float4x4 previousViewProjection;
     uint reflectionTexture; // The light each pixel's specular lobe reflects (ADR-0042), or kNoTexture.
     uint backgroundTexture; // The glass pass's copy of the frame before glass (ADR-0042).
-    uint depthTexture;      // The pre-pass's depth, for the glass pass.
+    uint depthTexture;      // The G-buffer's depth, for the glass pass.
     // What luminance in nits is multiplied by on the GPU (ADR-0043): lights and the sky come multiplied
     // already, emission is multiplied by it where it is read.
     float exposure;
+    uint emissiveTriangleBuffer; // The triangles of the emissive draws, in world space.
+    uint emissiveTriangleCount;
+    // Smoother surfaces trace a sharp reflection, which shows emissive lights: light sampling leaves out their
+    // specular light there, so that each is counted once (ADR-0044). 0 without reflections.
+    float sharpReflections;
+    uint framePadding;
 };
 
 // Where a point of clip space is on the screen, in texture coordinates: y goes down (CONVENTIONS.md,
@@ -66,11 +72,6 @@ float3 WorldPosition(FrameData frame, float2 uv, float depth) {
 float LinearDepth(FrameData frame, float depth) {
     return frame.nearPlane * frame.farPlane / (depth * (frame.farPlane - frame.nearPlane) + frame.nearPlane);
 }
-
-// Matches renderer/src/LightClusters.hpp.
-static const uint kClusterColumns = 16;
-static const uint kClusterRows = 9;
-static const uint kClusterSlices = 24;
 
 // The kinds of light: lights with a position, and directional lights, infinitely far (ADR-0040).
 static const uint kLightNear = 0;
@@ -161,7 +162,7 @@ struct MaterialData {
     float ior;
     uint thin;          // 1: thin glass, which bends nothing; 0: a closed volume.
     float3 absorption;  // Thick glass: exp(-absorption * meters) of each color goes through.
-    float materialPadding;
+    uint emissiveLight; // 1: its emission lights the scene (ADR-0044); 0: it is only seen.
 };
 
 // Fullscreen passes declare their own push constants.
@@ -177,8 +178,6 @@ struct MaterialData {
 [[vk::binding(2, 0)]] StructuredBuffer<JointData> g_joints[];
 [[vk::binding(2, 0)]] StructuredBuffer<SkinVertex> g_skins[];
 [[vk::binding(2, 0)]] StructuredBuffer<LightData> g_lights[];
-[[vk::binding(2, 0)]] StructuredBuffer<uint2> g_clusters[];
-[[vk::binding(2, 0)]] StructuredBuffer<uint> g_clusterLights[];
 // Vertices read as floats, kVertexFloats each, and the previous positions of skinned vertices.
 [[vk::binding(2, 0)]] StructuredBuffer<float> g_vertexFloats[];
 
@@ -187,16 +186,6 @@ static const uint kSamplerLinearClamp = 0;
 static const uint kSamplerLinearRepeat = 1;
 static const uint kSamplerNearestClamp = 2;
 static const uint kSamplerShadowCompare = 3;
-
-// The cluster of a pixel: its tile of the screen, and its slice of depth (ADR-0008).
-uint ClusterOf(FrameData frame, float2 pixel, float3 worldPosition) {
-    const float2 tile = pixel * frame.screenTexel * float2(kClusterColumns, kClusterRows);
-    const uint column = min(uint(tile.x), kClusterColumns - 1);
-    const uint row = min(uint(tile.y), kClusterRows - 1);
-    const float depth = max(dot(worldPosition - frame.cameraPosition, frame.cameraForward), frame.nearPlane);
-    const uint slice = min(uint(max(log(depth / frame.nearPlane) * frame.clusterSliceScale, 0.0)), kClusterSlices - 1);
-    return column + row * kClusterColumns + slice * kClusterColumns * kClusterRows;
-}
 
 // What a light's color is multiplied by to give the illuminance it makes at a point, facing it, in lux
 // (ADR-0043): the inverse square of the distance, faded to zero at the light's range by a smooth window

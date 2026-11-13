@@ -13,7 +13,7 @@ struct ResolvePushConstants {
     uint frameBuffer;
     uint color;    // The frame's HDR color, jittered.
     uint depth;    // Its depth, reverse-Z: 0 where nothing was drawn.
-    uint motion;   // The pre-pass's motion vectors, in texture coordinates.
+    uint motion;   // The G-buffer's motion vectors, in texture coordinates.
     uint reactive; // How little to trust the history, from the particles' coverage.
     uint history;  // The previous output, sampled.
     uint output;   // The new history, a storage image.

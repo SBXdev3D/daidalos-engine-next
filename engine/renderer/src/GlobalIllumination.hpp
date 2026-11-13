@@ -23,7 +23,9 @@ struct GlobalIlluminationInputs {
     rhi::AccelerationStructureHandle structure;
     /// The skinned vertices that rays read, or null.
     rhi::BufferHandle skinnedVertices;
-    /// The pre-pass's depth and normals.
+    /// The frame's emissive triangles, which light sampling reads (MeshPass::EmissiveTriangles).
+    rhi::BufferHandle emissiveTriangles;
+    /// The G-buffer's depth and normals.
     rhi::TextureHandle depth;
     rhi::TextureHandle normals;
     /// Counts the frames: the paths change with it.
@@ -76,6 +78,9 @@ public:
     static constexpr std::uint32_t kCacheCapacity = 1U << 20U;
     /// One update path per kPathSpacing by kPathSpacing pixels.
     static constexpr std::uint32_t kPathSpacing = 4;
+    /// Smoother surfaces trace sharp reflections, which shade what they find: matches kSharpRoughness in
+    /// shaders/GiReflect.slang.
+    static constexpr float kSharpRoughness = 0.3f;
 
 private:
     explicit GlobalIllumination(rhi::Device& device) : m_device(&device) {}

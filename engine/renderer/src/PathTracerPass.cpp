@@ -30,7 +30,8 @@ struct PathTracerPushConstants {
     std::uint32_t width;
     std::uint32_t height;
     std::uint32_t jitter;
-    std::array<std::uint32_t, 2> padding;
+    std::uint32_t directOnly;
+    std::uint32_t padding;
     glm::vec3 background;
     float padding2;
 };
@@ -89,7 +90,8 @@ void PathTracerPass::AddTo(RenderGraph& graph, const PathTracerInputs& inputs, c
                                        m_extent.width,
                                        m_extent.height,
                                        settings.jitter ? 1U : 0U,
-                                       {},
+                                       settings.directOnly ? 1U : 0U,
+                                       0,
                                        settings.background,
                                        0.0f};
     // The first path of an average overwrites whatever the image held.

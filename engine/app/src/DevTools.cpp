@@ -387,7 +387,7 @@ void DevTools::DrawStats() {
         const renderer::FrameStats stats = renderer.Stats();
         TextLine(
             std::format("Draws: {} drawn of {}, {} triangles", stats.drawnDraws, stats.draws, Count(stats.triangles)));
-        TextLine(std::format("Lights: {}, each with ray-traced shadows", stats.lights));
+        TextLine(std::format("Lights: {}, emissive triangles included; one shadow ray per pixel", stats.lights));
         TextLine(std::format("Particle spawns: {}", stats.particleSpawns));
         if (scene::Scene* scene = m_app->CurrentScene()) {
             TextLine(std::format("Entities: {}{}", scene->World().AliveCount(), scene->IsPaused() ? ", paused" : ""));

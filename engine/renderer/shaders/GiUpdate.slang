@@ -3,8 +3,9 @@
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
 // Fills the radiance cache (ADR-0040): one path from the camera per g_gi.spacing by g_gi.spacing pixels,
-// through a random point of its tile. At each surface it meets, a path gathers the surface's emission and
-// the light of one light (DirectDiffuseLight), then goes on in a random direction, as off a matte surface.
+// through a random point of its tile. At each surface it meets, a path gathers the light of one light
+// (DirectDiffuseLight), then goes on in a random direction, as off a matte surface. Emission adds nothing:
+// emissive lights are sampled as lights, and emission that is not a light is only seen (ADR-0044).
 // After kVertices surfaces, it ends where its last ray hits, with the light the cache already holds
 // there: light bounces as many times as the frames go on. Each surface's cell then receives the light
 // the surface sends back along the path.
@@ -52,7 +53,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             break;
         }
         cells[vertices] = FindCellOf(frame, surface.position, surface.faceNormal, true);
-        sent[vertices] = surface.emission + DirectDiffuseLight(surface, frame, random);
+        sent[vertices] = DirectDiffuseLight(surface, frame, random);
         albedos[vertices] = surface.diffuseColor;
         ++vertices;
         if (all(surface.diffuseColor <= 0.0)) {

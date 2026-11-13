@@ -2,7 +2,7 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
-// The motion vectors of the pre-pass, in color (ADR-0037): grey where nothing moved, more red where the
+// The motion vectors of the G-buffer, in color (ADR-0037): grey where nothing moved, more red where the
 // surface came from the right, more green where it came from below, by up to 16 pixels.
 
 struct MotionDebugPushConstants {

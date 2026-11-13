@@ -36,8 +36,11 @@ struct PathTracerSettings {
     /// Changes the random numbers, for the same image with other noise.
     std::uint32_t seed = 0;
     /// Spreads the paths over each pixel, which smooths edges. Without it, every path goes through the
-    /// pixel's center, as the mesh pass shades it: what tests compare.
+    /// pixel's center, as the lighting pass shades it: what tests compare.
     bool jitter = true;
+    /// Direct light only: the lights sampled at the first surface, and the emissive surfaces its second ray
+    /// finds, which needs two bounces. What the lighting pass computes without indirect light (ADR-0044).
+    bool directOnly = false;
 };
 
 /// The reference path tracer (ADR-0034): one path per pixel per frame, into an image that averages the

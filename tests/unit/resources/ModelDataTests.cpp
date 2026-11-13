@@ -86,6 +86,15 @@ TEST(LoadModelFile, EmissionIsInNitsWithItsStrength) {
     EXPECT_EQ(model->materials[0].emissiveFactor, glm::vec3(40.0f, 20.0f, 0.0f));
 }
 
+TEST(LoadModelFile, EmissionLightsUnlessItsExtrasSayOtherwise) {
+    const core::Result<ModelData> model = resources::LoadModelFile(kAssets / "lamp.gltf");
+    ASSERT_TRUE(model.has_value()) << core::Format(model.error());
+    ASSERT_EQ(model->materials.size(), 2U);
+    EXPECT_TRUE(model->materials[0].emissiveLight);
+    EXPECT_EQ(model->materials[1].name, "Sign");
+    EXPECT_FALSE(model->materials[1].emissiveLight);
+}
+
 TEST(LoadModelFile, ReadsTheLightsOfKhrLightsPunctual) {
     const core::Result<ModelData> model = resources::LoadModelFile(kAssets / "lamp.gltf");
     ASSERT_TRUE(model.has_value()) << core::Format(model.error());

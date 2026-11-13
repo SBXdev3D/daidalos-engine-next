@@ -162,6 +162,7 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
 
     std::vector<rhi::BufferUse> traced = cache;
     traced.push_back({inputs.skinnedVertices, rhi::Access::ComputeShaderRead});
+    traced.push_back({inputs.emissiveTriangles, rhi::Access::ComputeShaderRead});
     const std::uint32_t tilesX = (m_extent.width + kPathSpacing - 1) / kPathSpacing;
     const std::uint32_t tilesY = (m_extent.height + kPathSpacing - 1) / kPathSpacing;
     graph.AddPass({.name = "Radiance cache update",

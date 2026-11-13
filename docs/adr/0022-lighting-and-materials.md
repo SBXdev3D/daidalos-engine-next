@@ -1,6 +1,6 @@
 # ADR-0022: Lighting and materials
 
-- **Status:** Accepted; its ambient light replaced by ADR-0040, the specular term of that light by ADR-0042, and its light units and exposure by ADR-0043
+- **Status:** Accepted; its ambient light replaced by ADR-0040, the specular term of that light by ADR-0042, its light units and exposure by ADR-0043, and its forward mesh pass by ADR-0044's deferred lighting
 - **Date:** 2026-11-03
 
 ## Context

@@ -52,6 +52,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     particle.rotation = Random(seed) * 6.2831853;
     particle.rotationSpeed = (Random(seed) * 2.0 - 1.0) * effect.rotationSpeed;
     particle.effect = spawn.effect;
+    particle.light = float3(0.0, 0.0, 0.0);
+    particle.lightSamples = 0.0;
+    particle.reservoir = uint4(0xFFFFFFFF, 0, 0, 0);
     g_particleData[g_particles.particles][index] = particle;
 
     uint slot;

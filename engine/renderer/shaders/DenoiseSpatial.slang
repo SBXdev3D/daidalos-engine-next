@@ -17,7 +17,7 @@
 struct SpatialPushConstants {
     uint frameBuffer;
     uint depth;
-    uint normals; // The pre-pass's normals and roughness.
+    uint normals; // The G-buffer's normals and roughness.
     uint guides;  // The temporal pass's: the frames each pixel has averaged, in alpha.
     uint inputDiffuse; // Light and the variance of its average, sampled.
     uint inputSpecular;

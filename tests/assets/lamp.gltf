@@ -79,6 +79,17 @@
      "emissiveStrength": 40
     }
    }
+  },
+  {
+   "name": "Sign",
+   "emissiveFactor": [
+    0,
+    1,
+    0
+   ],
+   "extras": {
+    "light": false
+   }
   }
  ],
  "accessors": [

@@ -15,6 +15,9 @@
 // see the anchor, behind a wall, takes the cell's second variant instead (ADR-0040).
 // Include after MeshTypes.slangh and RayQueries.slangh. Matches GlobalIllumination.cpp.
 
+#include "Lights.slangh"
+#include "GBuffer.slangh"
+
 struct GiPushConstants {
     uint frameBuffer;
     uint instanceBuffer;
@@ -24,8 +27,8 @@ struct GiPushConstants {
     uint radiance;     // Per cell: the light it sends, and the samples it is worth.
     uint ages;         // Per cell: frames since a path last went through it.
     uint anchors;      // Per cell: the point that made it, off its surface, and 1 once written.
-    uint depth;        // Of the pre-pass.
-    uint normals;      // Of the pre-pass.
+    uint depth;        // Of the G-buffer.
+    uint normals;      // Of the G-buffer.
     uint output;       // Storage image: the indirect light of each pixel.
     uint width;
     uint height;
@@ -57,23 +60,6 @@ static const float kFixedPoint = 1024.0;
 static const float kMaxSampleRadiance = 256.0;
 
 static const float kPi = 3.14159265;
-
-// PCG (O'Neill 2014): a small, good random number generator.
-uint NextRandom(inout uint state) {
-    state = state * 747796405u + 2891336453u;
-    const uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-    return (word >> 22u) ^ word;
-}
-
-float Random(inout uint state) {
-    return float(NextRandom(state) >> 8) * (1.0 / 16777216.0);
-}
-
-uint Pcg(uint value) {
-    const uint state = value * 747796405u + 2891336453u;
-    const uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-    return (word >> 22u) ^ word;
-}
 
 // xxHash32's final mix: a hash independent of Pcg, for the checksum.
 uint XxHash(uint value) {
@@ -216,83 +202,20 @@ float3 CachedRadiance(FrameData frame, float3 position, float3 normal) {
     return cell == kNoCell ? float3(0.0, 0.0, 0.0) : g_cacheRadiance[g_gi.radiance][cell].rgb;
 }
 
-float Luminance(float3 color) {
-    return dot(color, float3(0.2126, 0.7152, 0.0722));
-}
-
-// The light of the frame's lights that a matte surface sends, as if it were matte, from one of them chosen
-// among a few at random, the brighter the more likely (resampled importance sampling, Talbot et al. 2005),
-// and one shadow ray. Unbiased: on average, the light of every light.
+// The light of the frame's lights that a matte surface sends, as if it were matte: one light chosen among a
+// few, the brighter the more likely, and one shadow ray (Lights.slangh). Unbiased: on average, the light
+// of every light.
 float3 DirectDiffuseLight(Surface surface, FrameData frame, inout uint random) {
-    if (frame.lightCount == 0 || all(surface.diffuseColor <= 0.0)) {
+    if (all(surface.diffuseColor <= 0.0)) {
         return float3(0.0, 0.0, 0.0);
     }
-    static const uint kCandidates = 8;
-    float weightSum = 0.0;
-    float3 chosenLight = float3(0.0, 0.0, 0.0);
-    float chosenWeight = 0.0;
-    LightData chosen = g_lights[frame.lightBuffer][0];
-    for (uint candidate = 0; candidate < kCandidates; ++candidate) {
-        const uint index = min(uint(Random(random) * float(frame.lightCount)), frame.lightCount - 1);
-        const LightData light = LightAt(g_lights[frame.lightBuffer][index], surface.position);
-        const float3 offset = light.position - surface.position;
-        const float distanceToLight = length(offset);
-        if (distanceToLight >= light.range) {
-            continue;
-        }
-        const float3 toLight = offset / max(distanceToLight, 0.0001);
-        const float cosine = dot(surface.normal, toLight);
-        if (cosine <= 0.0 || dot(surface.faceNormal, toLight) <= 0.0) {
-            continue;
-        }
-        // The illuminance the light makes, times the Lambert BSDF and the cosine (ADR-0043).
-        const float3 reflected =
-            light.color * Attenuation(light, distanceToLight, toLight) * cosine * surface.diffuseColor / kPi;
-        const float weight = Luminance(reflected);
-        if (weight <= 0.0) {
-            continue;
-        }
-        weightSum += weight;
-        if (Random(random) * weightSum < weight) {
-            chosen = light;
-            chosenLight = reflected;
-            chosenWeight = weight;
-        }
-    }
-    if (weightSum <= 0.0) {
-        return float3(0.0, 0.0, 0.0);
-    }
-    const float2 u = float2(Random(random), Random(random));
-    const float3 toPoint = SampleLightPoint(chosen.position, chosen.radius, surface.position, u) - surface.position;
-    const float distanceToPoint = length(toPoint);
-    if (!LightReaches(surface.position, surface.faceNormal, toPoint / max(distanceToPoint, 0.0001), distanceToPoint,
-                      chosen.range, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer)) {
-        return float3(0.0, 0.0, 0.0);
-    }
-    return chosenLight / chosenWeight * (weightSum / float(kCandidates)) * float(frame.lightCount);
+    return SampleDirectLight(frame, ReceiverOf(surface, surface.faceNormal, kRespondDiffuse), random, g_gi.instanceBuffer,
+                             g_gi.materialBuffer);
 }
 
-// The surface behind a pixel of the pre-pass, in world space.
-float3 PositionAt(FrameData frame, int2 pixel) {
-    const int2 clamped = clamp(pixel, int2(0, 0), int2(g_gi.width, g_gi.height) - 1);
-    const float depth = g_textures[g_gi.depth].Load(int3(clamped, 0)).r;
-    return WorldPosition(frame, (float2(clamped) + 0.5) * frame.screenTexel, depth);
-}
-
-// The surface's own orientation, from the positions of the neighbours on the side closest in depth, so as
-// not to take it across an edge; towards the camera.
+// The surface's own orientation behind a pixel of the G-buffer (GBuffer.slangh).
 float3 FaceNormalAt(FrameData frame, int2 pixel, float3 position) {
-    const float3 left = PositionAt(frame, pixel - int2(1, 0));
-    const float3 right = PositionAt(frame, pixel + int2(1, 0));
-    const float3 up = PositionAt(frame, pixel - int2(0, 1));
-    const float3 down = PositionAt(frame, pixel + int2(0, 1));
-    const float3 across = distance(left, position) < distance(right, position) ? position - left : right - position;
-    const float3 along = distance(up, position) < distance(down, position) ? position - up : down - position;
-    float3 normal = normalize(cross(along, across));
-    if (dot(normal, frame.cameraPosition - position) < 0.0) {
-        normal = -normal;
-    }
-    return normal;
+    return FaceNormalAt(frame, g_gi.depth, pixel, int2(g_gi.width, g_gi.height), position);
 }
 
 #endif
