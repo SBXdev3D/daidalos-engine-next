@@ -13,11 +13,14 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <format>
 #include <numeric>
+#include <span>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace daidalos::app {
 
@@ -393,6 +396,23 @@ void DevTools::DrawStats() {
             TextLine(std::format("Entities: {}{}", scene->World().AliveCount(), scene->IsPaused() ? ", paused" : ""));
         } else {
             TextLine("No scene");
+        }
+    }
+    if (ImGui::CollapsingHeader("Exposure", ImGuiTreeNodeFlags_DefaultOpen)) {
+        // ADR-0048: the eye adapts towards the metered light within the level's range.
+        const renderer::FrameStats stats = renderer.Stats();
+        TextLine(
+            std::format("Eye at EV100 {:.2f}, within {:.1f} to {:.1f}", stats.ev100, stats.ev100Min, stats.ev100Max));
+        TextLine(std::isnan(stats.meteredEv100) ? std::string("Not metered")
+                                                : std::format("Metered EV100 {:.2f}", stats.meteredEv100));
+        const std::span<const std::uint32_t> histogram = renderer.ExposureHistogram();
+        if (!histogram.empty()) {
+            std::vector<float> bins(histogram.size());
+            std::ranges::transform(histogram, bins.begin(),
+                                   [](std::uint32_t weight) { return static_cast<float>(weight); });
+            const float highest = *std::ranges::max_element(bins);
+            ImGui::PlotHistogram("##luminance", bins.data(), static_cast<int>(bins.size()), 0, "log2 nits, -10 to 16",
+                                 0.0f, std::max(highest, 1.0f), ImVec2(420.0f, 60.0f));
         }
     }
     if (ImGui::CollapsingHeader("Device", ImGuiTreeNodeFlags_DefaultOpen)) {

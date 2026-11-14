@@ -16,7 +16,7 @@
 > **Engine decisions (2026-11-05, ADR-0028).** This plan is the long-term target of the engine's Phase 9, which departs from it as follows:
 > - Its phases 0 to 5 are steps 9.1 to 9.12 of the engine roadmap (`OVERVIEW.md`); its Phase 6 (neural tier) is out of scope and its Phase 7 is deferred.
 > - The geometry pipeline (§4: meshlets, mesh shaders, LODs, Hi-Z, visibility buffer, portals) is deferred until a measurement shows rasterization is the bottleneck. The forward pipeline and its prepass stay.
-> - NRD, SHaRC, RTXDI and DLSS are not used: the NVIDIA RTX SDKs License (section 4(e)) conflicted with the engine's CC BY-NC-SA 4.0 licence. The denoiser, radiance cache and ReSTIR are own implementations; upscaling uses FSR 2 (MIT). Since ADR-0047 the engine is MIT or Apache 2.0 and the conflict is gone; the own implementations stay, and DLSS may be considered later as an optional path.
+> - NRD, SHaRC, RTXDI and DLSS are not used: the NVIDIA RTX SDKs License (section 4(e)) conflicted with the engine's CC BY-NC-SA 4.0 licence. The denoiser, radiance cache and ReSTIR are own implementations; upscaling is the engine's own temporal upscaling, with FSR 3.1 (MIT) only if it measures better (ADR-0048). Since ADR-0047 the engine is MIT or Apache 2.0 and the conflict is gone; the own implementations stay, and DLSS may be considered later as an optional path.
 > - Slang is compiled by `slangc` at build time and for hot reload; the engine does not embed the compiler.
 > - One binding model: descriptor indexing. `VK_EXT_descriptor_heap` waits for KHR.
 > - Layered material lobes, IES profiles and area lights come when content needs them.

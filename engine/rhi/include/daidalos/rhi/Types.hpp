@@ -44,6 +44,8 @@ enum class Format {
     Rgba8Srgb,
     Bgra8Unorm,
     Bgra8Srgb,
+    /// Ten bits per color, for HDR10 output.
+    A2b10g10r10Unorm,
     Rg32Float,
     Rgb32Float,
     Rgba32Float,

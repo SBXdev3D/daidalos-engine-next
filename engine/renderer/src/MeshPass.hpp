@@ -47,6 +47,9 @@ struct FrameTargets {
     /// What luminance in nits is multiplied by before tonemapping (ADR-0043): lights, emission and the sky
     /// reach the GPU multiplied by it, so that its targets hold values near those of the screen.
     float exposure = 1.0f;
+    /// Multiplies the fog's color, which is given as it looks at the atmosphere's ev100, into the GPU's
+    /// exposure (ADR-0048).
+    float fogScale = 1.0f;
     /// Smoother surfaces trace sharp reflections, which show emissive lights (ADR-0044): with reflections,
     /// the smaller of GlobalIllumination::kSharpRoughness and the roughness above which no reflection is
     /// traced; 0 without.

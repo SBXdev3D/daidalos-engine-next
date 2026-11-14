@@ -74,12 +74,15 @@ renderer::DebugView DebugViewMode(const core::CVar<std::string>& cvar) {
     if (name == "lights") {
         return renderer::DebugView::Lights;
     }
+    if (name == "bloom") {
+        return renderer::DebugView::Bloom;
+    }
     static std::string warned;
     if (name != "off" && name != warned) {
         warned = name;
         DAI_LOG_WARNING(kModule,
                         "Unknown debug view '{}': use off, rays, path, motion, normals, indirect, radiance_cache, "
-                        "reflections or lights",
+                        "reflections, lights or bloom",
                         name);
     }
 
@@ -102,6 +105,20 @@ renderer::Antialiasing AntialiasingMode(const core::CVar<std::string>& cvar) {
         DAI_LOG_WARNING(kModule, "Unknown antialiasing '{}', using taa: use off or taa", name);
     }
     return renderer::Antialiasing::Taa;
+}
+
+/// The tone mapper named by renderer.tonemap; any other name gives AgX, with a warning once.
+renderer::ToneMapper ToneMapperNamed(const core::CVar<std::string>& cvar) {
+    const std::string& name = cvar.Get();
+    if (name == "neutral") {
+        return renderer::ToneMapper::Neutral;
+    }
+    static std::string reported;
+    if (name != "agx" && reported != name) {
+        reported = name;
+        DAI_LOG_WARNING(kModule, "Unknown tone mapper '{}', using agx: use agx or neutral", name);
+    }
+    return renderer::ToneMapper::AgX;
 }
 
 core::Result<std::uint32_t> WindowDimension(const core::CVar<std::int64_t>& cvar) {
@@ -244,6 +261,18 @@ core::Result<void> Application::LoadConfiguration() {
         m_vsync = m_cvars.Register<bool>("renderer.vsync", true, "Synchronize presentation with the display");
         m_exposure = m_cvars.Register<double>("renderer.exposure_compensation", 0.0,
                                               "Stops added to the scene's exposure: +1 is twice as bright");
+        m_autoExposure = m_cvars.Register<bool>(
+            "renderer.auto_exposure", true,
+            "The eye adapts to the light within the level's range; off, it stays at the level's exposure");
+        m_bloom = m_cvars.Register<double>("renderer.bloom", 0.04,
+                                           "Share of the image that is its bloom, from 0 (none) to 1");
+        m_toneMapper = m_cvars.Register<std::string>(
+            "renderer.tonemap", "agx", "Tone mapping: agx, or neutral (Khronos PBR Neutral) for comparison");
+        m_hdr = m_cvars.Register<bool>("renderer.hdr", true, "HDR10 output on a display with HDR turned on");
+        m_hdrPaperWhite = m_cvars.Register<double>("renderer.hdr_paper_white", 0.0,
+                                                   "Nits of the interface's white in HDR10; 0 takes the system's");
+        m_hdrPeak = m_cvars.Register<double>("renderer.hdr_peak", 0.0,
+                                             "Nits of the brightest light in HDR10; 0 takes the display's");
         m_anisotropy = m_cvars.Register<std::int64_t>(
             "renderer.anisotropy", 16, "Anisotropic filtering of textures, from 1 (off) to 16, read at startup");
         m_indirectLight = m_cvars.Register<bool>("renderer.indirect_light", true,
@@ -285,7 +314,7 @@ core::Result<void> Application::LoadConfiguration() {
         m_debugView = m_cvars.Register<std::string>(
             "renderer.debug_view", "off",
             "Shows a debug view instead of the lit scene: off, rays, path, motion, normals, indirect, "
-            "radiance_cache, reflections or lights");
+            "radiance_cache, reflections, lights or bloom");
         m_pathBounces = m_cvars.Register<std::int64_t>(
             "renderer.path_bounces", 4, "Surfaces a path of the path tracer meets at most; 1 is direct light only");
         m_pathSamples = m_cvars.Register<std::int64_t>(
@@ -443,6 +472,7 @@ core::Result<void> Application::CreateRenderer() {
              .synchronizationValidation = m_syncValidation->Get(),
              .vsync = m_vsync->Get(),
              .exposureCompensation = static_cast<float>(m_exposure->Get()),
+             .image = Image(),
              .anisotropy = static_cast<float>(std::clamp<std::int64_t>(m_anisotropy->Get(), 1, 16)),
              .normalStrength = static_cast<float>(m_normalStrength->Get()),
              .indirectLight = m_indirectLight->Get(),
@@ -460,6 +490,15 @@ core::Result<void> Application::CreateRenderer() {
              .pathSamples = static_cast<std::uint32_t>(std::clamp<std::int64_t>(m_pathSamples->Get(), 1, 1 << 20))}));
     m_renderer.emplace(std::move(created));
     return {};
+}
+
+renderer::ImageConfig Application::Image() const {
+    return {.autoExposure = m_autoExposure->Get(),
+            .bloom = static_cast<float>(std::clamp(m_bloom->Get(), 0.0, 1.0)),
+            .toneMapper = ToneMapperNamed(*m_toneMapper),
+            .hdr = m_hdr->Get(),
+            .hdrPaperWhite = static_cast<float>(std::max(m_hdrPaperWhite->Get(), 0.0)),
+            .hdrPeak = static_cast<float>(std::max(m_hdrPeak->Get(), 0.0))};
 }
 
 renderer::IndirectLightConfig Application::IndirectLight() const {
@@ -508,6 +547,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_window->SetFullscreen(m_fullscreen->Get());
     m_renderer->SetVsync(m_vsync->Get());
     m_renderer->SetExposureCompensation(static_cast<float>(m_exposure->Get()));
+    m_renderer->SetImage(Image());
     m_renderer->SetNormalStrength(static_cast<float>(m_normalStrength->Get()));
     m_renderer->SetIndirectLight(m_indirectLight->Get());
     m_renderer->SetDenoiser(m_denoiser->Get());

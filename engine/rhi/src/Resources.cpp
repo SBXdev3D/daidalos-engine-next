@@ -58,6 +58,7 @@ std::uint32_t BytesPerPixel(Format format) {
     case Format::Rgba8Srgb:
     case Format::Bgra8Unorm:
     case Format::Bgra8Srgb:
+    case Format::A2b10g10r10Unorm:
     case Format::Rg16Float:
     case Format::D32Float:
         return 4;
@@ -103,6 +104,8 @@ VkFormat ToVulkan(Format format) {
         return VK_FORMAT_B8G8R8A8_UNORM;
     case Format::Bgra8Srgb:
         return VK_FORMAT_B8G8R8A8_SRGB;
+    case Format::A2b10g10r10Unorm:
+        return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
     case Format::Rg32Float:
         return VK_FORMAT_R32G32_SFLOAT;
     case Format::Rgb32Float:
@@ -133,6 +136,8 @@ Format FromVulkan(VkFormat format) {
         return Format::Rgba8Srgb;
     case VK_FORMAT_B8G8R8A8_SRGB:
         return Format::Bgra8Srgb;
+    case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+        return Format::A2b10g10r10Unorm;
     default:
         return Format::Undefined;
     }

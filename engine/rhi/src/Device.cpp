@@ -233,7 +233,7 @@ core::Result<void> Device::Impl::CreateInstance(const DeviceConfig& config) {
     }
 
     std::vector<const char*> extensions;
-    extensions.reserve(config.instanceExtensions.size() + 1);
+    extensions.reserve(config.instanceExtensions.size() + 3);
     for (const std::string& extension : config.instanceExtensions) {
         extensions.push_back(extension.c_str());
     }
@@ -249,6 +249,11 @@ core::Result<void> Device::Impl::CreateInstance(const DeviceConfig& config) {
     debugUtils = HasInstanceExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     if (debugUtils) {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    }
+    // HDR output is optional (ADR-0048): without it, swapchains are sRGB.
+    colorSpaces = config.presentation && HasInstanceExtension(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME);
+    if (colorSpaces) {
+        extensions.push_back(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME);
     }
 
     const VkDebugUtilsMessengerCreateInfoEXT messengerInfo{
@@ -408,6 +413,10 @@ core::Result<void> Device::Impl::CreateLogicalDevice(const DeviceConfig& config)
     std::vector<const char*> extensions(kRayTracingExtensions.begin(), kRayTracingExtensions.end());
     if (config.presentation) {
         extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+        hdrMetadata = colorSpaces && HasDeviceExtension(physicalDevice, VK_EXT_HDR_METADATA_EXTENSION_NAME);
+        if (hdrMetadata) {
+            extensions.push_back(VK_EXT_HDR_METADATA_EXTENSION_NAME);
+        }
     }
 
     const VkDeviceCreateInfo createInfo{

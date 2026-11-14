@@ -802,7 +802,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                     glm::inverse(jittered),
                     cameraPosition,
                     view.atmosphere.fogDensity,
-                    view.atmosphere.fogColor,
+                    view.atmosphere.fogColor * targets.fogScale,
                     static_cast<std::uint32_t>(view.lights.size()),
                     m_device->StorageIndex(slot.lights),
                     view.atmosphere.sky ? m_device->BindlessIndex(view.atmosphere.sky) : kNoTexture,

@@ -30,6 +30,16 @@ struct WindowConfig {
     bool vulkan = false;
 };
 
+/// The high dynamic range of the display a window is on, as the system's settings describe it.
+struct HdrInfo {
+    /// The display shows HDR content; false on SDR displays and where the system does not say.
+    bool enabled = false;
+    /// The brightness of SDR white, in nits: what the system shows a white page at.
+    float sdrWhiteNits = 80.0f;
+    /// How many times brighter than SDR white the display can go: 1 without HDR.
+    float headroom = 1.0f;
+};
+
 /// A desktop window. It must be destroyed before the Platform that created it.
 class Window {
 public:
@@ -48,6 +58,9 @@ public:
     /// Size of the drawable area in pixels.
     [[nodiscard]] Extent PixelSize() const;
     [[nodiscard]] bool IsMinimized() const;
+    /// Read from the system each time: it changes when the window moves to another display, or when
+    /// HDR is turned on or off.
+    [[nodiscard]] HdrInfo Hdr() const;
     [[nodiscard]] bool IsFullscreen() const;
     [[nodiscard]] std::string Title() const;
 
