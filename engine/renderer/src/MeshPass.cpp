@@ -12,6 +12,7 @@
 #include <glm/common.hpp>
 #include <glm/exponential.hpp>
 #include <glm/ext/matrix_transform.hpp>
+#include <glm/vec2.hpp>
 #include <shaders/Composite.ps.spv.h>
 #include <shaders/Composite.vs.spv.h>
 #include <shaders/EmissiveAverage.cs.spv.h>
@@ -133,9 +134,13 @@ struct FrameData {
     std::uint32_t emissiveTriangleBuffer;
     std::uint32_t emissiveTriangleCount;
     float sharpReflections;
-    std::uint32_t padding;
+    float mipBias;
+    glm::uvec2 renderSize;
+    glm::uvec2 previousRenderSize;
+    glm::uvec2 targetSize;
+    glm::uvec2 padding;
 };
-static_assert(sizeof(FrameData) == 400);
+static_assert(sizeof(FrameData) == 432);
 
 struct LightData {
     glm::vec3 position;
@@ -772,8 +777,9 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         return {};
     }
     const CameraView& camera = *view.camera;
-    const float aspect =
-        static_cast<float>(targets.extent.width) / static_cast<float>(std::max(targets.extent.height, 1U));
+    // The aspect is the output's: a render size rounded to whole pixels does not change the view.
+    const rhi::Extent targetExtent = targets.targetExtent.width > 0 ? targets.targetExtent : targets.extent;
+    const float aspect = static_cast<float>(targetExtent.width) / static_cast<float>(std::max(targetExtent.height, 1U));
     // The renderer's field of view is across the view, so that wider windows see more to the sides.
     const float verticalFov =
         camera.verticalFov.value_or(2.0f * std::atan(std::tan(m_fieldOfView * 0.5f) / std::max(aspect, 0.01f)));
@@ -798,6 +804,11 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         m_previousViewProjection.has_value() && !view.cut ? *m_previousViewProjection : viewProjection;
     m_previousViewProjection = viewProjection;
     m_viewProjection = viewProjection;
+    // The first frame, and the first after a cut, have no history to read: their own size stands in.
+    const rhi::Extent previousExtent =
+        m_previousRenderExtent.width > 0 && !view.cut ? m_previousRenderExtent : targets.extent;
+    m_previousRenderExtent = targets.extent;
+    m_renderExtent = targets.extent;
     FrameData frame{jittered,
                     glm::inverse(jittered),
                     cameraPosition,
@@ -830,7 +841,11 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                     0,
                     0,
                     targets.sharpReflections,
-                    0};
+                    targets.mipBias,
+                    {targets.extent.width, targets.extent.height},
+                    {previousExtent.width, previousExtent.height},
+                    {targetExtent.width, targetExtent.height},
+                    {0, 0}};
 
     if (!view.jointMatrices.empty()) {
         // Without previous joints, they stood still.
@@ -1113,7 +1128,8 @@ void MeshPass::DestroyShadingTargets(ShadingTargets& targets) const {
 }
 
 rhi::RenderingDesc MeshPass::GBufferRendering(const ShadingTargets& targets, rhi::TextureHandle normals,
-                                              rhi::TextureHandle motion, rhi::TextureHandle depth) {
+                                              rhi::TextureHandle motion, rhi::TextureHandle depth,
+                                              std::optional<rhi::Extent> area) {
     // Where nothing is drawn, nothing moved: the sky's motion comes from the camera alone.
     return {.colorTarget = normals,
             .clearColor = glm::vec4(0.5f, 1.0f, 0.5f, 1.0f),
@@ -1121,7 +1137,8 @@ rhi::RenderingDesc MeshPass::GBufferRendering(const ShadingTargets& targets, rhi
                                  {targets.baseColor, glm::vec4(0.0f)},
                                  {targets.emission, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f)}},
             .depthTarget = depth,
-            .clearDepth = 0.0f};
+            .clearDepth = 0.0f,
+            .area = area};
 }
 
 void MeshPass::AddComposite(RenderGraph& graph, rhi::TextureHandle target, const CompositeInputs& inputs) {
@@ -1140,7 +1157,7 @@ void MeshPass::AddComposite(RenderGraph& graph, rhi::TextureHandle target, const
                                       index(inputs.depth),
                                       0};
     graph.AddPass({.name = "Composite",
-                   .rendering = rhi::RenderingDesc{.colorTarget = target},
+                   .rendering = rhi::RenderingDesc{.colorTarget = target, .area = m_renderExtent},
                    .textures = {{target, rhi::Access::ColorTarget, true},
                                 {shading.baseColor, rhi::Access::FragmentShaderRead},
                                 {shading.emission, rhi::Access::FragmentShaderRead},

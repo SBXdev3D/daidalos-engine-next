@@ -53,8 +53,22 @@ struct FrameData {
     // Smoother surfaces trace a sharp reflection, which shows emissive lights: light sampling leaves out their
     // specular light there, so that each is counted once (ADR-0044). 0 without reflections.
     float sharpReflections;
-    uint framePadding;
+    float mipBias; // Added to the level of the textures the G-buffer samples: log2 of the render scale (ADR-0049).
+    // The frame draws into the top-left corner of its targets (ADR-0049): this many pixels, last frame's, and
+    // the targets' whole size. screenTexel is one pixel of the corner; texture coordinates of the frame go
+    // from 0 to 1 over the corner.
+    uint2 renderSize;
+    uint2 previousRenderSize;
+    uint2 targetSize;
+    uint2 framePadding;
 };
+
+// From texture coordinates of the frame, over the corner it draws into, to those of its targets, for
+// filtered reads: kept half a pixel inside the corner, so that they never read what is outside it.
+float2 FrameToTarget(FrameData frame, float2 uv) {
+    const float2 size = float2(frame.renderSize);
+    return clamp(uv * size, 0.5, size - 0.5) / float2(frame.targetSize);
+}
 
 // Where a point of clip space is on the screen, in texture coordinates: y goes down (CONVENTIONS.md,
 // section 5).

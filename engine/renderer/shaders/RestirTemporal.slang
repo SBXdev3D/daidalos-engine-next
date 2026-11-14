@@ -28,7 +28,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     if (any(previousUv < 0.0) || any(previousUv >= 1.0)) {
         return;
     }
-    const int2 previous = int2(previousUv * float2(g_restir.width, g_restir.height));
+    const int2 previous = int2(previousUv * float2(frame.previousRenderSize));
     const float4 guide = g_textures[g_restir.previousGuides].Load(int3(previous, 0));
     if (!SameSurface(ViewDepth(frame, surface.position), surface.faceNormal, guide.w, guide.xyz)) {
         return;

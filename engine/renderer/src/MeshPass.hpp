@@ -27,7 +27,13 @@ class RenderGraph;
 
 /// The targets of a frame that MeshPass needs to know about.
 struct FrameTargets {
+    /// The pixels the frame draws, in the top-left corner of its targets (ADR-0049).
     rhi::Extent extent;
+    /// The whole size of the targets, the output's: the projection's aspect follows it. extent's when zero.
+    rhi::Extent targetExtent;
+    /// Added to the level of the textures the G-buffer samples: log2 of the render scale, so that textures
+    /// keep the output's detail (ADR-0049).
+    float mipBias = 0.0f;
     /// The indirect diffuse light of the frame, per unit of diffuse color (ADR-0040), which the lighting pass
     /// adds to its lights' light. Null for none: direct light only.
     rhi::TextureHandle indirect;
@@ -130,9 +136,10 @@ public:
     [[nodiscard]] core::Result<ShadingTargets> CreateShadingTargets(rhi::Extent extent) const;
     void DestroyShadingTargets(ShadingTargets& targets) const;
     /// The rendering of RecordGBuffer: normals (kNormalFormat), motion vectors (kMotionFormat), the material
-    /// targets and the depth, all cleared.
+    /// targets and the depth, all cleared, in the top-left corner of this size.
     [[nodiscard]] static rhi::RenderingDesc GBufferRendering(const ShadingTargets& targets, rhi::TextureHandle normals,
-                                                             rhi::TextureHandle motion, rhi::TextureHandle depth);
+                                                             rhi::TextureHandle motion, rhi::TextureHandle depth,
+                                                             std::optional<rhi::Extent> area = std::nullopt);
 
     /// Replaces the shaders of the G-buffer. The glass pass uses the same vertex shader, so that both
     /// compute the same depth. On failure the current pipelines stay in use.
@@ -185,6 +192,8 @@ public:
     [[nodiscard]] std::span<const TracedDraw> TracedDraws() const { return m_traced; }
     /// The storage index of the prepared frame's instances.
     [[nodiscard]] std::uint32_t InstanceDataIndex() const;
+    /// The pixels the prepared frame draws, in the top-left corner of its targets.
+    [[nodiscard]] rhi::Extent RenderExtent() const { return m_renderExtent; }
     /// The view and projection of the prepared frame, without jitter.
     [[nodiscard]] const glm::mat4& ViewProjection() const { return m_viewProjection; }
     /// The storage index of the material table.
@@ -198,7 +207,8 @@ public:
     /// The prepared frame has glass to draw.
     [[nodiscard]] bool HasGlass() const { return m_prepared != nullptr && m_hasGlass; }
     /// Adds the pass that puts the shading targets back together into target, with the fog and the sky, as
-    /// "Composite" (ADR-0039). target has the pass's color format and is written whole.
+    /// "Composite" (ADR-0039). target has the pass's color format; the prepared frame's corner of it is
+    /// written whole.
     void AddComposite(RenderGraph& graph, rhi::TextureHandle target, const CompositeInputs& inputs);
 
     /// The storage index of the prepared frame's FrameData, for the passes that read it.
@@ -399,6 +409,9 @@ private:
     glm::mat4 m_viewProjection{1.0f};
     /// Of the last frame prepared, for its successor's motion vectors.
     std::optional<glm::mat4> m_previousViewProjection;
+    /// The pixels the prepared frame draws, and those of the frame before, whose histories the next reads.
+    rhi::Extent m_renderExtent;
+    rhi::Extent m_previousRenderExtent;
     bool m_hasGlass = false;
 };
 

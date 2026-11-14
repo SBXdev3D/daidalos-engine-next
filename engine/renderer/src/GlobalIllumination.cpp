@@ -135,6 +135,9 @@ core::Result<void> GlobalIllumination::Resize(rhi::Extent extent) {
 }
 
 void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInputs& inputs, Mode mode) {
+    const rhi::Extent extent = inputs.extent.width > 0 ? inputs.extent : m_extent;
+    const std::uint32_t groupsX = (extent.width + kGroupSize - 1) / kGroupSize;
+    const std::uint32_t groupsY = (extent.height + kGroupSize - 1) / kGroupSize;
     GiPushConstants push{inputs.frameBuffer,
                          inputs.instanceBuffer,
                          inputs.materialBuffer,
@@ -146,8 +149,8 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
                          m_device->BindlessIndex(inputs.depth),
                          m_device->BindlessIndex(inputs.normals),
                          m_device->StorageImageIndex(m_output),
-                         m_extent.width,
-                         m_extent.height,
+                         extent.width,
+                         extent.height,
                          inputs.frameIndex,
                          static_cast<std::uint32_t>(mode),
                          kPathSpacing,
@@ -177,8 +180,8 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
     std::vector<rhi::BufferUse> traced = cache;
     traced.push_back({inputs.skinnedVertices, rhi::Access::ComputeShaderRead});
     traced.push_back({inputs.emissiveTriangles, rhi::Access::ComputeShaderRead});
-    const std::uint32_t tilesX = (m_extent.width + kPathSpacing - 1) / kPathSpacing;
-    const std::uint32_t tilesY = (m_extent.height + kPathSpacing - 1) / kPathSpacing;
+    const std::uint32_t tilesX = (extent.width + kPathSpacing - 1) / kPathSpacing;
+    const std::uint32_t tilesY = (extent.height + kPathSpacing - 1) / kPathSpacing;
     graph.AddPass({.name = "Radiance cache update",
                    .group = "Radiance cache",
                    .buffers = traced,
@@ -202,12 +205,11 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
                                 {inputs.normals, rhi::Access::ComputeShaderRead}},
                    .buffers = traced,
                    .structures = {{inputs.structure, rhi::Access::RayQueryRead}}},
-                  [this, push](rhi::CommandList& commands) {
+                  [this, push, groupsX, groupsY](rhi::CommandList& commands) {
                       DAI_PROFILE_SCOPE("renderer::GlobalIllumination::Trace");
                       commands.BindPipeline(m_trace);
                       commands.Push(push);
-                      commands.Dispatch((m_extent.width + kGroupSize - 1) / kGroupSize,
-                                        (m_extent.height + kGroupSize - 1) / kGroupSize);
+                      commands.Dispatch(groupsX, groupsY);
                   });
     if (!inputs.reflections || mode != Mode::Indirect) {
         return;
@@ -220,12 +222,11 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
                                 {inputs.normals, rhi::Access::ComputeShaderRead}},
                    .buffers = traced,
                    .structures = {{inputs.structure, rhi::Access::RayQueryRead}}},
-                  [this, push](rhi::CommandList& commands) {
+                  [this, push, groupsX, groupsY](rhi::CommandList& commands) {
                       DAI_PROFILE_SCOPE("renderer::GlobalIllumination::Reflect");
                       commands.BindPipeline(m_reflect);
                       commands.Push(push);
-                      commands.Dispatch((m_extent.width + kGroupSize - 1) / kGroupSize,
-                                        (m_extent.height + kGroupSize - 1) / kGroupSize);
+                      commands.Dispatch(groupsX, groupsY);
                   });
 }
 

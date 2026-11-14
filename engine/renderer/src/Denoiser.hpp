@@ -16,6 +16,8 @@ class RenderGraph;
 
 /// What the denoiser reads each frame.
 struct DenoiserInputs {
+    /// The pixels the frame draws, in the top-left corner of the targets (ADR-0049); Resize's size when zero.
+    rhi::Extent extent;
     /// Storage index of the frame's FrameData.
     std::uint32_t frameBuffer = 0;
     /// The lighting pass's diffuse light per unit of diffuse color, with 1 in alpha where it may be noisy

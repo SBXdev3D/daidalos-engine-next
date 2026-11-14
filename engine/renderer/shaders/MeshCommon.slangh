@@ -61,8 +61,11 @@ VertexOutput VSMain(VertexInput input, uint vertexId : SV_VulkanVertexID) {
     return output;
 }
 
+// Below the output's resolution, textures are sampled with the bias of the render scale, so that they keep
+// the detail the upscaler can show (ADR-0049).
 float4 SampleTexture(uint texture, float2 uv, float4 fallback) {
-    return texture != kNoTexture ? g_textures[texture].Sample(g_samplers[kSamplerLinearRepeat], uv) : fallback;
+    const float bias = g_frames[g_push.frameBuffer][0].mipBias;
+    return texture != kNoTexture ? g_textures[texture].SampleBias(g_samplers[kSamplerLinearRepeat], uv, bias) : fallback;
 }
 
 // The normal map, in the tangent frame of glTF: the bitangent is cross(normal, tangent) * w. Only red and

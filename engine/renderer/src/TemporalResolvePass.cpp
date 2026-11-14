@@ -9,6 +9,8 @@
 
 #include <shaders/TemporalResolve.cs.spv.h>
 
+#include <algorithm>
+#include <cmath>
 #include <utility>
 
 #include "RenderGraph.hpp"
@@ -46,9 +48,15 @@ float RadicalInverse(std::uint64_t index, std::uint64_t base) {
 
 } // namespace
 
-glm::vec2 Jitter(std::uint64_t frame) {
+std::uint32_t JitterPositions(float scale) {
+    const float clamped = std::clamp(scale, 0.25f, 1.0f);
+    return std::max(kJitterPositions, static_cast<std::uint32_t>(
+                                          std::lround(static_cast<float>(kJitterPositions) / (clamped * clamped))));
+}
+
+glm::vec2 Jitter(std::uint64_t frame, std::uint32_t positions) {
     // The sequence starts at 1: its first point, 0, would be the corner of the pixel twice.
-    const std::uint64_t index = frame % kJitterPositions + 1;
+    const std::uint64_t index = frame % std::max(positions, 1U) + 1;
     return {RadicalInverse(index, 2) - 0.5f, RadicalInverse(index, 3) - 0.5f};
 }
 

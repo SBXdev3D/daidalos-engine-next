@@ -137,12 +137,13 @@ core::Result<void> Denoiser::Resize(rhi::Extent extent) {
 }
 
 void Denoiser::AddTo(RenderGraph& graph, const DenoiserInputs& inputs) {
+    const rhi::Extent extent = inputs.extent.width > 0 ? inputs.extent : m_extent;
     const std::uint32_t previous = m_current;
     m_current = 1 - m_current;
     const auto sampled = [this](rhi::TextureHandle texture) { return m_device->BindlessIndex(texture); };
     const auto storage = [this](rhi::TextureHandle texture) { return m_device->StorageImageIndex(texture); };
-    const std::uint32_t groupsX = (m_extent.width + kGroupSize - 1) / kGroupSize;
-    const std::uint32_t groupsY = (m_extent.height + kGroupSize - 1) / kGroupSize;
+    const std::uint32_t groupsX = (extent.width + kGroupSize - 1) / kGroupSize;
+    const std::uint32_t groupsY = (extent.height + kGroupSize - 1) / kGroupSize;
 
     // Temporal accumulation, into this frame's history.
     const TemporalPushConstants temporal{inputs.frameBuffer,
@@ -161,8 +162,8 @@ void Denoiser::AddTo(RenderGraph& graph, const DenoiserInputs& inputs) {
                                          storage(m_specular.history[m_current]),
                                          m_hasHistory ? 0U : 1U,
                                          inputs.reflections ? sampled(inputs.reflections) : kNoTexture,
-                                         m_extent.width,
-                                         m_extent.height};
+                                         extent.width,
+                                         extent.height};
     PassDesc accumulation{.name = "Denoiser temporal accumulation",
                           .group = "Denoiser",
                           .textures = {{m_guides[m_current], rhi::Access::ComputeShaderWrite, true},
@@ -206,8 +207,8 @@ void Denoiser::AddTo(RenderGraph& graph, const DenoiserInputs& inputs) {
                                            storage(target(m_diffuse)),
                                            storage(target(m_specular)),
                                            1U << iteration,
-                                           m_extent.width,
-                                           m_extent.height};
+                                           extent.width,
+                                           extent.height};
         graph.AddPass({.name = "Denoiser spatial filter",
                        .group = "Denoiser",
                        .textures = {{target(m_diffuse), rhi::Access::ComputeShaderWrite, true},

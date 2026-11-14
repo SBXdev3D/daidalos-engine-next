@@ -20,6 +20,8 @@ dai_add_module(NAME renderer
         src/Bloom.cpp
         src/Bloom.hpp
         src/DisplayTransform.cpp
+        src/DynamicResolution.cpp
+        src/DynamicResolution.hpp
         src/Exposure.cpp
         src/Exposure.hpp
         src/LightUnits.cpp

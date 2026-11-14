@@ -291,6 +291,11 @@ void CommandList::BeginRendering(const RenderingDesc& desc) {
         depthAttachment.clearValue.depthStencil = {desc.clearDepth.value_or(0.0f), 0};
     }
 
+    if (desc.area.has_value()) {
+        DAI_ASSERT(desc.area->width <= extent.width && desc.area->height <= extent.height,
+                   "The area must fit in the targets");
+        extent = *desc.area;
+    }
     const VkRenderingInfo renderingInfo{
         .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
         .renderArea = {{0, 0}, {extent.width, extent.height}},

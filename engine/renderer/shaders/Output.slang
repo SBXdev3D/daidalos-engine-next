@@ -2,8 +2,8 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-// Forms the image the display shows (ADR-0048), drawn as one triangle over the screen: the scene with its
-// bloom, scaled from the GPU's fixed exposure to the eye's, through the display transform, with the
+// Forms the image the display shows (ADR-0048), drawn as one triangle over the screen: the scene, sharpened
+// (ADR-0049), with its bloom, scaled from the GPU's fixed exposure to the eye's, through the display transform, with the
 // interface layer over it, encoded for the swapchain: sRGB, which the format encodes, or HDR10.
 // DisplayTransform.cpp holds the same functions for the CPU.
 
@@ -17,6 +17,7 @@ struct OutputPushConstants {
     float headroom;  // Peak over paper white: 1 in SDR.
     float paperWhite; // Nits of the interface's white and of 1 in the image, in HDR10.
     uint hdr10;
+    float sharpness; // Of the contrast-adaptive sharpening, from 0 (none) to 1.
 };
 
 static const uint kNone = 0xFFFFFFFF;
@@ -112,9 +113,48 @@ float3 PqEncode(float3 nits) {
     return pow((c1 + c2 * y) / (1.0 + c3 * y), m2);
 }
 
+// A reversible tone map, so that sharpening works on values from 0 to 1 whatever the light.
+float3 Compress(float3 color) {
+    return color / (1.0 + max(color.r, max(color.g, color.b)));
+}
+
+float3 Expand(float3 color) {
+    return color / max(1.0 - max(color.r, max(color.g, color.b)), 0.0001);
+}
+
+float3 LoadScene(int2 pixel, int2 size) {
+    return Compress(max(g_textures[g_push.scene].Load(int3(clamp(pixel, int2(0, 0), size - 1), 0)).rgb, 0.0));
+}
+
+// Robust contrast-adaptive sharpening, as FSR's RCAS does it (AMD, MIT): the pixel moves away from its four
+// neighbours by as much as their range allows without leaving it, so that edges sharpen and nothing rings.
+float3 Sharpen(int2 pixel, int2 size, float sharpness) {
+    const float3 north = LoadScene(pixel - int2(0, 1), size);
+    const float3 west = LoadScene(pixel - int2(1, 0), size);
+    const float3 center = LoadScene(pixel, size);
+    const float3 east = LoadScene(pixel + int2(1, 0), size);
+    const float3 south = LoadScene(pixel + int2(0, 1), size);
+    const float3 lowest = min(min(north, west), min(east, south));
+    const float3 highest = max(max(north, west), max(east, south));
+    // The largest negative lobe that keeps the result between 0 and 1, channel by channel.
+    const float3 toLowest = lowest / (4.0 * max(highest, 0.0001));
+    const float3 toHighest = (1.0 - highest) / min(4.0 * lowest - 4.0, -0.0001);
+    const float3 lobes = max(-toLowest, toHighest);
+    const float lobe = max(-0.1875, min(max(lobes.r, max(lobes.g, lobes.b)), 0.0)) * sharpness;
+    return Expand(clamp((lobe * (north + west + east + south) + center) / (4.0 * lobe + 1.0), 0.0, 0.999));
+}
+
 float4 PSMain(float4 position : SV_Position) : SV_Target {
     const int2 pixel = int2(position.xy);
-    float3 color = max(g_textures[g_push.scene].Load(int3(pixel, 0)).rgb, 0.0);
+    float3 color;
+    if (g_push.sharpness > 0.0) {
+        uint width;
+        uint height;
+        g_textures[g_push.scene].GetDimensions(width, height);
+        color = Sharpen(pixel, int2(width, height), g_push.sharpness);
+    } else {
+        color = max(g_textures[g_push.scene].Load(int3(pixel, 0)).rgb, 0.0);
+    }
     if (g_push.bloom != kNone) {
         uint width;
         uint height;

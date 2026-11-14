@@ -134,6 +134,44 @@ TEST_F(RendererTest, SwitchesAntialiasingWhileRunning) {
     EXPECT_EQ(target->Device().ValidationErrorCount(), 0U);
 }
 
+TEST_F(RendererTest, RendersBelowTheOutputsResolution) {
+    std::optional<renderer::Renderer> target = CreateRenderer();
+    if (!target.has_value()) {
+        GTEST_SKIP();
+    }
+    const core::Result<renderer::MeshHandle> mesh = target->CreateMesh(renderer::MakeCube(), "Cube");
+    ASSERT_TRUE(mesh.has_value());
+    const renderer::SceneView view = TestView(*mesh);
+    const platform::Extent size = m_window->PixelSize();
+
+    // A fixed scale (ADR-0049).
+    target->SetResolution({.scale = 0.67f, .dynamic = false});
+    RenderFrames(*target, view, 3);
+    EXPECT_EQ(target->Stats().renderWidth, static_cast<std::uint32_t>(std::lround(size.width * 0.67f)));
+    EXPECT_EQ(target->Stats().renderHeight, static_cast<std::uint32_t>(std::lround(size.height * 0.67f)));
+
+    // A scale that changes every frame keeps every history and reads nothing it should not.
+    for (const float scale : {0.5f, 0.9f, 0.58f, 1.0f, 0.75f, 0.5f}) {
+        target->SetResolution({.scale = scale, .dynamic = false});
+        RenderFrames(*target, view, 1);
+    }
+    // Debug views, and no antialiasing, render at the output's resolution.
+    target->SetDebugView(renderer::DebugView::Motion);
+    RenderFrames(*target, view, 2);
+    EXPECT_EQ(target->Stats().renderWidth, size.width);
+    target->SetDebugView(renderer::DebugView::Off);
+    target->SetAntialiasing(renderer::Antialiasing::Off);
+    RenderFrames(*target, view, 2);
+    EXPECT_EQ(target->Stats().renderWidth, size.width);
+    target->SetAntialiasing(renderer::Antialiasing::Taa);
+
+    // A budget no frame can hold: dynamic resolution goes down to its floor.
+    target->SetResolution({.scale = 1.0f, .dynamic = true, .minScale = 0.5f, .targetFps = 100000.0f});
+    RenderFrames(*target, view, 12);
+    EXPECT_FLOAT_EQ(target->Stats().renderScale, 0.5f);
+    EXPECT_EQ(target->Device().ValidationErrorCount(), 0U);
+}
+
 TEST_F(RendererTest, ShowsEachDebugView) {
     std::optional<renderer::Renderer> target = CreateRenderer();
     if (!target.has_value()) {

@@ -29,6 +29,7 @@
 #include "Bloom.hpp"
 #include "Denoiser.hpp"
 #include "DirectLighting.hpp"
+#include "DynamicResolution.hpp"
 #include "Exposure.hpp"
 #include "GlobalIllumination.hpp"
 #include "MeshPass.hpp"
@@ -62,6 +63,7 @@ struct OutputPushConstants {
     float headroom;
     float paperWhite;
     std::uint32_t hdr10;
+    float sharpness;
 };
 constexpr std::uint32_t kNoTexture = 0xFFFFFFFF;
 /// Stops between a level's darkest and brightest exposure beyond which the GPU's fixed exposure loses
@@ -139,7 +141,8 @@ struct Renderer::Impl {
 
     /// The targets follow the size of the back buffer.
     core::Result<void> ResizeTargets(rhi::Extent extent);
-    /// Reads the timestamps of the last finished frame recorded in this slot into gpuTimes.
+    /// Reads the timestamps of the last finished frame recorded in this slot into gpuTimes, and its whole
+    /// GPU time into frameGpuTime.
     void ReadGpuTimes(std::uint32_t slot);
     void ReloadShaders();
     void SetIndirect(const IndirectLightConfig& config) {
@@ -223,6 +226,14 @@ struct Renderer::Impl {
     /// The timed groups of the frame recorded in each slot, in the order of their timestamps.
     std::array<std::vector<std::string_view>, rhi::kFramesInFlight> timedGroups;
     std::vector<PassTime> gpuTimes;
+    std::optional<double> frameGpuTime;
+    /// The render resolution (ADR-0049): the settings, the scale that holds the budget, and what the last
+    /// frame was rendered at.
+    ResolutionConfig resolution;
+    DynamicResolution dynamicResolution{rhi::kFramesInFlight};
+    std::optional<std::chrono::steady_clock::time_point> lastFrameTime;
+    rhi::Extent renderExtent;
+    float renderScale = 1.0f;
     std::string shaderError;
 #if DAI_DEV_TOOLS
     std::optional<ShaderWatcher> shaderWatcher;
@@ -294,9 +305,11 @@ void Renderer::Impl::ReadGpuTimes(std::uint32_t slot) {
     const std::span<const double> timestamps = device.CompletedTimestamps();
     const std::vector<std::string_view>& groups = timedGroups[slot];
     gpuTimes.clear();
+    frameGpuTime.reset();
     if (timestamps.size() != groups.size() + 1) {
         return;
     }
+    frameGpuTime = timestamps.back() - timestamps.front();
     for (std::size_t group = 0; group < groups.size(); ++group) {
         gpuTimes.push_back({groups[group], timestamps[group + 1] - timestamps[group]});
     }
@@ -353,6 +366,7 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     auto impl = std::make_unique<Impl>(window, std::move(device), std::move(swapchain), config.vsync);
     impl->exposureCompensation = config.exposureCompensation;
     impl->image = config.image;
+    impl->resolution = config.resolution;
     DAI_TRY(impl->OutputPipeline(impl->swapchain.ColorFormat()));
     DAI_TRY_ASSIGN(impl->gbufferDebug, impl->device.CreatePipeline({
                                            .vertexShader = rhi::ToSpirv(kGBufferDebugVsSpirv),
@@ -449,6 +463,10 @@ void Renderer::SetImage(const ImageConfig& config) {
     m_impl->image = config;
 }
 
+void Renderer::SetResolution(const ResolutionConfig& config) {
+    m_impl->resolution = config;
+}
+
 void Renderer::SetIndirectLight(bool enabled) {
     m_impl->indirectLight = enabled;
 }
@@ -518,6 +536,9 @@ FrameStats Renderer::Stats() const {
             .meteredEv100 = impl.meteredEv100,
             .ev100Min = impl.ev100Min,
             .ev100Max = impl.ev100Max,
+            .renderWidth = impl.renderExtent.width,
+            .renderHeight = impl.renderExtent.height,
+            .renderScale = impl.renderScale,
             .meshes = impl.meshPass->MeshCount(),
             .materials = impl.meshPass->MaterialCount(),
             .particleEffects = impl.particlePass->EffectCount()};
@@ -586,6 +607,22 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     core::Result<void> status = impl.ResizeTargets(frame.extent);
     // Temporal antialiasing jitters the camera; the debug views show their own images unjittered.
     const bool taa = impl.antialiasing == Antialiasing::Taa && impl.debugView == DebugView::Off;
+    // The render resolution (ADR-0049). Only temporal antialiasing upscales: without it, and in debug views,
+    // the scene renders at the output's.
+    const auto now = std::chrono::steady_clock::now();
+    const float seconds =
+        impl.lastFrameTime.has_value() ? std::chrono::duration<float>(now - *impl.lastFrameTime).count() : 0.0f;
+    impl.lastFrameTime = now;
+    const ResolutionConfig& resolution = impl.resolution;
+    impl.renderScale = impl.dynamicResolution.Update(
+        impl.frameGpuTime, seconds,
+        {.enabled = taa && resolution.dynamic,
+         .maxScale = taa ? resolution.scale : 1.0f,
+         .minScale = resolution.minScale,
+         .budget = resolution.targetFps > 0.0f ? 0.9 * 1000.0 / resolution.targetFps : 0.0});
+    const rhi::Extent renderExtent = RenderExtent(frame.extent, impl.renderScale);
+    impl.renderExtent = renderExtent;
+    const float renderScale = static_cast<float>(renderExtent.width) / static_cast<float>(frame.extent.width);
     RenderGraph& graph = impl.graph;
     const bool cacheView = impl.debugView == DebugView::RadianceCache;
     const bool reflectionView = impl.debugView == DebugView::Reflections;
@@ -599,10 +636,13 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     if (status) {
         status = impl.rayTracing->Reserve(frame.slot, view.draws.size()).and_then([&](std::uint32_t structure) {
             return impl.meshPass->Prepare(
-                view, {.extent = frame.extent,
+                view, {.extent = renderExtent,
+                       .targetExtent = frame.extent,
+                       // Textures keep the output's detail.
+                       .mipBias = std::log2(renderScale),
                        .indirect = indirect,
                        .accelerationStructure = structure,
-                       .jitter = taa ? Jitter(impl.frameNumber) : glm::vec2(0.0f),
+                       .jitter = taa ? Jitter(impl.frameNumber, JitterPositions(renderScale)) : glm::vec2(0.0f),
                        .frameIndex = frameIndex,
                        .reflections = reflections,
                        .background = impl.background,
@@ -628,7 +668,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     if (status) {
         graph.AddPass(
             {.name = "G-buffer",
-             .rendering = MeshPass::GBufferRendering(impl.shading, impl.normals, impl.motion, impl.depth),
+             .rendering = MeshPass::GBufferRendering(impl.shading, impl.normals, impl.motion, impl.depth, renderExtent),
              .buffers = {skinnedVertices, {impl.meshPass->PreviousSkinnedPositions(), rhi::Access::VertexShaderRead}}},
             [&impl](rhi::CommandList& commands) { impl.meshPass->RecordGBuffer(commands); });
     }
@@ -639,7 +679,8 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
             impl.globalIllumination->Reset();
         }
         impl.globalIllumination->AddTo(graph,
-                                       {.frameBuffer = impl.meshPass->FrameDataIndex(),
+                                       {.extent = renderExtent,
+                                        .frameBuffer = impl.meshPass->FrameDataIndex(),
                                         .instanceBuffer = impl.meshPass->InstanceDataIndex(),
                                         .materialBuffer = impl.meshPass->MaterialDataIndex(),
                                         .structure = impl.rayTracing->Structure(),
@@ -681,7 +722,8 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         DirectLightingSettings settings = impl.restir;
         settings.debug = lightsView;
         impl.directLighting->AddTo(graph,
-                                   {.frameBuffer = impl.meshPass->FrameDataIndex(),
+                                   {.extent = renderExtent,
+                                    .frameBuffer = impl.meshPass->FrameDataIndex(),
                                     .instanceBuffer = impl.meshPass->InstanceDataIndex(),
                                     .materialBuffer = impl.meshPass->MaterialDataIndex(),
                                     .structure = impl.rayTracing->Structure(),
@@ -709,7 +751,8 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         if (!impl.denoised || view.cut) {
             impl.denoiser->Reset();
         }
-        impl.denoiser->AddTo(graph, {.frameBuffer = impl.meshPass->FrameDataIndex(),
+        impl.denoiser->AddTo(graph, {.extent = renderExtent,
+                                     .frameBuffer = impl.meshPass->FrameDataIndex(),
                                      .diffuse = impl.shading.diffuse,
                                      .specular = impl.shading.specular,
                                      .depth = impl.depth,
@@ -728,7 +771,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     if (status && hasFrame) {
         const glm::mat4 cameraWorld = glm::inverse(view.camera->view);
         impl.particlePass->AddDraw(graph, impl.meshPass->FrameDataIndex(), impl.depth, impl.hdr, impl.reactive,
-                                   glm::vec3(cameraWorld[0]), glm::vec3(cameraWorld[1]));
+                                   glm::vec3(cameraWorld[0]), glm::vec3(cameraWorld[1]), renderExtent);
     }
     // Glass, over everything else, which it reads from a copy of the frame (ADR-0042).
     if (status && hasFrame && impl.meshPass->HasGlass()) {
@@ -739,7 +782,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
             [&impl](rhi::CommandList& commands) { commands.CopyTexture(impl.hdr, impl.background); });
         graph.AddPass({.name = "Glass",
                        .group = "Glass",
-                       .rendering = rhi::RenderingDesc{.colorTarget = impl.hdr},
+                       .rendering = rhi::RenderingDesc{.colorTarget = impl.hdr, .area = renderExtent},
                        .textures = {{impl.hdr, rhi::Access::ColorTarget},
                                     {impl.background, rhi::Access::FragmentShaderRead},
                                     {impl.depth, rhi::Access::FragmentShaderRead}},
@@ -879,7 +922,9 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                        .bloomShare = blooms ? bloomShare : 0.0f,
                                        .headroom = hdr10 ? peak / paperWhite : 1.0f,
                                        .paperWhite = paperWhite,
-                                       .hdr10 = hdr10 ? 1U : 0U};
+                                       .hdr10 = hdr10 ? 1U : 0U,
+                                       // Sharpening undoes the softness of the temporal history.
+                                       .sharpness = resolve ? std::clamp(impl.image.sharpness, 0.0f, 1.0f) : 0.0f};
         std::vector<rhi::TextureUse> reads{{frame.backBuffer, rhi::Access::ColorTarget, true},
                                            {source, rhi::Access::FragmentShaderRead}};
         if (layerDrawn) {
