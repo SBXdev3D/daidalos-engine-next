@@ -1,6 +1,6 @@
 # ADR-0013: Licence
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0047
 - **Date:** 2026-10-27
 
 ## Context

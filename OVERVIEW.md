@@ -8,7 +8,7 @@
 **Development environment:** Visual Studio 2022 and CMake, with cross-platform build support planned  
 **Rendering API:** Vulkan 1.4 with mandatory hardware ray tracing, on Windows and Linux (see ADR-0007, ADR-0028, ADR-0031)  
 **Language standard:** C++20 (see ADR-0001)  
-**Licence:** CC BY-NC-SA 4.0 (see ADR-0013)  
+**Licence:** MIT or Apache 2.0, at your option (see ADR-0047)  
 **Repository:** https://github.com/StephaneBX/daidalos-engine-next  
 **Decision records:** `docs/adr/`; coding and math conventions: `docs/CONVENTIONS.md`  
 **Development approach:** Modular architecture, incremental implementation, testable components, and AI-assisted development  
@@ -1480,7 +1480,7 @@ The following table distinguishes candidate technologies from finalized decision
 | GPU memory | Vulkan Memory Allocator | Decided (ADR-0007) |
 | Shaders | Slang compiled with slangc to SPIR-V | Decided (ADR-0031, replacing HLSL and DXC of ADR-0009) |
 | Upscaling | FSR 2 (MIT) behind an engine interface | Decided for Phase 9 (ADR-0028) |
-| Denoising, radiance cache, many-light sampling | Own implementations | Decided (ADR-0028); NVIDIA RTX SDKs (NRD, SHaRC, RTXDI, DLSS) excluded by their licence |
+| Denoising, radiance cache, many-light sampling | Own implementations | Decided (ADR-0028); NVIDIA RTX SDKs (NRD, SHaRC, RTXDI, DLSS) not used; their licence conflict ended with ADR-0047 |
 | Math | GLM | Decided (ADR-0005) |
 | Error handling | tl::expected | Decided (ADR-0003) |
 | Logging | spdlog | Decided, behind an engine facade |
@@ -1712,7 +1712,7 @@ Deliverables:
 - Basic application executable.
 - Unit test target.
 - GitHub Actions CI (Windows MSVC and Linux Clang) and local build presets.
-- Licence file and source headers (CC BY-NC-SA 4.0).
+- Licence file and source headers (CC BY-NC-SA 4.0 at the time; MIT or Apache 2.0 since ADR-0047).
 - Removal of the legacy Visual Studio projects and legacy Core code.
 - Initial project documentation.
 
@@ -1954,7 +1954,7 @@ Hardware ray tracing is mandatory and no raster fallback is kept: each step dele
 15. Froxel volumetric fog with ray-traced shadows and local volumes (a dusty room, a steam pipe), replacing exponential fog.
 16. Quality presets and no stutter (ADR-0041): Low, Medium, High and Ultra set the cost of every feature, chosen at first launch from the GPU; the pipeline cache persists on disk and is rebuilt after a driver or GPU change; a pipeline created during gameplay is logged as a bug; VRAM use against `VK_EXT_memory_budget` in the statistics; each feature has its debug view.
 
-Deferred until measurements justify them: meshlets, mesh shaders, the visibility buffer, Hi-Z occlusion, LODs, portals, async compute, resource aliasing, `VK_EXT_descriptor_heap`, opacity micromaps, shader execution reordering, adaptive ray budgets. Deferred until content needs them: ReSTIR PT, subsurface scattering. Out of scope: the neural rendering tier and NVIDIA's RTX SDKs (licence, see ADR-0028 and ADR-0041).
+Deferred until measurements justify them: meshlets, mesh shaders, the visibility buffer, Hi-Z occlusion, LODs, portals, async compute, resource aliasing, `VK_EXT_descriptor_heap`, opacity micromaps, shader execution reordering, adaptive ray budgets. Deferred until content needs them: ReSTIR PT, subsurface scattering. Out of scope: the neural rendering tier and NVIDIA's RTX SDKs (own implementations instead, see ADR-0028, ADR-0041 and ADR-0047).
 
 Completion criteria:
 

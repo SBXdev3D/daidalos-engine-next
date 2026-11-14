@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // The frame's emissive triangles, each frame (ADR-0044): the corners of each triangle of an emissive draw in
 // world space, with its emission, which light sampling reads (Lights.slangh). An emissive draw that moves, or

@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // The G-buffer (ADR-0044): the one raster pass over the opaque meshes. It writes their depth, their world
 // normals and roughness, their motion vectors (ADR-0037), and what lighting needs of their material: the

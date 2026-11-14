@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Draws the sorted particles as quads facing the camera, back to front (ADR-0025). They fade where they
 // meet what is behind them (soft particles), are lit by the frame's lights unless they glow, with the light

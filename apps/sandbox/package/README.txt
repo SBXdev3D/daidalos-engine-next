@@ -46,6 +46,6 @@ The sandbox writes sandbox.log, and on Windows crash dumps to crashdumps/, in th
 Licences
 --------
 
-The engine and the sandbox: CC BY-NC-SA 4.0, in LICENSE.
+The engine and the sandbox: MIT or Apache 2.0, at your option, in LICENSE-MIT and LICENSE-APACHE.
 The level: assets/Factory/LICENSE.md. The fonts: SIL Open Font License 1.1, in assets/Fonts/OFL.txt.
 The libraries the engine is built with: THIRD_PARTY_NOTICES/.

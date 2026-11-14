@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Puts the frame's light back together (ADR-0039, ADR-0044): the emission of the G-buffer, plus the diffuse
 // light times the surface's diffuse color and the specular light times its specular albedo, as the denoiser

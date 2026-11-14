@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Casts one ray per thread straight down -Z, from (x, y, 10) with x and y read from a buffer, and writes
 // what it hit: the instance's custom index plus one and the distance, or zero for a miss.

@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // One iteration of the denoiser's spatial filter (ADR-0039): an à-trous wavelet, 5 by 5 taps spread
 // `step` pixels apart, which doubles from one iteration to the next (Dammertz et al. 2010). A neighbour

@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // The light each pixel's specular lobe reflects (ADR-0042): one ray from the G-buffer's surface, in a
 // direction drawn from the visible normals of its GGX lobe (SampleSpecularDirection), and the light that

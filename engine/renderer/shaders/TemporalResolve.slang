@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Temporal antialiasing (ADR-0037): blends each jittered frame with the history of the earlier ones,
 // found where the motion vectors say each pixel was. The history is clipped towards the colors around

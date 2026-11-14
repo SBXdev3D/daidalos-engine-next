@@ -1,6 +1,6 @@
 # Factory level
 
-These terms cover this directory. The repository's CC BY-NC-SA 4.0 licence does not extend to the free textures and sounds.
+These terms cover this directory. The author's own files are under the repository's licence, MIT or Apache 2.0 at your option (ADR-0047). That licence does not extend to the free textures and sounds.
 
 | Content | Origin | Terms |
 |---|---|---|

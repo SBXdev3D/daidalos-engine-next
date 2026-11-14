@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // The denoiser's first pass (ADR-0039): adds this frame's diffuse and specular light to their history,
 // found where the motion vectors say each pixel was, if the surface there is the same one. It counts the

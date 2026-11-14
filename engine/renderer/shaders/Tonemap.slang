@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Brings the HDR image into the display's range (ADR-0022), drawn as one triangle over the screen. The
 // target is an sRGB image, which encodes the linear result.

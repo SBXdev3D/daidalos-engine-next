@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // The debug view of the frame's acceleration structure (renderer.debug_view rays, ADR-0033): one ray per
 // pixel from the camera, each instance in its own color, shaded by the angle of the triangle it hits.

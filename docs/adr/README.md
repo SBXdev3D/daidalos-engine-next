@@ -16,7 +16,7 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0010](0010-asset-formats.md) | glTF 2.0 + KTX2 in UASTC, transcoded at load | Accepted, amended |
 | [0011](0011-threading-model.md) | Main-thread logic, one asset worker pool | Accepted |
 | [0012](0012-indoor-visibility.md) | Frustum + BVH, portals only if measured, no BSP | Accepted |
-| [0013](0013-licence.md) | CC BY-NC-SA 4.0 | Accepted |
+| [0013](0013-licence.md) | CC BY-NC-SA 4.0 | Superseded by 0047 |
 | [0014](0014-repository-and-ci.md) | GitHub, GitHub Actions, delete legacy code | Accepted |
 | [0015](0015-development-tooling.md) | Tracy, minidumps, cvars, ImGui, hot reload early | Accepted |
 | [0016](0016-resources.md) | Typed loaders, caches by identity, libraries that own their assets | Accepted, amended |
@@ -50,3 +50,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0044](0044-restir-di-and-deferred-lighting.md) | ReSTIR DI over lights and emissive triangles sampled by power; deferred lighting from a thin G-buffer, replacing light clusters and the forward mesh pass | Accepted |
 | [0045](0045-restir-gi.md) | One bounce lit by the lights before the radiance cache, clamped bounces, and the dark corridor test; ReSTIR GI measured and dropped | Accepted |
 | [0046](0046-texture-tool-and-factory-textures.md) | A KTX2 encoder and `texture-tool`; the factory's 2048 px albedo, normal, roughness and metalness maps in UASTC, height maps kept for Phase 11 | Accepted |
+| [0047](0047-dual-mit-apache-licence.md) | Dual MIT or Apache 2.0 licence for the code and the owner's assets; the NVIDIA SDKs no longer excluded by the licence, own implementations kept | Accepted |

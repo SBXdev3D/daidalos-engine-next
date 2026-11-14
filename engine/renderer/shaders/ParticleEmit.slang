@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Spawns the frame's new particles (ADR-0025): one thread each, taking a free slot from the dead list and
 // adding it to the alive list. When the pool is full, new particles are dropped.

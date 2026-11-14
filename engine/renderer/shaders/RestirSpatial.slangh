@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // ReSTIR DI's spatial reuse (ADR-0044): each pixel combines its reservoir with those of a few neighbours
 // on the same surface, by generalized RIS with pairwise MIS weights (Lin et al. 2022; Wyman et al., "A

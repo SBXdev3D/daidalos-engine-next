@@ -13,7 +13,7 @@ Much of it is done or already on the roadmap (Phase 9, ADR-0028). This ADR recor
 
 ### Kept as decided
 
-- **Own implementations** of ReSTIR, the radiance cache and the denoiser. The spec names RTXDI, NRD, SHaRC, the Neural Radiance Cache, DLSS Super Resolution and Ray Reconstruction, and RTX Character Rendering: all are under the NVIDIA RTX SDKs License, whose section 4(e) conflicts with CC BY-NC-SA 4.0 (ADR-0028). Their algorithms are implemented from the papers, as today. The denoiser's inputs and outputs stay the seam where another would fit (ADR-0039).
+- **Own implementations** of ReSTIR, the radiance cache and the denoiser. The spec names RTXDI, NRD, SHaRC, the Neural Radiance Cache, DLSS Super Resolution and Ray Reconstruction, and RTX Character Rendering: all are under the NVIDIA RTX SDKs License, whose section 4(e) conflicts with CC BY-NC-SA 4.0 (ADR-0028). Their algorithms are implemented from the papers, as today. *Amended by ADR-0047:* the licence conflict is gone with the move to MIT or Apache 2.0. The own implementations stay, and DLSS may be considered later as an optional path. The denoiser's inputs and outputs stay the seam where another would fit (ADR-0039).
 - **Upscaling with FSR 2** (MIT). XeSS only if its licence allows it.
 - **One binding model**, descriptor indexing. `VK_EXT_descriptor_heap` waits until it is KHR and a measurement shows the binding model costs anything: two binding models means two paths to test, on one GPU.
 - **Async compute and resource aliasing** when a measurement asks for them (ADR-0028). The render graph exists; the spec's "build it early" is met.

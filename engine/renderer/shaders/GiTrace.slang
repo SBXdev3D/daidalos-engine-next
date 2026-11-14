@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // The indirect diffuse light of each pixel (ADR-0040, ADR-0045): GiRays() rays from the
 // G-buffer's surface in random directions, more often near its normal, and the light that comes back along

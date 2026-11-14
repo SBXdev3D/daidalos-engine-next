@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Blends the light the update paths added to each cell this frame into the light the cell holds
 // (ADR-0040). Each sample counts as much as each of the samples before it, but the older ones weigh less

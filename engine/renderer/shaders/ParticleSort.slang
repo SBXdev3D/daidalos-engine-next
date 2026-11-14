@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Bitonic sort of the particles by depth, farthest first, so that blending draws them back to front
 // (ADR-0025). Steps that compare keys at least kLocalSize apart run one per dispatch, over the whole pool;

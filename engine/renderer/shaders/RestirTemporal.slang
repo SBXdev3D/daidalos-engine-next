@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // ReSTIR DI's temporal reuse (ADR-0044): each pixel finds its surface in the last frame, through its motion
 // vector, where the last frame's face normal and depth agree, and combines its new reservoir with the one kept

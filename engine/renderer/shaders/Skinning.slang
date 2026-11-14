@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Skins the vertices of one skinned draw into world space, once per frame (ADR-0033). Rasterization and
 // ray tracing both use the result, so they see the same surface. Their positions with the previous

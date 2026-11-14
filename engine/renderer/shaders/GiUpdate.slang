@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Fills the radiance cache (ADR-0040): one path from the camera per g_gi.spacing by g_gi.spacing pixels,
 // through a random point of its tile. At each surface it meets, a path gathers the light of one light
