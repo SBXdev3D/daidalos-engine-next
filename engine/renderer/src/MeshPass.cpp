@@ -792,6 +792,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
 
     const glm::vec3 cameraPosition = glm::inverse(camera.view)[3];
     const glm::mat4 projection = math::PerspectiveReverseZ(verticalFov, aspect, camera.nearPlane, farPlane);
+    m_perspective = {.verticalFov = verticalFov, .aspect = aspect, .nearPlane = camera.nearPlane, .farPlane = farPlane};
     const glm::mat4 viewProjection = projection * camera.view;
     // The jitter moves the image in clip space, where y goes up and the screen is 2 wide.
     const glm::vec2 extent(static_cast<float>(std::max(targets.extent.width, 1U)),

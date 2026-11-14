@@ -86,6 +86,14 @@ struct ImageConfig {
 /// The resolution the scene is rendered at, below the output's, and how it moves to hold the frame rate
 /// (ADR-0049). Temporal antialiasing upscales it to the output; without it, and in debug views, the scene
 /// renders at the output's resolution.
+/// What upscales the frame from the render resolution to the output's, with temporal antialiasing.
+enum class Upscaler : std::uint8_t {
+    /// The engine's own (ADR-0049).
+    Engine,
+    /// AMD FSR 3.1, run by the engine (ADR-0050).
+    Fsr3,
+};
+
 struct ResolutionConfig {
     /// Render size over output size, per axis, from 0.25 to 1: the scale without dynamic resolution, its
     /// ceiling with it.
@@ -95,6 +103,7 @@ struct ResolutionConfig {
     float minScale = 0.5f;
     /// Frames per second the GPU's budget is set for: 90% of a frame's time.
     float targetFps = 60.0f;
+    Upscaler upscaler = Upscaler::Engine;
 };
 
 struct RendererConfig {

@@ -1,6 +1,6 @@
 # ADR-0049: Temporal upscaling and dynamic resolution
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by 0050
 - **Date:** 2026-11-14
 - **Amends:** ADR-0037 (the resolve becomes an upscaler; sharpening is the engine's own), ADR-0048 (the test that decides whether FSR 3.1 is added), ADR-0041 (FSR 3.1 becomes step 9.16; volumetrics 9.17, presets and pipelines 9.18)
 
@@ -36,7 +36,7 @@ On the RTX 3090, the factory takes 6.5 ms of GPU time at 1080p: dynamic resoluti
 
 - **On the CPU**, as auto-exposure is (ADR-0048), and tested there: the GPU time of the frame that comes back, `kFramesInFlight` frames later, from the timestamps the statistics already read.
 - **Down at once, up slowly**: over the budget, the scale drops to what the budget allows, assuming the cost follows the pixels; under 85% of it for half a second, it rises by a step. Steps of 2.5% of the scale, so that it does not hunt.
-- **Settings:** `renderer.render_scale` (1.0 by default): the scale when dynamic resolution is off, its ceiling when it is on. `renderer.dynamic_resolution` (on). `renderer.min_render_scale` (0.5). `renderer.target_fps` (30, 60 or 120; 60): the GPU's budget is 90% of its frame time. The menu has one Resolution row, as the options screen had room for one: Dynamic (the default: up to the window's, down to half as the GPU needs), or fixed at Native, Quality (67%), Balanced (58%) or Performance (50%). The statistics show the render size. Without temporal antialiasing, and in debug views, the scale is 1.
+- **Settings:** `renderer.render_scale` (1.0 by default): the scale when dynamic resolution is off, its ceiling when it is on. `renderer.dynamic_resolution` (on). `renderer.min_render_scale` (0.5). `renderer.target_fps` (30 to 240; 60): the GPU's budget is 90% of its frame time. The menu has a Resolution row: Dynamic (the default: up to the window's, down to half as the GPU needs), or fixed at Native, Quality (67%), Balanced (58%) or Performance (50%). A Target frame rate row sets the frame rate dynamic resolution holds, from 30 to 240 fps (60 by default); the options' rows are 50 pixels high instead of 54 to fit it. The statistics show the render size. Without temporal antialiasing, and in debug views, the scale is 1.
 
 ### Whether FSR 3.1 is added
 
@@ -81,7 +81,7 @@ The resolve costs 0.21 ms at 1080p and 0.32 ms at 1440p, at any scale; the passe
 - The targets at render resolution keep the output's memory at every scale.
 - Every pass that turns pixels into texture coordinates uses the render size: a new pass that uses its target's size instead is wrong below 100%, and the tests at 67% are there to catch it.
 - Dynamic resolution is checked with a budget no frame holds, in the renderer's test; on the RTX 3090 the factory holds 60 fps at 1440p native (11.5 ms), so it stays at 100% there.
-- FSR 3.1 is step 9.16; volumetrics move to 9.17, presets and pipelines to 9.18.
+- FSR 3.1 is step 9.16; volumetrics move to 9.17, presets and pipelines to 9.18. ADR-0050 built it: the mirror room's gap was the upscaler's, FSR did not beat the engine's by this measure but flickers less, and it is kept as an option.
 
 ## Alternatives considered
 

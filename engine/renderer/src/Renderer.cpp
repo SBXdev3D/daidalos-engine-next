@@ -31,6 +31,7 @@
 #include "DirectLighting.hpp"
 #include "DynamicResolution.hpp"
 #include "Exposure.hpp"
+#include "Fsr3Upscaler.hpp"
 #include "GlobalIllumination.hpp"
 #include "MeshPass.hpp"
 #include "ParticlePass.hpp"
@@ -97,6 +98,7 @@ struct Renderer::Impl {
         exposureMeter.reset();
         bloom.reset();
         temporalResolve.reset();
+        fsr3.reset();
         denoiser.reset();
         directLighting.reset();
         if (meshPass.has_value()) {
@@ -160,6 +162,10 @@ struct Renderer::Impl {
     std::optional<ParticlePass> particlePass;
     std::optional<UiPass> uiPass;
     std::optional<TemporalResolvePass> temporalResolve;
+    /// Created with the renderer; its targets only once it upscales a frame.
+    std::optional<Fsr3Upscaler> fsr3;
+    /// The upscaler of the last frame resolved.
+    Upscaler upscaledBy = Upscaler::Engine;
     std::optional<ExposureMeter> exposureMeter;
     std::optional<Bloom> bloom;
     /// The eye's exposure, the last metering and histogram, and the range of the last frame (ADR-0048).
@@ -394,6 +400,8 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     impl->particlePass.emplace(std::move(particlePass));
     DAI_TRY_ASSIGN(TemporalResolvePass temporalResolve, TemporalResolvePass::Create(impl->device));
     impl->temporalResolve.emplace(std::move(temporalResolve));
+    DAI_TRY_ASSIGN(Fsr3Upscaler fsr3, Fsr3Upscaler::Create(impl->device));
+    impl->fsr3.emplace(std::move(fsr3));
     DAI_TRY_ASSIGN(ExposureMeter exposureMeter, ExposureMeter::Create(impl->device));
     impl->exposureMeter.emplace(std::move(exposureMeter));
     DAI_TRY_ASSIGN(Bloom bloom, Bloom::Create(impl->device));
@@ -633,6 +641,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     const bool reflect = indirectLight && (impl.reflections || reflectionView) && !cacheView;
     const rhi::TextureHandle reflections = reflect ? impl.globalIllumination->Reflections() : rhi::TextureHandle{};
     const std::uint32_t frameIndex = impl.frameIndex++;
+    const glm::vec2 jitter = taa ? Jitter(impl.frameNumber, JitterPositions(renderScale)) : glm::vec2(0.0f);
     if (status) {
         status = impl.rayTracing->Reserve(frame.slot, view.draws.size()).and_then([&](std::uint32_t structure) {
             return impl.meshPass->Prepare(
@@ -642,7 +651,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                        .mipBias = std::log2(renderScale),
                        .indirect = indirect,
                        .accelerationStructure = structure,
-                       .jitter = taa ? Jitter(impl.frameNumber, JitterPositions(renderScale)) : glm::vec2(0.0f),
+                       .jitter = jitter,
                        .frameIndex = frameIndex,
                        .reflections = reflections,
                        .background = impl.background,
@@ -794,16 +803,37 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     }
     // After everything the frame draws in HDR. A frame that does not follow the last one resolved starts
     // the history over.
+    const Upscaler upscaler = resolution.upscaler;
+    if (status && hasFrame && taa && upscaler == Upscaler::Fsr3) {
+        status = impl.fsr3->Resize(frame.extent);
+    }
     const bool resolve = status && hasFrame && taa;
     if (resolve) {
-        if (!impl.resolved || view.cut) {
-            impl.temporalResolve->Reset();
+        // A change of upscaler starts the new one's history over.
+        const bool restart = !impl.resolved || view.cut || upscaler != impl.upscaledBy;
+        if (upscaler == Upscaler::Fsr3) {
+            if (restart) {
+                impl.fsr3->Reset();
+            }
+            impl.fsr3->AddTo(graph, {.color = impl.hdr,
+                                     .depth = impl.depth,
+                                     .motion = impl.motion,
+                                     .reactive = impl.reactive,
+                                     .renderExtent = renderExtent,
+                                     .jitter = jitter,
+                                     .perspective = impl.meshPass->FramePerspective(),
+                                     .seconds = seconds});
+        } else {
+            if (restart) {
+                impl.temporalResolve->Reset();
+            }
+            impl.temporalResolve->AddTo(graph, {.frameBuffer = impl.meshPass->FrameDataIndex(),
+                                                .color = impl.hdr,
+                                                .depth = impl.depth,
+                                                .motion = impl.motion,
+                                                .reactive = impl.reactive});
         }
-        impl.temporalResolve->AddTo(graph, {.frameBuffer = impl.meshPass->FrameDataIndex(),
-                                            .color = impl.hdr,
-                                            .depth = impl.depth,
-                                            .motion = impl.motion,
-                                            .reactive = impl.reactive});
+        impl.upscaledBy = upscaler;
         ++impl.frameNumber;
     }
     impl.resolved = resolve;
@@ -898,8 +928,9 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                           : illuminate && reflectionView ? impl.globalIllumination->Reflections()
                                           : illuminate && indirectView   ? impl.globalIllumination->Output()
                                           : light && lightsView          ? impl.directLighting->DebugOutput()
-                                          : resolve                      ? impl.temporalResolve->Output()
-                                                                         : impl.hdr;
+                                          : resolve && upscaler == Upscaler::Fsr3 ? impl.fsr3->Output()
+                                          : resolve                               ? impl.temporalResolve->Output()
+                                                                                  : impl.hdr;
 
         // The lit scene is metered for the next frames' exposure; debug views are not.
         if (adapts && hasFrame && impl.debugView == DebugView::Off) {

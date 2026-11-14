@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
+#include <cstdlib>
 #include <format>
 #include <functional>
 #include <optional>
@@ -175,9 +177,11 @@ MenuChoice DrawOptions(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud
 
     const float left = (canvas.Size().x - kRowWidth) * 0.5f;
     float y = 160.0f;
+    // Rows a little shorter than the other menus', so that twelve fit a 1080-pixel-high canvas.
+    constexpr float kOptionHeight = 50.0f;
     const auto row = [&]() {
-        const ui::Rect rect{{left, y}, {kRowWidth, kRowHeight}};
-        y += kRowHeight + (kGap * 0.5f);
+        const ui::Rect rect{{left, y}, {kRowWidth, kOptionHeight}};
+        y += kOptionHeight + (kGap * 0.35f);
         return rect;
     };
     const auto section = [&](std::string_view name) {
@@ -233,6 +237,20 @@ MenuChoice DrawOptions(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud
     if (ui.Choice("Resolution", row(), scaleIndex, kScaleNames)) {
         Change(app, "renderer.dynamic_resolution", scaleIndex == 0 ? "true" : "false", changed);
         Change(app, "renderer.render_scale", std::format("{:.2f}", kScales[scaleIndex]), changed);
+    }
+    // The frame rate dynamic resolution holds; the nearest listed one is shown for a value set elsewhere.
+    constexpr std::array<std::int64_t, 7> kFrameRates{30, 60, 90, 120, 144, 165, 240};
+    constexpr std::array<std::string_view, 7> kFrameRateNames{"30 fps",  "60 fps",  "90 fps", "120 fps",
+                                                              "144 fps", "165 fps", "240 fps"};
+    const std::int64_t frameRate = SettingOr<std::int64_t>(app, "renderer.target_fps", 60);
+    std::size_t frameRateIndex = 0;
+    for (std::size_t index = 1; index < kFrameRates.size(); ++index) {
+        if (std::abs(kFrameRates[index] - frameRate) < std::abs(kFrameRates[frameRateIndex] - frameRate)) {
+            frameRateIndex = index;
+        }
+    }
+    if (ui.Choice("Target frame rate", row(), frameRateIndex, kFrameRateNames)) {
+        Change(app, "renderer.target_fps", std::to_string(kFrameRates[frameRateIndex]), changed);
     }
     toggle("Indirect light", "renderer.indirect_light");
     // Stops of exposure compensation (ADR-0043): one more is twice as bright.

@@ -38,7 +38,7 @@ The sandbox is a first-person demo in a dark factory, the remake of the legacy e
 | Optional | [Vulkan SDK](https://vulkan.lunarg.com/), for the validation layers | `vulkan-validationlayers` |
 | Formatting | clang-format 19 (bundled with Visual Studio's "C++ Clang tools" component) | clang-format 19 |
 
-Dependencies (SDL3, spdlog, GoogleTest, tl-expected, Vulkan headers, volk, the Vulkan Memory Allocator, Slang, Dear ImGui, fastgltf, libktx, stb, and Tracy for the profile presets) are installed automatically by vcpkg in manifest mode during the CMake configure step. They are listed in `vcpkg.json`, and their versions are pinned by the registry baseline in `vcpkg-configuration.json`. The GPU tests also use NVIDIA's FLIP (BSD 3-Clause), whose single header is in `third_party/flip`.
+Dependencies (SDL3, spdlog, GoogleTest, tl-expected, Vulkan headers, volk, the Vulkan Memory Allocator, Slang, Dear ImGui, fastgltf, libktx, stb, and Tracy for the profile presets) are installed automatically by vcpkg in manifest mode during the CMake configure step. They are listed in `vcpkg.json`, and their versions are pinned by the registry baseline in `vcpkg-configuration.json`. The GPU tests also use NVIDIA's FLIP (BSD 3-Clause), whose single header is in `third_party/flip`. The renderer includes AMD's FSR 3.1 shaders (MIT), in `third_party/fidelityfx-fsr3`.
 
 ### vcpkg
 

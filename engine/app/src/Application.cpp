@@ -108,6 +108,19 @@ renderer::Antialiasing AntialiasingMode(const core::CVar<std::string>& cvar) {
 }
 
 /// The tone mapper named by renderer.tonemap; any other name gives AgX, with a warning once.
+renderer::Upscaler UpscalerNamed(const core::CVar<std::string>& cvar) {
+    const std::string& name = cvar.Get();
+    if (name == "fsr") {
+        return renderer::Upscaler::Fsr3;
+    }
+    static std::string reported;
+    if (name != "engine" && reported != name) {
+        reported = name;
+        DAI_LOG_WARNING(kModule, "Unknown upscaler '{}', using engine: use engine or fsr", name);
+    }
+    return renderer::Upscaler::Engine;
+}
+
 renderer::ToneMapper ToneMapperNamed(const core::CVar<std::string>& cvar) {
     const std::string& name = cvar.Get();
     if (name == "neutral") {
@@ -278,7 +291,10 @@ core::Result<void> Application::LoadConfiguration() {
         m_minRenderScale = m_cvars.Register<double>("renderer.min_render_scale", 0.5,
                                                     "Lowest render size over the window's with dynamic resolution");
         m_targetFps = m_cvars.Register<std::int64_t>(
-            "renderer.target_fps", 60, "Frames per second dynamic resolution holds on the GPU: 30, 60 or 120");
+            "renderer.target_fps", 60, "Frames per second dynamic resolution holds on the GPU, from 30 to 240");
+        m_upscaler = m_cvars.Register<std::string>(
+            "renderer.upscaler", "engine",
+            "What upscales the render resolution with temporal antialiasing: engine, or fsr (AMD FSR 3.1)");
         m_toneMapper = m_cvars.Register<std::string>(
             "renderer.tonemap", "agx", "Tone mapping: agx, or neutral (Khronos PBR Neutral) for comparison");
         m_hdr = m_cvars.Register<bool>("renderer.hdr", true, "HDR10 output on a display with HDR turned on");
@@ -521,7 +537,8 @@ renderer::ResolutionConfig Application::Resolution() const {
     return {.scale = scale(m_renderScale->Get()),
             .dynamic = m_dynamicResolution->Get(),
             .minScale = scale(m_minRenderScale->Get()),
-            .targetFps = static_cast<float>(std::clamp<std::int64_t>(m_targetFps->Get(), 30, 240))};
+            .targetFps = static_cast<float>(std::clamp<std::int64_t>(m_targetFps->Get(), 30, 240)),
+            .upscaler = UpscalerNamed(*m_upscaler)};
 }
 
 renderer::IndirectLightConfig Application::IndirectLight() const {

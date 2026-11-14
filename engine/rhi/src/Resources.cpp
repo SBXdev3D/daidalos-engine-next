@@ -54,12 +54,16 @@ std::uint32_t BytesPerPixel(Format format) {
         return 0;
     case Format::R8Unorm:
         return 1;
+    case Format::R16Float:
+        return 2;
     case Format::Rgba8Unorm:
     case Format::Rgba8Srgb:
     case Format::Bgra8Unorm:
     case Format::Bgra8Srgb:
     case Format::A2b10g10r10Unorm:
     case Format::Rg16Float:
+    case Format::R32Float:
+    case Format::R32Uint:
     case Format::D32Float:
         return 4;
     case Format::Rg32Float:
@@ -118,6 +122,12 @@ VkFormat ToVulkan(Format format) {
         return VK_FORMAT_R16G16_SFLOAT;
     case Format::R8Unorm:
         return VK_FORMAT_R8_UNORM;
+    case Format::R16Float:
+        return VK_FORMAT_R16_SFLOAT;
+    case Format::R32Float:
+        return VK_FORMAT_R32_SFLOAT;
+    case Format::R32Uint:
+        return VK_FORMAT_R32_UINT;
     case Format::D32Float:
         return VK_FORMAT_D32_SFLOAT;
     case Format::Bc5Unorm:

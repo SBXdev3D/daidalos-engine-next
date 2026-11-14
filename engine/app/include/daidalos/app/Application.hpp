@@ -192,6 +192,7 @@ private:
     std::optional<core::CVar<bool>> m_dynamicResolution;
     std::optional<core::CVar<double>> m_minRenderScale;
     std::optional<core::CVar<std::int64_t>> m_targetFps;
+    std::optional<core::CVar<std::string>> m_upscaler;
     std::optional<core::CVar<std::string>> m_toneMapper;
     std::optional<core::CVar<bool>> m_hdr;
     std::optional<core::CVar<double>> m_hdrPaperWhite;

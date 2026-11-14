@@ -7,7 +7,9 @@ include_guard(GLOBAL)
 #   dai_add_shaders(TARGET renderer
 #       SOURCES shaders/Mesh.slang        # compiled, with VSMain and PSMain
 #       COMPUTE shaders/Particles.slang   # compiled, with CSMain: <shaders/Particles.cs.spv.h>, kParticlesCsSpirv
-#       INCLUDES shaders/Common.slangh)   # rebuild the sources when they change
+#       INCLUDES shaders/Common.slangh    # rebuild the sources when they change
+#       INCLUDE_DIRECTORIES dir           # searched by #include, after the source's own directory
+#       ARGUMENTS -DNAME=1)               # more slangc options, for these sources only
 
 # The slangc options, shared with hot reload: they must match kSlangArguments in
 # engine/renderer/src/ShaderCompiler.cpp. Matrices are column-major in memory, as GLM writes them.
@@ -20,7 +22,7 @@ set(DAI_SLANG_ARGUMENTS
 
 set(DAI_EMBED_SPIRV_SCRIPT "${CMAKE_CURRENT_LIST_DIR}/EmbedSpirv.cmake")
 
-function(dai_compile_shader name source entry stage suffix includes outputVariable)
+function(dai_compile_shader name source entry stage suffix includes arguments outputVariable)
     set(outputRoot "${CMAKE_CURRENT_BINARY_DIR}/generated")
     cmake_path(ABSOLUTE_PATH source NORMALIZE OUTPUT_VARIABLE sourcePath)
     cmake_path(GET sourcePath PARENT_PATH sourceDirectory)
@@ -29,7 +31,7 @@ function(dai_compile_shader name source entry stage suffix includes outputVariab
     set(header "${spirv}.h")
     add_custom_command(
         OUTPUT "${header}"
-        COMMAND "${SLANGC_EXECUTABLE}" ${DAI_SLANG_ARGUMENTS} -entry ${entry} -stage ${stage}
+        COMMAND "${SLANGC_EXECUTABLE}" ${DAI_SLANG_ARGUMENTS} ${arguments} -entry ${entry} -stage ${stage}
             -I "${sourceDirectory}" -o "${spirv}" "${sourcePath}"
         COMMAND "${CMAKE_COMMAND}" -DINPUT=${spirv} -DOUTPUT=${header} -DNAME=k${name}${suffix}Spirv
             -P "${DAI_EMBED_SPIRV_SCRIPT}"
@@ -40,21 +42,28 @@ function(dai_compile_shader name source entry stage suffix includes outputVariab
 endfunction()
 
 function(dai_add_shaders)
-    cmake_parse_arguments(PARSE_ARGV 0 ARG "" "TARGET" "SOURCES;COMPUTE;INCLUDES")
+    cmake_parse_arguments(PARSE_ARGV 0 ARG "" "TARGET" "SOURCES;COMPUTE;INCLUDES;INCLUDE_DIRECTORIES;ARGUMENTS")
     set(outputRoot "${CMAKE_CURRENT_BINARY_DIR}/generated")
     file(MAKE_DIRECTORY "${outputRoot}/shaders")
 
     list(TRANSFORM ARG_INCLUDES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/" OUTPUT_VARIABLE includes)
+    set(arguments ${ARG_ARGUMENTS})
+    foreach(directory IN LISTS ARG_INCLUDE_DIRECTORIES)
+        cmake_path(ABSOLUTE_PATH directory NORMALIZE OUTPUT_VARIABLE directoryPath)
+        list(APPEND arguments -I "${directoryPath}")
+        file(GLOB_RECURSE directoryHeaders CONFIGURE_DEPENDS "${directoryPath}/*.h")
+        list(APPEND includes ${directoryHeaders})
+    endforeach()
     set(outputs)
     foreach(source IN LISTS ARG_SOURCES)
         cmake_path(GET source STEM name)
-        dai_compile_shader(${name} ${source} VSMain vertex Vs "${includes}" vertexHeader)
-        dai_compile_shader(${name} ${source} PSMain fragment Ps "${includes}" pixelHeader)
+        dai_compile_shader(${name} ${source} VSMain vertex Vs "${includes}" "${arguments}" vertexHeader)
+        dai_compile_shader(${name} ${source} PSMain fragment Ps "${includes}" "${arguments}" pixelHeader)
         list(APPEND outputs "${vertexHeader}" "${pixelHeader}")
     endforeach()
     foreach(source IN LISTS ARG_COMPUTE)
         cmake_path(GET source STEM name)
-        dai_compile_shader(${name} ${source} CSMain compute Cs "${includes}" computeHeader)
+        dai_compile_shader(${name} ${source} CSMain compute Cs "${includes}" "${arguments}" computeHeader)
         list(APPEND outputs "${computeHeader}")
     endforeach()
 

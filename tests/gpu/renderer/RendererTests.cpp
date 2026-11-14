@@ -172,6 +172,28 @@ TEST_F(RendererTest, RendersBelowTheOutputsResolution) {
     EXPECT_EQ(target->Device().ValidationErrorCount(), 0U);
 }
 
+TEST_F(RendererTest, UpscalesWithFsr) {
+    std::optional<renderer::Renderer> target = CreateRenderer();
+    if (!target.has_value()) {
+        GTEST_SKIP();
+    }
+    const core::Result<renderer::MeshHandle> mesh = target->CreateMesh(renderer::MakeCube(), "Cube");
+    ASSERT_TRUE(mesh.has_value());
+    const renderer::SceneView view = TestView(*mesh);
+
+    // AMD FSR 3.1 in the engine's upscaler's place (ADR-0050), at a scale that changes every frame, then
+    // back to the engine's and to FSR again: each change of upscaler starts its history over.
+    for (const float scale : {0.67f, 0.5f, 0.9f, 1.0f, 0.58f}) {
+        target->SetResolution({.scale = scale, .dynamic = false, .upscaler = renderer::Upscaler::Fsr3});
+        RenderFrames(*target, view, 2);
+    }
+    target->SetResolution({.scale = 0.67f, .dynamic = false});
+    RenderFrames(*target, view, 2);
+    target->SetResolution({.scale = 0.67f, .dynamic = false, .upscaler = renderer::Upscaler::Fsr3});
+    RenderFrames(*target, view, 2);
+    EXPECT_EQ(target->Device().ValidationErrorCount(), 0U);
+}
+
 TEST_F(RendererTest, ShowsEachDebugView) {
     std::optional<renderer::Renderer> target = CreateRenderer();
     if (!target.has_value()) {

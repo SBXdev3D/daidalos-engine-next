@@ -1,0 +1,542 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+// AMD FSR 3.1's upscaler, run by the engine (step 9.16, ADR-0050). Its passes are AMD's, unchanged, in
+// third_party/fidelityfx-fsr3; they read and write through callbacks, which AMD's SDK binds to descriptor
+// tables. These bind them to the engine's bindless arrays instead: every resource is found by its index, in
+// one buffer written each frame with FSR's constants. Each pass's file defines the FSR3UPSCALER_BIND_*
+// macros of what it uses, as AMD's do, and includes this before the pass's header.
+
+#define FFX_GPU 1
+#define FFX_HLSL 1
+#define FFX_HALF 0
+#define FFX_FSR3UPSCALER_OPTION_HDR_COLOR_INPUT 1
+#define FFX_FSR3UPSCALER_OPTION_LOW_RESOLUTION_MOTION_VECTORS 1
+#define FFX_FSR3UPSCALER_OPTION_JITTERED_MOTION_VECTORS 0
+#define FFX_FSR3UPSCALER_OPTION_INVERTED_DEPTH 1
+#define FFX_FSR3UPSCALER_OPTION_APPLY_SHARPENING 0
+// The scene's average luma is read from the frame's information, which every pass can.
+#define FSR3UPSCALER_BIND_SRV_FRAME_INFO 1
+
+#include "fsr3upscaler/ffx_fsr3upscaler_resources.h"
+#include "ffx_core.h"
+
+#ifndef FFX_PREFER_WAVE64
+#define FFX_PREFER_WAVE64
+#endif
+
+// Matches Fsr3Data in Fsr3Upscaler.cpp: FSR's constants (cbFSR3Upscaler and cbSPD), then where each
+// resource is. Scalars only, so that the layout is the same in C++. "Texture" is an index into
+// g_textures, "image" into the storage images.
+struct Fsr3Data {
+    int renderWidth;
+    int renderHeight;
+    int previousRenderWidth;
+    int previousRenderHeight;
+    int upscaleWidth;
+    int upscaleHeight;
+    int previousUpscaleWidth;
+    int previousUpscaleHeight;
+    int maxRenderWidth;
+    int maxRenderHeight;
+    int maxUpscaleWidth;
+    int maxUpscaleHeight;
+    float deviceToViewDepth[4];
+    float jitterX;
+    float jitterY;
+    float previousJitterX;
+    float previousJitterY;
+    float motionVectorScaleX;
+    float motionVectorScaleY;
+    float downscaleFactorX;
+    float downscaleFactorY;
+    float motionVectorJitterCancellationX;
+    float motionVectorJitterCancellationY;
+    float tanHalfFov;
+    float jitterSequenceLength;
+    float deltaTime;
+    float deltaPreExposure;
+    float viewSpaceToMetersFactor;
+    float frameIndex;
+    float velocityFactor;
+    float reactivenessScale;
+    float shadingChangeScale;
+    float accumulationAddedPerFrame;
+    float minDisocclusionAccumulation;
+    uint spdMips;
+    uint spdWorkGroups;
+    uint spdWorkGroupOffsetX;
+    uint spdWorkGroupOffsetY;
+    uint spdRenderWidth;
+    uint spdRenderHeight;
+
+    // The engine's inputs, at the render size in the top-left corner of their textures.
+    uint colorTexture;
+    uint depthTexture;
+    uint motionTexture;
+    uint reactiveTexture;
+    // FSR's own: a texture and an image of the same resource where FSR both reads and writes it.
+    uint dilatedMotionTexture;
+    uint dilatedMotionImage;
+    uint dilatedDepthTexture;
+    uint dilatedDepthImage;
+    uint reconstructedDepthImage;
+    uint farthestDepthTexture;
+    uint farthestDepthImage;
+    uint farthestDepthMip1Texture;
+    uint farthestDepthMip1Image;
+    uint currentLumaTexture;
+    uint currentLumaImage;
+    uint previousLumaTexture;
+    uint lumaHistoryTexture;
+    uint lumaHistoryImage;
+    uint lumaInstabilityTexture;
+    uint lumaInstabilityImage;
+    uint shadingChangeTexture;
+    uint shadingChangeImage;
+    uint spdMipTextures[6];
+    uint spdMipImages[6];
+    uint spdMipWidth;
+    uint spdMipHeight;
+    uint spdAtomicImage;
+    uint frameInfoImage;
+    uint accumulationTexture;
+    uint accumulationImage;
+    uint newLocksTexture;
+    uint newLocksImage;
+    uint dilatedReactiveTexture;
+    uint dilatedReactiveImage;
+    uint historyTexture;
+    uint historyImage;
+    uint outputImage;
+};
+
+struct Fsr3PushConstants {
+    uint data;
+};
+
+[[vk::push_constant]] Fsr3PushConstants g_fsr3Push;
+[[vk::binding(0, 0)]] Texture2D g_textures[];
+[[vk::binding(1, 0)]] SamplerState g_samplers[4];
+[[vk::binding(2, 0)]] StructuredBuffer<Fsr3Data> g_fsr3Data[];
+// The storage images, one array per format, all at the same binding: each image is read through the
+// array of its own format.
+[[vk::binding(4, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> g_rgba16Images[];
+[[vk::binding(4, 0)]] [[vk::image_format("rgba32f")]] RWTexture2D<float4> g_rgba32Images[];
+[[vk::binding(4, 0)]] [[vk::image_format("rgba8")]] RWTexture2D<unorm float4> g_rgba8Images[];
+[[vk::binding(4, 0)]] [[vk::image_format("rg16f")]] RWTexture2D<float2> g_rg16Images[];
+[[vk::binding(4, 0)]] [[vk::image_format("rg16f")]] globallycoherent RWTexture2D<float2> g_coherentRg16Images[];
+[[vk::binding(4, 0)]] [[vk::image_format("r16f")]] RWTexture2D<float> g_r16Images[];
+[[vk::binding(4, 0)]] [[vk::image_format("r32f")]] RWTexture2D<float> g_r32Images[];
+[[vk::binding(4, 0)]] [[vk::image_format("r8")]] RWTexture2D<unorm float> g_r8Images[];
+[[vk::binding(4, 0)]] [[vk::image_format("r32ui")]] RWTexture2D<uint> g_r32uiImages[];
+[[vk::binding(4, 0)]] [[vk::image_format("r32ui")]] globallycoherent RWTexture2D<uint> g_coherentR32uiImages[];
+
+// Matches kSamplerLinearClamp in MeshTypes.slangh.
+static const uint kFsr3LinearClamp = 0;
+
+Fsr3Data Fsr3() {
+    return g_fsr3Data[g_fsr3Push.data][0];
+}
+
+float4 Fsr3Load(uint texture, int2 pixel) {
+    return g_textures[texture].Load(int3(pixel, 0));
+}
+
+float4 Fsr3Sample(uint texture, float2 uv) {
+    return g_textures[texture].SampleLevel(g_samplers[kFsr3LinearClamp], uv, 0.0);
+}
+
+int2 Fsr3TextureSize(uint texture) {
+    uint width;
+    uint height;
+    g_textures[texture].GetDimensions(width, height);
+    return int2(width, height);
+}
+
+// cbFSR3Upscaler.
+FfxInt32x2 RenderSize() {
+    return FfxInt32x2(Fsr3().renderWidth, Fsr3().renderHeight);
+}
+
+FfxInt32x2 PreviousFrameRenderSize() {
+    return FfxInt32x2(Fsr3().previousRenderWidth, Fsr3().previousRenderHeight);
+}
+
+FfxInt32x2 MaxRenderSize() {
+    return FfxInt32x2(Fsr3().maxRenderWidth, Fsr3().maxRenderHeight);
+}
+
+FfxInt32x2 UpscaleSize() {
+    return FfxInt32x2(Fsr3().upscaleWidth, Fsr3().upscaleHeight);
+}
+
+FfxInt32x2 PreviousFrameUpscaleSize() {
+    return FfxInt32x2(Fsr3().previousUpscaleWidth, Fsr3().previousUpscaleHeight);
+}
+
+FfxInt32x2 MaxUpscaleSize() {
+    return FfxInt32x2(Fsr3().maxUpscaleWidth, Fsr3().maxUpscaleHeight);
+}
+
+FfxFloat32x2 Jitter() {
+    return FfxFloat32x2(Fsr3().jitterX, Fsr3().jitterY);
+}
+
+FfxFloat32x2 PreviousFrameJitter() {
+    return FfxFloat32x2(Fsr3().previousJitterX, Fsr3().previousJitterY);
+}
+
+FfxFloat32x4 DeviceToViewSpaceTransformFactors() {
+    const Fsr3Data data = Fsr3();
+    return FfxFloat32x4(data.deviceToViewDepth[0], data.deviceToViewDepth[1], data.deviceToViewDepth[2],
+                        data.deviceToViewDepth[3]);
+}
+
+FfxFloat32x2 MotionVectorScale() {
+    return FfxFloat32x2(Fsr3().motionVectorScaleX, Fsr3().motionVectorScaleY);
+}
+
+FfxFloat32x2 DownscaleFactor() {
+    return FfxFloat32x2(Fsr3().downscaleFactorX, Fsr3().downscaleFactorY);
+}
+
+FfxFloat32x2 MotionVectorJitterCancellation() {
+    return FfxFloat32x2(Fsr3().motionVectorJitterCancellationX, Fsr3().motionVectorJitterCancellationY);
+}
+
+FfxFloat32 TanHalfFoV() {
+    return Fsr3().tanHalfFov;
+}
+
+FfxFloat32 JitterSequenceLength() {
+    return Fsr3().jitterSequenceLength;
+}
+
+FfxFloat32 DeltaTime() {
+    return Fsr3().deltaTime;
+}
+
+FfxFloat32 DeltaPreExposure() {
+    return Fsr3().deltaPreExposure;
+}
+
+FfxFloat32 ViewSpaceToMetersFactor() {
+    return Fsr3().viewSpaceToMetersFactor;
+}
+
+FfxFloat32 FrameIndex() {
+    return Fsr3().frameIndex;
+}
+
+FfxFloat32 VelocityFactor() {
+    return Fsr3().velocityFactor;
+}
+
+FfxFloat32 AccumulationAddedPerFrame() {
+    return Fsr3().accumulationAddedPerFrame;
+}
+
+FfxFloat32 MinDisocclusionAccumulation() {
+    return Fsr3().minDisocclusionAccumulation;
+}
+
+// cbSPD.
+FfxUInt32 MipCount() {
+    return Fsr3().spdMips;
+}
+
+FfxUInt32 NumWorkGroups() {
+    return Fsr3().spdWorkGroups;
+}
+
+FfxUInt32x2 WorkGroupOffset() {
+    return FfxUInt32x2(Fsr3().spdWorkGroupOffsetX, Fsr3().spdWorkGroupOffsetY);
+}
+
+FfxUInt32x2 SPD_RenderSize() {
+    return FfxUInt32x2(Fsr3().spdRenderWidth, Fsr3().spdRenderHeight);
+}
+
+// The luma pyramid's levels are textures of their own, each half the one before.
+FfxInt32x2 GetSPDMipDimensions(FfxUInt32 level) {
+    return max(FfxInt32x2(Fsr3().spdMipWidth, Fsr3().spdMipHeight) >> level, FfxInt32x2(1, 1));
+}
+
+FfxFloat32x2 SampleSPDMipLevel(FfxFloat32x2 uv, FfxUInt32 level) {
+    return Fsr3Sample(Fsr3().spdMipTextures[level], uv).xy;
+}
+
+// SPD goes up to twelve levels; FSR keeps six, and ignores the others, as AMD's callbacks do.
+FfxFloat32x2 RWLoadPyramid(FfxInt32x2 pixel, FfxUInt32 level) {
+    if (level > 5) {
+        return FfxFloat32x2(0.0, 0.0);
+    }
+    const uint image = Fsr3().spdMipImages[level];
+    return level == 5 ? g_coherentRg16Images[image][pixel] : g_rg16Images[image][pixel];
+}
+
+void StorePyramid(FfxInt32x2 pixel, FfxFloat32x2 value, FfxUInt32 level) {
+    if (level > 5) {
+        return;
+    }
+    const uint image = Fsr3().spdMipImages[level];
+    if (level == 5) {
+        g_coherentRg16Images[image][pixel] = value;
+    } else {
+        g_rg16Images[image][pixel] = value;
+    }
+}
+
+void SPD_IncreaseAtomicCounter(inout FfxUInt32 counter) {
+    InterlockedAdd(g_coherentR32uiImages[Fsr3().spdAtomicImage][int2(0, 0)], 1, counter);
+}
+
+void SPD_ResetAtomicCounter() {
+    g_coherentR32uiImages[Fsr3().spdAtomicImage][int2(0, 0)] = 0;
+}
+
+// The engine's inputs.
+FfxFloat32 LoadInputDepth(FfxUInt32x2 pixel) {
+    return Fsr3Load(Fsr3().depthTexture, pixel).x;
+}
+
+FfxFloat32 SampleInputDepth(FfxFloat32x2 uv) {
+    return Fsr3Sample(Fsr3().depthTexture, uv).x;
+}
+
+FfxFloat32 LoadReactiveMask(FfxUInt32x2 pixel) {
+    return Fsr3Load(Fsr3().reactiveTexture, pixel).x * Fsr3().reactivenessScale;
+}
+
+FfxInt32x2 GetReactiveMaskResourceDimensions() {
+    return Fsr3TextureSize(Fsr3().reactiveTexture);
+}
+
+FfxFloat32 SampleReactiveMask(FfxFloat32x2 uv) {
+    return Fsr3Sample(Fsr3().reactiveTexture, uv).x * Fsr3().reactivenessScale;
+}
+
+// The engine draws no transparency FSR must know of: the glass is in the color, and particles mark the
+// reactive mask.
+FfxFloat32 LoadTransparencyAndCompositionMask(FfxUInt32x2 pixel) {
+    return 0.0;
+}
+
+FfxInt32x2 GetTransparencyAndCompositionMaskResourceDimensions() {
+    return MaxRenderSize();
+}
+
+FfxFloat32 SampleTransparencyAndCompositionMask(FfxFloat32x2 uv) {
+    return 0.0;
+}
+
+FfxFloat32x3 LoadInputColor(FfxUInt32x2 pixel) {
+    return Fsr3Load(Fsr3().colorTexture, pixel).rgb;
+}
+
+FfxFloat32x3 SampleInputColor(FfxFloat32x2 uv) {
+    return Fsr3Sample(Fsr3().colorTexture, uv).rgb;
+}
+
+FfxFloat32x2 LoadInputMotionVector(FfxUInt32x2 pixel) {
+    return Fsr3Load(Fsr3().motionTexture, pixel).xy * MotionVectorScale();
+}
+
+// The color is exposed by the level's exposure before it reaches the upscaler, which is the exposure FSR
+// would be given: 1.
+FfxFloat32 Exposure() {
+    return 1.0;
+}
+
+// FSR's resources.
+FfxFloat32x4 LoadHistory(FfxUInt32x2 pixel) {
+    return Fsr3Load(Fsr3().historyTexture, pixel);
+}
+
+FfxFloat32x4 SampleHistory(FfxFloat32x2 uv) {
+    return Fsr3Sample(Fsr3().historyTexture, uv);
+}
+
+void StoreReprojectedHistory(FfxUInt32x2 pixel, FfxFloat32x4 history) {
+    g_rgba16Images[Fsr3().historyImage][pixel] = history;
+}
+
+void StoreInternalColorAndWeight(FfxUInt32x2 pixel, FfxFloat32x4 colorAndWeight) {
+    g_rgba16Images[Fsr3().historyImage][pixel] = colorAndWeight;
+}
+
+void StoreUpscaledOutput(FfxUInt32x2 pixel, FfxFloat32x3 color) {
+    // As the engine's resolve writes it, in full floats.
+    g_rgba32Images[Fsr3().outputImage][pixel] = FfxFloat32x4(color, 1.0);
+}
+
+void StoreLumaHistory(FfxUInt32x2 pixel, FfxFloat32x4 lumaHistory) {
+    g_rgba16Images[Fsr3().lumaHistoryImage][pixel] = lumaHistory;
+}
+
+FfxFloat32x4 LoadLumaHistory(FfxInt32x2 pixel) {
+    return Fsr3Load(Fsr3().lumaHistoryTexture, pixel);
+}
+
+FfxFloat32x4 SampleLumaHistory(FfxFloat32x2 uv) {
+    return Fsr3Sample(Fsr3().lumaHistoryTexture, uv);
+}
+
+FfxFloat32 SampleAccumulation(FfxFloat32x2 uv) {
+    return Fsr3Sample(Fsr3().accumulationTexture, uv).x;
+}
+
+void StoreAccumulation(FfxUInt32x2 pixel, FfxFloat32 accumulation) {
+    g_r8Images[Fsr3().accumulationImage][pixel] = accumulation;
+}
+
+FfxFloat32 LoadShadingChange(FfxUInt32x2 pixel) {
+    return Fsr3Load(Fsr3().shadingChangeTexture, pixel).x * Fsr3().shadingChangeScale;
+}
+
+FfxFloat32 SampleShadingChange(FfxFloat32x2 uv) {
+    return Fsr3Sample(Fsr3().shadingChangeTexture, uv).x * Fsr3().shadingChangeScale;
+}
+
+void StoreShadingChange(FfxUInt32x2 pixel, FfxFloat32 shadingChange) {
+    g_r8Images[Fsr3().shadingChangeImage][pixel] = shadingChange;
+}
+
+FfxInt32x2 GetFarthestDepthResourceDimensions() {
+    return Fsr3TextureSize(Fsr3().farthestDepthTexture);
+}
+
+FfxFloat32 LoadFarthestDepth(FfxUInt32x2 pixel) {
+    return Fsr3Load(Fsr3().farthestDepthTexture, pixel).x;
+}
+
+FfxFloat32 SampleFarthestDepth(FfxFloat32x2 uv) {
+    return Fsr3Sample(Fsr3().farthestDepthTexture, uv).x;
+}
+
+void StoreFarthestDepth(FfxUInt32x2 pixel, FfxFloat32 depth) {
+    g_r16Images[Fsr3().farthestDepthImage][pixel] = depth;
+}
+
+FfxInt32x2 GetFarthestDepthMip1ResourceDimensions() {
+    return Fsr3TextureSize(Fsr3().farthestDepthMip1Texture);
+}
+
+FfxFloat32 LoadFarthestDepthMip1(FfxUInt32x2 pixel) {
+    return Fsr3Load(Fsr3().farthestDepthMip1Texture, pixel).x;
+}
+
+FfxFloat32 SampleFarthestDepthMip1(FfxFloat32x2 uv) {
+    return Fsr3Sample(Fsr3().farthestDepthMip1Texture, uv).x;
+}
+
+void StoreFarthestDepthMip1(FfxUInt32x2 pixel, FfxFloat32 depth) {
+    g_r16Images[Fsr3().farthestDepthMip1Image][pixel] = depth;
+}
+
+FfxFloat32 LoadCurrentLuma(FfxUInt32x2 pixel) {
+    return Fsr3Load(Fsr3().currentLumaTexture, pixel).x;
+}
+
+FfxFloat32 SampleCurrentLuma(FfxFloat32x2 uv) {
+    return Fsr3Sample(Fsr3().currentLumaTexture, uv).x;
+}
+
+void StoreCurrentLuma(FfxUInt32x2 pixel, FfxFloat32 luma) {
+    g_r16Images[Fsr3().currentLumaImage][pixel] = luma;
+}
+
+FfxFloat32 SampleLumaInstability(FfxFloat32x2 uv) {
+    return Fsr3Sample(Fsr3().lumaInstabilityTexture, uv).x;
+}
+
+void StoreLumaInstability(FfxUInt32x2 pixel, FfxFloat32 lumaInstability) {
+    g_r16Images[Fsr3().lumaInstabilityImage][pixel] = lumaInstability;
+}
+
+FfxFloat32 LoadPreviousLuma(FfxUInt32x2 pixel) {
+    return Fsr3Load(Fsr3().previousLumaTexture, pixel).x;
+}
+
+FfxFloat32 SamplePreviousLuma(FfxFloat32x2 uv) {
+    return Fsr3Sample(Fsr3().previousLumaTexture, uv).x;
+}
+
+FfxFloat32 LoadNewLocks(FfxUInt32x2 pixel) {
+    return Fsr3Load(Fsr3().newLocksTexture, pixel).x;
+}
+
+FfxFloat32 LoadRwNewLocks(FfxUInt32x2 pixel) {
+    return g_r8Images[Fsr3().newLocksImage][pixel];
+}
+
+void StoreNewLocks(FfxUInt32x2 pixel, FfxFloat32 newLock) {
+    g_r8Images[Fsr3().newLocksImage][pixel] = newLock;
+}
+
+// The previous frame's nearest depth, reprojected: written with atomics, so a 32-bit unsigned image, and
+// read through it too.
+FfxFloat32 LoadReconstructedPrevDepth(FfxUInt32x2 pixel) {
+    return asfloat(g_r32uiImages[Fsr3().reconstructedDepthImage][pixel]);
+}
+
+void StoreReconstructedDepth(FfxUInt32x2 pixel, FfxFloat32 depth) {
+    // Reverse-Z: the nearest depth is the largest.
+    InterlockedMax(g_r32uiImages[Fsr3().reconstructedDepthImage][pixel], asuint(depth));
+}
+
+void SetReconstructedDepth(FfxUInt32x2 pixel, const FfxUInt32 value) {
+    g_r32uiImages[Fsr3().reconstructedDepthImage][pixel] = value;
+}
+
+void StoreDilatedDepth(FfxUInt32x2 pixel, FfxFloat32 depth) {
+    g_r32Images[Fsr3().dilatedDepthImage][pixel] = depth;
+}
+
+void StoreDilatedMotionVector(FfxUInt32x2 pixel, FfxFloat32x2 motionVector) {
+    g_rg16Images[Fsr3().dilatedMotionImage][pixel] = motionVector;
+}
+
+FfxFloat32x2 LoadDilatedMotionVector(FfxUInt32x2 pixel) {
+    return Fsr3Load(Fsr3().dilatedMotionTexture, pixel).xy;
+}
+
+FfxFloat32x2 SampleDilatedMotionVector(FfxFloat32x2 uv) {
+    return Fsr3Sample(Fsr3().dilatedMotionTexture, uv).xy;
+}
+
+FfxFloat32 LoadDilatedDepth(FfxUInt32x2 pixel) {
+    return Fsr3Load(Fsr3().dilatedDepthTexture, pixel).x;
+}
+
+FfxFloat32 SampleDilatedDepth(FfxFloat32x2 uv) {
+    return Fsr3Sample(Fsr3().dilatedDepthTexture, uv).x;
+}
+
+// The Lanczos lookup table is used by neither the reprojection (Lanczos computed) nor the upsampling
+// (approximated), as AMD sets them.
+FfxFloat32 SampleLanczos2Weight(FfxFloat32 x) {
+    return 0.0;
+}
+
+FfxFloat32x4 SampleDilatedReactiveMasks(FfxFloat32x2 uv) {
+    return Fsr3Sample(Fsr3().dilatedReactiveTexture, uv);
+}
+
+void StoreDilatedReactiveMasks(FfxUInt32x2 pixel, FfxFloat32x4 masks) {
+    g_rgba8Images[Fsr3().dilatedReactiveImage][pixel] = masks;
+}
+
+FfxFloat32x4 LoadFrameInfo() {
+    return g_rgba32Images[Fsr3().frameInfoImage][int2(0, 0)];
+}
+
+void StoreFrameInfo(FfxFloat32x4 info) {
+    g_rgba32Images[Fsr3().frameInfoImage][int2(0, 0)] = info;
+}
+
+FfxFloat32x4 FrameInfo() {
+    return g_rgba32Images[Fsr3().frameInfoImage][int2(0, 0)];
+}
