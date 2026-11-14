@@ -278,7 +278,7 @@ core::Result<void> Application::LoadConfiguration() {
         m_minRenderScale = m_cvars.Register<double>("renderer.min_render_scale", 0.5,
                                                     "Lowest render size over the window's with dynamic resolution");
         m_targetFps = m_cvars.Register<std::int64_t>(
-            "renderer.target_fps", 60, "Frames per second dynamic resolution holds on the GPU: 30, 60 or 120");
+            "renderer.target_fps", 60, "Frames per second dynamic resolution holds on the GPU, from 30 to 240");
         m_toneMapper = m_cvars.Register<std::string>(
             "renderer.tonemap", "agx", "Tone mapping: agx, or neutral (Khronos PBR Neutral) for comparison");
         m_hdr = m_cvars.Register<bool>("renderer.hdr", true, "HDR10 output on a display with HDR turned on");
