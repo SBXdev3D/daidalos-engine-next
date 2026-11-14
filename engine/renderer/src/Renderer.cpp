@@ -17,6 +17,7 @@
 #include <shaders/Tonemap.ps.spv.h>
 #include <shaders/Tonemap.vs.spv.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <optional>
@@ -96,6 +97,12 @@ struct Renderer::Impl {
     /// Reads the timestamps of the last finished frame recorded in this slot into gpuTimes.
     void ReadGpuTimes(std::uint32_t slot);
     void ReloadShaders();
+    void SetIndirect(const IndirectLightConfig& config) {
+        indirect = {.bounces = std::min(config.bounces, 3U),
+                    .lightCandidates = std::clamp(config.lightCandidates, 1U, 8U),
+                    .clamp = std::max(config.clamp, 0.0f),
+                    .rays = std::clamp(config.rays, 1U, 16U)};
+    }
 
     platform::Window* window;
     rhi::Device device;
@@ -108,6 +115,7 @@ struct Renderer::Impl {
     std::optional<Denoiser> denoiser;
     std::optional<DirectLighting> directLighting;
     DirectLightingSettings restir;
+    GlobalIlluminationSettings indirect;
     /// The last frame was lit: its reservoirs can be reused.
     bool lit = false;
     /// Counts the frames, for the jitter of temporal antialiasing.
@@ -318,6 +326,7 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     impl->directLighting.emplace(std::move(directLighting));
     impl->restir.spatial = config.restirSpatial;
     impl->restir.unbiased = config.restirUnbiased;
+    impl->SetIndirect(config.indirect);
     impl->denoise = config.denoiser;
     impl->reflections = config.reflections;
     impl->reflectionRoughness = config.reflectionRoughness;
@@ -386,6 +395,10 @@ void Renderer::SetReflections(bool enabled) {
 
 void Renderer::SetReflectionRoughness(float roughness) {
     m_impl->reflectionRoughness = roughness;
+}
+
+void Renderer::SetIndirectLightConfig(const IndirectLightConfig& config) {
+    m_impl->SetIndirect(config);
 }
 
 void Renderer::SetRestir(bool spatial, bool unbiased) {
@@ -520,7 +533,8 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                         .normals = impl.normals,
                                         .frameIndex = frameIndex,
                                         .reflections = reflect,
-                                        .reflectionRoughness = impl.reflectionRoughness},
+                                        .reflectionRoughness = impl.reflectionRoughness,
+                                        .settings = impl.indirect},
                                        cacheView ? GlobalIllumination::Mode::Cache
                                                  : GlobalIllumination::Mode::Indirect);
     }

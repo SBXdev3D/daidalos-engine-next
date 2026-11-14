@@ -6,6 +6,7 @@
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/platform/Platform.hpp>
 #include <daidalos/renderer/CornellBox.hpp>
+#include <daidalos/renderer/DarkCorridor.hpp>
 #include <daidalos/renderer/MirrorRoom.hpp>
 #include <daidalos/renderer/Primitives.hpp>
 
@@ -182,7 +183,7 @@ private:
     void LoadLevel(app::Application& app, scene::Scene& target) {
         m_loading = true;
         m_loadingSeconds = 0.0f;
-        if (m_levelPath == kCornellBox || m_levelPath == kMirrorRoom) {
+        if (m_levelPath == kCornellBox || m_levelPath == kMirrorRoom || m_levelPath == kDarkCorridor) {
             OnLevelLoaded(app, target, core::MakeError(core::ErrorCode::NotFound, "sandbox", "Built in code"));
             return;
         }
@@ -309,6 +310,11 @@ private:
         } else if (m_levelPath == kMirrorRoom) {
             const renderer::MirrorRoom room = renderer::MakeMirrorRoom();
             DAI_TRY(BuildTestRoom(app, target, room.parts, room.lights, 3.0f));
+        } else if (m_levelPath == kDarkCorridor) {
+            // Lit by nothing but the player's flashlight, which is on from the start.
+            const renderer::DarkCorridor corridor = renderer::MakeDarkCorridor();
+            DAI_TRY(BuildTestRoom(app, target, corridor.parts, {}, 20.0f));
+            m_settings.startWithFlashlight = true;
         } else if (model) {
             core::Result<ecs::Entity> player = sandbox::BuildLevel(target, **model, m_levelPath);
             if (!player) {
@@ -333,10 +339,11 @@ private:
         float yaw = 0.0f;
         float pitch = 0.0f;
         // In front of the Cornell box's opening, unless told otherwise.
-        std::istringstream text(!m_start.empty()             ? m_start
-                                : m_levelPath == kCornellBox ? std::string("0 1.5 9 0 0")
-                                : m_levelPath == kMirrorRoom ? std::string("0.6 1.6 6 0 -5")
-                                                             : m_start);
+        std::istringstream text(!m_start.empty()               ? m_start
+                                : m_levelPath == kCornellBox   ? std::string("0 1.5 9 0 0")
+                                : m_levelPath == kMirrorRoom   ? std::string("0.6 1.6 6 0 -5")
+                                : m_levelPath == kDarkCorridor ? std::string("0.2 1.5 -1 0 -3")
+                                                               : m_start);
         if (!(text >> position.x >> position.y >> position.z >> yaw >> pitch)) {
             return;
         }
@@ -370,8 +377,9 @@ private:
     }
 
     /// A test room built of cubes: the Cornell box (renderer::MakeCornellBox), the test scene of the path
-    /// tracer, with sandbox.scene cornell, or the mirror room (renderer::MakeMirrorRoom), of reflections and
-    /// glass, with sandbox.scene mirrors. Its floor spans x and z from -half to half, and goes on in front.
+    /// tracer, with sandbox.scene cornell, the mirror room (renderer::MakeMirrorRoom), of reflections and
+    /// glass, with sandbox.scene mirrors, or the dark corridor (renderer::MakeDarkCorridor), of indirect
+    /// light, with sandbox.scene corridor. Its floor spans x and z from -half to half, and goes on in front.
     static core::Result<void> BuildTestRoom(app::Application& app, scene::Scene& target,
                                             std::span<const renderer::CornellPart> parts,
                                             std::span<const renderer::Light> lights, float half) {
@@ -501,6 +509,8 @@ private:
     static constexpr std::string_view kCornellBox = "cornell";
     /// The value of sandbox.scene that builds the mirror room.
     static constexpr std::string_view kMirrorRoom = "mirrors";
+    /// The value of sandbox.scene that builds the dark corridor (ADR-0045).
+    static constexpr std::string_view kDarkCorridor = "corridor";
     sandbox::Settings m_settings;
     std::string m_start;
     std::unique_ptr<scene::Scene> m_nextScene;

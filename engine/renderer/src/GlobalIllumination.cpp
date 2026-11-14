@@ -13,6 +13,7 @@
 #include <shaders/GiTrace.cs.spv.h>
 #include <shaders/GiUpdate.cs.spv.h>
 
+#include <algorithm>
 #include <utility>
 
 #include "RenderGraph.hpp"
@@ -42,7 +43,18 @@ struct GiPushConstants {
     std::uint32_t reset;
     std::uint32_t reflections;
     float maxRoughness;
+    std::uint32_t counts;
+    float clamp;
 };
+static_assert(sizeof(GiPushConstants) <= rhi::kMaxPushConstantSize);
+
+// The settings' counts, a byte each, as the shaders read them (GiPushConstants::counts).
+std::uint32_t Counts(const GlobalIlluminationSettings& settings) {
+    const std::uint32_t bounces = std::min(settings.bounces, 3U);
+    const std::uint32_t candidates = std::clamp(settings.lightCandidates, 1U, 8U);
+    const std::uint32_t rays = std::clamp(settings.rays, 1U, 16U);
+    return bounces | (candidates << 8U) | (rays << 16U);
+}
 
 constexpr std::uint32_t kGroupSize = 8;
 constexpr std::uint32_t kResolveGroupSize = 64;
@@ -141,7 +153,9 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
                          kPathSpacing,
                          0,
                          m_device->StorageImageIndex(m_reflections),
-                         inputs.reflectionRoughness};
+                         inputs.reflectionRoughness,
+                         Counts(inputs.settings),
+                         inputs.settings.clamp};
     const std::vector<rhi::BufferUse> cache{{m_keys, rhi::Access::ComputeShaderWrite},
                                             {m_accumulation, rhi::Access::ComputeShaderWrite},
                                             {m_radiance, rhi::Access::ComputeShaderWrite},
@@ -151,7 +165,7 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
     if (m_reset) {
         GiPushConstants reset = push;
         reset.reset = 1;
-        graph.AddPass({.name = "Radiance cache reset", .group = "Global illumination", .buffers = cache},
+        graph.AddPass({.name = "Radiance cache reset", .group = "Radiance cache", .buffers = cache},
                       [this, reset, resolveGroups](rhi::CommandList& commands) {
                           commands.BindPipeline(m_resolve);
                           commands.Push(reset);
@@ -166,7 +180,7 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
     const std::uint32_t tilesX = (m_extent.width + kPathSpacing - 1) / kPathSpacing;
     const std::uint32_t tilesY = (m_extent.height + kPathSpacing - 1) / kPathSpacing;
     graph.AddPass({.name = "Radiance cache update",
-                   .group = "Global illumination",
+                   .group = "Radiance cache",
                    .buffers = traced,
                    .structures = {{inputs.structure, rhi::Access::RayQueryRead}}},
                   [this, push, tilesX, tilesY](rhi::CommandList& commands) {
@@ -175,14 +189,14 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
                       commands.Push(push);
                       commands.Dispatch((tilesX + kGroupSize - 1) / kGroupSize, (tilesY + kGroupSize - 1) / kGroupSize);
                   });
-    graph.AddPass({.name = "Radiance cache resolve", .group = "Global illumination", .buffers = cache},
+    graph.AddPass({.name = "Radiance cache resolve", .group = "Radiance cache", .buffers = cache},
                   [this, push, resolveGroups](rhi::CommandList& commands) {
                       commands.BindPipeline(m_resolve);
                       commands.Push(push);
                       commands.Dispatch(resolveGroups);
                   });
     graph.AddPass({.name = "Indirect light",
-                   .group = "Global illumination",
+                   .group = "Indirect light",
                    .textures = {{m_output, rhi::Access::ComputeShaderWrite, true},
                                 {inputs.depth, rhi::Access::ComputeShaderRead},
                                 {inputs.normals, rhi::Access::ComputeShaderRead}},

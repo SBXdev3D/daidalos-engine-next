@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0
 
 #include <daidalos/renderer/CornellBox.hpp>
+#include <daidalos/renderer/DarkCorridor.hpp>
 #include <daidalos/renderer/LightUnits.hpp>
 #include <daidalos/renderer/Material.hpp>
 #include <daidalos/renderer/MirrorRoom.hpp>
@@ -168,6 +169,10 @@ protected:
         std::function<void(SceneView&, std::uint32_t)> animate;
         /// How ReSTIR DI reuses its samples (ADR-0044).
         renderer::DirectLightingSettings restir;
+        /// With indirect: how its light is traced (ADR-0045).
+        renderer::GlobalIlluminationSettings gi;
+        /// Called with each frame drawn after the warmup, through the denoiser if there is one, and its number.
+        std::function<void(const Image&, std::uint32_t)> eachFrame;
     };
 
     // What the G-buffer and the lighting draw of the view, in linear HDR. The view is drawn frames times, each with the
@@ -254,7 +259,8 @@ protected:
                                                     .depth = depth,
                                                     .normals = normals,
                                                     .frameIndex = frame,
-                                                    .reflections = options.reflections});
+                                                    .reflections = options.reflections,
+                                                    .settings = options.gi});
                         }
                         lighting->AddTo(graph,
                                         {.frameBuffer = m_pass->FrameDataIndex(),
@@ -313,6 +319,9 @@ protected:
                 continue;
             }
             const Image drawnImage = Read(color, extent);
+            if (options.eachFrame) {
+                options.eachFrame(drawnImage, drawn - options.warmup);
+            }
             for (std::size_t index = 0; index < image.size(); ++index) {
                 image[index] =
                     denoise ? drawnImage[index] : image[index] + drawnImage[index] / static_cast<float>(frames);
@@ -691,8 +700,11 @@ TEST_F(PathTracerTest, IndirectLightMatchesThePathTracerInTheCornellBox) {
     RecordProperty("flipAveraged", std::to_string(averagedFlip));
     RecordProperty("flip", std::to_string(denoisedFlip));
     RecordProperty("flipDirect", std::to_string(directFlip));
-    // Measured on an RTX 3090: brightness 1.002, FLIP 0.150 averaged, 0.159 denoised, 0.68 direct light only.
+    // Measured on an RTX 3090: brightness 1.027, FLIP 0.117 averaged, 0.123 denoised, 0.68 direct light only;
+    // reading the cache where each ray first hit, as before ADR-0045: 0.150 and 0.159.
     EXPECT_NEAR(brightness, 1.0, 0.1);
+    EXPECT_LT(averagedFlip, 0.14f);
+    EXPECT_LT(denoisedFlip, 0.14f);
     EXPECT_LT(averagedFlip, 0.5f * directFlip);
     EXPECT_LT(denoisedFlip, 0.5f * directFlip);
     // The red wall throws red on the white ceiling near it, the green one green.
@@ -1021,8 +1033,10 @@ TEST_F(PathTracerTest, IndirectLightFollowsALightTurnedOff) {
     view.lights = {{.position = {0.0f, 100.0f, 0.0f}, .range = 1.0f}};
     const double after = TotalLuminance(Rasterize(view, kExtent, {.frames = 1, .indirect = &indirect, .warmup = 30}));
     RecordProperty("remaining", std::to_string(after / lit));
-    // Measured on an RTX 3090: 0.048.
-    EXPECT_LT(after, 0.08 * lit);
+    // Measured on an RTX 3090: 0.026; 0.048 when each pixel's ray read the cache where it hit, before
+    // ADR-0045. The light that reaches the first surface along the ray goes off at once; what the cache
+    // holds still fades.
+    EXPECT_LT(after, 0.05 * lit);
 }
 
 namespace {
@@ -1095,11 +1109,11 @@ TEST_F(PathTracerTest, ReflectionsMatchThePathTracerInTheMirrorRoom) {
     RecordProperty("flipAveraged", std::to_string(reflectedFlip));
     RecordProperty("flip", std::to_string(denoisedFlip));
     RecordProperty("flipWithoutReflections", std::to_string(unreflectedFlip));
-    // Measured on an RTX 3090: 0.234 averaged, 0.246 denoised, 0.327 without reflections. What remains is
+    // Measured on an RTX 3090: 0.188 averaged, 0.200 denoised, 0.280 without reflections. What remains is
     // mostly the indirect light's, as in the Cornell box: the lamps shine down, and the ceiling has only
     // the light that bounces up (ADR-0043).
-    EXPECT_LT(reflectedFlip, 0.27f);
-    EXPECT_LT(denoisedFlip, 0.28f);
+    EXPECT_LT(reflectedFlip, 0.22f);
+    EXPECT_LT(denoisedFlip, 0.23f);
     EXPECT_LT(reflectedFlip, 0.8f * unreflectedFlip);
 }
 
@@ -1124,8 +1138,8 @@ TEST_F(PathTracerTest, GlassMatchesThePathTracerInTheMirrorRoom) {
     const float bareFlip = Flip(traced, bare, kExtent);
     RecordProperty("flip", std::to_string(glassFlip));
     RecordProperty("flipWithoutGlass", std::to_string(bareFlip));
-    // Measured on an RTX 3090: 0.244, and 0.255 without the glass, which covers a small part of the image.
-    EXPECT_LT(glassFlip, 0.28f);
+    // Measured on an RTX 3090: 0.197, and 0.207 without the glass, which covers a small part of the image.
+    EXPECT_LT(glassFlip, 0.23f);
     EXPECT_LT(glassFlip, bareFlip);
 }
 
@@ -1215,4 +1229,367 @@ TEST_F(PathTracerTest, DenoisedReflectionsFollowTheReflectedPoint) {
     // Measured on an RTX 3090: 0.184, and 0.400 moved with the floor.
     EXPECT_LT(followedFlip, 0.25f);
     EXPECT_LT(followedFlip, 0.6f * smearedFlip);
+}
+
+TEST_F(PathTracerTest, IndirectLightBouncesMatchThePathTracer) {
+    // The Cornell box and the mirror room, with 0 to 3 surfaces lit by the lights along each pixel's ray before
+    // the cache is read (ADR-0045), denoised, against the path tracer.
+    const renderer::CornellBox box = renderer::MakeCornellBox();
+    SceneView cornell;
+    cornell.camera = LookAt(box.eye, box.target, box.verticalFov);
+    cornell.atmosphere = Dark();
+    cornell.lights.push_back(box.light);
+    for (const renderer::CornellPart& part : box.parts) {
+        cornell.draws.push_back({.mesh = m_cube, .world = part.world, .material = Material(part.material)});
+    }
+    const renderer::MirrorRoom room = renderer::MakeMirrorRoom();
+    const SceneView mirrors =
+        MirrorRoomView(room, m_cube, [this](const MaterialDesc& desc) { return Material(desc); }, false);
+    constexpr rhi::Extent kExtent{96, 96};
+    const Image tracedCornell = Trace(cornell, kExtent, {.maxBounces = 8, .seed = 17, .jitter = false}, 512);
+    const Image tracedMirrors = Trace(mirrors, kExtent, {.maxBounces = 8, .seed = 19, .jitter = false}, 512);
+    std::array<float, 4> cornellFlips{};
+    std::array<float, 4> mirrorFlips{};
+    for (std::uint32_t bounces = 0; bounces <= 3; ++bounces) {
+        const auto measure = [&](const SceneView& view, const Image& traced, bool reflections) {
+            core::Result<renderer::GlobalIllumination> created = renderer::GlobalIllumination::Create(Device());
+            EXPECT_TRUE(created.has_value());
+            const Image denoised = Rasterize(view, kExtent,
+                                             {.frames = 32,
+                                              .denoise = true,
+                                              .indirect = &*created,
+                                              .warmup = 32,
+                                              .reflections = reflections,
+                                              .gi = {.bounces = bounces}});
+            return Flip(traced, denoised, kExtent);
+        };
+        cornellFlips[bounces] = measure(cornell, tracedCornell, false);
+        mirrorFlips[bounces] = measure(mirrors, tracedMirrors, true);
+        RecordProperty("cornell" + std::to_string(bounces), std::to_string(cornellFlips[bounces]));
+        RecordProperty("mirrors" + std::to_string(bounces), std::to_string(mirrorFlips[bounces]));
+    }
+    // Measured on an RTX 3090, for 0 to 3 bounces: the Cornell box 0.157, 0.116, 0.114, 0.118; the mirror room
+    // 0.268, 0.214, 0.217, 0.217. A bounce lit by the lights shows the shadows and the detail the cache's
+    // 10 cm cells miss; more add little that the cache does not already give.
+    for (std::uint32_t bounces = 1; bounces <= 3; ++bounces) {
+        EXPECT_LT(cornellFlips[bounces], 0.85f * cornellFlips[0]) << bounces;
+        EXPECT_LT(mirrorFlips[bounces], 0.9f * mirrorFlips[0]) << bounces;
+    }
+    EXPECT_LT(cornellFlips[1], 0.13f);
+    EXPECT_LT(mirrorFlips[1], 0.24f);
+}
+
+namespace {
+
+// The dark corridor (ADR-0045) as a view, from eye towards target, with its flashlight.
+SceneView CorridorView(const renderer::DarkCorridor& corridor, renderer::MeshHandle cube,
+                       const std::function<renderer::MaterialHandle(const MaterialDesc&)>& material,
+                       const glm::vec3& target) {
+    SceneView view;
+    view.camera = LookAt(corridor.eye, target, corridor.verticalFov);
+    view.atmosphere = {.fogColor = glm::vec3(0.0f), .fogDensity = 0.0f, .ev100 = corridor.ev100};
+    view.lights.push_back(renderer::Flashlight(corridor.eye, target));
+    for (const renderer::CornellPart& part : corridor.parts) {
+        view.draws.push_back({.mesh = cube, .world = part.world, .material = material(part.material)});
+    }
+    return view;
+}
+
+// The corridor's view turned by an angle to the right, around the eye.
+glm::vec3 TurnedTarget(const renderer::DarkCorridor& corridor, float degrees) {
+    const glm::vec3 ahead = corridor.target - corridor.eye;
+    const float angle = -glm::radians(degrees);
+    const glm::vec3 turned(ahead.x * std::cos(angle) + ahead.z * std::sin(angle), ahead.y,
+                           -ahead.x * std::sin(angle) + ahead.z * std::cos(angle));
+    return corridor.eye + turned;
+}
+
+// The mean luminance of the pixels of an image where mask is set.
+double MaskedMean(const Image& image, const std::vector<bool>& mask) {
+    double total = 0.0;
+    std::size_t count = 0;
+    for (std::size_t index = 0; index < image.size(); ++index) {
+        if (mask[index]) {
+            total += Luminance(image[index]);
+            ++count;
+        }
+    }
+    return count > 0 ? total / static_cast<double>(count) : 0.0;
+}
+
+// The mean change of luminance from one image to the next, over the mean luminance.
+double Flicker(const Image& before, const Image& after) {
+    double change = 0.0;
+    double total = 0.0;
+    for (std::size_t index = 0; index < after.size(); ++index) {
+        change += std::abs(Luminance(after[index]) - Luminance(before[index]));
+        total += Luminance(after[index]);
+    }
+    return total > 0.0 ? change / total : 0.0;
+}
+
+// What the dark corridor measures of one way of tracing indirect light.
+struct CorridorScores {
+    float flip = 0.0f;    // Of the 32nd denoised frame after a cut.
+    double flicker = 0.0; // Mean change of luminance between denoised frames that do not move, over its mean.
+    int lag = 0;          // Frames after a turn of 30 degrees until the bounce-lit pixels are within 10%.
+};
+
+} // namespace
+
+class DarkCorridorTest : public PathTracerTest {
+protected:
+    static constexpr rhi::Extent kExtent{160, 90};
+    static constexpr float kTurn = 30.0f;
+    static constexpr std::uint32_t kStill = 64; // Frames before the turn.
+    static constexpr std::uint32_t kAfter = 48; // And after.
+
+    void SetUp() override {
+        PathTracerTest::SetUp();
+        if (IsSkipped() || HasFatalFailure()) {
+            return;
+        }
+        const auto material = [this](const MaterialDesc& desc) { return Material(desc); };
+        m_view = CorridorView(m_corridor, m_cube, material, m_corridor.target);
+        m_turned = CorridorView(m_corridor, m_cube, material, TurnedTarget(m_corridor, kTurn));
+        m_traced = Trace(m_view, kExtent, {.maxBounces = 8, .seed = 41, .jitter = false}, 2048);
+        m_tracedTurned = Trace(m_turned, kExtent, {.maxBounces = 8, .seed = 43, .jitter = false}, 2048);
+        // Where the turned view's light has bounced at least once: no direct light reaches the pixel.
+        const Image direct =
+            Trace(m_turned, kExtent, {.maxBounces = 2, .seed = 47, .jitter = false, .directOnly = true}, 64);
+        m_bounceOnly.resize(direct.size());
+        for (std::size_t index = 0; index < direct.size(); ++index) {
+            m_bounceOnly[index] = Luminance(direct[index]) <= 0.0f && Luminance(m_tracedTurned[index]) > 0.0f;
+        }
+    }
+
+    CorridorScores Measure(const renderer::GlobalIlluminationSettings& settings) {
+        core::Result<renderer::GlobalIllumination> created = renderer::GlobalIllumination::Create(Device());
+        EXPECT_TRUE(created.has_value());
+        CorridorScores scores;
+        const double reference = MaskedMean(m_tracedTurned, m_bounceOnly);
+        Image last;
+        double flicker = 0.0;
+        int within = 0;
+        scores.lag = static_cast<int>(kAfter);
+        Rasterize(m_view, kExtent,
+                  {.frames = kStill + kAfter,
+                   .denoise = true,
+                   .indirect = &*created,
+                   .animate = [&](SceneView& view, std::uint32_t frame) { view = frame < kStill ? m_view : m_turned; },
+                   .gi = settings,
+                   .eachFrame =
+                       [&](const Image& image, std::uint32_t frame) {
+                           if (frame == 31) {
+                               scores.flip = Flip(m_traced, image, kExtent);
+                           }
+                           if (frame >= 33 && frame < kStill) {
+                               flicker += Flicker(last, image);
+                           }
+                           if (frame >= kStill && scores.lag == static_cast<int>(kAfter)) {
+                               const double mean = MaskedMean(image, m_bounceOnly);
+                               within = std::abs(mean - reference) < 0.1 * reference ? within + 1 : 0;
+                               // Within for three frames in a row, not by chance.
+                               if (within == 3) {
+                                   scores.lag = static_cast<int>(frame - kStill) - 2;
+                               }
+                           }
+                           last = image;
+                       }});
+        scores.flicker = flicker / static_cast<double>(kStill - 33);
+        return scores;
+    }
+
+    void Report(const std::string& name, const CorridorScores& scores) {
+        RecordProperty(name + "_flip", std::to_string(scores.flip));
+        RecordProperty(name + "_flicker", std::to_string(scores.flicker));
+        RecordProperty(name + "_lag", std::to_string(scores.lag));
+        std::printf("%s: FLIP %.4f, flicker %.4f, lag %d frames\n", name.c_str(), scores.flip, scores.flicker,
+                    scores.lag);
+    }
+
+    renderer::DarkCorridor m_corridor = renderer::MakeDarkCorridor();
+    SceneView m_view;
+    SceneView m_turned;
+    Image m_traced;
+    Image m_tracedTurned;
+    std::vector<bool> m_bounceOnly;
+};
+
+TEST_F(DarkCorridorTest, TheFlashlightsBounceMatchesThePathTracer) {
+    // The dark corridor, where nearly everything seen is the flashlight's light sent back by a wall (ADR-0045):
+    // with the default settings, one surface lit by the flashlight along each ray before the cache is read,
+    // and with the cache read where the rays first hit, as before. The cache's cells are coarse, and it lags
+    // the flashlight that moves with the camera; the bounce lit by the flashlight does neither.
+    ASSERT_GT(std::ranges::count(m_bounceOnly, true), 1000) << "the turned view has pixels lit only by bounces";
+    const CorridorScores bounced = Measure({});
+    const CorridorScores cached = Measure({.bounces = 0});
+    Report("bounce", bounced);
+    Report("cache", cached);
+    // Measured on an RTX 3090: FLIP 0.112, flicker 0.0078, lag 0 frames; from the cache, FLIP 0.243.
+    EXPECT_LT(bounced.flip, 0.13f);
+    EXPECT_LT(bounced.flip, 0.6f * cached.flip);
+    EXPECT_LT(bounced.flicker, 0.0095);
+    EXPECT_LE(bounced.lag, 2);
+}
+
+TEST_F(DarkCorridorTest, DISABLED_MeasureEveryWayOfTracingIndirectLight) {
+    // Not a test: the scores of each setting, for ADR-0045.
+    for (std::uint32_t bounces = 0; bounces <= 3; ++bounces) {
+        for (std::uint32_t rays : {1U, 2U, 4U}) {
+            Report("rays" + std::to_string(rays) + "_bounces" + std::to_string(bounces),
+                   Measure({.bounces = bounces, .rays = rays}));
+        }
+    }
+    for (const std::uint32_t candidates : {1U, 2U, 8U}) {
+        Report("candidates" + std::to_string(candidates), Measure({.lightCandidates = candidates}));
+    }
+    for (const float clamp : {0.5f, 1.0f, 4.0f, 16.0f}) {
+        Report("clamp" + std::to_string(clamp), Measure({.clamp = clamp}));
+    }
+}
+
+TEST_F(PathTracerTest, BouncedLightIsClampedAndDirectLightIsNot) {
+    // A small lamp 5 cm from a wall makes a patch far brighter than the clamp: seen directly, it stays as
+    // bright; its light, bounced, is clamped (ADR-0045). With one ray, each pixel's indirect light is one
+    // sample's.
+    MaterialDesc matte;
+    matte.baseColorFactor = glm::vec4(0.8f, 0.8f, 0.8f, 1.0f);
+    matte.metallicFactor = 0.0f;
+    TwoRooms rooms = MakeTwoRooms(m_cube, Material(matte));
+    SceneView view;
+    view.atmosphere = Dark();
+    view.draws = rooms.draws;
+    view.lights.push_back({.position = {-1.95f, 1.0f, 0.0f}, .color = glm::vec3(50.0f), .range = 6.0f});
+    view.camera = LookAt({-0.2f, 1.0f, 0.0f}, {-2.0f, 1.0f, 0.0f}, glm::radians(70.0f));
+    constexpr rhi::Extent kExtent{64, 64};
+    constexpr float kClamp = 2.0f;
+    core::Result<renderer::GlobalIllumination> created = renderer::GlobalIllumination::Create(Device());
+    ASSERT_TRUE(created.has_value()) << core::Format(created.error());
+    const Image image =
+        Rasterize(view, kExtent, {.frames = 1, .indirect = &*created, .warmup = 16, .gi = {.clamp = kClamp}});
+    const Image indirect = ReadHalf(Device(), created->Output(), kExtent);
+    float brightestBounce = 0.0f;
+    for (const glm::vec4& pixel : indirect) {
+        brightestBounce = std::max(brightestBounce, Luminance(pixel));
+    }
+    float brightest = 0.0f;
+    for (const glm::vec4& pixel : image) {
+        brightest = std::max(brightest, Luminance(pixel));
+    }
+    RecordProperty("brightestBounce", std::to_string(brightestBounce));
+    RecordProperty("brightest", std::to_string(brightest));
+    EXPECT_GT(brightestBounce, 0.5f * kClamp) << "the patch's light bounces";
+    EXPECT_LE(brightestBounce, kClamp * 1.01f);
+    EXPECT_GT(brightest, 10.0f * kClamp) << "the patch itself is not clamped";
+}
+
+TEST_F(DarkCorridorTest, DISABLED_TimeIndirectLightAt1080p) {
+    // Not a test: the GPU time of each way of tracing indirect light at 1920 x 1080 in the dark corridor,
+    // through frames with timestamps (ADR-0045 set a budget of 1.5 ms on an RTX 3090).
+    constexpr rhi::Extent kFull{1920, 1080};
+    const auto created = [&](rhi::Format format, rhi::TextureUsage usage, const char* name) {
+        const core::Result<rhi::TextureHandle> texture =
+            Device().CreateTexture({.extent = kFull, .format = format, .usage = usage, .name = name});
+        EXPECT_TRUE(texture.has_value());
+        return texture.value_or(rhi::TextureHandle{});
+    };
+    const rhi::TextureHandle depth =
+        created(kDepthFormat, rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled, "Depth");
+    const rhi::TextureHandle normals =
+        created(MeshPass::kNormalFormat, rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled, "Normals");
+    const rhi::TextureHandle motion =
+        created(MeshPass::kMotionFormat, rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled, "Motion");
+    core::Result<renderer::ShadingTargets> shading = m_pass->CreateShadingTargets(kFull);
+    ASSERT_TRUE(shading.has_value());
+
+    const auto time = [&](const std::string& name, const renderer::GlobalIlluminationSettings& settings) {
+        core::Result<renderer::GlobalIllumination> gi = renderer::GlobalIllumination::Create(Device());
+        ASSERT_TRUE(gi.has_value() && gi->Resize(kFull).has_value());
+        constexpr std::uint32_t kWarmup = 16;
+        constexpr std::uint32_t kTimed = 128;
+        std::array<std::vector<std::string_view>, rhi::kFramesInFlight> groups;
+        std::map<std::string, double> totals;
+        std::uint32_t timed = 0;
+        for (std::uint32_t frame = 0; frame < kWarmup + kTimed + rhi::kFramesInFlight; ++frame) {
+            core::Result<std::optional<rhi::Frame>> begun = Device().BeginFrame();
+            ASSERT_TRUE(begun.has_value() && begun->has_value());
+            rhi::Frame& current = **begun;
+            const std::span<const double> stamps = Device().CompletedTimestamps();
+            if (frame >= kWarmup && stamps.size() == groups[current.slot].size() + 1) {
+                for (std::size_t group = 0; group < groups[current.slot].size(); ++group) {
+                    totals[std::string(groups[current.slot][group])] += stamps[group + 1] - stamps[group];
+                }
+                ++timed;
+            }
+            const core::Result<std::uint32_t> structure = m_scene->Reserve(current.slot, m_view.draws.size());
+            ASSERT_TRUE(structure.has_value());
+            ASSERT_TRUE(m_pass
+                            ->Prepare(m_view, {.extent = kFull,
+                                               .accelerationStructure = *structure,
+                                               .frameIndex = frame,
+                                               .exposure = renderer::ExposureScale(m_view.atmosphere.ev100)})
+                            .has_value());
+            ASSERT_TRUE(m_scene->Prepare(m_pass->TracedDraws()).has_value());
+            renderer::RenderGraph graph;
+            m_scene->AddBuild(graph);
+            m_pass->AddEmissiveLights(graph);
+            graph.AddPass(
+                {.name = "G-buffer", .rendering = MeshPass::GBufferRendering(*shading, normals, motion, depth)},
+                [&](rhi::CommandList& list) { m_pass->RecordGBuffer(list); });
+            gi->AddTo(graph, {.frameBuffer = m_pass->FrameDataIndex(),
+                              .instanceBuffer = m_pass->InstanceDataIndex(),
+                              .materialBuffer = m_pass->MaterialDataIndex(),
+                              .structure = m_scene->Structure(),
+                              .emissiveTriangles = m_pass->EmissiveTriangles(),
+                              .depth = depth,
+                              .normals = normals,
+                              .frameIndex = frame,
+                              .reflections = false,
+                              .settings = settings});
+            groups[current.slot] = graph.Execute(current.commands);
+            ASSERT_TRUE(Device().EndFrame().has_value());
+        }
+        ASSERT_TRUE(Device().WaitIdle().has_value());
+        for (const auto& [group, total] : totals) {
+            const double milliseconds = total / std::max(timed, 1U);
+            std::printf("%s, %s: %.3f ms\n", name.c_str(), group.c_str(), milliseconds);
+            RecordProperty(name + "_" + group, std::to_string(milliseconds));
+        }
+    };
+    for (std::uint32_t bounces = 0; bounces <= 3; ++bounces) {
+        for (std::uint32_t rays : {1U, 2U, 4U}) {
+            time("rays" + std::to_string(rays) + "_bounces" + std::to_string(bounces),
+                 {.bounces = bounces, .rays = rays});
+        }
+    }
+    for (const std::uint32_t candidates : {1U, 2U, 8U}) {
+        time("candidates" + std::to_string(candidates), {.lightCandidates = candidates});
+    }
+    m_pass->DestroyShadingTargets(*shading);
+    for (const rhi::TextureHandle texture : {depth, normals, motion}) {
+        Device().DestroyTexture(texture);
+    }
+}
+
+TEST_F(PathTracerTest, BouncesWeighSeveralLights) {
+    // In the room of a thousand lights, each surface a ray bounces off picks one light among a few, weighed by
+    // what each would send it (ADR-0045): with one, the bounce is noisier, and the denoised image farther
+    // from the path tracer's.
+    const SceneView room = RoomOfLights(m_cube, [this](const MaterialDesc& desc) { return Material(desc); });
+    constexpr rhi::Extent kExtent{96, 96};
+    const Image traced = Trace(room, kExtent, {.maxBounces = 8, .seed = 31, .jitter = false}, 512);
+    std::map<std::uint32_t, float> flips;
+    for (const std::uint32_t candidates : {1U, 2U, 4U, 8U}) {
+        core::Result<renderer::GlobalIllumination> created = renderer::GlobalIllumination::Create(Device());
+        ASSERT_TRUE(created.has_value());
+        const Image denoised = Rasterize(
+            room, kExtent,
+            {.frames = 32, .denoise = true, .indirect = &*created, .warmup = 4, .gi = {.lightCandidates = candidates}});
+        flips[candidates] = Flip(traced, denoised, kExtent);
+        RecordProperty("candidates" + std::to_string(candidates), std::to_string(flips[candidates]));
+    }
+    // Measured on an RTX 3090: 0.173 with one, 0.144 with two, 0.131 with four, 0.133 with eight.
+    EXPECT_LT(flips[4], 0.9f * flips[1]);
+    EXPECT_LT(flips[4], 0.15f);
 }

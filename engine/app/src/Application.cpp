@@ -258,6 +258,17 @@ core::Result<void> Application::LoadConfiguration() {
         m_restirUnbiased = m_cvars.Register<bool>(
             "renderer.restir_unbiased", false,
             "Test every reused light for shadows, to compare with the path tracer: twice the rays");
+        m_giBounces = m_cvars.Register<std::int64_t>(
+            "renderer.gi_bounces", 1,
+            "Surfaces lit along each ray of indirect light before the radiance cache is read, from 0 to 3");
+        m_giLightCandidates =
+            m_cvars.Register<std::int64_t>("renderer.gi_light_candidates", 4,
+                                           "Lights weighed at each surface indirect light bounces off, from 1 to 8");
+        m_giClamp = m_cvars.Register<double>(
+            "renderer.gi_clamp", 16.0,
+            "Brightest bounced light, as on screen before tone mapping, against fireflies; 0 for no limit");
+        m_giRays = m_cvars.Register<std::int64_t>(
+            "renderer.gi_rays", 1, "Rays of indirect light per pixel, from 1 to 16: less noise, for their cost");
         m_normalStrength = m_cvars.Register<double>(
             "renderer.normal_strength", 1.0, "Multiplies the relief of normal maps: 0 flattens them, 1 as authored");
         m_fieldOfView = m_cvars.Register<double>(
@@ -437,6 +448,7 @@ core::Result<void> Application::CreateRenderer() {
              .reflectionRoughness = ReflectionRoughness(*m_reflectionRoughness),
              .restirSpatial = m_restirSpatial->Get(),
              .restirUnbiased = m_restirUnbiased->Get(),
+             .indirect = IndirectLight(),
              .fieldOfView = FieldOfViewRadians(*m_fieldOfView),
              .viewDistance = ViewDistanceMeters(*m_viewDistance),
              .antialiasing = AntialiasingMode(*m_antialiasing),
@@ -445,6 +457,16 @@ core::Result<void> Application::CreateRenderer() {
              .pathSamples = static_cast<std::uint32_t>(std::clamp<std::int64_t>(m_pathSamples->Get(), 1, 1 << 20))}));
     m_renderer.emplace(std::move(created));
     return {};
+}
+
+renderer::IndirectLightConfig Application::IndirectLight() const {
+    const auto count = [](const core::CVar<std::int64_t>& value, std::int64_t low, std::int64_t high) {
+        return static_cast<std::uint32_t>(std::clamp(value.Get(), low, high));
+    };
+    return {.bounces = count(*m_giBounces, 0, 3),
+            .lightCandidates = count(*m_giLightCandidates, 1, 8),
+            .clamp = static_cast<float>(std::max(m_giClamp->Get(), 0.0)),
+            .rays = count(*m_giRays, 1, 16)};
 }
 
 core::Result<void> Application::CreateDebugOverlay() {
@@ -489,6 +511,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_renderer->SetReflections(m_reflections->Get());
     m_renderer->SetReflectionRoughness(ReflectionRoughness(*m_reflectionRoughness));
     m_renderer->SetRestir(m_restirSpatial->Get(), m_restirUnbiased->Get());
+    m_renderer->SetIndirectLightConfig(IndirectLight());
     m_renderer->SetFieldOfView(FieldOfViewRadians(*m_fieldOfView));
     m_renderer->SetViewDistance(ViewDistanceMeters(*m_viewDistance));
     m_renderer->SetAntialiasing(AntialiasingMode(*m_antialiasing));

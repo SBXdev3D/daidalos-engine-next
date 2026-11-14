@@ -1,6 +1,6 @@
 # ADR-0040: Diffuse global illumination with an own radiance cache, and directional lights
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by ADR-0045 (each pixel's ray lights the surface it hits before it reads the cache)
 - **Date:** 2026-11-11
 - **Supersedes:** ADR-0024's ambient occlusion and ambient light (the depth pre-pass stays)
 
