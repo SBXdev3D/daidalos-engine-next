@@ -28,6 +28,8 @@ struct GlobalIlluminationSettings {
 
 /// What global illumination reads each frame.
 struct GlobalIlluminationInputs {
+    /// The pixels the frame draws, in the top-left corner of the targets (ADR-0049); Resize's size when zero.
+    rhi::Extent extent;
     /// Storage indices of the frame's FrameData, instances and material table.
     std::uint32_t frameBuffer = 0;
     std::uint32_t instanceBuffer = 0;

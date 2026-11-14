@@ -42,3 +42,19 @@ TEST(Jitter, StaysInsideThePixelAndRepeats) {
     EXPECT_LT(std::abs(sum.x / kJitterPositions), 0.1f);
     EXPECT_LT(std::abs(sum.y / kJitterPositions), 0.1f);
 }
+
+TEST(Jitter, CyclesLongerBelowTheOutputsResolution) {
+    using daidalos::renderer::JitterPositions;
+    EXPECT_EQ(JitterPositions(1.0f), kJitterPositions);
+    // 8 / 0.67², so that each output pixel gets as many samples near its center (ADR-0049).
+    EXPECT_EQ(JitterPositions(0.67f), 18U);
+    EXPECT_EQ(JitterPositions(0.5f), 32U);
+    // Never fewer than at the output's resolution.
+    EXPECT_EQ(JitterPositions(1.5f), kJitterPositions);
+    const std::uint32_t positions = JitterPositions(0.67f);
+    for (std::uint64_t frame = 0; frame < positions; ++frame) {
+        EXPECT_EQ(Jitter(frame + positions, positions), Jitter(frame, positions));
+        EXPECT_GE(Jitter(frame, positions).x, -0.5f);
+        EXPECT_LT(Jitter(frame, positions).y, 0.5f);
+    }
+}

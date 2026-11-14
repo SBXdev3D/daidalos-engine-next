@@ -141,6 +141,7 @@ core::Result<void> DirectLighting::Resize(rhi::Extent extent) {
 
 void DirectLighting::AddTo(RenderGraph& graph, const DirectLightingInputs& inputs,
                            const DirectLightingSettings& settings) {
+    const rhi::Extent extent = inputs.extent.width > 0 ? inputs.extent : m_extent;
     const std::uint32_t previous = m_current;
     m_current = 1 - m_current;
     const auto sampled = [this](rhi::TextureHandle texture) { return m_device->BindlessIndex(texture); };
@@ -156,8 +157,8 @@ void DirectLighting::AddTo(RenderGraph& graph, const DirectLightingInputs& input
                              sampled(inputs.baseColor),
                              sampled(inputs.emission),
                              sampled(inputs.motion),
-                             m_extent.width,
-                             m_extent.height,
+                             extent.width,
+                             extent.height,
                              m_device->StorageIndex(m_reservoirs),
                              m_device->StorageIndex(m_finalReservoirs),
                              inputs.lightMap,
@@ -170,8 +171,8 @@ void DirectLighting::AddTo(RenderGraph& graph, const DirectLightingInputs& input
                              inputs.frameIndex,
                              flags,
                              sampled(m_guides[m_current])};
-    const std::uint32_t groupsX = (m_extent.width + kGroupSize - 1) / kGroupSize;
-    const std::uint32_t groupsY = (m_extent.height + kGroupSize - 1) / kGroupSize;
+    const std::uint32_t groupsX = (extent.width + kGroupSize - 1) / kGroupSize;
+    const std::uint32_t groupsY = (extent.height + kGroupSize - 1) / kGroupSize;
     const auto dispatch = [this, groupsX, groupsY](rhi::PipelineHandle pipeline, const RestirPushConstants& constants) {
         return [this, pipeline, constants, groupsX, groupsY](rhi::CommandList& commands) {
             DAI_PROFILE_SCOPE("renderer::DirectLighting");

@@ -1,6 +1,6 @@
 # ADR-0048: Image formation: auto-exposure, bloom, AgX and HDR output
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by ADR-0049 (the test that decides on FSR 3.1)
 - **Date:** 2026-11-14
 - **Amends:** ADR-0041 (step 9.14 is split in two; the steps after it move up by one), ADR-0043 (how exposure reaches the GPU)
 

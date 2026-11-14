@@ -266,6 +266,19 @@ core::Result<void> Application::LoadConfiguration() {
             "The eye adapts to the light within the level's range; off, it stays at the level's exposure");
         m_bloom = m_cvars.Register<double>("renderer.bloom", 0.04,
                                            "Share of the image that is its bloom, from 0 (none) to 1");
+        m_sharpness = m_cvars.Register<double>("renderer.sharpness", 0.25,
+                                               "Sharpening of the antialiased image, from 0 (none) to 1");
+        m_renderScale = m_cvars.Register<double>(
+            "renderer.render_scale", 1.0,
+            "Render size over the window's, from 0.5 to 1, upscaled by temporal antialiasing; with dynamic "
+            "resolution, the most it goes up to");
+        m_dynamicResolution = m_cvars.Register<bool>(
+            "renderer.dynamic_resolution", true,
+            "Lower the render size when the GPU cannot hold the target frame rate, and raise it back after");
+        m_minRenderScale = m_cvars.Register<double>("renderer.min_render_scale", 0.5,
+                                                    "Lowest render size over the window's with dynamic resolution");
+        m_targetFps = m_cvars.Register<std::int64_t>(
+            "renderer.target_fps", 60, "Frames per second dynamic resolution holds on the GPU: 30, 60 or 120");
         m_toneMapper = m_cvars.Register<std::string>(
             "renderer.tonemap", "agx", "Tone mapping: agx, or neutral (Khronos PBR Neutral) for comparison");
         m_hdr = m_cvars.Register<bool>("renderer.hdr", true, "HDR10 output on a display with HDR turned on");
@@ -473,6 +486,7 @@ core::Result<void> Application::CreateRenderer() {
              .vsync = m_vsync->Get(),
              .exposureCompensation = static_cast<float>(m_exposure->Get()),
              .image = Image(),
+             .resolution = Resolution(),
              .anisotropy = static_cast<float>(std::clamp<std::int64_t>(m_anisotropy->Get(), 1, 16)),
              .normalStrength = static_cast<float>(m_normalStrength->Get()),
              .indirectLight = m_indirectLight->Get(),
@@ -498,7 +512,16 @@ renderer::ImageConfig Application::Image() const {
             .toneMapper = ToneMapperNamed(*m_toneMapper),
             .hdr = m_hdr->Get(),
             .hdrPaperWhite = static_cast<float>(std::max(m_hdrPaperWhite->Get(), 0.0)),
-            .hdrPeak = static_cast<float>(std::max(m_hdrPeak->Get(), 0.0))};
+            .hdrPeak = static_cast<float>(std::max(m_hdrPeak->Get(), 0.0)),
+            .sharpness = static_cast<float>(std::clamp(m_sharpness->Get(), 0.0, 1.0))};
+}
+
+renderer::ResolutionConfig Application::Resolution() const {
+    const auto scale = [](double value) { return static_cast<float>(std::clamp(value, 0.5, 1.0)); };
+    return {.scale = scale(m_renderScale->Get()),
+            .dynamic = m_dynamicResolution->Get(),
+            .minScale = scale(m_minRenderScale->Get()),
+            .targetFps = static_cast<float>(std::clamp<std::int64_t>(m_targetFps->Get(), 30, 240))};
 }
 
 renderer::IndirectLightConfig Application::IndirectLight() const {
@@ -548,6 +571,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_renderer->SetVsync(m_vsync->Get());
     m_renderer->SetExposureCompensation(static_cast<float>(m_exposure->Get()));
     m_renderer->SetImage(Image());
+    m_renderer->SetResolution(Resolution());
     m_renderer->SetNormalStrength(static_cast<float>(m_normalStrength->Get()));
     m_renderer->SetIndirectLight(m_indirectLight->Get());
     m_renderer->SetDenoiser(m_denoiser->Get());

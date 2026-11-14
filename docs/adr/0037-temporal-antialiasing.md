@@ -1,6 +1,6 @@
 # ADR-0037: Motion vectors, jitter and temporal antialiasing
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by ADR-0049 (the resolve becomes an upscaler; sharpening is the engine's own)
 - **Date:** 2026-11-10
 - **Supersedes:** the antialiasing part of ADR-0026 (FXAA and MSAA)
 

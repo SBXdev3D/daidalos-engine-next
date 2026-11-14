@@ -41,6 +41,10 @@ struct RenderingDesc {
     TextureHandle depthTarget;
     /// Clears the depth target. Reverse-Z clears to 0, the far plane.
     std::optional<float> clearDepth;
+    /// Renders into the top-left corner of the targets only, this size, clears included; the whole targets
+    /// without it. Targets allocated at the largest size are drawn into a corner at a lower resolution
+    /// (ADR-0049).
+    std::optional<Extent> area;
 };
 
 /// The next use of a texture. Discard drops its content: for a texture about to be overwritten.
@@ -81,7 +85,7 @@ public:
     void Discard(TextureHandle texture, TextureState state);
 
     /// Sets the viewport (flipped once to make clip-space Y point up, CONVENTIONS.md section 5) and
-    /// the scissor to the size of the targets.
+    /// the scissor to the size of the targets, or to the desc's area.
     void BeginRendering(const RenderingDesc& desc);
     /// Draws into a part of the targets only, in pixels from their top-left corner. Clip-space Y still
     /// points up. Also sets the scissor to that part.

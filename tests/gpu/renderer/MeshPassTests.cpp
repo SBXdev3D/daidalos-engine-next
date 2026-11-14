@@ -186,7 +186,8 @@ protected:
                     const core::Result<std::uint32_t> structure = m_scene->Reserve(0, view.draws.size());
                     ASSERT_TRUE(structure.has_value());
                     EXPECT_TRUE(m_pass
-                                    ->Prepare(view, {.extent = kExtent,
+                                    ->Prepare(view, {.extent = m_renderExtent,
+                                                     .targetExtent = kExtent,
                                                      .accelerationStructure = *structure,
                                                      .jitter = jitter,
                                                      .frameIndex = m_frameIndex++})
@@ -203,12 +204,14 @@ protected:
                     const rhi::BufferUse skinned{m_pass->SkinnedVertices(), rhi::Access::VertexInputRead};
                     graph.AddPass(
                         {.name = "G-buffer",
-                         .rendering = MeshPass::GBufferRendering(m_shading, m_normals, m_motion, m_depth),
+                         .rendering =
+                             MeshPass::GBufferRendering(m_shading, m_normals, m_motion, m_depth, m_renderExtent),
                          .buffers = {skinned, {m_pass->PreviousSkinnedPositions(), rhi::Access::VertexShaderRead}}},
                         [&](rhi::CommandList& list) { m_pass->RecordGBuffer(list); });
                     if (view.camera.has_value()) {
                         m_lighting->AddTo(graph,
-                                          {.frameBuffer = m_pass->FrameDataIndex(),
+                                          {.extent = m_renderExtent,
+                                           .frameBuffer = m_pass->FrameDataIndex(),
                                            .instanceBuffer = m_pass->InstanceDataIndex(),
                                            .materialBuffer = m_pass->MaterialDataIndex(),
                                            .structure = traced,
@@ -227,7 +230,8 @@ protected:
                                           {});
                     }
                     if (denoiser != nullptr && view.camera.has_value()) {
-                        denoiser->AddTo(graph, {.frameBuffer = m_pass->FrameDataIndex(),
+                        denoiser->AddTo(graph, {.extent = m_renderExtent,
+                                                .frameBuffer = m_pass->FrameDataIndex(),
                                                 .diffuse = m_shading.diffuse,
                                                 .specular = m_shading.specular,
                                                 .depth = m_depth,
@@ -281,6 +285,8 @@ protected:
     std::optional<renderer::RayTracingScene> m_scene;
     std::optional<renderer::DirectLighting> m_lighting;
     renderer::ShadingTargets m_shading;
+    /// The frame draws this top-left corner of its targets, which are kExtent (ADR-0049).
+    rhi::Extent m_renderExtent = kExtent;
     std::uint32_t m_frameIndex = 0;
     rhi::TextureHandle m_color;
     rhi::TextureHandle m_depth;
@@ -1128,10 +1134,11 @@ protected:
         MeshPassTest::TearDown();
     }
 
-    // Renders and resolves frames of the view, each with the next jitter.
+    // Renders and resolves frames of the view, each with the next jitter of the render scale's cycle.
     void Resolve(const SceneView& view, int frames = 1) {
+        const float scale = static_cast<float>(m_renderExtent.width) / static_cast<float>(kExtent.width);
         for (int frame = 0; frame < frames; ++frame) {
-            Render(view, renderer::Jitter(m_frame++));
+            Render(view, renderer::Jitter(m_frame++, renderer::JitterPositions(scale)));
             ASSERT_TRUE(Device()
                             .Submit([&](rhi::CommandList& commands) {
                                 renderer::RenderGraph graph;
@@ -1153,6 +1160,15 @@ protected:
         }
     }
 
+    // The red channel of the last resolved frame along a row, from 0 to 1.
+    [[nodiscard]] std::vector<float> ResolvedRow(std::uint32_t y, std::uint32_t first, std::uint32_t last) {
+        std::vector<float> values;
+        for (std::uint32_t x = first; x <= last; ++x) {
+            values.push_back(Resolved(x, y));
+        }
+        return values;
+    }
+
     // The red channel of the last resolved frame, from 0 to 1.
     [[nodiscard]] float Resolved(std::uint32_t x, std::uint32_t y) {
         glm::vec4 pixel;
@@ -1166,11 +1182,13 @@ protected:
     [[nodiscard]] float Current(std::uint32_t x, std::uint32_t y) { return static_cast<float>(Pixel(x, y).r) / 255.0f; }
 
     // A white wall left of a vertical edge 0.1 pixels right of the center of column 32: 5 of the 8 jitter
-    // positions of that column's pixels fall on the wall.
-    SceneView Edge() {
+    // positions of that column's pixels fall on the wall. Mirrored, the wall is right of the edge.
+    SceneView Edge(bool mirrored = false) {
         const float halfWidth = 5.0f * std::tan(glm::radians(30.0f));
         const float edge = ((32.6f / 32.0f) - 1.0f) * halfWidth;
-        return {TestCamera(), {{Mesh(MakeQuad(-10.0f, edge, -10.0f, 10.0f, 0.0f)), glm::mat4(1.0f), m_white}}};
+        const MeshData wall =
+            mirrored ? MakeQuad(edge, 10.0f, -10.0f, 10.0f, 0.0f) : MakeQuad(-10.0f, edge, -10.0f, 10.0f, 0.0f);
+        return {TestCamera(), {{Mesh(wall), glm::mat4(1.0f), m_white}}};
     }
 
     std::optional<renderer::TemporalResolvePass> m_resolve;
@@ -1209,6 +1227,66 @@ TEST_F(TemporalTest, AStillEdgeConvergesToItsCoverage) {
     m_frame = 0;
     Resolve(view);
     EXPECT_NEAR(Resolved(32, 32), wall, 0.02f * wall);
+}
+
+// Upscaling (ADR-0049): the frames are drawn into a 43 × 43 corner of the 64 × 64 targets, 67%.
+constexpr rhi::Extent kUpscaled{43, 43};
+
+TEST_F(TemporalTest, AnUpscaledEdgeConvergesToWhatTheOutputsResolutionShows) {
+    m_white = Material({1.0f, 1.0f, 1.0f});
+    const SceneView view = Edge();
+    Resolve(view, 32);
+    const std::vector<float> native = ResolvedRow(32, 26, 38);
+
+    m_resolve->Reset();
+    m_frame = 0;
+    m_renderExtent = kUpscaled;
+    Resolve(view, 64);
+    const std::vector<float> upscaled = ResolvedRow(32, 26, 38);
+    const auto mapped = [](float value) { return value / (1.0f + value); };
+    for (std::size_t index = 0; index < native.size(); ++index) {
+        EXPECT_NEAR(mapped(upscaled[index]), mapped(native[index]), 0.1f * mapped(native[0]))
+            << "column " << 26 + index;
+    }
+}
+
+TEST_F(TemporalTest, OnlyTheCornerDrawnIsRead) {
+    m_white = Material({1.0f, 1.0f, 1.0f});
+    // A full frame leaves the wall on the left, down to the targets' last rows.
+    Resolve(Edge(), 4);
+    ASSERT_GT(Resolved(10, 60), 0.2f);
+    // Mirrored in a corner that changes size every frame, the left is dark: below the corner, the old wall
+    // must not be read.
+    m_resolve->Reset();
+    for (int frame = 0; frame < 8; ++frame) {
+        m_renderExtent = frame % 2 == 0 ? kUpscaled : rhi::Extent{50, 50};
+        Resolve(Edge(true));
+        for (const std::uint32_t y : {10U, 40U, 60U, 63U}) {
+            EXPECT_NEAR(Resolved(10, y), 0.0f, 0.01f) << "frame " << frame << ", row " << y;
+            EXPECT_GT(Resolved(54, y), 0.2f) << "frame " << frame << ", row " << y;
+        }
+    }
+}
+
+TEST_F(TemporalTest, AnUpscaledMovedObjectLeavesNoTrail) {
+    m_white = Material({1.0f, 1.0f, 1.0f});
+    m_renderExtent = kUpscaled;
+    const MeshHandle background = Mesh(MakeQuad(-10.0f, 10.0f, -10.0f, 10.0f, -1.0f));
+    const MeshHandle square = Mesh(MakeQuad(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f));
+    const glm::mat4 left = glm::translate(glm::mat4(1.0f), glm::vec3(-1.5f, 0.0f, 0.0f));
+    const glm::mat4 right = glm::translate(glm::mat4(1.0f), glm::vec3(1.5f, 0.0f, 0.0f));
+    SceneView view{TestCamera(),
+                   {{background, glm::mat4(1.0f), Material({0.2f, 0.2f, 0.2f})}, {square, left, m_white}}};
+    Resolve(view, 32);
+    const float square32 = Resolved(15, 32);
+    const float background32 = Resolved(48, 32);
+    ASSERT_GT(square32, background32 * 2.0f) << "the square stands out";
+
+    view.draws[1].world = right;
+    view.draws[1].previousWorld = left;
+    Resolve(view);
+    EXPECT_NEAR(Resolved(15, 32), background32, 0.02f) << "where it was, only the background";
+    EXPECT_NEAR(Resolved(48, 32), square32, 0.05f) << "it carried its history along";
 }
 
 TEST_F(TemporalTest, AMovedObjectLeavesNoTrail) {
@@ -1376,6 +1454,40 @@ TEST_F(DenoiserTest, AMovedPanelLeavesNoShadowBehind) {
     view.draws[1].previousWorld = glm::mat4(1.0f);
     Denoise(view);
     EXPECT_GT(Pixel(20, 32).r, 100) << "the floor is lit where the shadow was";
+}
+
+TEST_F(DenoiserTest, TheHistoryOutlivesAChangeOfRenderSize) {
+    // The frame's corner shrinks to 48 × 48, then stays (ADR-0049). Kept across the change, and found where
+    // it was, the history makes the first frame after it look as the frames do once settled at that size;
+    // lost, it would be raw noise, and read at the wrong place, a shadow moved by a quarter.
+    const SceneView view = ShadowView(1.0f);
+    Denoise(view, 16);
+    m_renderExtent = {48, 48};
+    const auto edge = [this] {
+        // Edge()'s region, at three quarters of the size.
+        std::vector<int> values;
+        for (std::uint32_t y = kEdgeTop * 3 / 4; y < kEdgeBottom * 3 / 4; ++y) {
+            for (std::uint32_t x = kEdgeLeft * 3 / 4; x < kEdgeRight * 3 / 4; ++x) {
+                values.push_back(Pixel(x, y).r);
+            }
+        }
+        return values;
+    };
+    Render(view);
+    const std::vector<int> rawFirst = edge();
+    Render(view);
+    const int rawDifferences = Differences(rawFirst, edge(), 12);
+    ASSERT_GT(rawDifferences, 10) << "the shadow's edge is noisy at this size too";
+
+    m_denoiser->Reset();
+    m_renderExtent = kExtent;
+    Denoise(view, 16);
+    m_renderExtent = {48, 48};
+    Denoise(view);
+    const std::vector<int> first = edge();
+    Denoise(view, 16);
+    // Measured on an RTX 3090: 8 of 21 raw; 30 with the history read at the wrong place.
+    EXPECT_LT(Differences(first, edge(), 12), rawDifferences / 2);
 }
 
 TEST_F(DenoiserTest, AResetForgetsTheHistory) {

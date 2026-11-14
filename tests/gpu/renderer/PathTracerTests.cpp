@@ -29,12 +29,15 @@
 
 #include "Denoiser.hpp"
 #include "DirectLighting.hpp"
+#include "DynamicResolution.hpp"
 #include "GlobalIllumination.hpp"
 #include "GpuFixture.hpp"
 #include "MeshPass.hpp"
+#include "ParticlePass.hpp"
 #include "PathTracerPass.hpp"
 #include "RayTracingScene.hpp"
 #include "RenderGraph.hpp"
+#include "TemporalResolvePass.hpp"
 
 using namespace daidalos;
 using gpu_tests::GpuTest;
@@ -173,6 +176,10 @@ protected:
         renderer::GlobalIlluminationSettings gi;
         /// Called with each frame drawn after the warmup, through the denoiser if there is one, and its number.
         std::function<void(const Image&, std::uint32_t)> eachFrame;
+        /// Each frame is jittered and resolved by temporal antialiasing, which upscales it from this scale of
+        /// the extent (ADR-0049); the last frame resolved is returned.
+        bool resolve = false;
+        float renderScale = 1.0f;
     };
 
     // What the G-buffer and the lighting draw of the view, in linear HDR. The view is drawn frames times, each with the
@@ -181,6 +188,9 @@ protected:
         const std::uint32_t frames = options.frames;
         const bool denoise = options.denoise;
         renderer::GlobalIllumination* const indirect = options.indirect;
+        // The frame draws the top-left corner of its targets, which are the extent (ADR-0049).
+        const rhi::Extent renderExtent = options.resolve ? renderer::RenderExtent(extent, options.renderScale) : extent;
+        const float renderScale = static_cast<float>(renderExtent.width) / static_cast<float>(extent.width);
         if (indirect != nullptr) {
             EXPECT_TRUE(indirect->Resize(extent).has_value());
         }
@@ -190,8 +200,18 @@ protected:
             EXPECT_TRUE(texture.has_value());
             return texture.value_or(rhi::TextureHandle{});
         };
-        const rhi::TextureHandle color =
-            created(kColorFormat, rhi::TextureUsage::ColorTarget | rhi::TextureUsage::TransferSrc, "Color");
+        const rhi::TextureHandle color = created(
+            kColorFormat, rhi::TextureUsage::ColorTarget | rhi::TextureUsage::TransferSrc | rhi::TextureUsage::Sampled,
+            "Color");
+        const rhi::TextureHandle reactive =
+            created(renderer::ParticlePass::kReactiveFormat,
+                    rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled, "Reactive");
+        std::optional<renderer::TemporalResolvePass> resolver;
+        if (options.resolve) {
+            core::Result<renderer::TemporalResolvePass> made = renderer::TemporalResolvePass::Create(Device());
+            EXPECT_TRUE(made.has_value() && made->Resize(extent).has_value());
+            resolver.emplace(std::move(*made));
+        }
         const rhi::TextureHandle depth =
             created(kDepthFormat, rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled, "Depth");
         const rhi::TextureHandle normals =
@@ -230,28 +250,36 @@ protected:
                         ASSERT_TRUE(structure.has_value());
                         ASSERT_TRUE(
                             m_pass
-                                ->Prepare(animated,
-                                          {.extent = extent,
-                                           .indirect = indirect != nullptr ? indirect->Output() : rhi::TextureHandle{},
-                                           .accelerationStructure = *structure,
-                                           .frameIndex = frame,
-                                           .reflections = reflections,
-                                           .background = background,
-                                           .depth = depth,
-                                           .exposure = renderer::ExposureScale(animated.atmosphere.ev100),
-                                           .sharpReflections =
-                                               reflections ? renderer::GlobalIllumination::kSharpRoughness : 0.0f})
+                                ->Prepare(
+                                    animated,
+                                    {.extent = renderExtent,
+                                     .targetExtent = extent,
+                                     .mipBias = std::log2(renderScale),
+                                     .indirect = indirect != nullptr ? indirect->Output() : rhi::TextureHandle{},
+                                     .accelerationStructure = *structure,
+                                     .jitter = options.resolve
+                                                   ? renderer::Jitter(drawn, renderer::JitterPositions(renderScale))
+                                                   : glm::vec2(0.0f),
+                                     .frameIndex = frame,
+                                     .reflections = reflections,
+                                     .background = background,
+                                     .depth = depth,
+                                     .exposure = renderer::ExposureScale(animated.atmosphere.ev100),
+                                     .sharpReflections =
+                                         reflections ? renderer::GlobalIllumination::kSharpRoughness : 0.0f})
                                 .has_value());
                         ASSERT_TRUE(m_scene->Prepare(m_pass->TracedDraws()).has_value());
                         renderer::RenderGraph graph;
                         m_pass->AddSkinning(graph);
                         m_scene->AddBuild(graph);
                         m_pass->AddEmissiveLights(graph);
-                        graph.AddPass({.name = "G-buffer",
-                                       .rendering = MeshPass::GBufferRendering(*shading, normals, motion, depth)},
-                                      [&](rhi::CommandList& list) { m_pass->RecordGBuffer(list); });
+                        graph.AddPass(
+                            {.name = "G-buffer",
+                             .rendering = MeshPass::GBufferRendering(*shading, normals, motion, depth, renderExtent)},
+                            [&](rhi::CommandList& list) { m_pass->RecordGBuffer(list); });
                         if (indirect != nullptr) {
-                            indirect->AddTo(graph, {.frameBuffer = m_pass->FrameDataIndex(),
+                            indirect->AddTo(graph, {.extent = renderExtent,
+                                                    .frameBuffer = m_pass->FrameDataIndex(),
                                                     .instanceBuffer = m_pass->InstanceDataIndex(),
                                                     .materialBuffer = m_pass->MaterialDataIndex(),
                                                     .structure = m_scene->Structure(),
@@ -263,7 +291,8 @@ protected:
                                                     .settings = options.gi});
                         }
                         lighting->AddTo(graph,
-                                        {.frameBuffer = m_pass->FrameDataIndex(),
+                                        {.extent = renderExtent,
+                                         .frameBuffer = m_pass->FrameDataIndex(),
                                          .instanceBuffer = m_pass->InstanceDataIndex(),
                                          .materialBuffer = m_pass->MaterialDataIndex(),
                                          .structure = m_scene->Structure(),
@@ -284,7 +313,8 @@ protected:
                         if (denoiser.has_value()) {
                             denoiser->AddTo(
                                 graph,
-                                {.frameBuffer = m_pass->FrameDataIndex(),
+                                {.extent = renderExtent,
+                                 .frameBuffer = m_pass->FrameDataIndex(),
                                  .diffuse = shading->diffuse,
                                  .specular = shading->specular,
                                  .depth = depth,
@@ -304,7 +334,7 @@ protected:
                                                         {background, rhi::Access::TransferWrite, true}}},
                                           [&](rhi::CommandList& list) { list.CopyTexture(color, background); });
                             graph.AddPass({.name = "Glass",
-                                           .rendering = rhi::RenderingDesc{.colorTarget = color},
+                                           .rendering = rhi::RenderingDesc{.colorTarget = color, .area = renderExtent},
                                            .textures = {{color, rhi::Access::ColorTarget},
                                                         {background, rhi::Access::FragmentShaderRead},
                                                         {depth, rhi::Access::FragmentShaderRead}},
@@ -312,21 +342,35 @@ protected:
                                            .structures = {{m_scene->Structure(), rhi::Access::RayQueryRead}}},
                                           [&](rhi::CommandList& list) { m_pass->RecordGlass(list); });
                         }
+                        if (resolver.has_value()) {
+                            graph.AddPass({.name = "Reactive",
+                                           .rendering = rhi::RenderingDesc{.colorTarget = reactive,
+                                                                           .clearColor = glm::vec4(0.0f)}},
+                                          [](rhi::CommandList& /*list*/) {});
+                            resolver->AddTo(graph, {.frameBuffer = m_pass->FrameDataIndex(),
+                                                    .color = color,
+                                                    .depth = depth,
+                                                    .motion = motion,
+                                                    .reactive = reactive});
+                        }
                         graph.Execute(commands);
                     })
                     .has_value());
             if (drawn < options.warmup) {
                 continue;
             }
-            const Image drawnImage = Read(color, extent);
+            const Image drawnImage = Read(resolver.has_value() ? resolver->Output() : color, extent);
             if (options.eachFrame) {
                 options.eachFrame(drawnImage, drawn - options.warmup);
             }
             for (std::size_t index = 0; index < image.size(); ++index) {
-                image[index] =
-                    denoise ? drawnImage[index] : image[index] + drawnImage[index] / static_cast<float>(frames);
+                image[index] = denoise || options.resolve
+                                   ? drawnImage[index]
+                                   : image[index] + drawnImage[index] / static_cast<float>(frames);
             }
         }
+        resolver.reset();
+        Device().DestroyTexture(reactive);
         denoiser.reset();
         lighting.reset();
         m_pass->DestroyShadingTargets(*shading);
@@ -1592,4 +1636,159 @@ TEST_F(PathTracerTest, BouncesWeighSeveralLights) {
     // Measured on an RTX 3090: 0.173 with one, 0.144 with two, 0.131 with four, 0.133 with eight.
     EXPECT_LT(flips[4], 0.9f * flips[1]);
     EXPECT_LT(flips[4], 0.15f);
+}
+
+namespace {
+
+// Each 2 x 2 block of an image of twice the extent, averaged: a supersampled reference (ADR-0049).
+Image Downsample(const Image& image, rhi::Extent extent) {
+    Image result(std::size_t{extent.width} * extent.height);
+    const std::size_t wide = std::size_t{extent.width} * 2;
+    for (std::uint32_t y = 0; y < extent.height; ++y) {
+        for (std::uint32_t x = 0; x < extent.width; ++x) {
+            const std::size_t corner = std::size_t{y} * 2 * wide + std::size_t{x} * 2;
+            result[std::size_t{y} * extent.width + x] =
+                (image[corner] + image[corner + 1] + image[corner + wide] + image[corner + wide + 1]) * 0.25f;
+        }
+    }
+    return result;
+}
+
+// What upscaling is measured by (ADR-0049), against the same frames rendered at twice the width and height
+// with temporal antialiasing and averaged down.
+struct UpscalingScores {
+    float still = 0.0f;   // Mean FLIP of the last eight frames before the camera turns.
+    float pan = 0.0f;     // Mean FLIP of the frames while it turns.
+    double flicker = 0.0; // Mean change of luminance between still frames, over its mean.
+};
+
+} // namespace
+
+class UpscalingTest : public PathTracerTest {
+protected:
+    static constexpr rhi::Extent kExtent{320, 180};
+    static constexpr std::uint32_t kStill = 48;
+    static constexpr std::uint32_t kPan = 32;
+    static constexpr float kDegreesPerFrame = 0.5f;
+
+    // The frames of the view, still then turning, at the extent, rendered at scale of it and upscaled, through
+    // indirect light, reflections and the denoiser.
+    std::vector<Image> Frames(const SceneView& view, rhi::Extent extent, float scale) {
+        core::Result<renderer::GlobalIllumination> indirect = renderer::GlobalIllumination::Create(Device());
+        EXPECT_TRUE(indirect.has_value());
+        std::vector<Image> frames;
+        const glm::mat4 still = view.camera->view;
+        Rasterize(view, extent,
+                  {.frames = kStill + kPan,
+                   .denoise = true,
+                   .indirect = &*indirect,
+                   .reflections = true,
+                   .animate =
+                       [&](SceneView& animated, std::uint32_t frame) {
+                           const float degrees =
+                               frame < kStill ? 0.0f : static_cast<float>(frame - kStill + 1) * kDegreesPerFrame;
+                           animated.camera->view =
+                               glm::rotate(glm::mat4(1.0f), glm::radians(degrees), glm::vec3(0.0f, 1.0f, 0.0f)) * still;
+                       },
+                   .eachFrame = [&](const Image& image, std::uint32_t /*frame*/) { frames.push_back(image); },
+                   .resolve = true,
+                   .renderScale = scale});
+        return frames;
+    }
+
+    std::vector<Image> Reference(const SceneView& view) {
+        std::vector<Image> frames = Frames(view, {kExtent.width * 2, kExtent.height * 2}, 1.0f);
+        for (Image& frame : frames) {
+            frame = Downsample(frame, kExtent);
+        }
+        return frames;
+    }
+
+    UpscalingScores Measure(const SceneView& view, const std::vector<Image>& reference, float scale) {
+        const std::vector<Image> frames = Frames(view, kExtent, scale);
+        UpscalingScores scores;
+        for (std::uint32_t frame = kStill - 8; frame < kStill; ++frame) {
+            scores.still += Flip(reference[frame], frames[frame], kExtent) / 8.0f;
+        }
+        for (std::uint32_t frame = kStill; frame < kStill + kPan; ++frame) {
+            scores.pan += Flip(reference[frame], frames[frame], kExtent) / static_cast<float>(kPan);
+        }
+        for (std::uint32_t frame = kStill - 16; frame < kStill; ++frame) {
+            scores.flicker += Flicker(frames[frame - 1], frames[frame]) / 16.0;
+        }
+        return scores;
+    }
+
+    void Report(const std::string& name, const UpscalingScores& scores) {
+        RecordProperty(name + "_still", std::to_string(scores.still));
+        RecordProperty(name + "_pan", std::to_string(scores.pan));
+        RecordProperty(name + "_flicker", std::to_string(scores.flicker));
+        std::printf("%s: FLIP still %.4f, panning %.4f, flicker %.4f\n", name.c_str(), scores.still, scores.pan,
+                    scores.flicker);
+    }
+
+    SceneView Corridor() {
+        const renderer::DarkCorridor corridor = renderer::MakeDarkCorridor();
+        return CorridorView(
+            corridor, m_cube, [this](const MaterialDesc& desc) { return Material(desc); }, corridor.target);
+    }
+
+    SceneView Mirrors() {
+        return MirrorRoomView(
+            renderer::MakeMirrorRoom(), m_cube, [this](const MaterialDesc& desc) { return Material(desc); }, true);
+    }
+
+    // The corridor's parts glowing, bright and dim in turn, and nothing lit: edges alone, the same at every
+    // render size, so that what differs is the upscaler's.
+    SceneView Edges() {
+        const renderer::DarkCorridor corridor = renderer::MakeDarkCorridor();
+        SceneView view = CorridorView(
+            corridor, m_cube,
+            [this, part = 0](const MaterialDesc& desc) mutable {
+                MaterialDesc glowing = desc;
+                glowing.emissiveFactor = glm::vec3((part++ % 2) == 0 ? 16.0f : 0.5f);
+                glowing.emissiveLight = false;
+                return Material(glowing);
+            },
+            corridor.target);
+        view.lights.clear();
+        return view;
+    }
+};
+
+TEST_F(UpscalingTest, TheUpscalerAtTwoThirdsStaysNearTheOutputsResolution) {
+    // ADR-0049: at 67%, the upscaler against native resolution, both against a reference supersampled twice
+    // each way. In the dark corridor, lit as the game is; and on edges alone, where nothing but the upscaler
+    // differs.
+    const SceneView corridor = Corridor();
+    const std::vector<Image> corridorReference = Reference(corridor);
+    const UpscalingScores corridorNative = Measure(corridor, corridorReference, 1.0f);
+    const UpscalingScores corridorUpscaled = Measure(corridor, corridorReference, 0.67f);
+    const SceneView edges = Edges();
+    const std::vector<Image> edgesReference = Reference(edges);
+    const UpscalingScores edgesNative = Measure(edges, edgesReference, 1.0f);
+    const UpscalingScores edgesUpscaled = Measure(edges, edgesReference, 0.67f);
+    Report("corridor_100", corridorNative);
+    Report("corridor_67", corridorUpscaled);
+    Report("edges_100", edgesNative);
+    Report("edges_67", edgesUpscaled);
+    // Measured on an RTX 3090: the corridor 0.093 and 0.105 still, 0.091 and 0.101 panning; edges 0.0028 and
+    // 0.0044 still, 0.0053 and 0.0065 panning.
+    EXPECT_LT(corridorUpscaled.still, 1.2f * corridorNative.still);
+    EXPECT_LT(corridorUpscaled.pan, 1.2f * corridorNative.pan);
+    EXPECT_LT(edgesUpscaled.still, 0.006f);
+    EXPECT_LT(edgesUpscaled.pan, 1.4f * edgesNative.pan);
+}
+
+TEST_F(UpscalingTest, DISABLED_MeasureEachScale) {
+    // Not a test: the scores of each scale, for ADR-0049.
+    const std::vector<std::pair<std::string, SceneView>> scenes{
+        {"edges", Edges()}, {"corridor", Corridor()}, {"mirrors", Mirrors()}};
+    for (const auto& [name, view] : scenes) {
+        const std::vector<Image> reference = Reference(view);
+        for (const float scale : {1.0f, 0.67f, 0.58f, 0.5f}) {
+            Report(name + "_" + std::to_string(static_cast<int>(std::lround(scale * 100.0f))),
+                   Measure(view, reference, scale));
+        }
+    }
 }

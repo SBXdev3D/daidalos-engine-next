@@ -79,6 +79,22 @@ struct ImageConfig {
     /// Nits of paper white and of the display's peak in HDR10; 0 takes the system's.
     float hdrPaperWhite = 0.0f;
     float hdrPeak = 0.0f;
+    /// Contrast-adaptive sharpening of the antialiased image, from 0 (none) to 1 (ADR-0049).
+    float sharpness = 0.25f;
+};
+
+/// The resolution the scene is rendered at, below the output's, and how it moves to hold the frame rate
+/// (ADR-0049). Temporal antialiasing upscales it to the output; without it, and in debug views, the scene
+/// renders at the output's resolution.
+struct ResolutionConfig {
+    /// Render size over output size, per axis, from 0.25 to 1: the scale without dynamic resolution, its
+    /// ceiling with it.
+    float scale = 1.0f;
+    /// The scale moves between minScale and scale to hold the target frame rate on the GPU.
+    bool dynamic = true;
+    float minScale = 0.5f;
+    /// Frames per second the GPU's budget is set for: 90% of a frame's time.
+    float targetFps = 60.0f;
 };
 
 struct RendererConfig {
@@ -90,6 +106,7 @@ struct RendererConfig {
     /// Stops added to the scene's exposure (Atmosphere::ev100): +1 shows the scene twice as bright (ADR-0043).
     float exposureCompensation = 0.0f;
     ImageConfig image;
+    ResolutionConfig resolution;
     /// Anisotropic filtering of textures, from 1 (off) to 16.
     float anisotropy = 16.0f;
     /// Multiplies the tilt of every normal map: 0 flattens them, 1 keeps them as authored.
@@ -145,6 +162,10 @@ struct FrameStats {
     float meteredEv100 = 0.0f;
     float ev100Min = 0.0f;
     float ev100Max = 0.0f;
+    /// The size the last frame was rendered at, and its scale of the output's (ADR-0049).
+    std::uint32_t renderWidth = 0;
+    std::uint32_t renderHeight = 0;
+    float renderScale = 1.0f;
     /// Objects the renderer holds.
     std::size_t meshes = 0;
     std::size_t materials = 0;
@@ -188,6 +209,7 @@ public:
     void SetVsync(bool vsync);
     void SetExposureCompensation(float stops);
     void SetImage(const ImageConfig& config);
+    void SetResolution(const ResolutionConfig& config);
     void SetNormalStrength(float strength);
     void SetIndirectLight(bool enabled);
     void SetDenoiser(bool enabled);

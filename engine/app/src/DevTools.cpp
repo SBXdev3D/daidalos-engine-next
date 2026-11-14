@@ -392,6 +392,9 @@ void DevTools::DrawStats() {
             std::format("Draws: {} drawn of {}, {} triangles", stats.drawnDraws, stats.draws, Count(stats.triangles)));
         TextLine(std::format("Lights: {}, emissive triangles included; one shadow ray per pixel", stats.lights));
         TextLine(std::format("Particle spawns: {}", stats.particleSpawns));
+        // ADR-0049: the size the scene is rendered at, before temporal antialiasing upscales it.
+        TextLine(std::format("Rendered at {} x {}, {:.0f}% of the window", stats.renderWidth, stats.renderHeight,
+                             stats.renderScale * 100.0f));
         if (scene::Scene* scene = m_app->CurrentScene()) {
             TextLine(std::format("Entities: {}{}", scene->World().AliveCount(), scene->IsPaused() ? ", paused" : ""));
         } else {

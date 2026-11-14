@@ -169,6 +169,7 @@ private:
     /// The renderer.gi_* variables.
     [[nodiscard]] renderer::IndirectLightConfig IndirectLight() const;
     [[nodiscard]] renderer::ImageConfig Image() const;
+    [[nodiscard]] renderer::ResolutionConfig Resolution() const;
     core::Result<void> CreateDebugOverlay();
     void RenderFrame(IApplicationHandler& handler);
     void ReportConfigurationProblems();
@@ -186,6 +187,11 @@ private:
     std::optional<core::CVar<double>> m_exposure;
     std::optional<core::CVar<bool>> m_autoExposure;
     std::optional<core::CVar<double>> m_bloom;
+    std::optional<core::CVar<double>> m_sharpness;
+    std::optional<core::CVar<double>> m_renderScale;
+    std::optional<core::CVar<bool>> m_dynamicResolution;
+    std::optional<core::CVar<double>> m_minRenderScale;
+    std::optional<core::CVar<std::int64_t>> m_targetFps;
     std::optional<core::CVar<std::string>> m_toneMapper;
     std::optional<core::CVar<bool>> m_hdr;
     std::optional<core::CVar<double>> m_hdrPaperWhite;

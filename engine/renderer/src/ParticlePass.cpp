@@ -393,7 +393,7 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, std::span<con
 
 void ParticlePass::AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::TextureHandle depth,
                            rhi::TextureHandle target, rhi::TextureHandle reactive, const glm::vec3& cameraRight,
-                           const glm::vec3& cameraUp) {
+                           const glm::vec3& cameraUp, std::optional<rhi::Extent> area) {
     ParticlePushConstants push{};
     push.particles = m_device->StorageIndex(m_particles);
     push.keys = m_device->StorageIndex(m_keys);
@@ -406,7 +406,8 @@ void ParticlePass::AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::T
     // Over the meshes, back to front; they read the depth to fade into surfaces.
     graph.AddPass(
         {.name = "Particles",
-         .rendering = rhi::RenderingDesc{.colorTarget = target, .moreColorTargets = {{reactive, glm::vec4(0.0f)}}},
+         .rendering =
+             rhi::RenderingDesc{.colorTarget = target, .moreColorTargets = {{reactive, glm::vec4(0.0f)}}, .area = area},
          .textures = {{depth, rhi::Access::FragmentShaderRead}},
          .buffers = {{m_particles, rhi::Access::VertexShaderRead},
                      {m_keys, rhi::Access::VertexShaderRead},

@@ -16,6 +16,8 @@ class RenderGraph;
 
 /// What the lighting pass reads and writes each frame.
 struct DirectLightingInputs {
+    /// The pixels the frame draws, in the top-left corner of the targets (ADR-0049); Resize's size when zero.
+    rhi::Extent extent;
     /// Storage indices of the frame's FrameData, instances and material table.
     std::uint32_t frameBuffer = 0;
     std::uint32_t instanceBuffer = 0;

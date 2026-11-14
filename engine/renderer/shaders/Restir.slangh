@@ -63,8 +63,10 @@ GBufferTextures Textures() {
     return textures;
 }
 
+// Reservoirs are laid out over the whole targets, whose corner the frame draws (ADR-0049): a pixel keeps its
+// index when the render size changes.
 uint PixelIndex(int2 pixel) {
-    return uint(pixel.y) * g_restir.width + uint(pixel.x);
+    return uint(pixel.y) * g_frames[g_restir.frameBuffer][0].targetSize.x + uint(pixel.x);
 }
 
 // Two pixels show the same surface: close in depth, facing the same way, as rough.

@@ -122,11 +122,12 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         const float4 clip = mul(frame.viewProjection, float4(particle.position, 1.0));
         const float2 uv = clip.xy / clip.w * float2(0.5, -0.5) + 0.5;
         if (all(uv >= 0.0) && all(uv <= 1.0)) {
+            const float2 texel = FrameToTarget(frame, uv);
             const float sceneDepth = LinearDepth(
-                frame, g_textures[g_particles.depthTexture].SampleLevel(g_samplers[kSamplerNearestClamp], uv, 0.0).r);
+                frame, g_textures[g_particles.depthTexture].SampleLevel(g_samplers[kSamplerNearestClamp], texel, 0.0).r);
             if (depth > sceneDepth && depth < sceneDepth + kCollisionThickness) {
                 const float3 normal = normalize(
-                    g_textures[g_particles.normalTexture].SampleLevel(g_samplers[kSamplerNearestClamp], uv, 0.0).xyz *
+                    g_textures[g_particles.normalTexture].SampleLevel(g_samplers[kSamplerNearestClamp], texel, 0.0).xyz *
                         2.0 - 1.0);
                 if (dot(particle.velocity, normal) < 0.0) {
                     particle.velocity = reflect(particle.velocity, normal) * effect.bounce;

@@ -175,7 +175,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     // Last frame's surface, where the motion vectors say this one was.
     const float2 previousUv = uv + Load(g_temporal.motion, pixel).xy;
     const float expectedDepth = mul(frame.previousViewProjection, float4(position, 1.0)).w;
-    const History history = FindHistory(previousUv, extent, expectedDepth, linearDepth, normal);
+    // Last frame drew a corner of its own size (ADR-0049).
+    const float2 previousExtent = float2(frame.previousRenderSize);
+    const History history = FindHistory(previousUv, previousExtent, expectedDepth, linearDepth, normal);
     float3 historyDiffuse = history.diffuse;
     float3 historySpecular = history.specular;
     float4 historyMoments = history.moments;
@@ -190,7 +192,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         const float3 reflected = position + normalize(position - frame.cameraPosition) * hitDistance;
         const float2 virtualUv = ClipToUv(mul(frame.previousViewProjection, float4(reflected, 1.0)));
         const float2 specularUv = lerp(previousUv, virtualUv, virtualShare);
-        const History virtualHistory = FindHistory(specularUv, extent, expectedDepth, linearDepth, normal);
+        const History virtualHistory = FindHistory(specularUv, previousExtent, expectedDepth, linearDepth, normal);
         // Nowhere to find it: the reflection starts over, with the rest of the history.
         historySpecular = virtualHistory.weight > 0.01 ? virtualHistory.specular / virtualHistory.weight * historyWeight
                                                        : specular * historyWeight;

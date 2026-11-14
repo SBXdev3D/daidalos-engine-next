@@ -181,7 +181,7 @@ MenuChoice DrawOptions(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud
         return rect;
     };
     const auto section = [&](std::string_view name) {
-        y += 14.0f;
+        y += 10.0f;
         canvas.DrawText(*hud.boldFont, name, {left, y + 18.0f},
                         {.size = 30.0f, .color = kTitleRed, .vertical = ui::Align::Center, .shadowColor = kShadow});
         y += 42.0f;
@@ -215,6 +215,25 @@ MenuChoice DrawOptions(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud
     if (ui.Choice("Antialiasing", row(), modeIndex, kModeNames)) {
         Change(app, "renderer.antialiasing", kModes[modeIndex], changed);
     }
+    // The render resolution (ADR-0049): dynamic, up to the window's and down to half of it as the GPU needs,
+    // or fixed. Temporal antialiasing upscales it.
+    constexpr std::array<double, 5> kScales{1.0, 1.0, 0.67, 0.58, 0.5};
+    constexpr std::array<std::string_view, 5> kScaleNames{"Dynamic", "Native", "Quality", "Balanced", "Performance"};
+    const bool dynamic = SettingOr(app, "renderer.dynamic_resolution", true);
+    const double scale = SettingOr(app, "renderer.render_scale", 1.0);
+    std::size_t scaleIndex = 0;
+    if (!dynamic) {
+        scaleIndex = 1;
+        for (std::size_t index = 1; index < kScales.size(); ++index) {
+            if (std::abs(kScales[index] - scale) < std::abs(kScales[scaleIndex] - scale)) {
+                scaleIndex = index;
+            }
+        }
+    }
+    if (ui.Choice("Resolution", row(), scaleIndex, kScaleNames)) {
+        Change(app, "renderer.dynamic_resolution", scaleIndex == 0 ? "true" : "false", changed);
+        Change(app, "renderer.render_scale", std::format("{:.2f}", kScales[scaleIndex]), changed);
+    }
     toggle("Indirect light", "renderer.indirect_light");
     // Stops of exposure compensation (ADR-0043): one more is twice as bright.
     slider(
@@ -237,7 +256,7 @@ MenuChoice DrawOptions(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud
         [](float value) { return std::format("{:.2f}", value * 1000.0f); },
         [](float value) { return std::format("{:.5f}", value); });
 
-    y += 24.0f;
+    y += 16.0f;
     constexpr float kHalfButton = (kButtonWidth - kGap) * 0.5f;
     const float buttonLeft = (canvas.Size().x - kButtonWidth) * 0.5f;
     if (ui.Button("Calibrate", {{buttonLeft, y}, {kHalfButton, kButtonHeight}})) {

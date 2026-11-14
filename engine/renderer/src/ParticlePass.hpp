@@ -1,5 +1,5 @@
 // Daidalos Engine Next
-// Copyright (C) 2011-2026 Stéphane Baudoux
+// Copyright (C) 2011-2026 StÃ©phane Baudoux
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 #pragma once
@@ -13,6 +13,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <span>
 
 namespace daidalos::renderer {
@@ -63,9 +64,11 @@ public:
     static constexpr rhi::Format kReactiveFormat = rhi::Format::R8Unorm;
 
     /// Adds the pass that draws the particles over target, as "Particles", and their coverage into
-    /// reactive, which it clears. They read depth themselves, to fade softly where they meet surfaces.
+    /// reactive, which it clears, in the top-left corner of this area. They read depth themselves, to fade
+    /// softly where they meet surfaces.
     void AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::TextureHandle depth, rhi::TextureHandle target,
-                 rhi::TextureHandle reactive, const glm::vec3& cameraRight, const glm::vec3& cameraUp);
+                 rhi::TextureHandle reactive, const glm::vec3& cameraRight, const glm::vec3& cameraUp,
+                 std::optional<rhi::Extent> area = std::nullopt);
 
     [[nodiscard]] std::size_t EffectCount() const { return m_effects.Size(); }
 
