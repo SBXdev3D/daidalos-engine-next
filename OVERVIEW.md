@@ -2001,6 +2001,7 @@ Deliverables, each its own pull request:
 6. Wetness: a porosity per material, wetness from vertex colors, textures and decals, darkening by porosity, a water coat (IOR 1.33), drying over time; puddles from a height and a water level, with ripples from drips, steps and impacts; running water on walls from flow maps. A flooded test room.
 7. Particles in the acceleration structure (a BLAS rebuilt each frame, opt-out per effect), so smoke and sparks cast shadows and show in reflections; smoke and steam as small density volumes lit by the volumetrics pass.
 8. Camera effects: film grain, vignette, lens dirt lit by the flashlight, optional chromatic aberration and motion blur, depth of field from the camera's aperture.
+9. Relief from height maps (ADR-0046): self-shadowing from the height map for direct light, so that the flashlight and lamps reveal mortar and cracks, with parallax where it reads; and occlusion baked from the same map by `texture-tool` into the red channel of the metallic-roughness texture, for indirect light. The factory's height maps wait in `assets/Factory/Source/`. Albedos that already paint their cavities dark are checked, so they are not darkened twice.
 
 Deferred (ADR-0041): deep water with refraction and caustics, the GPU leak simulation, grid-based fire (flames are flipbooks plus a light), video textures, strand hair and skin rendering.
 

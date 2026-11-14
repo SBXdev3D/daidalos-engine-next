@@ -59,6 +59,9 @@ renderer::DebugView DebugViewMode(const core::CVar<std::string>& cvar) {
     if (name == "motion") {
         return renderer::DebugView::Motion;
     }
+    if (name == "normals") {
+        return renderer::DebugView::Normals;
+    }
     if (name == "indirect") {
         return renderer::DebugView::Indirect;
     }
@@ -74,10 +77,10 @@ renderer::DebugView DebugViewMode(const core::CVar<std::string>& cvar) {
     static std::string warned;
     if (name != "off" && name != warned) {
         warned = name;
-        DAI_LOG_WARNING(
-            kModule,
-            "Unknown debug view '{}': use off, rays, path, motion, indirect, radiance_cache, reflections or lights",
-            name);
+        DAI_LOG_WARNING(kModule,
+                        "Unknown debug view '{}': use off, rays, path, motion, normals, indirect, radiance_cache, "
+                        "reflections or lights",
+                        name);
     }
 
     return renderer::DebugView::Off;
@@ -281,8 +284,8 @@ core::Result<void> Application::LoadConfiguration() {
                                               "Enable the Vulkan validation layers, read at startup");
         m_debugView = m_cvars.Register<std::string>(
             "renderer.debug_view", "off",
-            "Shows a debug view instead of the lit scene: off, rays, path, motion, indirect, radiance_cache, "
-            "reflections or lights");
+            "Shows a debug view instead of the lit scene: off, rays, path, motion, normals, indirect, "
+            "radiance_cache, reflections or lights");
         m_pathBounces = m_cvars.Register<std::int64_t>(
             "renderer.path_bounces", 4, "Surfaces a path of the path tracer meets at most; 1 is direct light only");
         m_pathSamples = m_cvars.Register<std::int64_t>(

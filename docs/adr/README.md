@@ -49,3 +49,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0043](0043-physical-light-units.md) | Physical light units: candela, lux, kelvin, nits and EV100, pre-exposed on the GPU; level lights in KHR_lights_punctual | Accepted |
 | [0044](0044-restir-di-and-deferred-lighting.md) | ReSTIR DI over lights and emissive triangles sampled by power; deferred lighting from a thin G-buffer, replacing light clusters and the forward mesh pass | Accepted |
 | [0045](0045-restir-gi.md) | One bounce lit by the lights before the radiance cache, clamped bounces, and the dark corridor test; ReSTIR GI measured and dropped | Accepted |
+| [0046](0046-texture-tool-and-factory-textures.md) | A KTX2 encoder and `texture-tool`; the factory's 2048 px albedo, normal, roughness and metalness maps in UASTC, height maps kept for Phase 11 | Accepted |

@@ -9,6 +9,7 @@ Each module is a static library in `engine/<module>/`. A module exists only if i
 ```mermaid
 flowchart TD
     sandbox["apps/sandbox"] --> app
+    tool["apps/texture-tool"] --> resources
     app --> scene
     scene --> renderer
     scene --> physics
@@ -29,7 +30,7 @@ Every module also links to `core`; the graph only shows it for the bottom row.
 |---|---|---|
 | `core` | `Result`, `Error`, `DAI_ASSERT`, `DAI_TRY`, handles, slot pool, frame timer, worker pool, cvars, profiling macros, logging (`logging::`), conventions, transforms, projections and boxes (`math::`) | spdlog; GLM, tl::expected and Tracy are public on purpose |
 | `platform` | Window, events, Vulkan surface, processes, crash dumps, and keyboard, mouse and gamepad state with actions (`input::`) | SDL3 |
-| `resources` | Asset paths, caches, decoding of files into plain CPU data | fastgltf, KTX, stb |
+| `resources` | Asset paths, caches, decoding of files into plain CPU data, and encoding of KTX2 textures for `texture-tool` (ADR-0046) | fastgltf, KTX, stb |
 | `rhi` | Vulkan 1.4 device with ray queries, swapchain, buffers, textures, pipelines, command lists, batched uploads | Vulkan, volk, VMA |
 | `renderer` | Draws a `SceneView`: G-buffer, lighting, skinning, materials, shader hot reload, the game's interface (`ui::`), and the debug overlay (`debugui::`, development builds) | Dear ImGui, stb_truetype (in `resources`) |
 | `physics` | Collisions, characters and ray queries of a scene | Jolt |
@@ -219,7 +220,7 @@ Barriers come from the RHI: each texture and buffer remembers its last write and
 
 ## Acceleration structures
 
-Rays are traced against a top-level acceleration structure rebuilt every frame from the frame's draws (ADR-0033). Each mesh has a bottom-level structure, built once with its upload. Skinned draws are skinned once per frame by a compute pass, into world-space vertices that the G-buffer draws and that each skinned draw's own structure is refitted from, so rays and rasterization see the same surface. A ray's hit names its draw's entry in the frame's instance data, which holds its vertices, indices and material. `renderer.debug_view rays` shows the structure from the camera, one color per instance.
+Rays are traced against a top-level acceleration structure rebuilt every frame from the frame's draws (ADR-0033). Each mesh has a bottom-level structure, built once with its upload. Skinned draws are skinned once per frame by a compute pass, into world-space vertices that the G-buffer draws and that each skinned draw's own structure is refitted from, so rays and rasterization see the same surface. A ray's hit names its draw's entry in the frame's instance data, which holds its vertices, indices and material. `renderer.debug_view rays` shows the structure from the camera, one color per instance. `renderer.debug_view normals` shows the G-buffer's world normals, normal maps included, and `motion` its motion vectors.
 
 ## The reference path tracer
 
@@ -290,7 +291,8 @@ A tag `vX.Y.Z` runs the Release workflow (ADR-0038): it builds the `*-shipping` 
 
 ## Known gaps
 
-- No tool produces KTX2 files yet, although the loader reads them.
+- Only the factory's upgraded textures are KTX2 (ADR-0046); the rest is PNG, decoded to RGBA8 at load.
+- Height maps are not used: the factory's wait in `assets/Factory/Source/` for Phase 11.
 - Particles only collide with what is on screen.
 - Particles are lit evenly from every side, and cast no shadow: their indirect light is that of the surfaces behind them.
 - What the cache holds lags a few frames behind a moving light, and starts over after a cut while the cache fills: light that bounced more than once, since the first bounce is lit at once.

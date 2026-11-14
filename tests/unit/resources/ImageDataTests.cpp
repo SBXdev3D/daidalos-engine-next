@@ -164,3 +164,72 @@ TEST(DecodeImage, UastcNormalMapIsTranscodedToBc5) {
     EXPECT_EQ(image->format, PixelFormat::Bc5Unorm);
     EXPECT_EQ(image->pixels.size(), 4U * 16U);
 }
+
+namespace {
+
+ImageData Solid(std::uint32_t size, PixelFormat format, std::array<std::uint8_t, 4> color) {
+    std::vector<std::uint8_t> pixels(std::size_t{size} * size * 4);
+    for (std::size_t index = 0; index < pixels.size(); ++index) {
+        pixels[index] = color[index % 4];
+    }
+    return resources::GenerateMips(Rgba(size, size, format, std::move(pixels)));
+}
+
+// The value of the first texel of a BC4 block, half of a BC5 block.
+std::uint8_t FirstBc4Texel(const ImageData& image, std::size_t blockOffset) {
+    const int red0 = Byte(image, blockOffset);
+    const int red1 = Byte(image, blockOffset + 1);
+    const int index = Byte(image, blockOffset + 2) & 0x7;
+    if (index < 2) {
+        return static_cast<std::uint8_t>(index == 0 ? red0 : red1);
+    }
+    if (red0 > red1) {
+        return static_cast<std::uint8_t>(((8 - index) * red0 + (index - 1) * red1) / 7);
+    }
+    if (index >= 6) {
+        return (index == 6) ? 0 : 255;
+    }
+    return static_cast<std::uint8_t>(((6 - index) * red0 + (index - 1) * red1) / 5);
+}
+
+} // namespace
+
+TEST(EncodeKtx2, ColorsComeBackAsBc7SrgbWithTheirMipLevels) {
+    const core::Result<std::vector<std::byte>> bytes =
+        resources::EncodeKtx2(Solid(16, PixelFormat::Rgba8Srgb, {200, 100, 50, 255}), TextureUse::Color);
+    ASSERT_TRUE(bytes.has_value()) << core::Format(bytes.error());
+    const core::Result<ImageData> image = resources::DecodeImage(*bytes, TextureUse::Color, "color.ktx2");
+    ASSERT_TRUE(image.has_value()) << core::Format(image.error());
+    EXPECT_EQ(image->format, PixelFormat::Bc7Srgb);
+    EXPECT_EQ(image->width, 16U);
+    EXPECT_EQ(image->mipLevels, 5U);
+    // 16x16, 8x8 and 4x4 are 16, 4 and 1 blocks; 2x2 and 1x1 take a block each.
+    EXPECT_EQ(image->pixels.size(), (16U + 4U + 1U + 1U + 1U) * 16U);
+}
+
+TEST(EncodeKtx2, NormalMapsKeepTheirRedAndGreenChannels) {
+    const core::Result<std::vector<std::byte>> bytes =
+        resources::EncodeKtx2(Solid(8, PixelFormat::Rgba8Unorm, {200, 60, 255, 255}), TextureUse::Normal);
+    ASSERT_TRUE(bytes.has_value()) << core::Format(bytes.error());
+    const core::Result<ImageData> image = resources::DecodeImage(*bytes, TextureUse::Normal, "normal.ktx2");
+    ASSERT_TRUE(image.has_value()) << core::Format(image.error());
+    ASSERT_EQ(image->format, PixelFormat::Bc5Unorm);
+    EXPECT_NEAR(FirstBc4Texel(*image, 0), 200, 3);
+    EXPECT_NEAR(FirstBc4Texel(*image, 8), 60, 3);
+}
+
+TEST(EncodeKtx2, ColorsMustBeSrgbAndOtherTexturesLinear) {
+    const ImageData linear = Solid(4, PixelFormat::Rgba8Unorm, {0, 0, 0, 255});
+    const core::Result<std::vector<std::byte>> bytes = resources::EncodeKtx2(linear, TextureUse::Color);
+    ASSERT_FALSE(bytes.has_value());
+    EXPECT_EQ(bytes.error().code, core::ErrorCode::InvalidArgument);
+    EXPECT_FALSE(resources::EncodeKtx2(Solid(4, PixelFormat::Rgba8Srgb, {0, 0, 0, 255}), TextureUse::Data));
+}
+
+TEST(EncodeKtx2, MissingMipLevelsAreAnInvalidArgument) {
+    ImageData image = Solid(4, PixelFormat::Rgba8Unorm, {0, 0, 0, 255});
+    image.pixels.resize(4 * 4 * 4);
+    const core::Result<std::vector<std::byte>> bytes = resources::EncodeKtx2(image, TextureUse::Data);
+    ASSERT_FALSE(bytes.has_value());
+    EXPECT_EQ(bytes.error().code, core::ErrorCode::InvalidArgument);
+}

@@ -14,11 +14,13 @@
 #include <array>
 #include <bit>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <format>
 #include <fstream>
 #include <memory>
 #include <optional>
+#include <thread>
 
 namespace daidalos::resources {
 
@@ -205,6 +207,84 @@ ImageData GenerateMips(ImageData image) {
     }
     image.mipLevels = levels;
     return image;
+}
+
+core::Result<std::vector<std::byte>> EncodeKtx2(const ImageData& image, TextureUse use) {
+    DAI_PROFILE_SCOPE("resources::EncodeKtx2");
+    const bool srgb = image.format == PixelFormat::Rgba8Srgb;
+    if (!srgb && image.format != PixelFormat::Rgba8Unorm) {
+        return core::MakeError(core::ErrorCode::InvalidArgument, kModule, "Only RGBA8 images can be encoded to KTX2");
+    }
+    if (srgb != (use == TextureUse::Color)) {
+        return core::MakeError(core::ErrorCode::InvalidArgument, kModule,
+                               "Colors are encoded from sRGB images, and other textures from linear ones");
+    }
+
+    ktxTextureCreateInfo info{};
+    info.vkFormat = srgb ? kVkRgba8Srgb : kVkRgba8Unorm;
+    info.baseWidth = image.width;
+    info.baseHeight = image.height;
+    info.baseDepth = 1;
+    info.numDimensions = 2;
+    info.numLevels = image.mipLevels;
+    info.numLayers = 1;
+    info.numFaces = 1;
+    info.generateMipmaps = KTX_FALSE;
+    ktxTexture2* created = nullptr;
+    const ktx_error_code_e allocated = ktxTexture2_Create(&info, KTX_TEXTURE_CREATE_ALLOC_STORAGE, &created);
+    if (allocated != KTX_SUCCESS) {
+        return core::MakeError(core::ErrorCode::InvalidArgument, kModule,
+                               std::format("Creating a KTX2 texture: {}", ktxErrorString(allocated)));
+    }
+    const std::unique_ptr<ktxTexture2, KtxDeleter> texture(created);
+
+    const auto* pixels = reinterpret_cast<const ktx_uint8_t*>(image.pixels.data());
+    std::size_t offset = 0;
+    for (std::uint32_t level = 0; level < image.mipLevels; ++level) {
+        const std::size_t size =
+            std::size_t{std::max(image.width >> level, 1U)} * std::max(image.height >> level, 1U) * 4;
+        if (offset + size > image.pixels.size()) {
+            return core::MakeError(core::ErrorCode::InvalidArgument, kModule,
+                                   "The image holds fewer pixels than its mip levels need");
+        }
+        const ktx_error_code_e copied =
+            ktxTexture_SetImageFromMemory(ktxTexture(texture.get()), level, 0, 0, pixels + offset, size);
+        if (copied != KTX_SUCCESS) {
+            return core::MakeError(core::ErrorCode::InvalidArgument, kModule,
+                                   std::format("Copying mip level {}: {}", level, ktxErrorString(copied)));
+        }
+        offset += size;
+    }
+
+    ktxBasisParams params{};
+    params.structSize = sizeof(params);
+    params.uastc = KTX_TRUE;
+    params.threadCount = std::max(std::thread::hardware_concurrency(), 1U);
+    params.uastcFlags = KTX_PACK_UASTC_LEVEL_DEFAULT;
+    params.normalMap = (use == TextureUse::Normal) ? KTX_TRUE : KTX_FALSE;
+    params.uastcRDO = (use == TextureUse::Normal) ? KTX_FALSE : KTX_TRUE;
+    const ktx_error_code_e compressed = ktxTexture2_CompressBasisEx(texture.get(), &params);
+    if (compressed != KTX_SUCCESS) {
+        return core::MakeError(core::ErrorCode::InvalidArgument, kModule,
+                               std::format("Encoding to UASTC: {}", ktxErrorString(compressed)));
+    }
+    constexpr ktx_uint32_t kZstdLevel = 18;
+    const ktx_error_code_e deflated = ktxTexture2_DeflateZstd(texture.get(), kZstdLevel);
+    if (deflated != KTX_SUCCESS) {
+        return core::MakeError(core::ErrorCode::InvalidArgument, kModule,
+                               std::format("Supercompressing with Zstandard: {}", ktxErrorString(deflated)));
+    }
+
+    ktx_uint8_t* written = nullptr;
+    ktx_size_t size = 0;
+    const ktx_error_code_e serialized = ktxTexture_WriteToMemory(ktxTexture(texture.get()), &written, &size);
+    if (serialized != KTX_SUCCESS) {
+        return core::MakeError(core::ErrorCode::InvalidArgument, kModule,
+                               std::format("Writing the KTX2 file: {}", ktxErrorString(serialized)));
+    }
+    const std::unique_ptr<ktx_uint8_t, decltype(&std::free)> owned(written, &std::free);
+    const auto* first = reinterpret_cast<const std::byte*>(written);
+    return std::vector<std::byte>(first, first + size);
 }
 
 core::Result<ImageData> DecodeImage(std::span<const std::byte> bytes, TextureUse use, const std::string& name) {
