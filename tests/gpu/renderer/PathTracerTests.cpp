@@ -1671,9 +1671,15 @@ protected:
     static constexpr std::uint32_t kPan = 32;
     static constexpr float kDegreesPerFrame = 0.5f;
 
+    // What the frames are lit by: indirect light and its reflections, or direct light alone.
+    struct Lighting {
+        bool indirect = true;
+        bool reflections = true;
+    };
+
     // The frames of the view, still then turning, at the extent, rendered at scale of it and upscaled, through
-    // indirect light, reflections and the denoiser.
-    std::vector<Image> Frames(const SceneView& view, rhi::Extent extent, float scale) {
+    // the lighting and the denoiser.
+    std::vector<Image> Frames(const SceneView& view, rhi::Extent extent, float scale, Lighting lighting = {}) {
         core::Result<renderer::GlobalIllumination> indirect = renderer::GlobalIllumination::Create(Device());
         EXPECT_TRUE(indirect.has_value());
         std::vector<Image> frames;
@@ -1681,8 +1687,8 @@ protected:
         Rasterize(view, extent,
                   {.frames = kStill + kPan,
                    .denoise = true,
-                   .indirect = &*indirect,
-                   .reflections = true,
+                   .indirect = lighting.indirect ? &*indirect : nullptr,
+                   .reflections = lighting.indirect && lighting.reflections,
                    .animate =
                        [&](SceneView& animated, std::uint32_t frame) {
                            const float degrees =
@@ -1696,16 +1702,17 @@ protected:
         return frames;
     }
 
-    std::vector<Image> Reference(const SceneView& view) {
-        std::vector<Image> frames = Frames(view, {kExtent.width * 2, kExtent.height * 2}, 1.0f);
+    std::vector<Image> Reference(const SceneView& view, Lighting lighting = {}) {
+        std::vector<Image> frames = Frames(view, {kExtent.width * 2, kExtent.height * 2}, 1.0f, lighting);
         for (Image& frame : frames) {
             frame = Downsample(frame, kExtent);
         }
         return frames;
     }
 
-    UpscalingScores Measure(const SceneView& view, const std::vector<Image>& reference, float scale) {
-        const std::vector<Image> frames = Frames(view, kExtent, scale);
+    UpscalingScores Measure(const SceneView& view, const std::vector<Image>& reference, float scale,
+                            Lighting lighting = {}) {
+        const std::vector<Image> frames = Frames(view, kExtent, scale, lighting);
         UpscalingScores scores;
         for (std::uint32_t frame = kStill - 8; frame < kStill; ++frame) {
             scores.still += Flip(reference[frame], frames[frame], kExtent) / 8.0f;
@@ -1733,9 +1740,28 @@ protected:
             corridor, m_cube, [this](const MaterialDesc& desc) { return Material(desc); }, corridor.target);
     }
 
-    SceneView Mirrors() {
+    SceneView Mirrors(bool glass = true) {
         return MirrorRoomView(
-            renderer::MakeMirrorRoom(), m_cube, [this](const MaterialDesc& desc) { return Material(desc); }, true);
+            renderer::MakeMirrorRoom(), m_cube, [this](const MaterialDesc& desc) { return Material(desc); }, glass);
+    }
+
+    // The mirror room with nothing lit: its rough surfaces glow, bright and dim in turn, and its mirrors, metals
+    // and glass show them. Without light to sample, its reflections hold no noise.
+    SceneView GlowingMirrors() {
+        SceneView view = MirrorRoomView(
+            renderer::MakeMirrorRoom(), m_cube,
+            [this, part = 0](const MaterialDesc& desc) mutable {
+                MaterialDesc glowing = desc;
+                if (desc.transmission <= 0.0f && desc.metallicFactor < 0.5f && desc.roughnessFactor > 0.3f) {
+                    glowing.emissiveFactor =
+                        glm::vec3((part++ % 2) == 0 ? 4.0f : 0.5f) * glm::vec3(desc.baseColorFactor);
+                    glowing.emissiveLight = false;
+                }
+                return Material(glowing);
+            },
+            true);
+        view.lights.clear();
+        return view;
     }
 
     // The corridor's parts glowing, bright and dim in turn, and nothing lit: edges alone, the same at every
@@ -1790,5 +1816,32 @@ TEST_F(UpscalingTest, DISABLED_MeasureEachScale) {
             Report(name + "_" + std::to_string(static_cast<int>(std::lround(scale * 100.0f))),
                    Measure(view, reference, scale));
         }
+    }
+}
+
+TEST_F(UpscalingTest, DISABLED_BreakDownTheMirrorRoom) {
+    // Not a test: where the mirror room's gap at 67% comes from (step 9.16). Each variant is measured at 100%
+    // and 67% against its own reference; if the gap closes where the lighting holds no noise, it is the
+    // lighting's, which works in render pixels, and an upscaler given the same frames cannot close it.
+    struct Variant {
+        std::string name;
+        SceneView view;
+        Lighting lighting;
+    };
+    const std::vector<Variant> variants{
+        {"full", Mirrors(), {}},
+        {"no_glass", Mirrors(false), {}},
+        {"no_reflections", Mirrors(), {.reflections = false}},
+        {"direct_only", Mirrors(), {.indirect = false}},
+        {"glowing", GlowingMirrors(), {}},
+    };
+    for (const Variant& variant : variants) {
+        const std::vector<Image> reference = Reference(variant.view, variant.lighting);
+        const UpscalingScores native = Measure(variant.view, reference, 1.0f, variant.lighting);
+        const UpscalingScores upscaled = Measure(variant.view, reference, 0.67f, variant.lighting);
+        Report(variant.name + "_100", native);
+        Report(variant.name + "_67", upscaled);
+        std::printf("%s: 67%% over 100%%, still %.2f, panning %.2f\n", variant.name.c_str(),
+                    upscaled.still / native.still, upscaled.pan / native.pan);
     }
 }
