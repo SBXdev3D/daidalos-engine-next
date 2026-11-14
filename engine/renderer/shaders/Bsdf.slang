@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // The one BSDF of the engine (ADR-0028, ADR-0034): Cook-Torrance with the GGX distribution,
 // height-correlated Smith visibility and Schlick's Fresnel, over a Lambert diffuse. The lighting

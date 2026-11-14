@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Writes value * 2 + 1 at each index of a storage buffer, and, from thread 0, the arguments of an indirect
 // draw of one triangle.

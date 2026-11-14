@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Daidalos Engine Next
 # Copyright (C) 2011-2026 Stéphane Baudoux
-# SPDX-License-Identifier: CC-BY-NC-SA-4.0
+# SPDX-License-Identifier: MIT OR Apache-2.0
 """Formats the engine sources with clang-format, or checks them with --check (used by CI)."""
 
 import argparse

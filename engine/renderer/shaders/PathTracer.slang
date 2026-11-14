@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // The reference path tracer (ADR-0034): one path per pixel per frame, averaged with the paths of earlier
 // frames until the view changes. It shades hits with the materials and lights of the G-buffer and its

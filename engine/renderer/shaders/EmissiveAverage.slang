@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // The emission of each triangle of an emissive mesh and material, once, when they are first drawn together
 // (ADR-0044): the emissive factor times the emissive texture averaged over the triangle, from a few points

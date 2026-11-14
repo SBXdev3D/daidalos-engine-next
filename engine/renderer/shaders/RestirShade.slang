@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // The lighting pass (ADR-0044), ReSTIR DI's last: the light each pixel's reservoir chose, through one
 // shadow ray, times the weight that makes it an estimate of every light, plus the indirect light and the

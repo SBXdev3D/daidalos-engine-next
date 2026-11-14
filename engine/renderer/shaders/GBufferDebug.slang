@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // A channel of the G-buffer, in color.
 // Motion vectors (ADR-0037): grey where nothing moved, more red where the surface came from the right, more

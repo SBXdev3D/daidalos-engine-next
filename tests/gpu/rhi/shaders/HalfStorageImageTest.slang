@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Writes (x, y, 1, 0.5) to each texel of a half-float storage image, through the array that declares that
 // format; the array of full floats shares its binding.

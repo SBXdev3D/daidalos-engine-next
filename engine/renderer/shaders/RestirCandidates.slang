@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // ReSTIR DI's first pass (ADR-0044): each pixel draws a few lights by power, keeps one in proportion to
 // what it would send (DrawCandidates), and tests it with a shadow ray before anything reuses it: indoors,

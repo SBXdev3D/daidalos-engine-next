@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Glass (ADR-0042), drawn over the finished frame, which it reads as its background: the G-buffer
 // leaves glass out. A pixel of glass is what its surface reflects, as much as Fresnel says, plus

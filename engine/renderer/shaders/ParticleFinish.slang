@@ -1,6 +1,6 @@
 // Daidalos Engine Next
 // Copyright (C) 2011-2026 Stéphane Baudoux
-// SPDX-License-Identifier: CC-BY-NC-SA-4.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // After the simulation (ADR-0025): the slots of the sort past the alive particles get a depth of 0, which
 // sorts them last; thread 0 writes the arguments of the draw and makes the next alive list current.

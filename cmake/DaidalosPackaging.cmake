@@ -8,7 +8,7 @@ include_guard(GLOBAL)
 #   cmake --build --preset windows-msvc-shipping
 #   cpack --preset windows-msvc-shipping          # build/packages/daidalos-engine-next-<version>-windows-x64.zip
 
-install(FILES "${PROJECT_SOURCE_DIR}/LICENSE" DESTINATION .)
+install(FILES "${PROJECT_SOURCE_DIR}/LICENSE-MIT" "${PROJECT_SOURCE_DIR}/LICENSE-APACHE" DESTINATION .)
 
 # The licences of the libraries that vcpkg built. Notices of the libraries the archive does not use, such
 # as GoogleTest, come along: one more notice is harmless, a missing one is not. vcpkg's own CMake helper
