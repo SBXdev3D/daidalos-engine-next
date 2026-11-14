@@ -40,7 +40,7 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0034](0034-reference-path-tracer.md) | A reference path tracer, one BSDF in a Slang module, storage images | Accepted |
 | [0035](0035-ray-traced-shadows.md) | Ray-traced shadows for every light, FLIP in the tests | Accepted, amended |
 | [0036](0036-sky.md) | A cube-texture sky, where nothing is drawn and for rays that leave the scene | Accepted |
-| [0037](0037-temporal-antialiasing.md) | Motion vectors, jitter and temporal antialiasing, replacing FXAA and MSAA | Accepted |
+| [0037](0037-temporal-antialiasing.md) | Motion vectors, jitter and temporal antialiasing, replacing FXAA and MSAA | Accepted, amended by 0049 |
 | [0038](0038-releases.md) | Releases: a tag builds Windows and Linux archives into a draft GitHub release | Accepted |
 | [0039](0039-denoiser-and-soft-shadows.md) | An own spatiotemporal denoiser of the lights' diffuse and specular light; lights with a radius and soft shadows | Accepted, amended by 0044 |
 | [0040](0040-diffuse-global-illumination.md) | Diffuse global illumination from an own radiance cache, replacing ambient light and SSAO; directional lights and the moon | Accepted, amended by 0045 |
@@ -51,3 +51,5 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0045](0045-restir-gi.md) | One bounce lit by the lights before the radiance cache, clamped bounces, and the dark corridor test; ReSTIR GI measured and dropped | Accepted |
 | [0046](0046-texture-tool-and-factory-textures.md) | A KTX2 encoder and `texture-tool`; the factory's 2048 px albedo, normal, roughness and metalness maps in UASTC, height maps kept for Phase 11 | Accepted |
 | [0047](0047-dual-mit-apache-licence.md) | Dual MIT or Apache 2.0 licence for the code and the owner's assets; the NVIDIA SDKs no longer excluded by the licence, own implementations kept | Accepted |
+| [0048](0048-image-formation.md) | Image formation: auto-exposure within a range each level sets, bloom, AgX, HDR10 output, the interface on a layer, brightness calibration | Accepted, amended by 0049 |
+| [0049](0049-upscaling-and-dynamic-resolution.md) | The engine's own temporal upscaling and sharpening, targets drawn into a corner for dynamic resolution, and the test that decides on FSR 3.1 | Proposed |
