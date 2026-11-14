@@ -13,6 +13,19 @@ namespace daidalos::renderer {
 
 class RenderGraph;
 
+/// How the indirect diffuse light is traced (ADR-0045).
+struct GlobalIlluminationSettings {
+    /// Surfaces lit by the frame's lights before the cache is read, along each pixel's ray, from 0 to 3. 0
+    /// reads the cache where the ray first hits.
+    std::uint32_t bounces = 1;
+    /// Lights weighed at each of those surfaces before one is kept, from 1 to 8.
+    std::uint32_t lightCandidates = 4;
+    /// The luminance bounced light is clamped to, pre-exposed; 0 for none. Direct light is never clamped.
+    float clamp = 16.0f;
+    /// Rays per pixel, from 1 to 16, averaged.
+    std::uint32_t rays = 1;
+};
+
 /// What global illumination reads each frame.
 struct GlobalIlluminationInputs {
     /// Storage indices of the frame's FrameData, instances and material table.
@@ -34,12 +47,14 @@ struct GlobalIlluminationInputs {
     bool reflections = true;
     /// Rougher surfaces trace no reflection: their indirect diffuse light stands in for it.
     float reflectionRoughness = 0.6f;
+    GlobalIlluminationSettings settings;
 };
 
-/// The engine's global illumination (ADR-0040, ADR-0042): a radiance cache, a hash grid of world space filled
-/// by a few paths from the camera each frame, one ray per pixel that reads it where it hits, for the
-/// indirect diffuse light, and one ray per pixel along its specular lobe, for its reflection. Light
-/// bounces from frame to frame, through the cache, without limit. The Device must outlive it.
+/// The engine's global illumination (ADR-0040, ADR-0042, ADR-0045): a radiance cache, a hash grid of world
+/// space filled by a few paths from the camera each frame; for the indirect diffuse light, a ray per pixel
+/// whose hit is lit by the frame's lights, for a few bounces, before the cache is read; and one ray per pixel
+/// along its specular lobe, for its reflection. Light bounces from frame to frame, through the cache, without
+/// limit. The Device must outlive it.
 class GlobalIllumination {
 public:
     static core::Result<GlobalIllumination> Create(rhi::Device& device);
@@ -61,8 +76,9 @@ public:
         /// A debug view: the light the cache holds at each pixel's surface.
         Cache = 1,
     };
-    /// Adds the passes that update the cache and trace the frame's rays, as "Global illumination", and the
-    /// reflections, as "Reflections". Valid after Resize; the frame's structure must be built before.
+    /// Adds the passes that update the cache, as "Radiance cache", that trace the frame's rays, as "Indirect
+    /// light", and the reflections, as "Reflections". Valid after Resize; the frame's structure must be built
+    /// before.
     void AddTo(RenderGraph& graph, const GlobalIlluminationInputs& inputs, Mode mode = Mode::Indirect);
 
     /// Output of the last frame added (kOutputFormat). Valid after Resize; its index does not change until

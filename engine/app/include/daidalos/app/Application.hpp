@@ -166,6 +166,8 @@ private:
     core::Result<void> CreateMainWindow();
     void CreateAudio();
     core::Result<void> CreateRenderer();
+    /// The renderer.gi_* variables.
+    [[nodiscard]] renderer::IndirectLightConfig IndirectLight() const;
     core::Result<void> CreateDebugOverlay();
     void RenderFrame(IApplicationHandler& handler);
     void ReportConfigurationProblems();
@@ -193,6 +195,10 @@ private:
     std::optional<core::CVar<double>> m_reflectionRoughness;
     std::optional<core::CVar<bool>> m_restirSpatial;
     std::optional<core::CVar<bool>> m_restirUnbiased;
+    std::optional<core::CVar<std::int64_t>> m_giBounces;
+    std::optional<core::CVar<std::int64_t>> m_giLightCandidates;
+    std::optional<core::CVar<double>> m_giClamp;
+    std::optional<core::CVar<std::int64_t>> m_giRays;
     std::optional<core::CVar<bool>> m_validation;
     std::optional<core::CVar<bool>> m_syncValidation;
     std::optional<core::CVar<std::string>> m_debugView;

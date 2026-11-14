@@ -330,11 +330,11 @@ Reservoir Unpack(uint4 packed) {
 // How much of the past a reservoir keeps: its history stands for at most this many frames.
 static const float kMaxHistory = 20.0;
 
-// kLightCandidates lights drawn by power, each with a point on it, and one kept in proportion to the light
-// the receiver would send, unshadowed: resampled importance sampling. Its confidence is 1.
-Reservoir DrawCandidates(FrameData frame, Receiver receiver, inout uint random) {
+// count lights drawn by power, each with a point on it, and one kept in proportion to the light the
+// receiver would send, unshadowed: resampled importance sampling. Its confidence is 1.
+Reservoir DrawCandidates(FrameData frame, Receiver receiver, inout uint random, uint count) {
     Reservoir reservoir = EmptyReservoir();
-    for (uint candidate = 0; candidate < kLightCandidates; ++candidate) {
+    for (uint candidate = 0; candidate < count; ++candidate) {
         const LightChoice choice = ChooseLight(frame, float4(Random(random), Random(random), Random(random), Random(random)));
         const float2 u = float2(Random(random), Random(random));
         if (choice.index == kNoLight) {
@@ -344,17 +344,22 @@ Reservoir DrawCandidates(FrameData frame, Receiver receiver, inout uint random) 
         Stream(reservoir, choice.index, u, target / choice.probability, target, Random(random));
     }
     reservoir.count = 1.0;
-    reservoir.weight = reservoir.target > 0.0 ? reservoir.weightSum / (float(kLightCandidates) * reservoir.target) : 0.0;
+    reservoir.weight = reservoir.target > 0.0 ? reservoir.weightSum / (float(count) * reservoir.target) : 0.0;
     if (reservoir.weight <= 0.0) {
         reservoir.light = kNoLight;
     }
     return reservoir;
 }
 
-// The light of the frame's lights that the receiver sends, from one light chosen among kLightCandidates and
-// one shadow ray: unbiased, on average the light of every light (ADR-0044).
-float3 SampleDirectLight(FrameData frame, Receiver receiver, inout uint random, uint instanceBuffer, uint materialBuffer) {
-    const Reservoir reservoir = DrawCandidates(frame, receiver, random);
+Reservoir DrawCandidates(FrameData frame, Receiver receiver, inout uint random) {
+    return DrawCandidates(frame, receiver, random, kLightCandidates);
+}
+
+// The light of the frame's lights that the receiver sends, from one light chosen among candidates and one
+// shadow ray: unbiased, on average the light of every light (ADR-0044).
+float3 SampleDirectLight(FrameData frame, Receiver receiver, inout uint random, uint instanceBuffer, uint materialBuffer,
+                         uint candidates) {
+    const Reservoir reservoir = DrawCandidates(frame, receiver, random, candidates);
     if (reservoir.light == kNoLight) {
         return float3(0.0, 0.0, 0.0);
     }
@@ -363,6 +368,10 @@ float3 SampleDirectLight(FrameData frame, Receiver receiver, inout uint random, 
         return float3(0.0, 0.0, 0.0);
     }
     return contact.illuminance * Reflected(receiver, LightTerms(receiver, contact)) * reservoir.weight;
+}
+
+float3 SampleDirectLight(FrameData frame, Receiver receiver, inout uint random, uint instanceBuffer, uint materialBuffer) {
+    return SampleDirectLight(frame, receiver, random, instanceBuffer, materialBuffer, kLightCandidates);
 }
 
 // A receiver for a surface that rays hit (Surface, in RayQueries.slangh).

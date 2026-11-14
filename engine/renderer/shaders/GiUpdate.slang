@@ -8,7 +8,7 @@
 // emissive lights are sampled as lights, and emission that is not a light is only seen (ADR-0044).
 // After kVertices surfaces, it ends where its last ray hits, with the light the cache already holds
 // there: light bounces as many times as the frames go on. Each surface's cell then receives the light
-// the surface sends back along the path.
+// the surface sends back along the path; what reaches it from the surfaces after it is clamped.
 
 #define DAI_NO_MESH_PUSH_CONSTANTS
 #include "MeshTypes.slangh"
@@ -68,10 +68,11 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         ray.TMax = 1e6;
     }
 
-    // From the last surface back to the first, each sends its own light and reflects what reaches it.
+    // From the last surface back to the first, each sends its own light and reflects what reaches it, which
+    // bounced off another surface, and is clamped (ADR-0045).
     float3 light = tail;
     for (int vertex = int(vertices) - 1; vertex >= 0; --vertex) {
-        light = sent[vertex] + albedos[vertex] * light;
+        light = sent[vertex] + albedos[vertex] * ClampBounce(light);
         AddToCell(cells[vertex], light);
     }
 }

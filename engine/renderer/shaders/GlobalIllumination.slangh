@@ -38,9 +38,23 @@ struct GiPushConstants {
     uint reset;   // The resolve pass: 1 empties the cache.
     uint reflections;   // Storage image: the light each pixel's specular lobe reflects (ADR-0042).
     float maxRoughness; // Rougher surfaces trace no reflection ray: the indirect light stands in for it.
+    // ADR-0045. Bytes, from the lowest: the surfaces lit before the cache is read, the lights weighed at
+    // each, the rays per pixel.
+    uint counts;
+    float clamp; // The luminance bounced light is clamped to, pre-exposed; 0 for none.
 };
 
 [[vk::push_constant]] GiPushConstants g_gi;
+
+uint GiBounces() {
+    return g_gi.counts & 0xFF;
+}
+uint GiLightCandidates() {
+    return max((g_gi.counts >> 8) & 0xFF, 1u);
+}
+uint GiRays() {
+    return max((g_gi.counts >> 16) & 0xFF, 1u);
+}
 
 [[vk::binding(2, 0)]] RWStructuredBuffer<uint> g_cacheWords[];
 [[vk::binding(2, 0)]] RWStructuredBuffer<float4> g_cacheRadiance[];
@@ -211,6 +225,128 @@ float3 DirectDiffuseLight(Surface surface, FrameData frame, inout uint random) {
     }
     return SampleDirectLight(frame, ReceiverOf(surface, surface.faceNormal, kRespondDiffuse), random, g_gi.instanceBuffer,
                              g_gi.materialBuffer);
+}
+
+// Bounced light, clamped in luminance (ADR-0045): a lamp near a wall makes a small, very bright patch that one
+// ray in thousands finds, and which would spread as fireflies.
+float3 ClampBounce(float3 light) {
+    const float luminance = Luminance(light);
+    return g_gi.clamp > 0.0 && luminance > g_gi.clamp ? light * (g_gi.clamp / luminance) : light;
+}
+
+// A point that rays found, as indirect light sees it: a matte surface.
+struct BouncePoint {
+    float3 position;
+    float3 faceNormal; // Towards where the ray came from.
+    float3 normal;
+    float3 diffuseColor;
+};
+
+BouncePoint BouncePointOf(Surface surface) {
+    BouncePoint point;
+    point.position = surface.position;
+    point.faceNormal = surface.faceNormal;
+    point.normal = surface.normal;
+    point.diffuseColor = surface.diffuseColor;
+    return point;
+}
+
+// The light of the frame's lights that a bounce point sends, from one light among GiLightCandidates() and
+// one shadow ray.
+float3 BounceDirectLight(FrameData frame, BouncePoint point, inout uint random) {
+    Receiver receiver;
+    receiver.position = point.position;
+    receiver.origin = OffsetOrigin(point.position, point.faceNormal);
+    receiver.faceNormal = point.faceNormal;
+    receiver.normal = point.normal;
+    receiver.view = point.faceNormal;
+    receiver.diffuseColor = point.diffuseColor;
+    receiver.f0 = float3(0.0, 0.0, 0.0);
+    receiver.roughness = 1.0;
+    receiver.response = kRespondDiffuse;
+    receiver.emissiveSpecular = true;
+    receiver.nearest = kNearestLight;
+    return SampleDirectLight(frame, receiver, random, g_gi.instanceBuffer, g_gi.materialBuffer, GiLightCandidates());
+}
+
+// The light a point that a ray from a pixel found sends back along it (ADR-0045): with no bounce, what the
+// cache holds there; otherwise, the light of one of the frame's lights, then what it reflects of one more
+// cosine-weighted ray, as many times as GiBounces(), the last of which reads the cache where it hits, or
+// the sky where it leaves. Clamped (ClampBounce).
+float3 BouncedLight(FrameData frame, BouncePoint first, inout uint random) {
+    const uint bounces = GiBounces();
+    if (bounces == 0) {
+        return ClampBounce(CachedRadiance(frame, first.position, first.faceNormal));
+    }
+    BouncePoint point = first;
+    float3 light = float3(0.0, 0.0, 0.0);
+    float3 throughput = float3(1.0, 1.0, 1.0);
+    for (uint bounce = 0; bounce < bounces; ++bounce) {
+        if (all(point.diffuseColor <= 0.0)) {
+            break; // A metal: no diffuse light.
+        }
+        light += throughput * BounceDirectLight(frame, point, random);
+        throughput *= point.diffuseColor;
+        RayDesc ray;
+        ray.Direction = CosineDirection(point.normal, float2(Random(random), Random(random)));
+        if (dot(ray.Direction, point.faceNormal) <= 0.0) {
+            ray.Direction = reflect(ray.Direction, point.faceNormal);
+        }
+        ray.Origin = OffsetOrigin(point.position, point.faceNormal);
+        ray.TMin = 0.0;
+        ray.TMax = 1e6;
+        const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer);
+        if (!hit.found) {
+            light += throughput * SkyRadiance(frame, ray.Direction);
+            break;
+        }
+        const Surface surface = ShadeHit(hit, ray.Direction, frame, g_gi.instanceBuffer, g_gi.materialBuffer);
+        if (bounce + 1 == bounces) {
+            light += throughput * CachedRadiance(frame, surface.position, surface.faceNormal);
+            break;
+        }
+        point = BouncePointOf(surface);
+    }
+    return ClampBounce(light);
+}
+
+// Traces ray, from a pixel, and returns the light that comes back along it (BouncedLight), or the sky's.
+float3 TraceBounce(FrameData frame, RayDesc ray, inout uint random) {
+    const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer);
+    if (!hit.found) {
+        return ClampBounce(SkyRadiance(frame, ray.Direction));
+    }
+    BouncePoint point;
+    if (GiBounces() == 0) {
+        // Only the cache is read: no need for the surface's material.
+        const InstanceData instance = g_instances[g_gi.instanceBuffer][hit.instance];
+        float3 hitNormal = normalize(FaceNormal(instance, hit.primitive));
+        if (dot(hitNormal, ray.Direction) > 0.0) {
+            hitNormal = -hitNormal;
+        }
+        point.position = ray.Origin + ray.Direction * hit.distance;
+        point.faceNormal = hitNormal;
+        point.normal = hitNormal;
+        point.diffuseColor = float3(1.0, 1.0, 1.0);
+    } else {
+        point = BouncePointOf(ShadeHit(hit, ray.Direction, frame, g_gi.instanceBuffer, g_gi.materialBuffer));
+    }
+    return BouncedLight(frame, point, random);
+}
+
+// A ray from a pixel of the G-buffer in a cosine-weighted direction around its normal.
+RayDesc PixelBounceRay(FrameData frame, float3 position, float3 faceNormal, float3 normal, inout uint random) {
+    RayDesc ray;
+    ray.Direction = CosineDirection(normal, float2(Random(random), Random(random)));
+    if (dot(ray.Direction, faceNormal) <= 0.0) {
+        ray.Direction = reflect(ray.Direction, faceNormal);
+    }
+    // A position from depth is less precise than a hit's: farther off the surface, the farther it is.
+    const float viewDistance = distance(position, frame.cameraPosition);
+    ray.Origin = OffsetOrigin(position, faceNormal) + faceNormal * (0.002 * viewDistance);
+    ray.TMin = 0.0;
+    ray.TMax = 1e6;
+    return ray;
 }
 
 // The surface's own orientation behind a pixel of the G-buffer (GBuffer.slangh).

@@ -47,6 +47,20 @@ enum class DebugView {
     Lights,
 };
 
+/// How indirect light is traced (ADR-0045).
+struct IndirectLightConfig {
+    /// Surfaces lit by the frame's lights along each pixel's ray before the radiance cache is read, from 0
+    /// to 3; 0 reads the cache where the ray first hits.
+    std::uint32_t bounces = 1;
+    /// Lights weighed at each of those surfaces before one is kept, from 1 to 8.
+    std::uint32_t lightCandidates = 4;
+    /// The luminance bounced light is clamped to, as shown on screen before tone mapping; 0 for none.
+    /// Direct light is never clamped.
+    float clamp = 16.0f;
+    /// Rays per pixel, from 1 to 16: less noise, for their cost.
+    std::uint32_t rays = 1;
+};
+
 struct RendererConfig {
     /// Enables the Vulkan validation layers if they are installed.
     bool validation = false;
@@ -74,6 +88,8 @@ struct RendererConfig {
     /// ReSTIR DI tests every sample it reuses for visibility, for comparisons with the path tracer: twice the
     /// rays.
     bool restirUnbiased = false;
+    /// How indirect light is traced (ADR-0045).
+    IndirectLightConfig indirect;
     /// Radians across the view, for cameras that set no field of view of their own.
     float fieldOfView = glm::radians(90.0f);
     /// Meters: farther, nothing is drawn or lit.
@@ -151,6 +167,7 @@ public:
     void SetReflectionRoughness(float roughness);
     /// See RendererConfig::restirSpatial and restirUnbiased.
     void SetRestir(bool spatial, bool unbiased);
+    void SetIndirectLightConfig(const IndirectLightConfig& config);
     /// From the next frame; see RendererConfig.
     void SetFieldOfView(float radians);
     void SetViewDistance(float meters);
