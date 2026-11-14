@@ -4,6 +4,8 @@
 
 #include "Menus.hpp"
 
+#include <daidalos/renderer/DisplayTransform.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -78,6 +80,12 @@ T SettingOr(app::Application& app, std::string_view name, T fallback) {
     const core::CVarValue* value = Setting(app, name);
     const T* typed = value != nullptr ? std::get_if<T>(value) : nullptr;
     return typed != nullptr ? *typed : fallback;
+}
+
+/// Linear to sRGB, which canvas colors are in.
+float LinearToSrgb(float value) {
+    value = std::clamp(value, 0.0f, 1.0f);
+    return value <= 0.0031308f ? value * 12.92f : (1.055f * std::pow(value, 1.0f / 2.4f)) - 0.055f;
 }
 
 void Change(app::Application& app, std::string_view name, std::string_view value, bool& changed) {
@@ -230,8 +238,43 @@ MenuChoice DrawOptions(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud
         [](float value) { return std::format("{:.5f}", value); });
 
     y += 24.0f;
+    constexpr float kHalfButton = (kButtonWidth - kGap) * 0.5f;
     const float buttonLeft = (canvas.Size().x - kButtonWidth) * 0.5f;
-    return ui.Button("Back", {{buttonLeft, y}, {kButtonWidth, kButtonHeight}}) ? MenuChoice::Back : MenuChoice::None;
+    if (ui.Button("Calibrate", {{buttonLeft, y}, {kHalfButton, kButtonHeight}})) {
+        return MenuChoice::Calibrate;
+    }
+    return ui.Button("Back", {{buttonLeft + kHalfButton + kGap, y}, {kHalfButton, kButtonHeight}}) ? MenuChoice::Back
+                                                                                                   : MenuChoice::None;
+}
+
+MenuChoice DrawCalibration(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud, app::Application& app,
+                           bool& changed) {
+    // A dark surface, as exposed light: about 1.5% of middle grey. At a Brightness of 0 on a display at its
+    // usual settings, the display transform shows it at about 0.4% of white, sRGB 12 of 255.
+    constexpr float kDarkSurface = 0.008f;
+    constexpr float kSymbolSize = 300.0f;
+    canvas.FillRect({{0.0f, 0.0f}, canvas.Size()}, {0.0f, 0.0f, 0.0f, 1.0f});
+    Title(canvas, hud, "BRIGHTNESS", 170.0f, 90.0f, glm::vec4(1.0f));
+    Line(canvas, hud, "Move the slider until the gear is barely visible.", 270.0f);
+
+    const auto stops = static_cast<float>(SettingOr(app, "renderer.exposure_compensation", 0.0));
+    const renderer::ToneMapper toneMapper = SettingOr<std::string>(app, "renderer.tonemap", "agx") == "neutral"
+                                                ? renderer::ToneMapper::Neutral
+                                                : renderer::ToneMapper::AgX;
+    const glm::vec3 shown = renderer::DisplayColor(glm::vec3(kDarkSurface * std::exp2(stops)), toneMapper);
+    const glm::vec4 symbol{LinearToSrgb(shown.r), LinearToSrgb(shown.g), LinearToSrgb(shown.b), 1.0f};
+    const glm::vec2 center{canvas.Size().x * 0.5f, 520.0f};
+    canvas.DrawImage(hud.gear, {center - (kSymbolSize * 0.5f), {kSymbolSize, kSymbolSize}}, {.color = symbol});
+
+    float value = stops;
+    const float left = (canvas.Size().x - kRowWidth) * 0.5f;
+    if (ui.Slider("Brightness", {{left, 760.0f}, {kRowWidth, kRowHeight}}, value, -1.0f, 1.0f, 0.1f,
+                  std::format("{:+.1f} EV", value))) {
+        Change(app, "renderer.exposure_compensation", std::format("{:.1f}", value), changed);
+    }
+    const float buttonLeft = (canvas.Size().x - kButtonWidth) * 0.5f;
+    return ui.Button("Done", {{buttonLeft, 860.0f}, {kButtonWidth, kButtonHeight}}) ? MenuChoice::Back
+                                                                                    : MenuChoice::None;
 }
 
 } // namespace sandbox

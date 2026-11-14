@@ -15,10 +15,10 @@
 namespace sandbox {
 
 /// The screens drawn over the game. None is playing.
-enum class Screen : std::uint8_t { None, Main, Pause, Options, Dead, Complete };
+enum class Screen : std::uint8_t { None, Main, Pause, Options, Calibration, Dead, Complete };
 
 /// What the player picked on a screen this frame.
-enum class MenuChoice : std::uint8_t { None, Play, Resume, Restart, Options, Back, Quit };
+enum class MenuChoice : std::uint8_t { None, Play, Resume, Restart, Options, Calibrate, Back, Quit };
 
 /// The look of the game's buttons, sliders and choices.
 [[nodiscard]] daidalos::ui::WidgetStyle MenuStyle(const HudAssets& hud);
@@ -36,5 +36,11 @@ enum class MenuChoice : std::uint8_t { None, Play, Resume, Restart, Options, Bac
 /// Returns Back when done; the caller saves them then.
 [[nodiscard]] MenuChoice DrawOptions(daidalos::ui::Context& ui, daidalos::ui::Canvas& canvas, const HudAssets& hud,
                                      daidalos::app::Application& app, bool& changed);
+
+/// The brightness calibration (ADR-0048): a symbol a little brighter than black, as the display transform
+/// shows a dark surface at the chosen brightness, and the Brightness slider. Shown at the first start.
+/// Returns Back when done.
+[[nodiscard]] MenuChoice DrawCalibration(daidalos::ui::Context& ui, daidalos::ui::Canvas& canvas, const HudAssets& hud,
+                                         daidalos::app::Application& app, bool& changed);
 
 } // namespace sandbox

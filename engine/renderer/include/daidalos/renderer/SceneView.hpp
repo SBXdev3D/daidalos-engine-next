@@ -63,6 +63,7 @@ struct DrawItem {
 /// or the fog color without one. The sky also lights the scene, through the rays of indirect light that
 /// leave it (ADR-0040): no light comes from nowhere.
 struct Atmosphere {
+    /// What the fog looks like on screen, linear, at ev100: it is light, and follows the eye's exposure.
     glm::vec3 fogColor{0.02f, 0.02f, 0.03f};
     /// Fraction of the light lost per meter; 0 for clear air.
     float fogDensity = 0.0f;

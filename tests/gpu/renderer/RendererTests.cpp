@@ -8,6 +8,7 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <optional>
 #include <string>
 #include <vector>
@@ -142,8 +143,9 @@ TEST_F(RendererTest, ShowsEachDebugView) {
     ASSERT_TRUE(mesh.has_value());
     const renderer::SceneView view = TestView(*mesh);
     using renderer::DebugView;
-    for (const DebugView debugView : {DebugView::Rays, DebugView::Path, DebugView::Motion, DebugView::Normals,
-                                      DebugView::Indirect, DebugView::RadianceCache, DebugView::Off}) {
+    for (const DebugView debugView :
+         {DebugView::Rays, DebugView::Path, DebugView::Motion, DebugView::Normals, DebugView::Indirect,
+          DebugView::RadianceCache, DebugView::Reflections, DebugView::Lights, DebugView::Bloom, DebugView::Off}) {
         target->SetDebugView(debugView);
         RenderFrames(*target, view, 3);
     }
@@ -152,6 +154,48 @@ TEST_F(RendererTest, ShowsEachDebugView) {
     RenderFrames(*target, view, 2);
     target->SetIndirectLight(true);
     RenderFrames(*target, view, 2);
+    EXPECT_EQ(target->Device().ValidationErrorCount(), 0U);
+}
+
+TEST_F(RendererTest, AdaptsTheEyeWithinTheLevelsRange) {
+    std::optional<renderer::Renderer> target = CreateRenderer();
+    if (!target.has_value()) {
+        GTEST_SKIP();
+    }
+    const core::Result<renderer::MeshHandle> mesh = target->CreateMesh(renderer::MakeCube(), "Cube");
+    ASSERT_TRUE(mesh.has_value());
+    // A cube that fills the view, a meter away, in black air.
+    renderer::SceneView view = TestView(*mesh);
+    view.draws[0].world = glm::scale(glm::mat4(1.0f), glm::vec3(4.0f));
+    view.atmosphere.fogColor = glm::vec3(0.0f);
+    view.atmosphere.ev100 = 4.0f;
+    view.atmosphere.autoExposure = true;
+    view.atmosphere.ev100Min = 1.0f;
+    view.atmosphere.ev100Max = 6.0f;
+    view.timeStep = 1.0f;
+
+    // Unlit, the frame is black: the eye opens as far as the level lets it, and no further.
+    RenderFrames(*target, view, 30);
+    renderer::FrameStats stats = target->Stats();
+    ASSERT_FALSE(std::isnan(stats.meteredEv100));
+    EXPECT_LT(stats.meteredEv100, 1.0f);
+    EXPECT_NEAR(stats.ev100, 1.0f, 0.05f);
+    EXPECT_EQ(target->ExposureHistogram().size(), 128U);
+
+    // A lamp half a meter from the cube, thousands of nits on its face: the eye closes, to the level's brightest.
+    view.lights.push_back({.position = glm::vec3(0.0f, 0.0f, 2.5f), .color = glm::vec3(50000.0f), .range = 20.0f});
+    RenderFrames(*target, view, 30);
+    stats = target->Stats();
+    EXPECT_GT(stats.meteredEv100, 6.0f);
+    EXPECT_NEAR(stats.ev100, 6.0f, 0.05f);
+    EXPECT_FLOAT_EQ(stats.ev100Min, 1.0f);
+    EXPECT_FLOAT_EQ(stats.ev100Max, 6.0f);
+
+    // Without auto-exposure, the eye stays at the atmosphere's exposure.
+    target->SetImage({.autoExposure = false});
+    RenderFrames(*target, view, 3);
+    EXPECT_FLOAT_EQ(target->Stats().ev100, 4.0f);
+    EXPECT_TRUE(target->ExposureHistogram().empty());
     EXPECT_EQ(target->Device().ValidationErrorCount(), 0U);
 }
 

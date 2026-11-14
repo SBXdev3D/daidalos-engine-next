@@ -90,6 +90,10 @@ public:
             app.CVars()
                 .Register<bool>("sandbox.menu", true, "Show the main menu at the start; false plays at once")
                 .Get();
+        m_calibrated = app.CVars()
+                           .Register<bool>("sandbox.calibrated", false,
+                                           "The brightness was calibrated; false shows its screen before the menu")
+                           .Get();
         m_actions = sandbox::MakeActions();
         m_assetRoot = FindAssetRoot();
         DAI_LOG_INFO("sandbox", "Assets in '{}'", m_assetRoot.string());
@@ -146,6 +150,8 @@ public:
                 OpenScreen(app, sandbox::Screen::None);
             } else if (m_screen == sandbox::Screen::Options) {
                 CloseOptions(app);
+            } else if (m_screen == sandbox::Screen::Calibration) {
+                CloseCalibration(app);
             }
         }
         ++m_totalFrames;
@@ -207,8 +213,13 @@ private:
             app.SetScene(std::move(m_nextScene));
             OpenScreen(app, sandbox::Screen::None);
         } else {
-            // The first level waits behind the main menu.
-            OpenScreen(app, m_menuAtStart ? sandbox::Screen::Main : sandbox::Screen::None);
+            // The first level waits behind the main menu, and the first start begins with the brightness.
+            if (m_menuAtStart && !m_calibrated) {
+                m_screen = sandbox::Screen::Main;
+                OpenScreen(app, sandbox::Screen::Calibration);
+            } else {
+                OpenScreen(app, m_menuAtStart ? sandbox::Screen::Main : sandbox::Screen::None);
+            }
         }
     }
 
@@ -229,6 +240,8 @@ private:
         if (screen == sandbox::Screen::Options) {
             m_optionsReturn = m_screen;
             m_settingsChanged = false;
+        } else if (screen == sandbox::Screen::Calibration) {
+            m_calibrationReturn = m_screen;
         }
         m_screen = screen;
         m_ui.ResetFocus();
@@ -249,6 +262,30 @@ private:
             }
         }
         OpenScreen(app, m_optionsReturn);
+    }
+
+    /// Saves the brightness, and that it was calibrated, before going back.
+    void CloseCalibration(app::Application& app) {
+        if (!m_calibrated) {
+            m_calibrated = true;
+            if (core::Result<void> marked = app.ChangeSetting("sandbox.calibrated", "true"); !marked) {
+                DAI_LOG_WARNING("sandbox", "{}", core::Format(marked.error()));
+            }
+            m_settingsChanged = true;
+        }
+        if (m_calibrationReturn == sandbox::Screen::Options) {
+            // The options save what changed when they close.
+            m_screen = sandbox::Screen::Options;
+            m_ui.ResetFocus();
+            return;
+        }
+        if (m_settingsChanged) {
+            if (core::Result<void> saved = app.SaveSettings(); !saved) {
+                DAI_LOG_ERROR("sandbox", "{}", core::Format(saved.error()));
+            }
+            m_settingsChanged = false;
+        }
+        OpenScreen(app, m_calibrationReturn);
     }
 
     /// Death, or the last zombie's, ends the game after a moment, the time to see it happen.
@@ -284,8 +321,15 @@ private:
         case sandbox::MenuChoice::Options:
             OpenScreen(app, sandbox::Screen::Options);
             break;
+        case sandbox::MenuChoice::Calibrate:
+            OpenScreen(app, sandbox::Screen::Calibration);
+            break;
         case sandbox::MenuChoice::Back:
-            CloseOptions(app);
+            if (m_screen == sandbox::Screen::Calibration) {
+                CloseCalibration(app);
+            } else {
+                CloseOptions(app);
+            }
             break;
         case sandbox::MenuChoice::Quit:
             app.RequestQuit();
@@ -445,6 +489,9 @@ private:
         case sandbox::Screen::Options:
             choice = sandbox::DrawOptions(m_ui, canvas, m_hud, app, m_settingsChanged);
             break;
+        case sandbox::Screen::Calibration:
+            choice = sandbox::DrawCalibration(m_ui, canvas, m_hud, app, m_settingsChanged);
+            break;
         case sandbox::Screen::Dead:
             if (player != nullptr) {
                 choice = sandbox::DrawDeathScreen(m_ui, canvas, m_hud, *player);
@@ -520,6 +567,9 @@ private:
     sandbox::Screen m_screen = sandbox::Screen::None;
     /// Where the options go back to.
     sandbox::Screen m_optionsReturn = sandbox::Screen::Main;
+    /// Where the brightness calibration goes back to.
+    sandbox::Screen m_calibrationReturn = sandbox::Screen::Main;
+    bool m_calibrated = false;
     bool m_settingsChanged = false;
     bool m_menuAtStart = true;
     bool m_resumePending = false;

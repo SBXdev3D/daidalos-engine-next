@@ -128,7 +128,7 @@ Decided in ADR-0006. Tested by: `tests/unit/ecs`.
 | Metallic-roughness texture | glTF layout: roughness in G, metallic in B, occlusion optionally in R |
 | Normal maps | Tangent space, +Y up ("OpenGL" convention, as in glTF), stored as BC5 (X, Y), Z reconstructed |
 | Tangents | `vec4`: xyz = tangent, w = ±1 handedness; `bitangent = cross(normal, tangent.xyz) * tangent.w`. Generated with MikkTSpace when missing |
-| Lighting | Computed in linear space; output converted to sRGB by the swapchain format |
+| Lighting | Computed in linear space; the output pass encodes it for the swapchain: sRGB by the format, or HDR10 PQ in the shader |
 | Light units | Point and spot lights in candela, directional lights in lux (glTF `KHR_lights_punctual`) |
 | GPU resource destruction | Only through the deferred-destruction queue, never immediately while frames are in flight. `rhi::Device::Destroy*` does this |
 | GPU resource references | Generational handles (`BufferHandle`, `TextureHandle`, `PipelineHandle`, `MeshHandle`, `MaterialHandle`). Destroying a null or stale handle does nothing |

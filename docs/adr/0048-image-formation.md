@@ -1,6 +1,6 @@
 # ADR-0048: Image formation: auto-exposure, bloom, AgX and HDR output
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-14
 - **Amends:** ADR-0041 (step 9.14 is split in two; the steps after it move up by one), ADR-0043 (how exposure reaches the GPU)
 
@@ -49,6 +49,10 @@ The game is a horror game. Auto-exposure as cameras do it would undo the darknes
 ### Debug views and statistics
 
 - `renderer.debug_view bloom` shows the bloom alone; the statistics show the eye's EV100, the metered EV100 and the level's range; the developer tools draw the histogram.
+
+## Measurements
+
+On the RTX 3090 at 1080p, in the factory: the exposure histogram and its readback 0.06 ms, bloom 0.11 ms, the interface layer 0.02 ms, the output pass 0.05 ms; about 0.2 ms in all over the tonemap pass it replaces. The factory's range was chosen from screenshots at five places against the old look (fixed EV100 3, PBR Neutral, no bloom): from 0.5 stop below its exposure, so that its dark corridors stay as dark as they were, to 2.5 stops above, under its lamps and in the moonlit room. A first try that let the eye open 1.5 stops greyed the dark floors and showed their noise: the factory is dark nearly everywhere, so the eye always opens as far as allowed, and the bottom of the range is the level's real look. Warm lamps lose some of their tint where they are brightest, as AgX intends. HDR10 output is not yet checked on an HDR display.
 
 ## Consequences
 

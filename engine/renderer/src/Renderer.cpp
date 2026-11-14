@@ -608,6 +608,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                        .background = impl.background,
                        .depth = impl.depth,
                        .exposure = preExposure,
+                       .fogScale = std::exp2(atmosphere.ev100 - gpuEv100),
                        .sharpReflections =
                            reflect ? std::min(GlobalIllumination::kSharpRoughness, impl.reflectionRoughness) : 0.0f});
         });
@@ -811,10 +812,13 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
 
     if (status && !hasFrame) {
         // Nothing to draw: the fog's color.
-        graph.AddPass({.name = "Clear",
-                       .rendering = rhi::RenderingDesc{.colorTarget = impl.hdr,
-                                                       .clearColor = glm::vec4(view.atmosphere.fogColor, 1.0f)}},
-                      [](rhi::CommandList& /*commands*/) {});
+        graph.AddPass(
+            {.name = "Clear",
+             .rendering =
+                 rhi::RenderingDesc{.colorTarget = impl.hdr,
+                                    .clearColor = glm::vec4(
+                                        view.atmosphere.fogColor * std::exp2(view.atmosphere.ev100 - gpuEv100), 1.0f)}},
+            [](rhi::CommandList& /*commands*/) {});
     }
     // The interface goes after the antialiasing, which would blur text, and under the overlay, in a layer
     // that the output pass puts over the image.
