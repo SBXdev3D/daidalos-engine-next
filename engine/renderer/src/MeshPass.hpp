@@ -84,6 +84,16 @@ struct CompositeInputs {
     rhi::TextureHandle depth;
 };
 
+/// The perspective a frame is drawn with, reverse-Z, as the upscalers that reconstruct depth need it.
+struct Perspective {
+    /// Radians, from the bottom of the view to its top.
+    float verticalFov = 0.0f;
+    /// Width over height, the output's.
+    float aspect = 1.0f;
+    float nearPlane = 0.0f;
+    float farPlane = 0.0f;
+};
+
 /// A draw as rays see it (ADR-0033). Rigid draws use their mesh's bottom-level structure; skinned draws
 /// have a structure refitted each frame to their skinned vertices.
 struct TracedDraw {
@@ -196,6 +206,8 @@ public:
     [[nodiscard]] rhi::Extent RenderExtent() const { return m_renderExtent; }
     /// The view and projection of the prepared frame, without jitter.
     [[nodiscard]] const glm::mat4& ViewProjection() const { return m_viewProjection; }
+    /// The perspective of the prepared frame.
+    [[nodiscard]] const Perspective& FramePerspective() const { return m_perspective; }
     /// The storage index of the material table.
     [[nodiscard]] std::uint32_t MaterialDataIndex() const { return m_device->StorageIndex(m_materialTable); }
     /// Writes the G-buffer of the opaque draws, inside a GBufferRendering scope. Skinned draws read
@@ -407,6 +419,7 @@ private:
     std::vector<SkinningJob> m_skinningJobs;
     std::vector<TracedDraw> m_traced;
     glm::mat4 m_viewProjection{1.0f};
+    Perspective m_perspective;
     /// Of the last frame prepared, for its successor's motion vectors.
     std::optional<glm::mat4> m_previousViewProjection;
     /// The pixels the prepared frame draws, and those of the frame before, whose histories the next reads.

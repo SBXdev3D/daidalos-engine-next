@@ -30,6 +30,7 @@
 #include "Denoiser.hpp"
 #include "DirectLighting.hpp"
 #include "DynamicResolution.hpp"
+#include "Fsr3Upscaler.hpp"
 #include "GlobalIllumination.hpp"
 #include "GpuFixture.hpp"
 #include "MeshPass.hpp"
@@ -180,6 +181,8 @@ protected:
         /// the extent (ADR-0049); the last frame resolved is returned.
         bool resolve = false;
         float renderScale = 1.0f;
+        /// With resolve: AMD FSR 3.1 upscales the frames instead of the engine's resolve (ADR-0050).
+        bool fsr = false;
     };
 
     // What the G-buffer and the lighting draw of the view, in linear HDR. The view is drawn frames times, each with the
@@ -207,7 +210,14 @@ protected:
             created(renderer::ParticlePass::kReactiveFormat,
                     rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled, "Reactive");
         std::optional<renderer::TemporalResolvePass> resolver;
-        if (options.resolve) {
+        std::optional<renderer::Fsr3Upscaler> fsr;
+        if (options.resolve && options.fsr) {
+            core::Result<renderer::Fsr3Upscaler> made = renderer::Fsr3Upscaler::Create(Device());
+            EXPECT_TRUE(made.has_value()) << core::Format(made.error());
+            const core::Result<void> resized = made->Resize(extent);
+            EXPECT_TRUE(resized.has_value()) << core::Format(resized.error());
+            fsr.emplace(std::move(*made));
+        } else if (options.resolve) {
             core::Result<renderer::TemporalResolvePass> made = renderer::TemporalResolvePass::Create(Device());
             EXPECT_TRUE(made.has_value() && made->Resize(extent).has_value());
             resolver.emplace(std::move(*made));
@@ -342,16 +352,29 @@ protected:
                                            .structures = {{m_scene->Structure(), rhi::Access::RayQueryRead}}},
                                           [&](rhi::CommandList& list) { m_pass->RecordGlass(list); });
                         }
-                        if (resolver.has_value()) {
+                        if (options.resolve) {
                             graph.AddPass({.name = "Reactive",
                                            .rendering = rhi::RenderingDesc{.colorTarget = reactive,
                                                                            .clearColor = glm::vec4(0.0f)}},
                                           [](rhi::CommandList& /*list*/) {});
+                        }
+                        if (resolver.has_value()) {
                             resolver->AddTo(graph, {.frameBuffer = m_pass->FrameDataIndex(),
                                                     .color = color,
                                                     .depth = depth,
                                                     .motion = motion,
                                                     .reactive = reactive});
+                        }
+                        if (fsr.has_value()) {
+                            fsr->AddTo(graph,
+                                       {.color = color,
+                                        .depth = depth,
+                                        .motion = motion,
+                                        .reactive = reactive,
+                                        .renderExtent = renderExtent,
+                                        .jitter = renderer::Jitter(drawn, renderer::JitterPositions(renderScale)),
+                                        .perspective = m_pass->FramePerspective(),
+                                        .seconds = 1.0f / 60.0f});
                         }
                         graph.Execute(commands);
                     })
@@ -359,7 +382,10 @@ protected:
             if (drawn < options.warmup) {
                 continue;
             }
-            const Image drawnImage = Read(resolver.has_value() ? resolver->Output() : color, extent);
+            const Image drawnImage = Read(fsr.has_value()        ? fsr->Output()
+                                          : resolver.has_value() ? resolver->Output()
+                                                                 : color,
+                                          extent);
             if (options.eachFrame) {
                 options.eachFrame(drawnImage, drawn - options.warmup);
             }
@@ -370,6 +396,7 @@ protected:
             }
         }
         resolver.reset();
+        fsr.reset();
         Device().DestroyTexture(reactive);
         denoiser.reset();
         lighting.reset();
@@ -1679,7 +1706,8 @@ protected:
 
     // The frames of the view, still then turning, at the extent, rendered at scale of it and upscaled, through
     // the lighting and the denoiser.
-    std::vector<Image> Frames(const SceneView& view, rhi::Extent extent, float scale, Lighting lighting = {}) {
+    std::vector<Image> Frames(const SceneView& view, rhi::Extent extent, float scale, Lighting lighting = {},
+                              bool fsr = false) {
         core::Result<renderer::GlobalIllumination> indirect = renderer::GlobalIllumination::Create(Device());
         EXPECT_TRUE(indirect.has_value());
         std::vector<Image> frames;
@@ -1698,7 +1726,8 @@ protected:
                        },
                    .eachFrame = [&](const Image& image, std::uint32_t /*frame*/) { frames.push_back(image); },
                    .resolve = true,
-                   .renderScale = scale});
+                   .renderScale = scale,
+                   .fsr = fsr});
         return frames;
     }
 
@@ -1711,8 +1740,8 @@ protected:
     }
 
     UpscalingScores Measure(const SceneView& view, const std::vector<Image>& reference, float scale,
-                            Lighting lighting = {}) {
-        const std::vector<Image> frames = Frames(view, kExtent, scale, lighting);
+                            Lighting lighting = {}, bool fsr = false) {
+        const std::vector<Image> frames = Frames(view, kExtent, scale, lighting, fsr);
         UpscalingScores scores;
         for (std::uint32_t frame = kStill - 8; frame < kStill; ++frame) {
             scores.still += Flip(reference[frame], frames[frame], kExtent) / 8.0f;
@@ -1806,6 +1835,27 @@ TEST_F(UpscalingTest, TheUpscalerAtTwoThirdsStaysNearTheOutputsResolution) {
     EXPECT_LT(edgesUpscaled.pan, 1.4f * edgesNative.pan);
 }
 
+TEST_F(UpscalingTest, FsrAtTwoThirdsStaysNearTheOutputsResolution) {
+    // ADR-0050: AMD FSR 3.1 at 67%, against native resolution and the same references as the engine's
+    // upscaler. It flickers less than native resolution; its error is a little above the engine's.
+    const SceneView corridor = Corridor();
+    const std::vector<Image> corridorReference = Reference(corridor);
+    const UpscalingScores corridorNative = Measure(corridor, corridorReference, 1.0f);
+    const UpscalingScores corridorFsr = Measure(corridor, corridorReference, 0.67f, {}, true);
+    const SceneView edges = Edges();
+    const std::vector<Image> edgesReference = Reference(edges);
+    const UpscalingScores edgesFsr = Measure(edges, edgesReference, 0.67f, {}, true);
+    Report("corridor_100", corridorNative);
+    Report("corridor_67_fsr", corridorFsr);
+    Report("edges_67_fsr", edgesFsr);
+    // Measured on an RTX 3090: the corridor 0.094 native and 0.115 with FSR still, 0.091 and 0.106 panning,
+    // flicker 0.0039 and 0.0024; edges 0.0063 still. With its jitter the wrong way, edges are 0.0085.
+    EXPECT_LT(corridorFsr.still, 1.3f * corridorNative.still);
+    EXPECT_LT(corridorFsr.pan, 1.25f * corridorNative.pan);
+    EXPECT_LT(corridorFsr.flicker, corridorNative.flicker);
+    EXPECT_LT(edgesFsr.still, 0.0075f);
+}
+
 TEST_F(UpscalingTest, DISABLED_MeasureEachScale) {
     // Not a test: the scores of each scale, for ADR-0049.
     const std::vector<std::pair<std::string, SceneView>> scenes{
@@ -1843,5 +1893,24 @@ TEST_F(UpscalingTest, DISABLED_BreakDownTheMirrorRoom) {
         Report(variant.name + "_67", upscaled);
         std::printf("%s: 67%% over 100%%, still %.2f, panning %.2f\n", variant.name.c_str(),
                     upscaled.still / native.still, upscaled.pan / native.pan);
+    }
+}
+
+TEST_F(UpscalingTest, DISABLED_CompareWithFsr) {
+    // Not a test: AMD FSR 3.1 against the engine's upscaler, both at 67%, and native resolution, against
+    // the same references (step 9.16, ADR-0050).
+    const std::vector<std::pair<std::string, SceneView>> scenes{
+        {"edges", Edges()}, {"corridor", Corridor()}, {"mirrors", Mirrors()}, {"glowing", GlowingMirrors()}};
+    for (const auto& [name, view] : scenes) {
+        const std::vector<Image> reference = Reference(view);
+        const UpscalingScores native = Measure(view, reference, 1.0f);
+        const UpscalingScores engine = Measure(view, reference, 0.67f);
+        const UpscalingScores fsr = Measure(view, reference, 0.67f, {}, true);
+        Report(name + "_100", native);
+        Report(name + "_67_engine", engine);
+        Report(name + "_67_fsr", fsr);
+        std::printf("%s over 100%%: engine %.2f still, %.2f panning; FSR %.2f still, %.2f panning\n", name.c_str(),
+                    engine.still / native.still, engine.pan / native.pan, fsr.still / native.still,
+                    fsr.pan / native.pan);
     }
 }

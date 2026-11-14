@@ -50,6 +50,8 @@ dai_add_module(NAME renderer
         src/Renderer.cpp
         src/ShaderCompiler.cpp
         src/ShaderCompiler.hpp
+        src/Fsr3Upscaler.cpp
+        src/Fsr3Upscaler.hpp
         src/TemporalResolvePass.cpp
         src/TemporalResolvePass.hpp
         src/UiPass.cpp
@@ -72,6 +74,17 @@ dai_add_shaders(TARGET daidalos_renderer
         shaders/EmissiveAverage.slang shaders/EmissiveTriangles.slang shaders/ExposureHistogram.slang shaders/Bloom.slang
     INCLUDES shaders/Bsdf.slang shaders/RayQueries.slangh shaders/GlobalIllumination.slangh shaders/MeshCommon.slangh shaders/MeshTypes.slangh shaders/Particles.slangh
         shaders/Denoiser.slangh shaders/Random.slangh shaders/Lights.slangh shaders/GBuffer.slangh shaders/Restir.slangh shaders/RestirSpatial.slangh)
+
+# AMD FSR 3.1's upscaler (ADR-0050): AMD's passes, unchanged, through the engine's callbacks. Its headers
+# test macros they leave undefined (15205) and keep code after a return (41000); its pyramids use quad
+# operations.
+dai_add_shaders(TARGET daidalos_renderer
+    COMPUTE shaders/Fsr3PrepareInputs.slang shaders/Fsr3LumaPyramid.slang shaders/Fsr3ShadingChangePyramid.slang
+        shaders/Fsr3ShadingChange.slang shaders/Fsr3PrepareReactivity.slang shaders/Fsr3LumaInstability.slang
+        shaders/Fsr3Accumulate.slang
+    INCLUDES shaders/Fsr3.slangh
+    INCLUDE_DIRECTORIES ${PROJECT_SOURCE_DIR}/third_party/fidelityfx-fsr3/gpu
+    ARGUMENTS -warnings-disable 15205 -warnings-disable 41000 -DFFX_HLSL_SM=62 -capability spvGroupNonUniformQuad)
 
 target_compile_definitions(daidalos_renderer
     PUBLIC DAI_DEV_TOOLS=$<BOOL:${DAI_ENABLE_DEV_TOOLS}>

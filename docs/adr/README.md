@@ -52,4 +52,5 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0046](0046-texture-tool-and-factory-textures.md) | A KTX2 encoder and `texture-tool`; the factory's 2048 px albedo, normal, roughness and metalness maps in UASTC, height maps kept for Phase 11 | Accepted |
 | [0047](0047-dual-mit-apache-licence.md) | Dual MIT or Apache 2.0 licence for the code and the owner's assets; the NVIDIA SDKs no longer excluded by the licence, own implementations kept | Accepted |
 | [0048](0048-image-formation.md) | Image formation: auto-exposure within a range each level sets, bloom, AgX, HDR10 output, the interface on a layer, brightness calibration | Accepted, amended by 0049 |
-| [0049](0049-upscaling-and-dynamic-resolution.md) | The engine's own temporal upscaling and sharpening, targets drawn into a corner for dynamic resolution, and the test that decides on FSR 3.1, which adds it as step 9.16 | Accepted |
+| [0049](0049-upscaling-and-dynamic-resolution.md) | The engine's own temporal upscaling and sharpening, targets drawn into a corner for dynamic resolution, and the test that decides on FSR 3.1, which adds it as step 9.16 | Accepted, amended by 0050 |
+| [0050](0050-fsr-3-1.md) | AMD FSR 3.1's passes, unchanged, run by the engine through its own callbacks; a little behind the engine's upscaler by FLIP, steadier, kept as an option | Accepted |

@@ -55,6 +55,11 @@ enum class Format {
     Rg16Float,
     /// One channel, such as ambient occlusion.
     R8Unorm,
+    /// One channel at more precision: a half float, a float, or an unsigned integer that compute shaders can
+    /// update atomically.
+    R16Float,
+    R32Float,
+    R32Uint,
     D32Float,
     /// Block-compressed formats, with blocks of 4x4 pixels.
     Bc5Unorm,
