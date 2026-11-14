@@ -12,8 +12,8 @@
 
 #include <glm/matrix.hpp>
 #include <glm/vec4.hpp>
-#include <shaders/MotionDebug.ps.spv.h>
-#include <shaders/MotionDebug.vs.spv.h>
+#include <shaders/GBufferDebug.ps.spv.h>
+#include <shaders/GBufferDebug.vs.spv.h>
 #include <shaders/Tonemap.ps.spv.h>
 #include <shaders/Tonemap.vs.spv.h>
 
@@ -49,12 +49,14 @@ struct TonemapPushConstants {
     float exposure;
 };
 
-// Matches MotionDebugPushConstants in shaders/MotionDebug.slang.
-struct MotionDebugPushConstants {
-    std::uint32_t motionTexture;
-    std::uint32_t padding;
+// Matches GBufferDebugPushConstants in shaders/GBufferDebug.slang.
+struct GBufferDebugPushConstants {
+    std::uint32_t texture;
+    std::uint32_t mode;
     glm::vec2 extent;
 };
+constexpr std::uint32_t kShowMotion = 0;
+constexpr std::uint32_t kShowNormals = 1;
 
 } // namespace
 
@@ -83,7 +85,7 @@ struct Renderer::Impl {
         particlePass.reset();
         uiPass.reset();
         device.DestroyPipeline(tonemap);
-        device.DestroyPipeline(motionDebug);
+        device.DestroyPipeline(gbufferDebug);
         device.DestroyTexture(motion);
         device.DestroyTexture(reactive);
         device.DestroyTexture(depth);
@@ -144,7 +146,7 @@ struct Renderer::Impl {
     PathTracerSettings pathAveraged;
     bool pathShown = false;
     rhi::PipelineHandle tonemap;
-    rhi::PipelineHandle motionDebug;
+    rhi::PipelineHandle gbufferDebug;
     /// The G-buffer's material and what the lighting writes, which the composite puts together into hdr
     /// (ADR-0039, ADR-0044).
     ShadingTargets shading;
@@ -294,13 +296,13 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
                                       .cull = rhi::CullMode::None,
                                       .name = "Tonemap",
                                   }));
-    DAI_TRY_ASSIGN(impl->motionDebug, impl->device.CreatePipeline({
-                                          .vertexShader = rhi::ToSpirv(kMotionDebugVsSpirv),
-                                          .fragmentShader = rhi::ToSpirv(kMotionDebugPsSpirv),
-                                          .colorFormat = kHdrFormat,
-                                          .cull = rhi::CullMode::None,
-                                          .name = "Motion debug view",
-                                      }));
+    DAI_TRY_ASSIGN(impl->gbufferDebug, impl->device.CreatePipeline({
+                                           .vertexShader = rhi::ToSpirv(kGBufferDebugVsSpirv),
+                                           .fragmentShader = rhi::ToSpirv(kGBufferDebugPsSpirv),
+                                           .colorFormat = kHdrFormat,
+                                           .cull = rhi::CullMode::None,
+                                           .name = "G-buffer debug view",
+                                       }));
     DAI_TRY_ASSIGN(UiPass uiPass, UiPass::Create(impl->device, impl->swapchain.ColorFormat()));
     impl->uiPass.emplace(std::move(uiPass));
     impl->antialiasing = config.antialiasing;
@@ -644,15 +646,18 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         ++impl.frameNumber;
     }
     impl.resolved = resolve;
-    if (status && hasFrame && impl.debugView == DebugView::Motion) {
+    const bool gbufferView = impl.debugView == DebugView::Motion || impl.debugView == DebugView::Normals;
+    if (status && hasFrame && gbufferView) {
+        const bool normals = impl.debugView == DebugView::Normals;
+        const rhi::TextureHandle shown = normals ? impl.normals : impl.motion;
         graph.AddPass(
-            {.name = "Motion debug view",
+            {.name = "G-buffer debug view",
              .rendering = rhi::RenderingDesc{.colorTarget = impl.hdr},
-             .textures = {{impl.hdr, rhi::Access::ColorTarget, true}, {impl.motion, rhi::Access::FragmentShaderRead}}},
-            [&impl, &frame](rhi::CommandList& commands) {
-                commands.BindPipeline(impl.motionDebug);
-                commands.Push(MotionDebugPushConstants{
-                    impl.device.BindlessIndex(impl.motion), 0,
+             .textures = {{impl.hdr, rhi::Access::ColorTarget, true}, {shown, rhi::Access::FragmentShaderRead}}},
+            [&impl, &frame, shown, normals](rhi::CommandList& commands) {
+                commands.BindPipeline(impl.gbufferDebug);
+                commands.Push(GBufferDebugPushConstants{
+                    impl.device.BindlessIndex(shown), normals ? kShowNormals : kShowMotion,
                     glm::vec2(static_cast<float>(frame.extent.width), static_cast<float>(frame.extent.height))});
                 commands.Draw(3);
             });

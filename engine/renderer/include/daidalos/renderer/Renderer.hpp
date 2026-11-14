@@ -37,6 +37,8 @@ enum class DebugView {
     Path,
     /// The motion vectors of the G-buffer, in color (ADR-0037): grey where nothing moved.
     Motion,
+    /// The world normals of the G-buffer, normal maps included, in color: times 0.5 plus 0.5.
+    Normals,
     /// The indirect diffuse light of each pixel, as its ray found it, before the denoiser (ADR-0040).
     Indirect,
     /// The light the radiance cache holds at each pixel's surface (ADR-0040): its cells show.

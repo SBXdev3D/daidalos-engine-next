@@ -142,8 +142,8 @@ TEST_F(RendererTest, ShowsEachDebugView) {
     ASSERT_TRUE(mesh.has_value());
     const renderer::SceneView view = TestView(*mesh);
     using renderer::DebugView;
-    for (const DebugView debugView : {DebugView::Rays, DebugView::Path, DebugView::Motion, DebugView::Indirect,
-                                      DebugView::RadianceCache, DebugView::Off}) {
+    for (const DebugView debugView : {DebugView::Rays, DebugView::Path, DebugView::Motion, DebugView::Normals,
+                                      DebugView::Indirect, DebugView::RadianceCache, DebugView::Off}) {
         target->SetDebugView(debugView);
         RenderFrames(*target, view, 3);
     }

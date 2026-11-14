@@ -11,6 +11,9 @@ is a node of its own, whose name holds its kind and attributes: "door;id=-5;radi
 
 Legacy scenes are left-handed, in units of about 3 per meter (the camera stood 4.7 above the floor).
 They are converted to the engine's conventions: right-handed, in meters, -Z forward.
+
+The level's materials have since taken new textures (ADR-0046): run scripts/convert_factory_textures.py
+after this script, or the legacy textures come back.
 """
 
 import argparse

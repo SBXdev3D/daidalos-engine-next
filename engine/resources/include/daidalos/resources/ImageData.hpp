@@ -47,6 +47,12 @@ struct ImageData {
 /// Reads and decodes an image file. A missing file is NotFound.
 [[nodiscard]] core::Result<ImageData> LoadImageFile(const std::filesystem::path& path, TextureUse use);
 
+/// Encodes an image and its mip levels to a KTX2 file that DecodeImage reads back: UASTC, which it
+/// transcodes to BC7 (BC5 for normal maps), supercompressed with Zstandard. The image must be RGBA8, in
+/// sRGB for colors and linear otherwise; GenerateMips makes its mip levels. Normal maps are encoded
+/// without rate-distortion optimization, which bends normals. Fails with InvalidArgument on other images.
+[[nodiscard]] core::Result<std::vector<std::byte>> EncodeKtx2(const ImageData& image, TextureUse use);
+
 /// Adds the mip levels of a single-level RGBA8 image, by averaging 2x2 pixels. Colors of Rgba8Srgb
 /// images are averaged in linear space, and alpha always is.
 [[nodiscard]] ImageData GenerateMips(ImageData image);
