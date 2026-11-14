@@ -5,6 +5,7 @@
 #include <daidalos/core/Assert.hpp>
 #include <daidalos/core/Profile.hpp>
 #include <daidalos/logging/Log.hpp>
+#include <daidalos/renderer/DisplayTransform.hpp>
 #include <daidalos/renderer/LightUnits.hpp>
 #include <daidalos/renderer/Renderer.hpp>
 #include <daidalos/rhi/Spirv.hpp>
@@ -14,17 +15,21 @@
 #include <glm/vec4.hpp>
 #include <shaders/GBufferDebug.ps.spv.h>
 #include <shaders/GBufferDebug.vs.spv.h>
-#include <shaders/Tonemap.ps.spv.h>
-#include <shaders/Tonemap.vs.spv.h>
+#include <shaders/Output.ps.spv.h>
+#include <shaders/Output.vs.spv.h>
 
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
+#include <limits>
 #include <optional>
 #include <utility>
 
+#include "Bloom.hpp"
 #include "Denoiser.hpp"
 #include "DirectLighting.hpp"
+#include "Exposure.hpp"
 #include "GlobalIllumination.hpp"
 #include "MeshPass.hpp"
 #include "ParticlePass.hpp"
@@ -43,11 +48,25 @@ constexpr std::string_view kModule = "renderer";
 constexpr rhi::Format kDepthFormat = rhi::Format::D32Float;
 /// Lighting is computed in HDR, then tonemapped into the swapchain (ADR-0022).
 constexpr rhi::Format kHdrFormat = rhi::Format::Rgba16Float;
-// Matches TonemapPushConstants in shaders/Tonemap.slang.
-struct TonemapPushConstants {
-    std::uint32_t hdrTexture;
-    float exposure;
+/// The interface and the developer tools draw into a layer of their own, which the output pass puts over the
+/// image whatever the display's format (ADR-0048).
+constexpr rhi::Format kInterfaceFormat = rhi::Format::Rgba8Srgb;
+// Matches OutputPushConstants in shaders/Output.slang.
+struct OutputPushConstants {
+    std::uint32_t scene;
+    std::uint32_t bloom;
+    std::uint32_t layer;
+    std::uint32_t toneMapper;
+    float scale;
+    float bloomShare;
+    float headroom;
+    float paperWhite;
+    std::uint32_t hdr10;
 };
+constexpr std::uint32_t kNoTexture = 0xFFFFFFFF;
+/// Stops between a level's darkest and brightest exposure beyond which the GPU's fixed exposure loses
+/// precision (ADR-0048).
+constexpr float kWidestExposureRange = 8.0f;
 
 // Matches GBufferDebugPushConstants in shaders/GBufferDebug.slang.
 struct GBufferDebugPushConstants {
@@ -73,6 +92,8 @@ struct Renderer::Impl {
             DAI_LOG_ERROR(kModule, "Shutting down with a failed device: {}", core::Format(idle.error()));
         }
         pathTracer.reset();
+        exposureMeter.reset();
+        bloom.reset();
         temporalResolve.reset();
         denoiser.reset();
         directLighting.reset();
@@ -84,7 +105,9 @@ struct Renderer::Impl {
         globalIllumination.reset();
         particlePass.reset();
         uiPass.reset();
-        device.DestroyPipeline(tonemap);
+        for (const auto& [format, pipeline] : outputPipelines) {
+            device.DestroyPipeline(pipeline);
+        }
         device.DestroyPipeline(gbufferDebug);
         device.DestroyTexture(motion);
         device.DestroyTexture(reactive);
@@ -92,6 +115,26 @@ struct Renderer::Impl {
         device.DestroyTexture(normals);
         device.DestroyTexture(hdr);
         device.DestroyTexture(background);
+        device.DestroyTexture(interfaceLayer);
+    }
+
+    /// The output pass's pipeline for a swapchain format, created the first time the format is seen: once,
+    /// and again when HDR is turned on or off.
+    core::Result<rhi::PipelineHandle> OutputPipeline(rhi::Format format) {
+        for (const auto& [known, pipeline] : outputPipelines) {
+            if (known == format) {
+                return pipeline;
+            }
+        }
+        DAI_TRY_ASSIGN(const rhi::PipelineHandle pipeline, device.CreatePipeline({
+                                                               .vertexShader = rhi::ToSpirv(kOutputVsSpirv),
+                                                               .fragmentShader = rhi::ToSpirv(kOutputPsSpirv),
+                                                               .colorFormat = format,
+                                                               .cull = rhi::CullMode::None,
+                                                               .name = "Output",
+                                                           }));
+        outputPipelines.emplace_back(format, pipeline);
+        return pipeline;
     }
 
     /// The targets follow the size of the back buffer.
@@ -114,6 +157,15 @@ struct Renderer::Impl {
     std::optional<ParticlePass> particlePass;
     std::optional<UiPass> uiPass;
     std::optional<TemporalResolvePass> temporalResolve;
+    std::optional<ExposureMeter> exposureMeter;
+    std::optional<Bloom> bloom;
+    /// The eye's exposure, the last metering and histogram, and the range of the last frame (ADR-0048).
+    EyeAdaptation eye;
+    float meteredEv100 = std::numeric_limits<float>::quiet_NaN();
+    std::vector<std::uint32_t> histogram;
+    float ev100Min = 0.0f;
+    float ev100Max = 0.0f;
+    bool rangeWarned = false;
     std::optional<Denoiser> denoiser;
     std::optional<DirectLighting> directLighting;
     DirectLightingSettings restir;
@@ -145,8 +197,11 @@ struct Renderer::Impl {
     glm::mat4 pathViewProjection{0.0f};
     PathTracerSettings pathAveraged;
     bool pathShown = false;
-    rhi::PipelineHandle tonemap;
+    std::vector<std::pair<rhi::Format, rhi::PipelineHandle>> outputPipelines;
     rhi::PipelineHandle gbufferDebug;
+    ImageConfig image;
+    /// The interface and the overlay, premultiplied, at the window's size.
+    rhi::TextureHandle interfaceLayer;
     /// The G-buffer's material and what the lighting writes, which the composite puts together into hdr
     /// (ADR-0039, ADR-0044).
     ShadingTargets shading;
@@ -185,6 +240,7 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
     device.DestroyTexture(reactive);
     device.DestroyTexture(hdr);
     device.DestroyTexture(background);
+    device.DestroyTexture(interfaceLayer);
     meshPass->DestroyShadingTargets(shading);
     depth = {};
     normals = {};
@@ -192,7 +248,9 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
     reactive = {};
     hdr = {};
     background = {};
+    interfaceLayer = {};
     DAI_TRY(temporalResolve->Resize(extent));
+    DAI_TRY(bloom->Resize(extent));
     DAI_TRY(denoiser->Resize(extent));
     DAI_TRY(directLighting->Resize(extent));
     DAI_TRY_ASSIGN(shading, meshPass->CreateShadingTargets(extent));
@@ -223,6 +281,11 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
                                          .format = kHdrFormat,
                                          .usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDst,
                                          .name = "Behind glass"}));
+    DAI_TRY_ASSIGN(interfaceLayer,
+                   device.CreateTexture({.extent = extent,
+                                         .format = kInterfaceFormat,
+                                         .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
+                                         .name = "Interface"}));
     targetExtent = extent;
     return {};
 }
@@ -289,13 +352,8 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
 
     auto impl = std::make_unique<Impl>(window, std::move(device), std::move(swapchain), config.vsync);
     impl->exposureCompensation = config.exposureCompensation;
-    DAI_TRY_ASSIGN(impl->tonemap, impl->device.CreatePipeline({
-                                      .vertexShader = rhi::ToSpirv(kTonemapVsSpirv),
-                                      .fragmentShader = rhi::ToSpirv(kTonemapPsSpirv),
-                                      .colorFormat = impl->swapchain.ColorFormat(),
-                                      .cull = rhi::CullMode::None,
-                                      .name = "Tonemap",
-                                  }));
+    impl->image = config.image;
+    DAI_TRY(impl->OutputPipeline(impl->swapchain.ColorFormat()));
     DAI_TRY_ASSIGN(impl->gbufferDebug, impl->device.CreatePipeline({
                                            .vertexShader = rhi::ToSpirv(kGBufferDebugVsSpirv),
                                            .fragmentShader = rhi::ToSpirv(kGBufferDebugPsSpirv),
@@ -303,7 +361,7 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
                                            .cull = rhi::CullMode::None,
                                            .name = "G-buffer debug view",
                                        }));
-    DAI_TRY_ASSIGN(UiPass uiPass, UiPass::Create(impl->device, impl->swapchain.ColorFormat()));
+    DAI_TRY_ASSIGN(UiPass uiPass, UiPass::Create(impl->device, kInterfaceFormat));
     impl->uiPass.emplace(std::move(uiPass));
     impl->antialiasing = config.antialiasing;
     DAI_TRY_ASSIGN(MeshPass meshPass, MeshPass::Create(impl->device, kHdrFormat, kDepthFormat));
@@ -322,6 +380,10 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     impl->particlePass.emplace(std::move(particlePass));
     DAI_TRY_ASSIGN(TemporalResolvePass temporalResolve, TemporalResolvePass::Create(impl->device));
     impl->temporalResolve.emplace(std::move(temporalResolve));
+    DAI_TRY_ASSIGN(ExposureMeter exposureMeter, ExposureMeter::Create(impl->device));
+    impl->exposureMeter.emplace(std::move(exposureMeter));
+    DAI_TRY_ASSIGN(Bloom bloom, Bloom::Create(impl->device));
+    impl->bloom.emplace(std::move(bloom));
     DAI_TRY_ASSIGN(Denoiser denoiser, Denoiser::Create(impl->device));
     impl->denoiser.emplace(std::move(denoiser));
     DAI_TRY_ASSIGN(DirectLighting directLighting, DirectLighting::Create(impl->device));
@@ -381,6 +443,10 @@ void Renderer::SetVsync(bool vsync) {
 
 void Renderer::SetExposureCompensation(float stops) {
     m_impl->exposureCompensation = stops;
+}
+
+void Renderer::SetImage(const ImageConfig& config) {
+    m_impl->image = config;
 }
 
 void Renderer::SetIndirectLight(bool enabled) {
@@ -448,9 +514,17 @@ FrameStats Renderer::Stats() const {
             .rayInstances = impl.rayTracing->LastStats().instances,
             .skinnedStructures = impl.rayTracing->LastStats().skinnedStructures,
             .pathSamples = impl.debugView == DebugView::Path ? impl.pathTracer->Samples() : 0,
+            .ev100 = impl.eye.Ev100(),
+            .meteredEv100 = impl.meteredEv100,
+            .ev100Min = impl.ev100Min,
+            .ev100Max = impl.ev100Max,
             .meshes = impl.meshPass->MeshCount(),
             .materials = impl.meshPass->MaterialCount(),
             .particleEffects = impl.particlePass->EffectCount()};
+}
+
+std::span<const std::uint32_t> Renderer::ExposureHistogram() const {
+    return m_impl->histogram;
 }
 
 core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* canvas, const OverlayRecorder& overlay) {
@@ -460,7 +534,16 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     impl.ReloadShaders();
 
     const platform::Extent size = impl.window->PixelSize();
-    impl.swapchain.Configure({{size.width, size.height}, impl.vsync});
+    // HDR10 where the display shows HDR (ADR-0048); its paper white and peak are the system's unless set.
+    const platform::HdrInfo display = impl.window->Hdr();
+    const bool hdrWanted = impl.image.hdr && display.enabled;
+    const float paperWhite = impl.image.hdrPaperWhite > 0.0f ? impl.image.hdrPaperWhite : display.sdrWhiteNits;
+    const float peak =
+        std::max(impl.image.hdrPeak > 0.0f ? impl.image.hdrPeak : display.sdrWhiteNits * display.headroom, paperWhite);
+    impl.swapchain.Configure({.extent = {size.width, size.height},
+                              .vsync = impl.vsync,
+                              .hdr = hdrWanted,
+                              .maxLuminance = hdrWanted ? peak : 0.0f});
 
     DAI_TRY_ASSIGN(std::optional<rhi::Frame> begun, impl.device.BeginFrame(&impl.swapchain));
     if (!begun.has_value()) {
@@ -468,6 +551,36 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     }
     rhi::Frame& frame = *begun;
     impl.ReadGpuTimes(frame.slot);
+
+    // Exposure (ADR-0048). The GPU's light is exposed once for the level, at the middle of its range, so
+    // that no history goes stale when the eye adapts: the eye and the brightness setting scale the image
+    // in the output pass.
+    const Atmosphere& atmosphere = view.atmosphere;
+    const bool adapts = impl.image.autoExposure && atmosphere.autoExposure;
+    impl.ev100Min = adapts ? std::min(atmosphere.ev100Min, atmosphere.ev100Max) : atmosphere.ev100;
+    impl.ev100Max = adapts ? std::max(atmosphere.ev100Min, atmosphere.ev100Max) : atmosphere.ev100;
+    if (impl.ev100Max - impl.ev100Min > kWidestExposureRange && !impl.rangeWarned) {
+        impl.rangeWarned = true;
+        DAI_LOG_WARNING(kModule, "The exposure range spans {:.1f} stops: beyond {:.0f}, dark light loses precision",
+                        impl.ev100Max - impl.ev100Min, kWidestExposureRange);
+    }
+    std::optional<float> metered;
+    if (const std::span<const std::uint32_t> histogram = impl.exposureMeter->Read(frame.slot); !histogram.empty()) {
+        impl.histogram.assign(histogram.begin(), histogram.end());
+        metered = MeterEv100(histogram);
+        impl.meteredEv100 = metered.value_or(std::numeric_limits<float>::quiet_NaN());
+    }
+    if (!adapts) {
+        impl.histogram.clear();
+        impl.meteredEv100 = std::numeric_limits<float>::quiet_NaN();
+    }
+    if (!impl.eye.Started() || view.cut) {
+        impl.eye.Reset(std::clamp(atmosphere.ev100, impl.ev100Min, impl.ev100Max));
+    }
+    impl.eye.Update(adapts ? metered : std::nullopt, view.timeStep, impl.ev100Min, impl.ev100Max);
+    const float gpuEv100 = (impl.ev100Min + impl.ev100Max) * 0.5f;
+    const float preExposure = ExposureScale(gpuEv100);
+    const float displayScale = std::exp2(gpuEv100 - impl.eye.Ev100() + impl.exposureCompensation);
 
     // A failure from here on still ends the frame: the acquired image must be presented.
     core::Result<void> status = impl.ResizeTargets(frame.extent);
@@ -494,7 +607,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                        .reflections = reflections,
                        .background = impl.background,
                        .depth = impl.depth,
-                       .exposure = ExposureScale(view.atmosphere.ev100 - impl.exposureCompensation),
+                       .exposure = preExposure,
                        .sharpReflections =
                            reflect ? std::min(GlobalIllumination::kSharpRoughness, impl.reflectionRoughness) : 0.0f});
         });
@@ -536,7 +649,11 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                         .frameIndex = frameIndex,
                                         .reflections = reflect,
                                         .reflectionRoughness = impl.reflectionRoughness,
-                                        .settings = impl.indirect},
+                                        // The clamp is set in what the screen shows.
+                                        .settings = {.bounces = impl.indirect.bounces,
+                                                     .lightCandidates = impl.indirect.lightCandidates,
+                                                     .clamp = impl.indirect.clamp / displayScale,
+                                                     .rays = impl.indirect.rays}},
                                        cacheView ? GlobalIllumination::Mode::Cache
                                                  : GlobalIllumination::Mode::Indirect);
     }
@@ -699,6 +816,36 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                                        .clearColor = glm::vec4(view.atmosphere.fogColor, 1.0f)}},
                       [](rhi::CommandList& /*commands*/) {});
     }
+    // The interface goes after the antialiasing, which would blur text, and under the overlay, in a layer
+    // that the output pass puts over the image.
+    bool layerDrawn = false;
+    const auto layerRendering = [&impl, &layerDrawn] {
+        rhi::RenderingDesc rendering{.colorTarget = impl.interfaceLayer};
+        if (!layerDrawn) {
+            rendering.clearColor = glm::vec4(0.0f);
+            layerDrawn = true;
+        }
+        return rendering;
+    };
+    if (status && canvas != nullptr && !canvas->Commands().empty()) {
+        graph.AddPass(
+            {.name = "Interface", .rendering = layerRendering()},
+            [&impl, &status, canvas](rhi::CommandList& commands) { status = impl.uiPass->Record(commands, *canvas); });
+    }
+    if (status && overlay) {
+        graph.AddPass({.name = "Overlay", .group = "Interface", .rendering = layerRendering()},
+                      [&overlay, &frame](rhi::CommandList& commands) { overlay(commands, frame.extent); });
+    }
+
+    rhi::PipelineHandle output;
+    if (status) {
+        core::Result<rhi::PipelineHandle> pipeline = impl.OutputPipeline(impl.swapchain.ColorFormat());
+        if (pipeline) {
+            output = *pipeline;
+        } else {
+            status = tl::unexpected(std::move(pipeline.error()));
+        }
+    }
     if (status) {
         const rhi::TextureHandle source = path                           ? impl.pathTracer->Output()
                                           : illuminate && reflectionView ? impl.globalIllumination->Reflections()
@@ -707,27 +854,44 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                           : resolve                      ? impl.temporalResolve->Output()
                                                                          : impl.hdr;
 
-        graph.AddPass({.name = "Tonemap",
+        // The lit scene is metered for the next frames' exposure; debug views are not.
+        if (adapts && hasFrame && impl.debugView == DebugView::Off) {
+            impl.exposureMeter->AddTo(graph, frame.slot, source, frame.extent, preExposure);
+        }
+        // Bloom spreads the lit scene's light; its debug view shows it alone.
+        const bool bloomView = impl.debugView == DebugView::Bloom;
+        const float bloomShare = bloomView ? 1.0f : std::clamp(impl.image.bloom, 0.0f, 1.0f);
+        const bool blooms = hasFrame && bloomShare > 0.0f && (impl.debugView == DebugView::Off || bloomView);
+        if (blooms) {
+            impl.bloom->AddTo(graph, source);
+        }
+        const bool hdr10 = impl.swapchain.CurrentColorSpace() == rhi::ColorSpace::Hdr10;
+        const OutputPushConstants push{.scene = impl.device.BindlessIndex(source),
+                                       .bloom = blooms ? impl.device.BindlessIndex(impl.bloom->Output()) : kNoTexture,
+                                       .layer =
+                                           layerDrawn ? impl.device.BindlessIndex(impl.interfaceLayer) : kNoTexture,
+                                       .toneMapper = impl.image.toneMapper == ToneMapper::AgX ? 0U : 1U,
+                                       .scale = displayScale,
+                                       .bloomShare = blooms ? bloomShare : 0.0f,
+                                       .headroom = hdr10 ? peak / paperWhite : 1.0f,
+                                       .paperWhite = paperWhite,
+                                       .hdr10 = hdr10 ? 1U : 0U};
+        std::vector<rhi::TextureUse> reads{{frame.backBuffer, rhi::Access::ColorTarget, true},
+                                           {source, rhi::Access::FragmentShaderRead}};
+        if (layerDrawn) {
+            reads.push_back({impl.interfaceLayer, rhi::Access::FragmentShaderRead});
+        }
+        if (blooms) {
+            reads.push_back({impl.bloom->Output(), rhi::Access::FragmentShaderRead});
+        }
+        graph.AddPass({.name = "Output",
                        .rendering = rhi::RenderingDesc{.colorTarget = frame.backBuffer},
-                       .textures = {{frame.backBuffer, rhi::Access::ColorTarget, true},
-                                    {source, rhi::Access::FragmentShaderRead}}},
-                      // The frame is exposed already (ADR-0043).
-                      [&impl, source](rhi::CommandList& commands) {
-                          commands.BindPipeline(impl.tonemap);
-                          commands.Push(TonemapPushConstants{impl.device.BindlessIndex(source), 1.0f});
+                       .textures = std::move(reads)},
+                      [output, push](rhi::CommandList& commands) {
+                          commands.BindPipeline(output);
+                          commands.Push(push);
                           commands.Draw(3);
                       });
-    }
-
-    // The interface goes after the antialiasing, which would blur text, and under the debug overlay.
-    if (status && canvas != nullptr && !canvas->Commands().empty()) {
-        graph.AddPass(
-            {.name = "Interface", .rendering = rhi::RenderingDesc{.colorTarget = frame.backBuffer}},
-            [&impl, &status, canvas](rhi::CommandList& commands) { status = impl.uiPass->Record(commands, *canvas); });
-    }
-    if (status && overlay) {
-        graph.AddPass({.name = "Overlay", .rendering = rhi::RenderingDesc{.colorTarget = frame.backBuffer}},
-                      [&overlay, &frame](rhi::CommandList& commands) { overlay(commands, frame.extent); });
     }
     impl.timedGroups[frame.slot] = graph.Execute(frame.commands);
 
@@ -740,7 +904,7 @@ rhi::Device& Renderer::Device() {
 }
 
 rhi::Format Renderer::ColorFormat() const {
-    return m_impl->swapchain.ColorFormat();
+    return kInterfaceFormat;
 }
 
 const std::string& Renderer::ShaderError() const {

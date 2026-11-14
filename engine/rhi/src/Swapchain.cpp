@@ -18,11 +18,21 @@ namespace daidalos::rhi {
 
 namespace {
 
-std::optional<VkSurfaceFormatKHR> ChooseFormat(VkPhysicalDevice device, VkSurfaceKHR surface) {
+std::optional<VkSurfaceFormatKHR> ChooseFormat(VkPhysicalDevice device, VkSurfaceKHR surface, bool hdr) {
     std::uint32_t count = 0;
     vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &count, nullptr);
     std::vector<VkSurfaceFormatKHR> formats(count);
     vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &count, formats.data());
+
+    // HDR10 is offered while the window is on a display with HDR turned on (ADR-0048).
+    if (hdr) {
+        for (const VkSurfaceFormatKHR& format : formats) {
+            if (format.format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 &&
+                format.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT) {
+                return format;
+            }
+        }
+    }
 
     // The swapchain format converts linear lighting to sRGB (CONVENTIONS.md, section 6).
     for (const VkFormat wanted : {VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_SRGB}) {
@@ -108,6 +118,16 @@ core::Result<void> Swapchain::Impl::Recreate() {
         imageCount = std::min(imageCount, capabilities.maxImageCount);
     }
     const VkPresentModeKHR presentMode = ChoosePresentMode(device->physicalDevice, surface, config.vsync);
+    const bool hdr = config.hdr && device->colorSpaces;
+    if (const std::optional<VkSurfaceFormatKHR> format = ChooseFormat(device->physicalDevice, surface, hdr)) {
+        surfaceFormat = *format;
+    }
+    const bool hdr10 = surfaceFormat.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT;
+    if (loggedHdr != hdr10) {
+        DAI_LOG_INFO(kModule, "Output in {}{}", hdr10 ? "HDR10" : "sRGB",
+                     config.hdr && !hdr10 ? " (HDR10 is not offered: is HDR on for this display?)" : "");
+        loggedHdr = hdr10;
+    }
     const VkSwapchainKHR previous = swapchain;
     const VkSwapchainCreateInfoKHR createInfo{
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
@@ -176,9 +196,27 @@ core::Result<void> Swapchain::Impl::Recreate() {
         }
     }
 
+    if (surfaceFormat.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT && device->hdrMetadata &&
+        config.maxLuminance > 0.0f) {
+        // Rec. 2020 primaries and the D65 white point, in CIE 1931 xy.
+        const VkHdrMetadataEXT metadata{
+            .sType = VK_STRUCTURE_TYPE_HDR_METADATA_EXT,
+            .displayPrimaryRed = {0.708f, 0.292f},
+            .displayPrimaryGreen = {0.170f, 0.797f},
+            .displayPrimaryBlue = {0.131f, 0.046f},
+            .whitePoint = {0.3127f, 0.3290f},
+            .maxLuminance = config.maxLuminance,
+            .minLuminance = 0.0f,
+            .maxContentLightLevel = config.maxLuminance,
+            .maxFrameAverageLightLevel = config.maxLuminance,
+        };
+        vkSetHdrMetadataEXT(device->device, 1, &swapchain, &metadata);
+    }
+
     outdated = false;
-    DAI_LOG_DEBUG(kModule, "Swapchain created: {}x{}, {} images, present mode {}", extent.width, extent.height,
-                  images.size(), static_cast<int>(presentMode));
+    DAI_LOG_DEBUG(kModule, "Swapchain created: {}x{}, {} images, present mode {}, {}", extent.width, extent.height,
+                  images.size(), static_cast<int>(presentMode),
+                  surfaceFormat.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT ? "HDR10" : "sRGB");
     return {};
 }
 
@@ -250,7 +288,7 @@ core::Result<Swapchain> Swapchain::Create(Device& device, const SurfaceFactory& 
         return core::MakeError(core::ErrorCode::NotSupported, kModule,
                                std::format("'{}' cannot present to this window", deviceImpl.info.name));
     }
-    const std::optional<VkSurfaceFormatKHR> format = ChooseFormat(deviceImpl.physicalDevice, impl->surface);
+    const std::optional<VkSurfaceFormatKHR> format = ChooseFormat(deviceImpl.physicalDevice, impl->surface, false);
     if (!format.has_value()) {
         return core::MakeError(core::ErrorCode::NotSupported, kModule, "The window has no 8-bit sRGB surface format");
     }
@@ -268,7 +306,7 @@ Swapchain& Swapchain::operator=(Swapchain&& other) noexcept = default;
 Swapchain::~Swapchain() = default;
 
 void Swapchain::Configure(const SwapchainConfig& config) {
-    if (config.extent != m_impl->config.extent || config.vsync != m_impl->config.vsync) {
+    if (config != m_impl->config) {
         m_impl->config = config;
         m_impl->outdated = true;
     }
@@ -276,6 +314,10 @@ void Swapchain::Configure(const SwapchainConfig& config) {
 
 Format Swapchain::ColorFormat() const {
     return FromVulkan(m_impl->surfaceFormat.format);
+}
+
+ColorSpace Swapchain::CurrentColorSpace() const {
+    return m_impl->surfaceFormat.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT ? ColorSpace::Hdr10 : ColorSpace::Srgb;
 }
 
 Extent Swapchain::CurrentExtent() const {

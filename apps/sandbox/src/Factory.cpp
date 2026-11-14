@@ -75,6 +75,10 @@ constexpr float kMessageTime = 3.0f;    // Seconds.
 // Settings::darkness 0, this many stops brighter.
 constexpr float kFactoryEv100 = 3.0f;
 constexpr float kBrightStops = 4.0f;
+// The eye adapts (ADR-0048) from this many stops below the factory's exposure, in its darkest corners, which
+// stay dark, to this many above, under its lamps and in the moonlit room.
+constexpr float kEyeOpensStops = 0.5f;
+constexpr float kEyeClosesStops = 2.5f;
 // The legacy sky's colors, in nits: as bright on screen at EV100 3 as they were before physical units.
 constexpr float kSkyLuminance = 9.6f;
 constexpr glm::vec3 kFogColor{0.005f, 0.006f, 0.008f};
@@ -752,12 +756,16 @@ core::Result<void> LoadSky(scene::Scene& scene, const std::string& directory, st
 void ApplyAtmosphere(scene::Scene& scene, const Settings& settings) {
     const float darkness = std::clamp(settings.darkness, 0.0f, 1.0f);
     // Brightness is seen in stops: halfway is half the stops.
+    const float ev100 = kFactoryEv100 - ((1.0f - darkness) * kBrightStops);
     scene.SetAtmosphere({.fogColor = kFogColor,
                          .fogDensity = kFogDensity * darkness,
                          .sky = scene.Atmosphere().sky,
                          .skyIntensity = scene.Atmosphere().skyIntensity,
                          .skyYaw = scene.Atmosphere().skyYaw,
-                         .ev100 = kFactoryEv100 - (1.0f - darkness) * kBrightStops});
+                         .ev100 = ev100,
+                         .autoExposure = true,
+                         .ev100Min = ev100 - kEyeOpensStops,
+                         .ev100Max = ev100 + kEyeClosesStops});
 }
 
 } // namespace

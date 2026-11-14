@@ -160,6 +160,10 @@ struct Device::Impl {
     VkInstance instance = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT messenger = VK_NULL_HANDLE;
     bool debugUtils = false;
+    /// Swapchains may use color spaces other than sRGB, such as HDR10 (VK_EXT_swapchain_colorspace).
+    bool colorSpaces = false;
+    /// Swapchains can describe their HDR content to the display (VK_EXT_hdr_metadata).
+    bool hdrMetadata = false;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     std::uint32_t queueFamily = 0;
     VkDevice device = VK_NULL_HANDLE;
@@ -228,6 +232,8 @@ struct Swapchain::Impl {
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkSurfaceFormatKHR surfaceFormat{};
+    /// Whether the last color space logged was HDR10.
+    std::optional<bool> loggedHdr;
     SwapchainConfig config;
     Extent extent;
     bool outdated = true;

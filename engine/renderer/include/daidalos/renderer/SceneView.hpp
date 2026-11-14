@@ -76,8 +76,14 @@ struct Atmosphere {
     float skyYaw = 0.0f;
     /// The camera's exposure value at ISO 100 (ADR-0043): each step up halves the light that reaches the
     /// screen. About 3 for a dim interior, 8 for a bright one, 15 for a sunny day outside. The renderer's
-    /// exposure compensation is added in stops, the other way.
+    /// exposure compensation is added in stops, the other way. With auto-exposure, where the eye starts.
     float ev100 = 0.0f;
+    /// Auto-exposure (ADR-0048): the eye adapts to the light between ev100Min, the darkest the level may
+    /// look, and ev100Max, the brightest. Off, the exposure stays at ev100. The range is the level's
+    /// darkness: a dark corridor stays dark when the eye cannot open any further. Up to 8 stops wide.
+    bool autoExposure = false;
+    float ev100Min = 0.0f;
+    float ev100Max = 0.0f;
 };
 
 /// A directional light is infinitely far, as the sun or the moon: it shines along its direction everywhere,

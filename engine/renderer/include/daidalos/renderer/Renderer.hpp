@@ -6,6 +6,7 @@
 
 #include <daidalos/core/Result.hpp>
 #include <daidalos/platform/Window.hpp>
+#include <daidalos/renderer/DisplayTransform.hpp>
 #include <daidalos/renderer/Material.hpp>
 #include <daidalos/renderer/Primitives.hpp>
 #include <daidalos/renderer/SceneView.hpp>
@@ -47,6 +48,8 @@ enum class DebugView {
     Reflections,
     /// The light each pixel's reservoir chose, one hue per light (ADR-0044); black where none.
     Lights,
+    /// The bloom alone, as the output pass would mix it in (ADR-0048).
+    Bloom,
 };
 
 /// How indirect light is traced (ADR-0045).
@@ -63,6 +66,21 @@ struct IndirectLightConfig {
     std::uint32_t rays = 1;
 };
 
+/// How the frame's light becomes the image a display shows (ADR-0048).
+struct ImageConfig {
+    /// The eye adapts to the light, within the range the scene's atmosphere sets. Off, it stays at the
+    /// atmosphere's ev100.
+    bool autoExposure = true;
+    /// The share of the image that is its bloom, from 0 (none) to 1.
+    float bloom = 0.04f;
+    ToneMapper toneMapper = ToneMapper::AgX;
+    /// HDR10 output on a display with HDR turned on; sRGB otherwise.
+    bool hdr = true;
+    /// Nits of paper white and of the display's peak in HDR10; 0 takes the system's.
+    float hdrPaperWhite = 0.0f;
+    float hdrPeak = 0.0f;
+};
+
 struct RendererConfig {
     /// Enables the Vulkan validation layers if they are installed.
     bool validation = false;
@@ -71,6 +89,7 @@ struct RendererConfig {
     bool vsync = true;
     /// Stops added to the scene's exposure (Atmosphere::ev100): +1 shows the scene twice as bright (ADR-0043).
     float exposureCompensation = 0.0f;
+    ImageConfig image;
     /// Anisotropic filtering of textures, from 1 (off) to 16.
     float anisotropy = 16.0f;
     /// Multiplies the tilt of every normal map: 0 flattens them, 1 keeps them as authored.
@@ -120,6 +139,12 @@ struct FrameStats {
     std::uint32_t skinnedStructures = 0;
     /// Paths per pixel the path tracer has averaged, with DebugView::Path.
     std::uint32_t pathSamples = 0;
+    /// The eye's exposure, what the frame last metered (NaN before the first metering, or without
+    /// auto-exposure), and the range the eye adapts within (ADR-0048).
+    float ev100 = 0.0f;
+    float meteredEv100 = 0.0f;
+    float ev100Min = 0.0f;
+    float ev100Max = 0.0f;
     /// Objects the renderer holds.
     std::size_t meshes = 0;
     std::size_t materials = 0;
@@ -132,7 +157,7 @@ struct PassTime {
     double milliseconds = 0.0;
 };
 
-/// Records into the back buffer after the scene, inside a rendering scope without depth.
+/// Records into the interface layer after the canvas, inside a rendering scope without depth.
 using OverlayRecorder = std::function<void(rhi::CommandList& commands, rhi::Extent extent)>;
 
 /// Draws scenes to a window. The window must have been created with WindowConfig::vulkan and must
@@ -162,6 +187,7 @@ public:
 
     void SetVsync(bool vsync);
     void SetExposureCompensation(float stops);
+    void SetImage(const ImageConfig& config);
     void SetNormalStrength(float strength);
     void SetIndirectLight(bool enabled);
     void SetDenoiser(bool enabled);
@@ -183,6 +209,9 @@ public:
     [[nodiscard]] std::span<const PassTime> GpuTimes() const;
     /// Counts of the last frame drawn, and of the objects held now.
     [[nodiscard]] FrameStats Stats() const;
+    /// The last luminance histogram auto-exposure read back: weights by bin, from black to bright, in log2
+    /// nits from -10 to 16 (ADR-0048). Empty without auto-exposure.
+    [[nodiscard]] std::span<const std::uint32_t> ExposureHistogram() const;
 
     /// Draws one frame, following the window's size: the scene, then the canvas if there is one, then
     /// the overlay. A minimized window draws nothing. An error means that the device is unusable and the
@@ -191,6 +220,7 @@ public:
                                             const OverlayRecorder& overlay = {});
 
     [[nodiscard]] rhi::Device& Device();
+    /// The format of the layer that the interface and the overlay draw into: sRGB, whatever the display's.
     [[nodiscard]] rhi::Format ColorFormat() const;
     /// Compiler output of the last failed shader reload; empty when the shaders are up to date.
     /// Reloads exist in builds with DAI_DEV_TOOLS only.

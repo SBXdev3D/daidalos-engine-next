@@ -100,6 +100,16 @@ Extent Window::PixelSize() const {
     return ToExtent(width, height);
 }
 
+HdrInfo Window::Hdr() const {
+    // SDL gives SDR white as a multiple of 80 nits, the sRGB reference.
+    constexpr float kSrgbReferenceNits = 80.0f;
+    const SDL_PropertiesID properties = SDL_GetWindowProperties(m_impl->window);
+    return {.enabled = SDL_GetBooleanProperty(properties, SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN, false),
+            .sdrWhiteNits =
+                SDL_GetFloatProperty(properties, SDL_PROP_WINDOW_SDR_WHITE_LEVEL_FLOAT, 1.0f) * kSrgbReferenceNits,
+            .headroom = std::max(SDL_GetFloatProperty(properties, SDL_PROP_WINDOW_HDR_HEADROOM_FLOAT, 1.0f), 1.0f)};
+}
+
 bool Window::IsMinimized() const {
     return (SDL_GetWindowFlags(m_impl->window) & SDL_WINDOW_MINIMIZED) != 0;
 }

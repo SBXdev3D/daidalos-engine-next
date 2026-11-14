@@ -168,6 +168,7 @@ private:
     core::Result<void> CreateRenderer();
     /// The renderer.gi_* variables.
     [[nodiscard]] renderer::IndirectLightConfig IndirectLight() const;
+    [[nodiscard]] renderer::ImageConfig Image() const;
     core::Result<void> CreateDebugOverlay();
     void RenderFrame(IApplicationHandler& handler);
     void ReportConfigurationProblems();
@@ -183,6 +184,12 @@ private:
     std::optional<core::CVar<std::int64_t>> m_windowHeight;
     std::optional<core::CVar<bool>> m_vsync;
     std::optional<core::CVar<double>> m_exposure;
+    std::optional<core::CVar<bool>> m_autoExposure;
+    std::optional<core::CVar<double>> m_bloom;
+    std::optional<core::CVar<std::string>> m_toneMapper;
+    std::optional<core::CVar<bool>> m_hdr;
+    std::optional<core::CVar<double>> m_hdrPaperWhite;
+    std::optional<core::CVar<double>> m_hdrPeak;
     std::optional<core::CVar<std::int64_t>> m_anisotropy;
     std::optional<core::CVar<double>> m_fieldOfView;
     std::optional<core::CVar<double>> m_viewDistance;
