@@ -324,14 +324,17 @@ Output resolutions per tier (decided):
 - Frame-time stability matters more than average fps: no hitches above 2× the frame budget from AS rebuilds, streaming or shader compilation (precompile all pipelines; use pipeline caches).
 
 ### Scalability presets (required for the minimum tier)
-| Setting | Medium (min tier) | High | Ultra |
-|---|---|---|---|
-| ReSTIR GI resolution | half-res, upsampled | full-res | full-res + extra bounce |
-| Radiance cache | hash grid, coarse cells | hash grid | hash grid or NRC |
-| RT reflections | half-res, roughness cutoff 0.3 | full-res, cutoff 0.45 | full-res, 2 to 3 bounces on mirrors |
-| ReSTIR DI | 1 shadow ray, reduced candidates | 1 shadow ray | 1 to 2 shadow rays |
-| Volumetric froxels | 128×72×64 | 160×90×128 | 240×135×128 |
-| Upscaler | DLSS/FSR/XeSS Performance or Balanced | Quality | Quality / DLAA |
+
+> **Built (ADR-0052).** The table below, written before the features, named some that were dropped or never built (ReSTIR GI, neural radiance caching, DLSS and XeSS). The presets are the settings the engine has, measured in the factory, and chosen at the first launch by timing High on the GPU:
+
+| Setting | Low | Medium (min tier) | High | Ultra |
+|---|---|---|---|---|
+| Render scale, highest / lowest | 58% / 50% | 67% / 50% | 100% / 50% | 100% / 67% |
+| Surfaces lit before the radiance cache | 0 | 1 | 1 | 2 |
+| Rays of indirect light per pixel | 1 | 1 | 1 | 2 |
+| Reflections up to roughness | 0.3 | 0.45 | 0.6 | 0.9 |
+| ReSTIR DI spatial reuse | off | on | on | on |
+| Fog slices / cell in pixels | 32 / 16 | 48 / 16 | 64 / 16 | 128 / 8 |
 
 Budget at the High preset:
 

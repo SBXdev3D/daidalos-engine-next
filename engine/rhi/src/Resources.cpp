@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <chrono>
 #include <cstring>
 #include <format>
 #include <utility>
@@ -572,8 +573,10 @@ core::Result<PipelineHandle> Device::CreatePipeline(const GraphicsPipelineDesc& 
     };
 
     PipelineData data;
+    const auto start = std::chrono::steady_clock::now();
     const VkResult result =
-        vkCreateGraphicsPipelines(m_impl->device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &data.pipeline);
+        vkCreateGraphicsPipelines(m_impl->device, m_impl->pipelineCache, 1, &pipelineInfo, nullptr, &data.pipeline);
+    m_impl->NotePipeline(desc.name, std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
     destroyModules();
     if (result != VK_SUCCESS) {
         return tl::unexpected(VulkanError(std::format("Creating pipeline '{}'", desc.name), result));
@@ -602,8 +605,10 @@ core::Result<PipelineHandle> Device::CreateComputePipeline(const ComputePipeline
         .layout = m_impl->pipelineLayout,
     };
     PipelineData data{.bindPoint = VK_PIPELINE_BIND_POINT_COMPUTE};
+    const auto start = std::chrono::steady_clock::now();
     const VkResult result =
-        vkCreateComputePipelines(m_impl->device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &data.pipeline);
+        vkCreateComputePipelines(m_impl->device, m_impl->pipelineCache, 1, &pipelineInfo, nullptr, &data.pipeline);
+    m_impl->NotePipeline(desc.name, std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
     vkDestroyShaderModule(m_impl->device, module, nullptr);
     if (result != VK_SUCCESS) {
         return tl::unexpected(VulkanError(std::format("Creating compute pipeline '{}'", desc.name), result));

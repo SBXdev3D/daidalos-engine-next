@@ -94,6 +94,10 @@ struct FogVolume {
     glm::vec3 albedo{0.9f};
     /// The fog thins to nothing towards the faces, over this fraction of the box's half-size.
     float edge = 0.3f;
+    /// Meters over which the density halves, going up from the bottom of the box: fog that lies on the
+    /// ground. The bottom face then does not thin, as the fog rests on the floor there. 0 for the same
+    /// density at every height.
+    float falloffHeight = 0.0f;
     /// How much the density varies, from 0 to 1, with a noise that changes every 1 / noiseFrequency meters
     /// and moves at noiseVelocity, in meters per second: steam rises, dust drifts.
     float noise = 0.0f;

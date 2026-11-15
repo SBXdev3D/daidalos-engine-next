@@ -351,3 +351,32 @@ TEST(CVarConfig, FormattedLinesReadBack) {
     EXPECT_EQ(FormatConfigLine("view.fov", "90"), "view.fov 90");
     EXPECT_EQ(FormatConfigLine("a.b", "x y"), "a.b \"x y\"");
 }
+
+TEST(CVarRegistry, KnowsWhetherSomethingSetAVariable) {
+    CVarRegistry registry;
+    ASSERT_TRUE(registry.Set("test.early", "3").has_value());
+    const CVar<std::int64_t> early = registry.Register<std::int64_t>("test.early", 1, "");
+    const CVar<std::int64_t> late = registry.Register<std::int64_t>("test.late", 1, "");
+    const CVar<std::int64_t> invalid = registry.Register<std::int64_t>("test.invalid", 1, "");
+
+    EXPECT_TRUE(early.IsSet()) << "A value kept until registration counts";
+    EXPECT_FALSE(late.IsSet());
+    EXPECT_FALSE(registry.Set("test.invalid", "many").has_value());
+    EXPECT_FALSE(invalid.IsSet()) << "A value that does not parse sets nothing";
+    ASSERT_TRUE(registry.Set("test.late", "1").has_value());
+    EXPECT_TRUE(late.IsSet()) << "Even to its default value";
+
+    registry.Reset("test.early");
+    EXPECT_FALSE(early.IsSet());
+    EXPECT_EQ(early.Get(), 1);
+}
+
+TEST(CVarRegistry, ResetForgetsAValueKeptForAnUnregisteredName) {
+    CVarRegistry registry;
+    ASSERT_TRUE(registry.Set("test.pending", "3").has_value());
+    registry.Reset("test.pending");
+    const CVar<std::int64_t> pending = registry.Register<std::int64_t>("test.pending", 1, "");
+    EXPECT_FALSE(pending.IsSet());
+    EXPECT_EQ(pending.Get(), 1);
+    EXPECT_TRUE(registry.UnregisteredNames().empty());
+}

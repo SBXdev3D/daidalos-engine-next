@@ -158,7 +158,9 @@ struct FogVolumeData {
     float noiseFrequency;
     float noise;
     float edge;
-    glm::vec2 padding;
+    /// Halvings of the density per unit of the box's height, from its bottom; 0 for none.
+    float heightFalloff;
+    float padding;
 };
 static_assert(sizeof(FogVolumeData) == 112);
 
@@ -924,6 +926,8 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         auto* volumes = reinterpret_cast<FogVolumeData*>(m_device->Mapped(slot.fogVolumes).data());
         for (std::size_t index = 0; index < view.fogVolumes.size(); ++index) {
             const FogVolume& volume = view.fogVolumes[index];
+            // The box's height in meters: its Y axis, scaled.
+            const float height = glm::length(glm::vec3(volume.world[1]));
             volumes[index] = {.worldToBox = glm::inverse(volume.world),
                               .albedo = glm::clamp(volume.albedo, glm::vec3(0.0f), glm::vec3(1.0f)),
                               .density = std::max(volume.density, 0.0f),
@@ -931,7 +935,8 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                               .noiseFrequency = volume.noiseFrequency,
                               .noise = std::clamp(volume.noise, 0.0f, 1.0f),
                               .edge = std::clamp(volume.edge, 0.0f, 1.0f),
-                              .padding = glm::vec2(0.0f)};
+                              .heightFalloff = volume.falloffHeight > 0.0f ? height / volume.falloffHeight : 0.0f,
+                              .padding = 0.0f};
         }
     }
 

@@ -83,6 +83,9 @@ struct FogVolume {
     /// The fog thins to nothing towards the faces, over this fraction of the box's half-size: 0 ends sharply
     /// at the faces, 1 thins from the center.
     float edge = 0.3f;
+    /// Meters over which the density halves, going up the box's Y axis from its bottom face, which then
+    /// does not thin: fog that lies on the ground. 0 for the same density at every height.
+    float falloffHeight = 0.0f;
     /// How much the density varies, from 0 (even) to 1 (from none to twice as dense), with a noise that
     /// moves at noiseVelocity, in meters per second, and changes every 1 / noiseFrequency meters.
     float noise = 0.0f;

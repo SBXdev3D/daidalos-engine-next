@@ -1953,19 +1953,19 @@ Hardware ray tracing is mandatory and no raster fallback is kept: each step dele
 14. Image formation (ADR-0048): auto-exposure in EV within a range each level sets, so that the dark stays dark, adapting fast to light and slowly to the dark; bloom without threshold; AgX tone mapping; HDR10 output with the system's paper white and peak; a brightness calibration screen on first launch (done, ADR-0048).
 15. Upscaling and dynamic resolution (ADR-0049): the engine's own temporal upscaling, grown from step 7's TAA, with its own sharpening, behind a seam where FSR 3.1 could go if it measures better against a supersampled reference; targets allocated at the output's size and drawn into a corner, so that a change of scale keeps every history; a frame-time target of 30 to 240 fps, down at once and up slowly (done, ADR-0049; the factory at 1440p goes from 11.5 ms to 6.6 ms at 67%).
 16. FSR 3.1 from source (MIT), behind the upscaler's seam (ADR-0049): the engine's upscaler at 67% exceeded 1.15 times native resolution's FLIP in the mirror room; FSR is measured by the same test (done, ADR-0050: AMD's passes run through the engine's callbacks; 1 to 8% behind the engine's upscaler by FLIP in lit scenes, two to three times steadier; kept as `renderer.upscaler fsr`, the engine's the default).
-17. Froxel volumetric fog with ray-traced shadows and local volumes (a dusty room, a steam pipe), replacing exponential fog (done, ADR-0051: the fog in the path tracer too; FLIP 0.090 against it on a lit Cornell box, 0.38 ms at 1440p in the factory; ReSTIR reuse per froxel measured worse and dropped; fog lit by many lights stays blotchy until lights are drawn by position).
-18. Quality presets and no stutter (ADR-0041): Low, Medium, High and Ultra set the cost of every feature, chosen at first launch from the GPU; the pipeline cache persists on disk and is rebuilt after a driver or GPU change; a pipeline created during gameplay is logged as a bug; VRAM use against `VK_EXT_memory_budget` in the statistics; each feature has its debug view.
+17. Froxel volumetric fog with ray-traced shadows and local volumes (a dusty room, a steam pipe), replacing exponential fog (done, ADR-0051: the fog in the path tracer too; FLIP 0.090 against it on a lit Cornell box, 0.38 ms at 1440p in the factory; ReSTIR reuse per froxel measured worse and dropped; fog lit by many lights stays blotchy until lights are drawn by position; boxes of fog can lie on the ground, densest on the floor, placed by the level's glTF nodes).
+18. Quality presets and no stutter (ADR-0041): Low, Medium, High and Ultra set the cost of every feature, chosen at first launch from the GPU; the pipeline cache persists on disk and is rebuilt after a driver or GPU change; a pipeline created during gameplay is logged as a bug; VRAM use against `VK_EXT_memory_budget` in the statistics; each feature has its debug view (done, ADR-0052: the presets are the eleven settings with a cost, measured in the factory, and a setting that is set wins over its preset; the first launch times High on the GPU and chooses, not a list of GPUs; Low to Ultra take 3, 4, 8.5 and 14 ms at 1080p on an RTX 3090; pipelines take 80 ms cold, 9 ms from the cache).
 
 Deferred until measurements justify them: meshlets, mesh shaders, the visibility buffer, Hi-Z occlusion, LODs, portals, async compute, resource aliasing, `VK_EXT_descriptor_heap`, opacity micromaps, shader execution reordering, adaptive ray budgets. Deferred until content needs them: ReSTIR PT, subsurface scattering. Out of scope: the neural rendering tier and NVIDIA's RTX SDKs (own implementations instead, see ADR-0028, ADR-0041 and ADR-0047).
 
 Completion criteria:
 
-- The factory runs at 60 fps at 1080p on an RTX 3090, on the High preset.
-- No light leaks through the thin-wall test scene.
-- Real-time output matches the path tracer within a FLIP threshold on the test scenes, the dark corridor included.
-- Validation layers, synchronization validation included, report no errors.
-- Every pass reports its GPU time.
-- No pipeline is created after a level has loaded.
+- The factory runs at 60 fps at 1080p on an RTX 3090, on the High preset (met: 8 to 9 ms; Ultra 13 to 14 ms).
+- No light leaks through the thin-wall test scene (met: `PathTracerTest`'s thin-wall scenes).
+- Real-time output matches the path tracer within a FLIP threshold on the test scenes, the dark corridor included (met: the GPU tests' thresholds).
+- Validation layers, synchronization validation included, report no errors (met: the GPU tests, and the factory at Ultra).
+- Every pass reports its GPU time (met).
+- No pipeline is created after a level has loaded (met: logged as an error if one is, and tested over every setting and debug view).
 
 ## Phase 10 — Level Editor
 

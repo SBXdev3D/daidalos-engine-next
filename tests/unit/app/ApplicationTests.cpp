@@ -91,6 +91,7 @@ protected:
         m_config.window.height = 200;
         // A user.cfg left next to the tests must not change them.
         m_config.userConfigFile.clear();
+        m_config.pipelineCacheFile.clear();
     }
 
     // Asserts that everything Run started has been stopped.

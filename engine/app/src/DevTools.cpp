@@ -263,9 +263,15 @@ void DevTools::DrawSummary() {
                                         ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings |
                                         ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
     if (ImGui::Begin("##summary", nullptr, kFlags)) {
-        TextLine(std::format("{:.0f} FPS   {:.2f} ms   GPU {:.2f} ms   {} draws   {} triangles",
+        // Video memory against the budget the driver gives this process (ADR-0052).
+        const rhi::MemoryStats memory = m_app->Renderer().Device().Memory();
+        TextLine(std::format("{:.0f} FPS   {:.2f} ms   GPU {:.2f} ms   {} draws   {} triangles   VRAM {} / {}",
                              average > 0.0f ? 1000.0f / average : 0.0f, average, gpu, stats.drawnDraws,
-                             Count(stats.triangles)));
+                             Count(stats.triangles), Megabytes(memory.usedBytes), Megabytes(memory.budgetBytes)));
+        if (const std::uint64_t late = m_app->Renderer().Device().LatePipelineCount(); late > 0) {
+            ImGui::TextColored(kErrorColor, "%llu pipelines created after loading: see the log",
+                               static_cast<unsigned long long>(late));
+        }
         if (const std::string& error = m_app->Renderer().ShaderError(); !error.empty()) {
             ImGui::TextColored(kErrorColor, "Shader reload failed: open the tools to read why");
         }
@@ -421,7 +427,12 @@ void DevTools::DrawStats() {
     if (ImGui::CollapsingHeader("Device", ImGuiTreeNodeFlags_DefaultOpen)) {
         const rhi::MemoryStats memory = renderer.Device().Memory();
         TextLine(renderer.Device().Info().name);
-        TextLine(std::format("Video memory: {} of {}", Megabytes(memory.usedBytes), Megabytes(memory.budgetBytes)));
+        TextLine(std::format("Video memory: {} of {} ({})", Megabytes(memory.usedBytes), Megabytes(memory.budgetBytes),
+                             renderer.Device().Info().memoryBudget ? "reported by the driver" : "estimated"));
+        TextLine(std::format("Quality: {}{}", NameOf(m_app->CurrentQuality()),
+                             m_app->ChoosingQuality()   ? ", measuring"
+                             : m_app->QualityIsCustom() ? ", with custom settings"
+                                                        : ""));
         TextLine(std::format("{} buffers, {} textures, {} pipelines; {} waiting to be destroyed", memory.buffers,
                              memory.textures, memory.pipelines, renderer.Device().PendingDestructionCount()));
         if (const std::uint64_t errors = renderer.Device().ValidationErrorCount(); errors > 0) {

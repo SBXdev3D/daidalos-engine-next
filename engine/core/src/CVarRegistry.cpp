@@ -130,6 +130,7 @@ const CVarEntry& CVarRegistry::Add(std::string_view name, CVarValue defaultValue
     if (const auto pending = m_pending.find(name); pending != m_pending.end()) {
         if (std::optional<CVarValue> parsed = ParseAs(entry.value, pending->second)) {
             entry.value = std::move(*parsed);
+            entry.set = true;
         } else {
             m_errors.push_back(InvalidValue(entry, pending->second));
         }
@@ -156,7 +157,18 @@ Result<void> CVarRegistry::Set(std::string_view name, std::string_view text) {
         return tl::unexpected(InvalidValue(entry, text));
     }
     entry.value = std::move(*parsed);
+    entry.set = true;
     return {};
+}
+
+void CVarRegistry::Reset(std::string_view name) {
+    if (const auto found = m_byName.find(name); found != m_byName.end()) {
+        found->second->value = found->second->defaultValue;
+        found->second->set = false;
+    }
+    if (const auto pending = m_pending.find(name); pending != m_pending.end()) {
+        m_pending.erase(pending);
+    }
 }
 
 Result<std::vector<ConfigLine>> ParseConfigLines(std::string_view text, std::string_view sourceName) {

@@ -84,9 +84,9 @@ constexpr float kSkyLuminance = 9.6f;
 // The haze: a share of the light lost per meter, mostly scattered, a little more of the blue, and forwards.
 // Thin, as indoor haze is (about 600 m of visibility): enough for the lamps' cones to show, not so much that
 // the flashlight, at the eye and looked along, fills the view with its beam.
-constexpr float kFogDensity = 0.005f;
+constexpr float kFogDensity = 0.0f;
 constexpr glm::vec3 kFogAlbedo{0.8f, 0.82f, 0.85f};
-constexpr float kFogAnisotropy = 0.2f;
+constexpr float kFogAnisotropy = 0.1f;
 // The steam of the leak: meters long and across, and its density at the heart.
 constexpr float kSteamLength = 4.0f;
 constexpr float kSteamWidth = 1.6f;
@@ -440,6 +440,20 @@ glm::vec3 Vector(const NodeDescription& description, std::string_view key) {
         cursor = std::from_chars(cursor, end, value[axis]).ptr + 1; // Past the comma.
     }
     return value;
+}
+
+/// A box of fog that the level places (ADR-0051): "fog;density=0.1;falloff=0.4;color=r:g:b:a;edge=0.3;
+/// noise=0.5;noise_frequency=1;noise_velocity=x,y,z". The node's transform is the box, the cube from -0.5 to
+/// 0.5 scaled to its size. With a falloff in meters, the fog lies on the ground: it halves every falloff
+/// going up from the box's bottom, which belongs on the floor.
+void AddFog(ecs::World& world, ecs::Entity entity, const NodeDescription& node) {
+    world.Add<scene::FogVolume>(entity, scene::FogVolume{.density = Number(node, "density", 0.1f),
+                                                         .albedo = Color(node, "color", kFogAlbedo),
+                                                         .edge = Number(node, "edge", 0.3f),
+                                                         .falloffHeight = Number(node, "falloff", 0.0f),
+                                                         .noise = Number(node, "noise", 0.0f),
+                                                         .noiseFrequency = Number(node, "noise_frequency", 1.0f),
+                                                         .noiseVelocity = Vector(node, "noise_velocity")});
 }
 
 std::optional<PickupKind> PickupOf(std::string_view kind) {
@@ -990,6 +1004,8 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
             DAI_TRY(LoadSky(scene, directory, sky->second));
         } else if (node.kind == "particles") {
             AddParticleEmitter(world, entity, node, effects);
+        } else if (node.kind == "fog") {
+            AddFog(world, entity, node);
         } else if (node.kind == "fan") {
             world.Add<LoopedSound>(entity, bank.fan, 0.7f, 1.0f, 20.0f);
         } else if (node.kind == "ladder") {

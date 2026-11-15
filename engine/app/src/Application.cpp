@@ -29,6 +29,22 @@ constexpr std::int64_t kMaxWindowSize = 32768;
 constexpr std::chrono::milliseconds kMinimizedWait{100};
 // Asset decoding is the only customer: more threads than this would only compete for the disk.
 constexpr std::uint32_t kMaxWorkerThreads = 4;
+// The first launch measures High after this many frames with a scene, while the GPU and the histories
+// settle, over this many (ADR-0052).
+constexpr std::uint32_t kProbeWarmupFrames = 90;
+constexpr std::uint32_t kProbeFrames = 120;
+// The settings the presets decide, which ChooseQuality puts back to the preset.
+constexpr std::array<std::string_view, 11> kPresetSettings{
+    "renderer.render_scale",         "renderer.min_render_scale", "renderer.indirect_light",
+    "renderer.gi_bounces",           "renderer.gi_rays",          "renderer.reflections",
+    "renderer.reflection_roughness", "renderer.restir_spatial",   "renderer.volumetric_fog",
+    "renderer.fog_slices",           "renderer.fog_tile"};
+
+/// The variable's value if something set it, the preset's otherwise.
+template <class T>
+T Preset(const core::CVar<T>& variable, T presetValue) {
+    return variable.IsSet() ? variable.Get() : presetValue;
+}
 #ifdef NDEBUG
 constexpr bool kValidationByDefault = false;
 #else
@@ -39,12 +55,16 @@ float FieldOfViewRadians(const core::CVar<double>& degrees) {
     return glm::radians(static_cast<float>(std::clamp(degrees.Get(), 30.0, 150.0)));
 }
 
-float ReflectionRoughness(const core::CVar<double>& roughness) {
-    return static_cast<float>(std::clamp(roughness.Get(), 0.0, 1.0));
+float ReflectionRoughness(double roughness) {
+    return static_cast<float>(std::clamp(roughness, 0.0, 1.0));
 }
 
-std::uint32_t FogSlices(const core::CVar<std::int64_t>& slices) {
-    return static_cast<std::uint32_t>(std::clamp<std::int64_t>(slices.Get(), 16, 256));
+std::uint32_t FogSlices(std::int64_t slices) {
+    return static_cast<std::uint32_t>(std::clamp<std::int64_t>(slices, 16, 256));
+}
+
+std::uint32_t FogTile(std::int64_t pixels) {
+    return static_cast<std::uint32_t>(std::clamp<std::int64_t>(pixels, 8, 32));
 }
 
 float ViewDistanceMeters(const core::CVar<double>& meters) {
@@ -189,6 +209,10 @@ void Application::ApplyPendingScene() {
     if (m_scenePending) {
         m_scenePending = false;
         m_currentScene = std::move(m_pendingScene);
+        // A new level: the first launch's measurement starts over on it.
+        m_sceneFrames = 0;
+        m_probeMilliseconds = 0.0;
+        m_probeFrames = 0;
     }
 }
 
@@ -324,6 +348,12 @@ core::Result<void> Application::LoadConfiguration() {
                                                  "Fog lit by the lights, with light shafts; off, the air is clear");
         m_fogSlices = m_cvars.Register<std::int64_t>(
             "renderer.fog_slices", 64, "Slices of the volumetric fog in depth, from 16 to 256: finer, for their cost");
+        m_fogTile = m_cvars.Register<std::int64_t>(
+            "renderer.fog_tile", 16, "Pixels across a cell of the volumetric fog, from 8 to 32: finer, for their cost");
+        m_quality = m_cvars.Register<std::string>(
+            "renderer.quality", "auto",
+            "Quality preset: low, medium, high or ultra; auto measures the GPU at the first launch and chooses. "
+            "The settings it decides follow it unless set themselves");
         m_restirSpatial =
             m_cvars.Register<bool>("renderer.restir_spatial", true,
                                    "Pixels reuse the lights their neighbours chose; off, only their own past");
@@ -354,7 +384,7 @@ core::Result<void> Application::LoadConfiguration() {
         m_debugView = m_cvars.Register<std::string>(
             "renderer.debug_view", "off",
             "Shows a debug view instead of the lit scene: off, rays, path, motion, normals, indirect, "
-            "radiance_cache, reflections, lights or bloom");
+            "radiance_cache, reflections, lights, bloom or fog");
         m_pathBounces = m_cvars.Register<std::int64_t>(
             "renderer.path_bounces", 4, "Surfaces a path of the path tracer meets at most; 1 is direct light only");
         m_pathSamples = m_cvars.Register<std::int64_t>(
@@ -504,6 +534,7 @@ core::Result<void> Application::CreateRenderer() {
     if (!m_config.rendering) {
         return {};
     }
+    const QualitySettings quality = EffectiveQualitySettings();
     DAI_TRY_ASSIGN(
         renderer::Renderer created,
         renderer::Renderer::Create(
@@ -515,14 +546,16 @@ core::Result<void> Application::CreateRenderer() {
              .image = Image(),
              .resolution = Resolution(),
              .anisotropy = static_cast<float>(std::clamp<std::int64_t>(m_anisotropy->Get(), 1, 16)),
+             .pipelineCacheFile = PipelineCachePath(),
              .normalStrength = static_cast<float>(m_normalStrength->Get()),
-             .indirectLight = m_indirectLight->Get(),
+             .indirectLight = quality.indirectLight,
              .denoiser = m_denoiser->Get(),
-             .reflections = m_reflections->Get(),
-             .reflectionRoughness = ReflectionRoughness(*m_reflectionRoughness),
-             .volumetricFog = m_volumetricFog->Get(),
-             .fogSlices = FogSlices(*m_fogSlices),
-             .restirSpatial = m_restirSpatial->Get(),
+             .reflections = quality.reflections,
+             .reflectionRoughness = ReflectionRoughness(quality.reflectionRoughness),
+             .volumetricFog = quality.volumetricFog,
+             .fogSlices = FogSlices(quality.fogSlices),
+             .fogTile = FogTile(quality.fogTile),
+             .restirSpatial = quality.restirSpatial,
              .restirUnbiased = m_restirUnbiased->Get(),
              .indirect = IndirectLight(),
              .fieldOfView = FieldOfViewRadians(*m_fieldOfView),
@@ -547,9 +580,12 @@ renderer::ImageConfig Application::Image() const {
 
 renderer::ResolutionConfig Application::Resolution() const {
     const auto scale = [](double value) { return static_cast<float>(std::clamp(value, 0.5, 1.0)); };
-    return {.scale = scale(m_renderScale->Get()),
-            .dynamic = m_dynamicResolution->Get(),
-            .minScale = scale(m_minRenderScale->Get()),
+    const QualitySettings quality = EffectiveQualitySettings();
+    // The first launch measures High at its full scale, which dynamic resolution would hide.
+    const bool probing = ChoosingQuality();
+    return {.scale = scale(probing ? SettingsOf(Quality::High).renderScale : quality.renderScale),
+            .dynamic = !probing && m_dynamicResolution->Get(),
+            .minScale = scale(quality.minRenderScale),
             .targetFps = static_cast<float>(std::clamp<std::int64_t>(m_targetFps->Get(), 30, 240)),
             .upscaler = UpscalerNamed(*m_upscaler)};
 }
@@ -558,10 +594,101 @@ renderer::IndirectLightConfig Application::IndirectLight() const {
     const auto count = [](const core::CVar<std::int64_t>& value, std::int64_t low, std::int64_t high) {
         return static_cast<std::uint32_t>(std::clamp(value.Get(), low, high));
     };
-    return {.bounces = count(*m_giBounces, 0, 3),
+    const QualitySettings quality = EffectiveQualitySettings();
+    return {.bounces = static_cast<std::uint32_t>(std::clamp<std::int64_t>(quality.giBounces, 0, 3)),
             .lightCandidates = count(*m_giLightCandidates, 1, 8),
             .clamp = static_cast<float>(std::max(m_giClamp->Get(), 0.0)),
-            .rays = count(*m_giRays, 1, 16)};
+            .rays = static_cast<std::uint32_t>(std::clamp<std::int64_t>(quality.giRays, 1, 16))};
+}
+
+Quality Application::CurrentQuality() const {
+    return QualityNamed(m_quality->Get()).value_or(Quality::High);
+}
+
+bool Application::ChoosingQuality() const {
+    return m_renderer.has_value() && !QualityNamed(m_quality->Get()).has_value();
+}
+
+bool Application::QualityIsCustom() const {
+    return std::ranges::any_of(kPresetSettings, [this](std::string_view name) {
+        const core::CVarEntry* entry = m_cvars.Find(name);
+        return entry != nullptr && entry->set;
+    });
+}
+
+core::Result<void> Application::ChooseQuality(Quality quality) {
+    DAI_TRY(ChangeSetting("renderer.quality", NameOf(quality)));
+    for (const std::string_view name : kPresetSettings) {
+        ResetSetting(name);
+    }
+    return {};
+}
+
+void Application::ResetSetting(std::string_view name) {
+    m_cvars.Reset(name);
+    if (const auto found = m_userSettings.find(name); found != m_userSettings.end()) {
+        m_userSettings.erase(found);
+    }
+}
+
+QualitySettings Application::EffectiveQualitySettings() const {
+    const QualitySettings preset = SettingsOf(CurrentQuality());
+    return {.renderScale = Preset(*m_renderScale, preset.renderScale),
+            .minRenderScale = Preset(*m_minRenderScale, preset.minRenderScale),
+            .indirectLight = Preset(*m_indirectLight, preset.indirectLight),
+            .giBounces = Preset(*m_giBounces, preset.giBounces),
+            .giRays = Preset(*m_giRays, preset.giRays),
+            .reflections = Preset(*m_reflections, preset.reflections),
+            .reflectionRoughness = Preset(*m_reflectionRoughness, preset.reflectionRoughness),
+            .restirSpatial = Preset(*m_restirSpatial, preset.restirSpatial),
+            .volumetricFog = Preset(*m_volumetricFog, preset.volumetricFog),
+            .fogSlices = Preset(*m_fogSlices, preset.fogSlices),
+            .fogTile = Preset(*m_fogTile, preset.fogTile)};
+}
+
+std::filesystem::path Application::PipelineCachePath() const {
+    if (m_config.pipelineCacheFile.empty()) {
+        return {};
+    }
+    const std::filesystem::path& file = m_config.pipelineCacheFile;
+    return file.is_relative() ? platform::ExecutableDirectory() / file : file;
+}
+
+void Application::AfterSceneFrame() {
+    // Only frames that draw a level count: a loading screen measures nothing.
+    if (!m_currentScene || !m_renderer.has_value() || !m_scene.camera.has_value() || m_scene.draws.empty()) {
+        return;
+    }
+    ++m_sceneFrames;
+    rhi::Device& device = m_renderer->Device();
+    if (!device.PipelineCreationLocked()) {
+        // Every pipeline is made by now: one made later stalls a frame (ADR-0052).
+        device.LockPipelineCreation(true);
+        DAI_LOG_INFO(kModule, "Pipelines created in {:.0f} ms, {}", device.PipelineCreationSeconds() * 1000.0,
+                     device.Info().pipelineCacheLoaded ? "from the cache" : "without a cache");
+    }
+    if (!ChoosingQuality() || m_sceneFrames <= kProbeWarmupFrames) {
+        return;
+    }
+    double milliseconds = 0.0;
+    for (const renderer::PassTime& pass : m_renderer->GpuTimes()) {
+        milliseconds += pass.milliseconds;
+    }
+    if (milliseconds <= 0.0) {
+        return;
+    }
+    m_probeMilliseconds += milliseconds;
+    if (++m_probeFrames < kProbeFrames) {
+        return;
+    }
+    const double high = m_probeMilliseconds / static_cast<double>(m_probeFrames);
+    const double fps = static_cast<double>(std::clamp<std::int64_t>(m_targetFps->Get(), 30, 240));
+    const Quality chosen = app::ChooseQuality(high, fps);
+    DAI_LOG_INFO(kModule, "Quality preset {}: a frame at High took {:.2f} ms on the GPU, for {:.0f} fps",
+                 NameOf(chosen), high, fps);
+    if (core::Result<void> changed = ChooseQuality(chosen).and_then([this] { return SaveSettings(); }); !changed) {
+        DAI_LOG_WARNING(kModule, "The quality preset was not saved: {}", core::Format(changed.error()));
+    }
 }
 
 core::Result<void> Application::CreateDebugOverlay() {
@@ -603,12 +730,13 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_renderer->SetImage(Image());
     m_renderer->SetResolution(Resolution());
     m_renderer->SetNormalStrength(static_cast<float>(m_normalStrength->Get()));
-    m_renderer->SetIndirectLight(m_indirectLight->Get());
+    const QualitySettings quality = EffectiveQualitySettings();
+    m_renderer->SetIndirectLight(quality.indirectLight);
     m_renderer->SetDenoiser(m_denoiser->Get());
-    m_renderer->SetReflections(m_reflections->Get());
-    m_renderer->SetReflectionRoughness(ReflectionRoughness(*m_reflectionRoughness));
-    m_renderer->SetVolumetricFog(m_volumetricFog->Get(), FogSlices(*m_fogSlices));
-    m_renderer->SetRestir(m_restirSpatial->Get(), m_restirUnbiased->Get());
+    m_renderer->SetReflections(quality.reflections);
+    m_renderer->SetReflectionRoughness(ReflectionRoughness(quality.reflectionRoughness));
+    m_renderer->SetVolumetricFog(quality.volumetricFog, FogSlices(quality.fogSlices), FogTile(quality.fogTile));
+    m_renderer->SetRestir(quality.restirSpatial, m_restirUnbiased->Get());
     m_renderer->SetIndirectLightConfig(IndirectLight());
     m_renderer->SetFieldOfView(FieldOfViewRadians(*m_fieldOfView));
     m_renderer->SetViewDistance(ViewDistanceMeters(*m_viewDistance));
@@ -624,7 +752,9 @@ void Application::RenderFrame(IApplicationHandler& handler) {
         DAI_LOG_ERROR(kModule, "Rendering failed: {}", core::Format(rendered.error()));
         m_failure = std::move(rendered.error());
         RequestQuit();
+        return;
     }
+    AfterSceneFrame();
 }
 
 void Application::ReportConfigurationProblems() {

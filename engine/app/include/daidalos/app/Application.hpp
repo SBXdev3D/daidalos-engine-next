@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <daidalos/app/Quality.hpp>
 #include <daidalos/core/CVarRegistry.hpp>
 #include <daidalos/core/FrameTimer.hpp>
 #include <daidalos/core/Result.hpp>
@@ -75,6 +76,9 @@ struct ApplicationConfig {
     /// and before the command line. Relative to the executable's directory, like them. Empty reads and
     /// writes none.
     std::filesystem::path userConfigFile{"user.cfg"};
+    /// Where the pipeline cache is kept between runs (ADR-0052), next to the executable if relative, as
+    /// the player's settings. Empty for none.
+    std::filesystem::path pipelineCacheFile{"pipelines.cache"};
     /// Command-line arguments; "+name value" pairs override cvars.
     std::vector<std::string> arguments;
     platform::PlatformConfig platform;
@@ -148,9 +152,25 @@ public:
     /// SaveSettings writes. The value is text, as in config files. Fails, changing nothing, if the
     /// name is not registered or the value does not parse.
     core::Result<void> ChangeSetting(std::string_view name, std::string_view value);
+    /// Puts a cvar back to its default, or to its quality preset's value, and drops it from the player's
+    /// settings.
+    void ResetSetting(std::string_view name);
     /// Writes the player's settings to ApplicationConfig::userConfigFile: those it held at the start
     /// and those changed since, so that settings from the command line are not kept by accident.
     core::Result<void> SaveSettings();
+    /// The quality preset in use (ADR-0052): renderer.quality, or High while the first launch measures
+    /// which one this GPU holds.
+    [[nodiscard]] Quality CurrentQuality() const;
+    /// Whether a setting the presets decide was set by a config file, the command line or the player:
+    /// the menu then shows Custom.
+    [[nodiscard]] bool QualityIsCustom() const;
+    /// Whether the first launch is still measuring which preset to choose.
+    [[nodiscard]] bool ChoosingQuality() const;
+    /// Chooses a preset as the options menu does: the settings it decides go back to it, among the
+    /// player's settings too. SaveSettings writes the choice.
+    core::Result<void> ChooseQuality(Quality quality);
+    /// The settings the renderer uses for what the presets decide: the preset's, unless set.
+    [[nodiscard]] QualitySettings EffectiveQualitySettings() const;
     /// Radians of turn per unit of mouse movement, from input.mouse_sensitivity.
     [[nodiscard]] float MouseSensitivity() const;
     [[nodiscard]] const ApplicationConfig& Config() const noexcept { return m_config; }
@@ -163,6 +183,7 @@ private:
     core::Result<void> LoadConfiguration();
     core::Result<void> LoadUserSettings();
     [[nodiscard]] std::filesystem::path UserConfigPath() const;
+    [[nodiscard]] std::filesystem::path PipelineCachePath() const;
     core::Result<void> CreateMainWindow();
     void CreateAudio();
     core::Result<void> CreateRenderer();
@@ -176,6 +197,9 @@ private:
     void MainLoop(IApplicationHandler& handler);
     void HandleEvent(const platform::Event& event);
     void ApplyPendingScene();
+    /// After a frame with a scene: locks pipeline creation, and measures the frame for the first launch's
+    /// choice of preset.
+    void AfterSceneFrame();
 
     ApplicationConfig m_config;
     core::CVarRegistry m_cvars;
@@ -209,6 +233,8 @@ private:
     std::optional<core::CVar<double>> m_reflectionRoughness;
     std::optional<core::CVar<bool>> m_volumetricFog;
     std::optional<core::CVar<std::int64_t>> m_fogSlices;
+    std::optional<core::CVar<std::int64_t>> m_fogTile;
+    std::optional<core::CVar<std::string>> m_quality;
     std::optional<core::CVar<bool>> m_restirSpatial;
     std::optional<core::CVar<bool>> m_restirUnbiased;
     std::optional<core::CVar<std::int64_t>> m_giBounces;
@@ -238,6 +264,10 @@ private:
 #endif
     std::unique_ptr<scene::Scene> m_currentScene;
     std::unique_ptr<scene::Scene> m_pendingScene;
+    /// Frames drawn with a scene, and the GPU milliseconds of those the first launch measures.
+    std::uint32_t m_sceneFrames = 0;
+    double m_probeMilliseconds = 0.0;
+    std::uint32_t m_probeFrames = 0;
     bool m_scenePending = false;
     bool m_looping = false;
     renderer::SceneView m_scene;

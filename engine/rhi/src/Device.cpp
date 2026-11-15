@@ -9,8 +9,11 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstring>
 #include <format>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <utility>
 
@@ -189,6 +192,12 @@ Device::Impl::~Impl() {
             vmaDestroyImage(allocator, data.image, data.allocation);
         });
         pipelines.ForEach([this](PipelineData& data) { vkDestroyPipeline(device, data.pipeline, nullptr); });
+        if (pipelineCache != VK_NULL_HANDLE) {
+            if (core::Result<void> saved = SavePipelineCache(); !saved) {
+                DAI_LOG_WARNING(kModule, "Pipeline cache not saved: {}", core::Format(saved.error()));
+            }
+            vkDestroyPipelineCache(device, pipelineCache, nullptr);
+        }
         accelerationStructures.ForEach(
             [this](AccelerationStructureData& data) { DestroyAccelerationStructureNow(data); });
 
@@ -411,6 +420,11 @@ core::Result<void> Device::Impl::CreateLogicalDevice(const DeviceConfig& config)
     };
 
     std::vector<const char*> extensions(kRayTracingExtensions.begin(), kRayTracingExtensions.end());
+    // The memory in use and the budget, as the driver sees them (ADR-0052).
+    info.memoryBudget = HasDeviceExtension(physicalDevice, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+    if (info.memoryBudget) {
+        extensions.push_back(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+    }
     if (config.presentation) {
         extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
         hdrMetadata = colorSpaces && HasDeviceExtension(physicalDevice, VK_EXT_HDR_METADATA_EXTENSION_NAME);
@@ -447,7 +461,8 @@ core::Result<void> Device::Impl::CreateAllocator() {
         .vkGetDeviceProcAddr = vkGetDeviceProcAddr,
     };
     const VmaAllocatorCreateInfo createInfo{
-        .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
+        .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT |
+                 (info.memoryBudget ? VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT : 0u),
         .physicalDevice = physicalDevice,
         .device = device,
         .pVulkanFunctions = &functions,
@@ -681,6 +696,108 @@ core::Result<void> Device::Impl::CreateGlobalDescriptors() {
     return {};
 }
 
+namespace {
+
+// A pipeline cache file starts with this, then the driver's version, then the driver's data, whose own
+// header names the vendor, the device and the cache's UUID (VkPipelineCacheHeaderVersionOne).
+constexpr std::array<char, 8> kCacheMagic{'D', 'A', 'I', 'P', 'C', 'A', 'C', 'H'};
+constexpr std::size_t kCachePrefix = kCacheMagic.size() + sizeof(std::uint32_t);
+
+} // namespace
+
+core::Result<void> Device::Impl::CreatePipelineCache(const std::filesystem::path& file) {
+    pipelineCacheFile = file;
+    std::vector<char> data;
+    if (!file.empty()) {
+        std::ifstream stream(file, std::ios::binary);
+        if (stream) {
+            data.assign(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+        }
+    }
+    VkPhysicalDeviceProperties properties;
+    vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+    // The driver checks its own header too, but not every driver catches a cache from another version:
+    // the engine checks the driver's version, the vendor, the device and the cache's UUID itself.
+    bool usable = data.size() > kCachePrefix + sizeof(VkPipelineCacheHeaderVersionOne) &&
+                  std::equal(kCacheMagic.begin(), kCacheMagic.end(), data.begin());
+    if (usable) {
+        std::uint32_t driverVersion = 0;
+        std::memcpy(&driverVersion, data.data() + kCacheMagic.size(), sizeof(driverVersion));
+        VkPipelineCacheHeaderVersionOne header{};
+        std::memcpy(&header, data.data() + kCachePrefix, sizeof(header));
+        usable = driverVersion == properties.driverVersion &&
+                 header.headerVersion == VK_PIPELINE_CACHE_HEADER_VERSION_ONE &&
+                 header.vendorID == properties.vendorID && header.deviceID == properties.deviceID &&
+                 std::memcmp(header.pipelineCacheUUID, properties.pipelineCacheUUID, VK_UUID_SIZE) == 0;
+        if (!usable) {
+            DAI_LOG_INFO(kModule, "The pipeline cache is from another GPU or driver: it is built again");
+        }
+    }
+    const VkPipelineCacheCreateInfo createInfo{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
+        .initialDataSize = usable ? data.size() - kCachePrefix : 0,
+        .pInitialData = usable ? data.data() + kCachePrefix : nullptr,
+    };
+    if (const VkResult result = vkCreatePipelineCache(device, &createInfo, nullptr, &pipelineCache);
+        result != VK_SUCCESS) {
+        return tl::unexpected(VulkanError("vkCreatePipelineCache", result));
+    }
+    info.pipelineCacheLoaded = usable;
+    return {};
+}
+
+core::Result<void> Device::Impl::SavePipelineCache() const {
+    if (pipelineCacheFile.empty()) {
+        return {};
+    }
+    std::size_t size = 0;
+    if (const VkResult result = vkGetPipelineCacheData(device, pipelineCache, &size, nullptr); result != VK_SUCCESS) {
+        return tl::unexpected(VulkanError("vkGetPipelineCacheData", result));
+    }
+    std::vector<char> data(kCachePrefix + size);
+    if (const VkResult result = vkGetPipelineCacheData(device, pipelineCache, &size, data.data() + kCachePrefix);
+        result != VK_SUCCESS) {
+        return tl::unexpected(VulkanError("vkGetPipelineCacheData", result));
+    }
+    data.resize(kCachePrefix + size);
+    VkPhysicalDeviceProperties properties;
+    vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+    std::copy(kCacheMagic.begin(), kCacheMagic.end(), data.begin());
+    std::memcpy(data.data() + kCacheMagic.size(), &properties.driverVersion, sizeof(properties.driverVersion));
+
+    // A new file replaces the old one only once it is complete.
+    std::error_code error;
+    if (pipelineCacheFile.has_parent_path()) {
+        std::filesystem::create_directories(pipelineCacheFile.parent_path(), error);
+    }
+    std::filesystem::path temporary = pipelineCacheFile;
+    temporary += ".new";
+    {
+        std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
+        stream.write(data.data(), static_cast<std::streamsize>(data.size()));
+        if (!stream.flush()) {
+            return core::MakeError(core::ErrorCode::IoError, kModule,
+                                   std::format("Cannot write '{}'", temporary.generic_string()));
+        }
+    }
+    std::filesystem::rename(temporary, pipelineCacheFile, error);
+    if (error) {
+        return core::MakeError(
+            core::ErrorCode::IoError, kModule,
+            std::format("Cannot replace '{}': {}", pipelineCacheFile.generic_string(), error.message()));
+    }
+    return {};
+}
+
+void Device::Impl::NotePipeline(const std::string& name, double seconds) {
+    pipelineSeconds += seconds;
+    if (pipelinesLocked) {
+        ++latePipelines;
+        DAI_LOG_ERROR(kModule, "Pipeline '{}' created after loading, in {:.1f} ms: a hitch (ADR-0052)", name,
+                      seconds * 1000.0);
+    }
+}
+
 void Device::Impl::SetName(VkObjectType type, std::uint64_t object, const std::string& name) const {
     if (!debugUtils || name.empty()) {
         return;
@@ -843,8 +960,10 @@ core::Result<Device> Device::Create(const DeviceConfig& config) {
     DAI_TRY(impl->CreateAllocator());
     DAI_TRY(impl->CreateFrameResources());
     DAI_TRY(impl->CreateGlobalDescriptors());
-    DAI_LOG_INFO(kModule, "Vulkan device '{}', validation {}, anisotropy {}x", impl->info.name,
-                 impl->info.validationEnabled ? "on" : "off", impl->info.anisotropy);
+    DAI_TRY(impl->CreatePipelineCache(config.pipelineCacheFile));
+    DAI_LOG_INFO(kModule, "Vulkan device '{}', validation {}, anisotropy {}x, memory budget {}", impl->info.name,
+                 impl->info.validationEnabled ? "on" : "off", impl->info.anisotropy,
+                 impl->info.memoryBudget ? "reported" : "estimated");
     return Device(std::move(impl));
 }
 
@@ -877,6 +996,26 @@ std::uint64_t Device::PresentedFrameCount() const {
 
 std::size_t Device::PendingDestructionCount() const {
     return m_impl->deferred.size();
+}
+
+void Device::LockPipelineCreation(bool locked) {
+    m_impl->pipelinesLocked = locked;
+}
+
+bool Device::PipelineCreationLocked() const {
+    return m_impl->pipelinesLocked;
+}
+
+std::uint64_t Device::LatePipelineCount() const {
+    return m_impl->latePipelines;
+}
+
+double Device::PipelineCreationSeconds() const {
+    return m_impl->pipelineSeconds;
+}
+
+core::Result<void> Device::SavePipelineCache() {
+    return m_impl->SavePipelineCache();
 }
 
 MemoryStats Device::Memory() const {

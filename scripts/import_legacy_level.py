@@ -116,6 +116,15 @@ METALS = {
 # The faces of a legacy sky: front is +Z in the legacy engine, -Z in this one (ADR-0036).
 SKY_FACES = ("right", "left", "up", "down", "front", "back")
 EXTRA_ENTITIES = [("shotgun;model=shotgun.gltf", (-15.75, 0.0, -21.0))]
+# Fog that lies on the ground (ADR-0051), which the legacy level lacks: boxes by their center and size, in
+# meters, with their bottom on the floor, and no higher than 80 cm. Over the floor of the big room, around
+# its pit, and down the narrow corridor past the second door, thicker there.
+EXTRA_FOG = [
+    ("fog;density=0.12;falloff=0.35;edge=0.15;noise=0.6;noise_frequency=0.4;noise_velocity=0.15,0,0.05",
+     (0.0, 0.4, -38.5), (38.5, 0.8, 38.5)),
+    ("fog;density=0.2;falloff=0.35;edge=0.2;noise=0.5;noise_frequency=1.0;noise_velocity=0,0,0.1",
+     (0.0, 0.4, -71.5), (3.5, 0.8, 17.0)),
+]
 
 # Two leftover tests, and the 31 MB ambient track, which waits for a compressed format in Phase 6.
 # enter_the_maze.wav is 31 MB: it was converted once, and only enter_the_maze.ogg is committed.
@@ -657,13 +666,15 @@ class GltfWriter:
         self.gltf["meshes"].append({"primitives": primitives})
         return len(self.gltf["meshes"]) - 1
 
-    def node(self, name, translation=None, rotation=None, mesh=None, root=True):
+    def node(self, name, translation=None, rotation=None, mesh=None, root=True, scale=None):
         """Rotation is a quaternion (x, y, z, w). Returns the index of the node."""
         node = {"name": name}
         if translation is not None:
             node["translation"] = list(translation)
         if rotation is not None and abs(rotation[3]) < 1.0 - 1e-7:
             node["rotation"] = list(rotation)
+        if scale is not None:
+            node["scale"] = list(scale)
         if mesh is not None:
             node["mesh"] = mesh
         self.gltf["nodes"].append(node)
@@ -861,6 +872,9 @@ def convert(source, scene, output):
         kind = name.split(";")[0]
         counts[kind] = counts.get(kind, 0) + 1
     writer.node("level", mesh=writer.mesh(level))
+    for name, center, size in EXTRA_FOG:
+        writer.node(name, center, scale=size)
+        counts["fog"] = counts.get("fog", 0) + 1
     writer.write(scene.capitalize())
     triangles = sum(len(geometry.positions) // 3 for geometry in level.values())
     print(f"{scene}: {triangles} level triangles in {len(level)} materials, entities: {counts}")
