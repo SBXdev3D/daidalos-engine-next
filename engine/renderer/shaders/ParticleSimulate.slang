@@ -292,14 +292,15 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         Hit hit;
         hit.found = false;
         if (effect.collision != kCollisionNone && distance > 1.0e-6) {
-            // Along its motion, against everything the frame's rays see, glass included.
+            // Along its motion, against the world the frame's rays see, glass included; not what casts no
+            // shadow, such as the weapons in the player's hands, which casings leave from.
             RayDesc ray;
             ray.Origin = particle.position;
             ray.Direction = motion / distance;
             ray.TMin = 0.0;
             ray.TMax = distance;
             hit = TraceClosest(ray, frame.accelerationStructure, g_particles.instanceBuffer, g_particles.materialBuffer,
-                               kMaskAll);
+                               kMaskShadowCasters | kMaskGlass);
         }
         if (hit.found) {
             const InstanceData instance = g_instances[g_particles.instanceBuffer][hit.instance];

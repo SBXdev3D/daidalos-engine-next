@@ -7,7 +7,7 @@
     "lifetime": [10, 12],
     "size": 1,
     "spread": 15,
-    "speed": [2.5, 3.5],
+    "speed": [2, 3],
     "gravity": 1,
     "drag": 0.1,
     "rotationSpeed": 1440,
