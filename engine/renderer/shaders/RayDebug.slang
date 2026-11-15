@@ -49,7 +49,7 @@ float4 PSMain(float4 position : SV_Position) : SV_Target {
     query.TraceRayInline(g_accelerationStructures[frame.accelerationStructure], RAY_FLAG_NONE, 0xFF, ray);
     query.Proceed();
     if (query.CommittedStatus() != COMMITTED_TRIANGLE_HIT) {
-        return float4(frame.fogColor, 1.0);
+        return float4(0.0, 0.0, 0.0, 1.0);
     }
     const uint instanceIndex = query.CommittedInstanceID();
     const InstanceData instance = g_instances[g_debug.instanceBuffer][instanceIndex];

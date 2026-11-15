@@ -9,6 +9,7 @@
 
 #define DAI_PARTICLES_READ_ONLY
 #include "Particles.slangh"
+#include "Fog.slangh"
 
 struct VertexOutput {
     float4 clipPosition : SV_Position;
@@ -96,10 +97,12 @@ ParticleOutput PSMain(VertexOutput input) {
         color *= light;
     }
 
-    const float visibility = exp(-frame.fogDensity * max(depth, 0.0));
+    // Seen through the fog in front of it (ADR-0051).
+    const float4 fog =
+        FogAt(frame, input.clipPosition.xy * frame.screenTexel, max(depth, 0.0), uint2(input.clipPosition.xy));
     const bool additive = (effect.flags & kEffectAdditive) != 0;
     if (additive) {
-        return Output(float4(color * alpha * visibility, 0.0), alpha);
+        return Output(float4(color * alpha * fog.a, 0.0), alpha);
     }
-    return Output(float4(lerp(frame.fogColor, color, visibility) * alpha, alpha), alpha);
+    return Output(float4(ThroughFog(fog, color) * alpha, alpha), alpha);
 }

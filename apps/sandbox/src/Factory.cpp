@@ -70,9 +70,9 @@ constexpr float kMaxPitch = glm::radians(89.0f);
 constexpr float kStickLookSpeed = 2.5f; // Radians per second.
 constexpr float kMessageTime = 3.0f;    // Seconds.
 
-// The factory is dark, lit by its lamps and the light they bounce (ADR-0040), with a thin fog that swallows
-// what is far away. It is exposed as a dim interior, at EV100 3 (ADR-0043); without its darkness,
-// Settings::darkness 0, this many stops brighter.
+// The factory is dark, lit by its lamps and the light they bounce (ADR-0040), in a thin haze that the lamps
+// and the moon light (ADR-0051) and that swallows what is far away. It is exposed as a dim interior, at EV100 3
+// (ADR-0043); without its darkness, Settings::darkness 0, this many stops brighter.
 constexpr float kFactoryEv100 = 3.0f;
 constexpr float kBrightStops = 4.0f;
 // The eye adapts (ADR-0048) from this many stops below the factory's exposure, in its darkest corners, which
@@ -81,8 +81,20 @@ constexpr float kEyeOpensStops = 0.5f;
 constexpr float kEyeClosesStops = 2.5f;
 // The legacy sky's colors, in nits: as bright on screen at EV100 3 as they were before physical units.
 constexpr float kSkyLuminance = 9.6f;
-constexpr glm::vec3 kFogColor{0.005f, 0.006f, 0.008f};
-constexpr float kFogDensity = 0.03f;
+// The haze: a share of the light lost per meter, mostly scattered, a little more of the blue, and forwards.
+// Thin, as indoor haze is (about 600 m of visibility): enough for the lamps' cones to show, not so much that
+// the flashlight, at the eye and looked along, fills the view with its beam.
+constexpr float kFogDensity = 0.005f;
+constexpr glm::vec3 kFogAlbedo{0.8f, 0.82f, 0.85f};
+constexpr float kFogAnisotropy = 0.2f;
+// The steam of the leak: meters long and across, and its density at the heart.
+constexpr float kSteamLength = 4.0f;
+constexpr float kSteamWidth = 1.6f;
+constexpr float kSteamDensity = 0.8f;
+// The dust of the start room: where its box is from the player's start, its size, and its density.
+constexpr glm::vec3 kDustOffset{0.0f, 0.0f, -3.5f};
+constexpr glm::vec3 kDustSize{6.0f, 3.0f, 8.0f};
+constexpr float kDustDensity = 0.1f;
 // The moon painted on sky1 shines through the level's openings (ADR-0040). Its disk is centered at pixel
 // (343.5, 147) of the 512-pixel front face, the legacy +Z: towards (0.344, 0.424, 1) in the cube, -Z in the
 // engine, 22 degrees above the horizon. That low, it would light only walls that the player sees from
@@ -352,6 +364,39 @@ ParticleEffects MakeParticleEffects(scene::Scene& scene, const std::string& dire
     return effects;
 }
 
+/// Steam around a leak, which blows along -Z as its smoke does (ADR-0051): a box of fog that starts at the
+/// leak and widens away from it, whose noise drifts with the smoke, lit by the lamps around.
+void AddSteam(ecs::World& world, ecs::Entity leak) {
+    const ecs::Entity steam = world.Create();
+    ecs::LocalTransform transform;
+    transform.translation = {0.0f, 0.1f, -kSteamLength * 0.5f + 0.2f};
+    transform.scale = {kSteamWidth, kSteamWidth, kSteamLength};
+    world.Add<ecs::LocalTransform>(steam, transform);
+    world.Add<scene::FogVolume>(steam, scene::FogVolume{.density = kSteamDensity,
+                                                        .albedo = glm::vec3(0.95f),
+                                                        .edge = 0.8f,
+                                                        .noise = 0.8f,
+                                                        .noiseFrequency = 1.5f,
+                                                        .noiseVelocity = {0.0f, 0.1f, -0.5f}});
+    [[maybe_unused]] const core::Result<void> attached = world.SetParent(steam, leak);
+}
+
+/// Dust in the start room (ADR-0051): a box of thin fog around the player's start and the lamp ahead,
+/// whose noise drifts slowly, so that swirls move through the lamp's cone.
+void AddDust(ecs::World& world, const glm::vec3& start) {
+    const ecs::Entity dust = world.Create();
+    ecs::LocalTransform transform;
+    transform.translation = start + kDustOffset;
+    transform.scale = kDustSize;
+    world.Add<ecs::LocalTransform>(dust, transform);
+    world.Add<scene::FogVolume>(dust, scene::FogVolume{.density = kDustDensity,
+                                                       .albedo = {0.85f, 0.8f, 0.7f},
+                                                       .edge = 0.3f,
+                                                       .noise = 0.7f,
+                                                       .noiseFrequency = 0.8f,
+                                                       .noiseVelocity = {0.08f, 0.03f, 0.0f}});
+}
+
 /// A level emitter, by the name of its legacy template, at the rate the legacy game emitted.
 void AddParticleEmitter(ecs::World& world, ecs::Entity entity, const NodeDescription& node,
                         const ParticleEffects& effects) {
@@ -359,6 +404,7 @@ void AddParticleEmitter(ecs::World& world, ecs::Entity entity, const NodeDescrip
     const std::string_view name = found == node.attributes.end() ? std::string_view{} : found->second;
     if (name == "smokeLeakEmitter") {
         world.Add<scene::ParticleEmitter>(entity, effects.smokeLeak, 12.0f);
+        AddSteam(world, entity);
     } else if (name == "smokeGreenEmitter") {
         world.Add<scene::ParticleEmitter>(entity, effects.greenSmoke, 100.0f);
     } else if (name == "fogGreenEmitter") {
@@ -757,8 +803,7 @@ void ApplyAtmosphere(scene::Scene& scene, const Settings& settings) {
     const float darkness = std::clamp(settings.darkness, 0.0f, 1.0f);
     // Brightness is seen in stops: halfway is half the stops.
     const float ev100 = kFactoryEv100 - ((1.0f - darkness) * kBrightStops);
-    scene.SetAtmosphere({.fogColor = kFogColor,
-                         .fogDensity = kFogDensity * darkness,
+    scene.SetAtmosphere({.fog = {.density = kFogDensity * darkness, .albedo = kFogAlbedo, .anisotropy = kFogAnisotropy},
                          .sky = scene.Atmosphere().sky,
                          .skyIntensity = scene.Atmosphere().skyIntensity,
                          .skyYaw = scene.Atmosphere().skyYaw,
@@ -933,6 +978,7 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
             }
         }
         if (node.kind == "player") {
+            AddDust(world, position);
             eye = position;
             if (const std::optional<physics::RayHit> floor = physics.CastRay(position, -math::kUp, 20.0f, playerBody)) {
                 eye = floor->position + math::kUp * kEyeHeight;

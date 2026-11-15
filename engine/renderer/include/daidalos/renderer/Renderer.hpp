@@ -50,6 +50,8 @@ enum class DebugView {
     Lights,
     /// The bloom alone, as the output pass would mix it in (ADR-0048).
     Bloom,
+    /// The light the volumetric fog scatters towards the camera alone, over black (ADR-0051).
+    Fog,
 };
 
 /// How indirect light is traced (ADR-0045).
@@ -130,6 +132,11 @@ struct RendererConfig {
     bool reflections = true;
     /// Surfaces rougher than this trace no reflection, from 0 (none do) to 1 (all do).
     float reflectionRoughness = 0.6f;
+    /// Volumetric fog (ADR-0051): the atmosphere's fog and the view's fog volumes, lit by the frame's lights.
+    /// Off, the air is clear.
+    bool volumetricFog = true;
+    /// Froxels of the fog in depth, from the near plane to the far plane, from 16 to 256.
+    std::uint32_t fogSlices = 64;
     /// ReSTIR DI (ADR-0044): pixels reuse the lights their neighbours chose, as well as their own past.
     bool restirSpatial = true;
     /// ReSTIR DI tests every sample it reuses for visibility, for comparisons with the path tracer: twice the
@@ -224,6 +231,8 @@ public:
     void SetDenoiser(bool enabled);
     void SetReflections(bool enabled);
     void SetReflectionRoughness(float roughness);
+    /// See RendererConfig::volumetricFog and fogSlices.
+    void SetVolumetricFog(bool enabled, std::uint32_t slices);
     /// See RendererConfig::restirSpatial and restirUnbiased.
     void SetRestir(bool spatial, bool unbiased);
     void SetIndirectLightConfig(const IndirectLightConfig& config);

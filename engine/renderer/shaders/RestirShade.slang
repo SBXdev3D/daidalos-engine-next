@@ -54,9 +54,13 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
 
     const uint index = PixelIndex(pixel);
     Reservoir reservoir = Unpack(g_reservoirs[g_restir.reservoirs][index]);
+    // The light chosen moved since the last frame, as a flashlight does with the camera: the denoiser keeps
+    // little of its history, which would lag behind (ADR-0051).
+    bool moving = false;
     if (reservoir.light != kNoLight) {
         const LightContact contact = ContactLight(frame, reservoir.light, reservoir.u, receiver);
         stochastic = stochastic || contact.soft;
+        moving = (g_lightMaps[g_restir.lightMap][g_restir.previousLightCount + reservoir.light] & kLightMoved) != 0;
         if (contact.valid && Unoccluded(frame, receiver, contact, g_restir.instanceBuffer, g_restir.materialBuffer)) {
             const BsdfTerms terms = LightTerms(receiver, contact);
             diffuseLight += contact.illuminance * terms.diffuse * reservoir.weight;
@@ -70,7 +74,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
 
     // Divided by the albedo's luminance, which keeps the color of a metal's reflections in the light.
     const float albedo = max(Luminance(specularAlbedo), 0.001);
-    g_storageImages[g_restir.diffuse][id.xy] = float4(diffuseLight, stochastic ? 1.0 : 0.0);
+    g_storageImages[g_restir.diffuse][id.xy] = float4(diffuseLight, (stochastic ? 1.0 : 0.0) + (moving ? 2.0 : 0.0));
     g_storageImages[g_restir.specular][id.xy] = float4(specularLight / albedo, albedo);
     if ((g_restir.flags & kRestirDebug) != 0) {
         g_storageImages[g_restir.debug][id.xy] =

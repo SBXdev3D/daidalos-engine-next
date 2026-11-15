@@ -55,8 +55,10 @@ struct CompositePushConstants {
     std::uint32_t specular;
     std::uint32_t shading;
     std::uint32_t depth;
-    std::uint32_t padding;
+    std::uint32_t flags;
 };
+// Matches the flags in shaders/Composite.slang.
+constexpr std::uint32_t kFogOnly = 1;
 
 struct SkinningPushConstants {
     std::uint32_t source;
@@ -107,7 +109,7 @@ struct FrameData {
     glm::mat4 inverseViewProjection;
     glm::vec3 cameraPosition;
     float fogDensity;
-    glm::vec3 fogColor;
+    glm::vec3 fogAlbedo;
     std::uint32_t lightCount;
     std::uint32_t lightBuffer;
     std::uint32_t skyTexture;
@@ -138,9 +140,27 @@ struct FrameData {
     glm::uvec2 renderSize;
     glm::uvec2 previousRenderSize;
     glm::uvec2 targetSize;
-    glm::uvec2 padding;
+    float fogAnisotropy;
+    float time;
+    std::uint32_t fogVolumeBuffer;
+    std::uint32_t fogVolumeCount;
+    std::uint32_t fogTexture;
+    std::uint32_t fogAliasBuffer;
 };
-static_assert(sizeof(FrameData) == 432);
+static_assert(sizeof(FrameData) == 448);
+
+/// A box of fog (ADR-0051). Matches its twin in shaders/Fog.slangh.
+struct FogVolumeData {
+    glm::mat4 worldToBox;
+    glm::vec3 albedo;
+    float density;
+    glm::vec3 noiseVelocity;
+    float noiseFrequency;
+    float noise;
+    float edge;
+    glm::vec2 padding;
+};
+static_assert(sizeof(FogVolumeData) == 112);
 
 struct LightData {
     glm::vec3 position;
@@ -238,6 +258,11 @@ constexpr std::uint32_t kInitialMaterialCapacity = 64;
 constexpr std::uint64_t kInitialInstanceCapacity = 256;
 constexpr std::uint64_t kInitialJointCapacity = 256;
 constexpr std::uint64_t kInitialLightCapacity = 64;
+constexpr std::uint64_t kInitialFogVolumeCapacity = 8;
+/// A light that moved farther than this, in meters, or turned by more than this cosine, since the last frame
+/// moved: the histories that its light fills must follow it at once.
+constexpr float kMovedDistance = 0.001f;
+constexpr float kMovedCosine = 0.99999f;
 /// Grows an array of a frame slot to hold count elements, doubling, and never to zero. The CPU writes it,
 /// unless it is in GPU memory.
 core::Result<void> Reserve(rhi::Device& device, rhi::BufferHandle& buffer, std::uint64_t& capacity, std::uint64_t count,
@@ -317,9 +342,11 @@ MeshPass::~MeshPass() {
         m_device->DestroyBuffer(slot.joints);
         m_device->DestroyBuffer(slot.lights);
         m_device->DestroyBuffer(slot.sources);
+        m_device->DestroyBuffer(slot.fogSources);
         m_device->DestroyBuffer(slot.lightMap);
         m_device->DestroyBuffer(slot.emissiveDraws);
         m_device->DestroyBuffer(slot.emissiveTriangles);
+        m_device->DestroyBuffer(slot.fogVolumes);
     }
 }
 
@@ -611,6 +638,8 @@ core::Result<void> MeshPass::PrepareFrameSlot(FrameSlot& slot, const SceneView& 
                     sizeof(glm::mat4), "Joints"));
     DAI_TRY(reserve(slot.lights, slot.lightCapacity, view.lights.size(), kInitialLightCapacity, sizeof(LightData),
                     "Lights"));
+    DAI_TRY(reserve(slot.fogVolumes, slot.fogVolumeCapacity, view.fogVolumes.size(), kInitialFogVolumeCapacity,
+                    sizeof(FogVolumeData), "Fog volumes"));
     return {};
 }
 
@@ -691,17 +720,34 @@ std::vector<glm::vec3> MeshPass::TriangleEmission(MeshHandle mesh, MaterialHandl
     return emission;
 }
 
-core::Result<MeshPass::FrameLights> MeshPass::PrepareLights(FrameSlot& slot, const SceneView& view, float exposure) {
-    // The analytic lights, each its own source.
+core::Result<MeshPass::FrameLights> MeshPass::PrepareLights(FrameSlot& slot, const SceneView& view, float exposure,
+                                                            const glm::vec3& cameraPosition) {
+    // The analytic lights, each its own source. Each source is also weighed for the volumetric fog by its
+    // distance to the camera; a directional light, everywhere, as if it were kFogReach away (ADR-0051).
     const auto lightCount = static_cast<std::uint32_t>(view.lights.size());
     auto* lights = reinterpret_cast<LightData*>(m_device->Mapped(slot.lights).data());
     std::vector<float> powers;
+    std::vector<float> fogPowers;
     std::vector<LightRange> ranges;
+    // Lights that moved since the last frame, whose light the histories must follow at once.
+    std::vector<bool> moved;
+    std::unordered_map<std::uint64_t, std::pair<glm::vec3, glm::vec3>> places;
     for (std::uint32_t index = 0; index < lightCount; ++index) {
-        lights[index] = ToGpu(view.lights[index], exposure);
-        powers.push_back(LightPower(view.lights[index]));
-        ranges.push_back({IdentityKey(view.lights[index].id, index), index, 1});
+        const Light& light = view.lights[index];
+        lights[index] = ToGpu(light, exposure);
+        powers.push_back(LightPower(light));
+        fogPowers.push_back(FogSourceWeight(powers.back(), light.type == LightType::Directional
+                                                               ? kFogReach
+                                                               : glm::distance(light.position, cameraPosition)));
+        const std::uint64_t key = IdentityKey(light.id, index);
+        ranges.push_back({key, index, 1});
+        const auto previous = m_previousPlaces.find(key);
+        moved.push_back(previous != m_previousPlaces.end() &&
+                        (glm::distance(previous->second.first, light.position) > kMovedDistance ||
+                         glm::dot(previous->second.second, light.direction) < kMovedCosine));
+        places.emplace(key, std::make_pair(light.position, light.direction));
     }
+    m_previousPlaces = std::move(places);
 
     // Then the emissive draws, each a source of its triangles, once their emission is known (ADR-0044). The
     // flux of a surface that sends the same light everywhere is its radiance times its area times pi.
@@ -722,6 +768,14 @@ core::Result<MeshPass::FrameLights> MeshPass::PrepareLights(FrameSlot& slot, con
         const bool skinned = sorted.firstSkinnedVertex != kNotSkinned;
         const float sides = material.doubleSided ? 2.0f : 1.0f;
         powers.push_back(source->power * (skinned ? 1.0f : AreaScale(draw.world)) * std::numbers::pi_v<float> * sides);
+        // Its distance to the camera from its bounding sphere.
+        const glm::vec4& bounds = m_meshes.Get(sorted.mesh).bounds;
+        const float scale = std::max({glm::length(glm::vec3(draw.world[0])), glm::length(glm::vec3(draw.world[1])),
+                                      glm::length(glm::vec3(draw.world[2]))});
+        const glm::vec3 center(draw.world * glm::vec4(glm::vec3(bounds), 1.0f));
+        fogPowers.push_back(
+            FogSourceWeight(powers.back(), std::max(glm::distance(center, cameraPosition) - bounds.w * scale, 0.0f)));
+        moved.push_back(skinned || (draw.previousWorld.has_value() && *draw.previousWorld != draw.world));
         ranges.push_back({EmissiveDrawKey(draw.id, sorted.draw, sorted.mesh, sorted.material),
                           lightCount + triangleCount, source->triangleCount});
         draws.push_back({triangleCount, source->triangleCount, m_device->StorageIndex(source->aliasTable), 0});
@@ -732,6 +786,8 @@ core::Result<MeshPass::FrameLights> MeshPass::PrepareLights(FrameSlot& slot, con
 
     DAI_TRY(Reserve(*m_device, slot.sources, slot.sourceCapacity, powers.size(), kInitialLightCapacity,
                     sizeof(AliasEntry), "Light sources"));
+    DAI_TRY(Reserve(*m_device, slot.fogSources, slot.fogSourceCapacity, fogPowers.size(), kInitialLightCapacity,
+                    sizeof(AliasEntry), "Fog light sources"));
     DAI_TRY(Reserve(*m_device, slot.emissiveDraws, slot.emissiveDrawCapacity, draws.size(), 16,
                     sizeof(EmissiveDrawData), "Emissive draws"));
     DAI_TRY(Reserve(*m_device, slot.emissiveTriangles, slot.emissiveTriangleCapacity, triangleCount, 256,
@@ -744,16 +800,28 @@ core::Result<MeshPass::FrameLights> MeshPass::PrepareLights(FrameSlot& slot, con
     if (!table.empty()) {
         std::memcpy(m_device->Mapped(slot.sources).data(), table.data(), table.size() * sizeof(AliasEntry));
     }
+    const std::vector<AliasEntry> fogTable = BuildAliasTable(fogPowers);
+    if (!fogTable.empty()) {
+        std::memcpy(m_device->Mapped(slot.fogSources).data(), fogTable.data(), fogTable.size() * sizeof(AliasEntry));
+    }
     if (!draws.empty()) {
         std::memcpy(m_device->Mapped(slot.emissiveDraws).data(), draws.data(), draws.size() * sizeof(EmissiveDrawData));
     }
 
     // Each light keeps its name from frame to frame: the reservoirs that chose it follow it.
     std::vector<std::uint32_t> map = MapLights(m_previousRanges, ranges, m_lightCount);
-    std::vector<std::uint32_t> fresh(std::size_t{lightCount} + triangleCount, 1);
+    std::vector<std::uint32_t> fresh(std::size_t{lightCount} + triangleCount, kLightNew);
     for (const std::uint32_t current : map) {
         if (current != kGone) {
             fresh[current] = 0;
+        }
+    }
+    // A source's lights share its flag: an emissive draw's triangles move with it.
+    for (std::size_t source = 0; source < ranges.size(); ++source) {
+        if (moved[source]) {
+            for (std::uint32_t light = 0; light < ranges[source].count; ++light) {
+                fresh[ranges[source].first + light] |= kLightMoved;
+            }
         }
     }
     map.insert(map.end(), fresh.begin(), fresh.end());
@@ -813,8 +881,8 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     FrameData frame{jittered,
                     glm::inverse(jittered),
                     cameraPosition,
-                    view.atmosphere.fogDensity,
-                    view.atmosphere.fogColor * targets.fogScale,
+                    std::max(view.atmosphere.fog.density, 0.0f),
+                    glm::clamp(view.atmosphere.fog.albedo, glm::vec3(0.0f), glm::vec3(1.0f)),
                     static_cast<std::uint32_t>(view.lights.size()),
                     m_device->StorageIndex(slot.lights),
                     view.atmosphere.sky ? m_device->BindlessIndex(view.atmosphere.sky) : kNoTexture,
@@ -846,7 +914,26 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                     {targets.extent.width, targets.extent.height},
                     {previousExtent.width, previousExtent.height},
                     {targetExtent.width, targetExtent.height},
-                    {0, 0}};
+                    std::clamp(view.atmosphere.fog.anisotropy, -0.95f, 0.95f),
+                    targets.time,
+                    m_device->StorageIndex(slot.fogVolumes),
+                    static_cast<std::uint32_t>(view.fogVolumes.size()),
+                    targets.fog ? m_device->BindlessIndex(targets.fog) : kNoTexture,
+                    0};
+    if (!view.fogVolumes.empty()) {
+        auto* volumes = reinterpret_cast<FogVolumeData*>(m_device->Mapped(slot.fogVolumes).data());
+        for (std::size_t index = 0; index < view.fogVolumes.size(); ++index) {
+            const FogVolume& volume = view.fogVolumes[index];
+            volumes[index] = {.worldToBox = glm::inverse(volume.world),
+                              .albedo = glm::clamp(volume.albedo, glm::vec3(0.0f), glm::vec3(1.0f)),
+                              .density = std::max(volume.density, 0.0f),
+                              .noiseVelocity = volume.noiseVelocity,
+                              .noiseFrequency = volume.noiseFrequency,
+                              .noise = std::clamp(volume.noise, 0.0f, 1.0f),
+                              .edge = std::clamp(volume.edge, 0.0f, 1.0f),
+                              .padding = glm::vec2(0.0f)};
+        }
+    }
 
     if (!view.jointMatrices.empty()) {
         // Without previous joints, they stood still.
@@ -949,9 +1036,10 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         }
     }
     // The lights, emissive draws included, once the draws are sorted: their instances are known.
-    DAI_TRY_ASSIGN(const FrameLights frameLights, PrepareLights(slot, view, targets.exposure));
+    DAI_TRY_ASSIGN(const FrameLights frameLights, PrepareLights(slot, view, targets.exposure, cameraPosition));
     frame.sourceCount = frameLights.sourceCount;
     frame.aliasBuffer = m_device->StorageIndex(slot.sources);
+    frame.fogAliasBuffer = m_device->StorageIndex(slot.fogSources);
     frame.emissiveDrawBuffer = m_device->StorageIndex(slot.emissiveDraws);
     frame.emissiveTriangleBuffer = m_device->StorageIndex(slot.emissiveTriangles);
     frame.emissiveTriangleCount = frameLights.emissiveTriangleCount;
@@ -1156,7 +1244,7 @@ void MeshPass::AddComposite(RenderGraph& graph, rhi::TextureHandle target, const
                                       index(inputs.specular),
                                       index(shading.specular),
                                       index(inputs.depth),
-                                      0};
+                                      inputs.fogOnly ? kFogOnly : 0U};
     graph.AddPass({.name = "Composite",
                    .rendering = rhi::RenderingDesc{.colorTarget = target, .area = m_renderExtent},
                    .textures = {{target, rhi::Access::ColorTarget, true},
@@ -1165,7 +1253,8 @@ void MeshPass::AddComposite(RenderGraph& graph, rhi::TextureHandle target, const
                                 {shading.specular, rhi::Access::FragmentShaderRead},
                                 {inputs.diffuse, rhi::Access::FragmentShaderRead},
                                 {inputs.specular, rhi::Access::FragmentShaderRead},
-                                {inputs.depth, rhi::Access::FragmentShaderRead}}},
+                                {inputs.depth, rhi::Access::FragmentShaderRead},
+                                {inputs.fog, rhi::Access::FragmentShaderRead}}},
                   [this, push](rhi::CommandList& commands) {
                       commands.BindPipeline(m_pipelines.composite);
                       commands.Push(push);

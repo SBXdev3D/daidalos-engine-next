@@ -1,0 +1,224 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+#ifndef DAIDALOS_FOG_SLANGH
+#define DAIDALOS_FOG_SLANGH
+
+// Volumetric fog (ADR-0051). The level's fog fills everything within the view distance of the camera, the
+// same everywhere; boxes of fog add to it, with a density that thins at their faces and moves with a noise.
+// The light scatters in them as one medium: extinction per meter, and an albedo per color.
+//
+// The froxels, a grid that follows the camera, slice the view by depth exponentially from the near plane to
+// the far plane: VolumetricFog lights them and adds them up from the camera, so that each holds the fog in
+// front of it, which FogAt reads for any point of the view.
+// Include after MeshTypes.slangh.
+
+#include "Random.slangh"
+
+// A box of fog. Matches FogVolumeData in renderer/src/MeshPass.cpp.
+struct FogVolumeData {
+    float4x4 worldToBox; // The box is the cube from -0.5 to 0.5.
+    float3 albedo;
+    float density;
+    float3 noiseVelocity; // Meters per second.
+    float noiseFrequency; // Per meter.
+    float noise;          // From 0, even, to 1, from none to twice as dense.
+    float edge;           // Fraction of the half-size over which the density thins at the faces.
+    float2 padding;
+};
+
+[[vk::binding(2, 0)]] StructuredBuffer<FogVolumeData> g_fogVolumes[];
+// 3D textures alias the sampled textures (rhi::TextureDesc::depth).
+[[vk::binding(0, 0)]] Texture3D g_volumeTextures[];
+
+static const float kInversePi4 = 0.07957747;
+
+// The fraction of the light scattered towards each direction, per steradian, for the cosine of the angle
+// between where the light goes and where it is scattered (Henyey and Greenstein 1941).
+float FogPhase(float anisotropy, float cosine) {
+    const float g2 = anisotropy * anisotropy;
+    const float denominator = max(1.0 + g2 - 2.0 * anisotropy * cosine, 1e-4);
+    return kInversePi4 * (1.0 - g2) / (denominator * sqrt(denominator));
+}
+
+// A direction drawn in proportion to the phase function around forward, the direction the light goes,
+// from two numbers in [0, 1).
+float3 SampleFogPhase(float anisotropy, float3 forward, float2 u) {
+    float cosine;
+    if (abs(anisotropy) < 1e-3) {
+        cosine = 1.0 - 2.0 * u.x;
+    } else {
+        const float square = (1.0 - anisotropy * anisotropy) / (1.0 - anisotropy + 2.0 * anisotropy * u.x);
+        cosine = (1.0 + anisotropy * anisotropy - square * square) / (2.0 * anisotropy);
+    }
+    cosine = clamp(cosine, -1.0, 1.0);
+    const float sine = sqrt(max(1.0 - cosine * cosine, 0.0));
+    const float angle = 6.28318531 * u.y;
+    const float3 helper = abs(forward.y) < 0.99 ? float3(0.0, 1.0, 0.0) : float3(1.0, 0.0, 0.0);
+    const float3 tangent = normalize(cross(helper, forward));
+    const float3 bitangent = cross(forward, tangent);
+    return normalize(tangent * (cos(angle) * sine) + bitangent * (sin(angle) * sine) + forward * cosine);
+}
+
+// A number in [0, 1) for each corner of the unit grid.
+float LatticeValue(int3 corner) {
+    const uint3 bits = uint3(corner);
+    return float(Pcg(bits.x ^ Pcg(bits.y ^ Pcg(bits.z))) >> 8) * (1.0 / 16777216.0);
+}
+
+// Value noise: the corners' numbers, blended smoothly, in [0, 1).
+float ValueNoise(float3 position) {
+    const float3 floored = floor(position);
+    const int3 corner = int3(floored);
+    const float3 f = position - floored;
+    const float3 t = f * f * (3.0 - 2.0 * f);
+    const float x00 = lerp(LatticeValue(corner), LatticeValue(corner + int3(1, 0, 0)), t.x);
+    const float x10 = lerp(LatticeValue(corner + int3(0, 1, 0)), LatticeValue(corner + int3(1, 1, 0)), t.x);
+    const float x01 = lerp(LatticeValue(corner + int3(0, 0, 1)), LatticeValue(corner + int3(1, 0, 1)), t.x);
+    const float x11 = lerp(LatticeValue(corner + int3(0, 1, 1)), LatticeValue(corner + int3(1, 1, 1)), t.x);
+    return lerp(lerp(x00, x10, t.y), lerp(x01, x11, t.y), t.z);
+}
+
+// Three octaves of value noise, in [0, 1): billows with finer wisps.
+float FogNoise(float3 position) {
+    return (ValueNoise(position) * 0.5714286 + ValueNoise(position * 2.03 + 17.1) * 0.2857143 +
+            ValueNoise(position * 4.07 + 41.7) * 0.1428571);
+}
+
+// The density of a box of fog at a point, per meter.
+float FogVolumeDensity(FogVolumeData volume, float3 position, float time) {
+    const float3 local = mul(volume.worldToBox, float4(position, 1.0)).xyz;
+    const float3 inside = 0.5 - abs(local);
+    const float nearestFace = min(inside.x, min(inside.y, inside.z));
+    if (nearestFace <= 0.0) {
+        return 0.0;
+    }
+    float density = volume.density;
+    if (volume.edge > 0.0) {
+        density *= smoothstep(0.0, 1.0, nearestFace / (0.5 * volume.edge));
+    }
+    if (volume.noise > 0.0) {
+        const float noise = FogNoise((position - volume.noiseVelocity * time) * volume.noiseFrequency);
+        density *= max(lerp(1.0, 2.0 * noise, volume.noise), 0.0);
+    }
+    return density;
+}
+
+// The densest a box of fog gets.
+float FogVolumeMajorant(FogVolumeData volume) {
+    return volume.density * (1.0 + volume.noise);
+}
+
+// What the fog is at a point: the light it loses per meter, and the light it scatters per meter, per color.
+struct FogMedium {
+    float extinction;
+    float3 scattering;
+};
+
+// The level's fog and its boxes, at a point. All fog is within the view distance of the camera: beyond it,
+// nothing is drawn.
+FogMedium FogMediumAt(FrameData frame, float3 position) {
+    FogMedium medium;
+    medium.extinction = 0.0;
+    medium.scattering = float3(0.0, 0.0, 0.0);
+    if (distance(position, frame.cameraPosition) >= frame.farPlane) {
+        return medium;
+    }
+    medium.extinction = frame.fogDensity;
+    medium.scattering = frame.fogDensity * frame.fogAlbedo;
+    for (uint index = 0; index < frame.fogVolumeCount; ++index) {
+        const FogVolumeData volume = g_fogVolumes[frame.fogVolumeBuffer][index];
+        const float density = FogVolumeDensity(volume, position, frame.time);
+        medium.extinction += density;
+        medium.scattering += density * volume.albedo;
+    }
+    return medium;
+}
+
+// Meters along the segment from a point, along a unit direction, that are within the view distance of the
+// camera, where the level's fog is.
+float InLevelFog(FrameData frame, float3 origin, float3 direction, float length) {
+    const float3 offset = origin - frame.cameraPosition;
+    const float b = dot(offset, direction);
+    const float c = dot(offset, offset) - frame.farPlane * frame.farPlane;
+    const float discriminant = b * b - c;
+    if (discriminant <= 0.0) {
+        return 0.0;
+    }
+    const float root = sqrt(discriminant);
+    return max(min(-b + root, length) - max(-b - root, 0.0), 0.0);
+}
+
+// The fraction of the light that crosses the level's fog from one point to another. The boxes of fog are
+// left out: light from the frame's lights only loses what the level's fog takes (ADR-0051).
+float LevelFogTransmittance(FrameData frame, float3 from, float3 to) {
+    if (frame.fogDensity <= 0.0) {
+        return 1.0;
+    }
+    const float3 offset = to - from;
+    const float length = sqrt(dot(offset, offset));
+    if (length <= 0.0) {
+        return 1.0;
+    }
+    return exp(-frame.fogDensity * InLevelFog(frame, from, offset / length, length));
+}
+
+// Meters in front of the camera where a froxel slice starts, from 0 at the near plane to 1 at the far
+// plane, and the inverse.
+float FroxelDepth(FrameData frame, float slice) {
+    return frame.nearPlane * pow(frame.farPlane / frame.nearPlane, slice);
+}
+
+float FroxelSlice(FrameData frame, float depth) {
+    return log(max(depth, frame.nearPlane) / frame.nearPlane) / log(frame.farPlane / frame.nearPlane);
+}
+
+// The direction from the camera through a point of the view, in texture coordinates of the frame.
+float3 ViewRay(FrameData frame, float2 uv) {
+    const float4 through = mul(frame.inverseViewProjection, float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 0.5, 1.0));
+    return normalize(through.xyz / through.w - frame.cameraPosition);
+}
+
+// Where a pixel reads the froxels, from its center, in froxels: up to half of one each way, a different
+// offset for each pixel and frame (interleaved gradient noise, Jimenez 2014). Temporal antialiasing averages
+// them, which blends each froxel's noise with its neighbours' instead of showing the grid.
+float3 FogDither(uint2 pixel, uint frameIndex) {
+    const float2 shifted = float2(pixel) + 5.588238 * float(frameIndex & 63u);
+    const float noise = frac(52.9829189 * frac(dot(shifted, float2(0.06711056, 0.00583715))));
+    return frac(float3(noise, noise + 0.618034, noise + 0.381966)) - 0.5;
+}
+
+// The fog between the camera and a point of the view at this depth in meters (LinearDepth): the light it
+// scatters towards the camera, and in alpha the fraction of the point's light that crosses it. dither moves
+// where the froxels are read, in froxels (FogDither). None without volumetric fog.
+float4 FogAt(FrameData frame, float2 uv, float depth, float3 dither) {
+    if (frame.fogTexture == kNoTexture) {
+        return float4(0.0, 0.0, 0.0, 1.0);
+    }
+    uint3 size;
+    g_volumeTextures[frame.fogTexture].GetDimensions(size.x, size.y, size.z);
+    const float slices = float(size.z);
+    const float2 at = uv + dither.xy / float2(size.xy);
+    // Slice i holds the fog up to where slice i + 1 starts: at depth d, the texel coordinate is that of
+    // slice(d) - 1. In front of the first slice's end, from no fog to the first slice's.
+    const float texel = FroxelSlice(frame, depth) * slices - 1.0 + dither.z;
+    const SamplerState linear = g_samplers[kSamplerLinearClamp];
+    if (texel < 0.0) {
+        const float4 first = g_volumeTextures[frame.fogTexture].SampleLevel(linear, float3(at, 0.5 / slices), 0.0);
+        return lerp(float4(0.0, 0.0, 0.0, 1.0), first, saturate(depth / FroxelDepth(frame, 1.0 / slices)));
+    }
+    return g_volumeTextures[frame.fogTexture].SampleLevel(linear, float3(at, (texel + 0.5) / slices), 0.0);
+}
+
+// The same, read where pixel reads it this frame.
+float4 FogAt(FrameData frame, float2 uv, float depth, uint2 pixel) {
+    return FogAt(frame, uv, depth, FogDither(pixel, frame.frameIndex));
+}
+
+// A point's light seen through the fog in front of it.
+float3 ThroughFog(float4 fog, float3 color) {
+    return color * fog.a + fog.rgb;
+}
+
+#endif

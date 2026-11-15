@@ -113,6 +113,8 @@ sandbox.exe +window.fullscreen true +renderer.antialiasing off
 | `renderer.indirect_light` | true | Light that bounces off surfaces; off leaves direct light only |
 | `renderer.reflections` | true | Ray-traced reflections; off, the indirect light stands in for them |
 | `renderer.reflection_roughness` | 0.6 | Surfaces rougher than this trace no reflection |
+| `renderer.volumetric_fog` | true | Fog lit by the lights, with light shafts; off, the air is clear |
+| `renderer.fog_slices` | 64 | Slices of the volumetric fog in depth, from 16 to 256 |
 | `renderer.restir_spatial` | true | Pixels reuse the lights their neighbours chose, as well as their own past |
 | `renderer.restir_unbiased` | false | Test every reused light for shadows, to compare with the path tracer |
 | `renderer.antialiasing` | `taa` | `taa` or `off` |

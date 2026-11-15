@@ -258,8 +258,11 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
 
     const bool sampled = HasFlag(desc.usage, TextureUsage::Sampled);
     const bool storage = HasFlag(desc.usage, TextureUsage::Storage);
-    DAI_ASSERT(!storage || desc.format == Format::Rgba32Float || desc.format == Format::Rgba16Float,
-               "A storage texture is Rgba32Float or Rgba16Float");
+    DAI_ASSERT(!storage || desc.format == Format::Rgba32Float || desc.format == Format::Rgba16Float ||
+                   desc.format == Format::Rgba8Unorm || desc.format == Format::Rg16Float ||
+                   desc.format == Format::R8Unorm || desc.format == Format::R16Float ||
+                   desc.format == Format::R32Float || desc.format == Format::R32Uint,
+               "A storage texture has a format that shaders declare their storage images with");
     if (storage && m_impl->freeStorageImageIndices.empty()) {
         return core::MakeError(
             core::ErrorCode::OutOfMemory, kModule,
@@ -269,6 +272,10 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
                    (desc.extent.width == desc.extent.height && !storage &&
                     !HasFlag(desc.usage, TextureUsage::ColorTarget) && !HasFlag(desc.usage, TextureUsage::DepthTarget)),
                "A cube has square faces, and is only sampled and copied to");
+    const bool volume = desc.depth > 1;
+    DAI_ASSERT(!volume || (!desc.cube && desc.mipLevels == 1 && !HasFlag(desc.usage, TextureUsage::ColorTarget) &&
+                           !HasFlag(desc.usage, TextureUsage::DepthTarget)),
+               "A 3D texture has one mip level, and is only sampled and stored");
     std::vector<std::uint32_t>& freeSampledIndices = desc.cube ? m_impl->freeCubeIndices : m_impl->freeBindlessIndices;
     if (sampled && freeSampledIndices.empty()) {
         return core::MakeError(
@@ -279,9 +286,9 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
     const VkImageCreateInfo imageInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .flags = desc.cube ? VkImageCreateFlags{VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT} : VkImageCreateFlags{0},
-        .imageType = VK_IMAGE_TYPE_2D,
+        .imageType = volume ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D,
         .format = ToVulkan(desc.format),
-        .extent = {desc.extent.width, desc.extent.height, 1},
+        .extent = {desc.extent.width, desc.extent.height, std::max(desc.depth, 1U)},
         .mipLevels = desc.mipLevels,
         .arrayLayers = desc.cube ? 6U : 1U,
         .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -296,6 +303,7 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
     data.extent = desc.extent;
     data.mipLevels = desc.mipLevels;
     data.layers = imageInfo.arrayLayers;
+    data.depth = imageInfo.extent.depth;
     data.format = desc.format;
     data.usage = desc.usage;
     if (const VkResult result =
@@ -307,7 +315,9 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
     const VkImageViewCreateInfo viewInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = data.image,
-        .viewType = desc.cube ? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_2D,
+        .viewType = desc.cube ? VK_IMAGE_VIEW_TYPE_CUBE
+                    : volume  ? VK_IMAGE_VIEW_TYPE_3D
+                              : VK_IMAGE_VIEW_TYPE_2D,
         .format = imageInfo.format,
         .subresourceRange = {.aspectMask = (desc.format == Format::D32Float)
                                                ? VkImageAspectFlags{VK_IMAGE_ASPECT_DEPTH_BIT}
@@ -379,6 +389,7 @@ void Device::DestroyTexture(TextureHandle texture) {
 
 core::Result<void> Device::UploadTexture(TextureHandle texture, std::span<const std::byte> pixels) {
     const TextureData& data = m_impl->textures.Get(texture);
+    DAI_ASSERT(data.depth == 1, "3D textures are never uploaded");
     std::uint64_t expectedSize = 0;
     for (std::uint32_t level = 0; level < data.mipLevels; ++level) {
         expectedSize += MipByteSize(data.format, MipExtent(data.extent, level));

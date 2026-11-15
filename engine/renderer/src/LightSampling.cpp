@@ -89,6 +89,11 @@ float LightPower(const Light& light) {
     return 0.0f;
 }
 
+float FogSourceWeight(float power, float distanceToCamera) {
+    const float reach2 = kFogReach * kFogReach;
+    return std::max(power, 0.0f) * reach2 / (distanceToCamera * distanceToCamera + reach2);
+}
+
 std::uint64_t IdentityKey(SceneId id, std::uint32_t position) {
     // Ids name entities by their index and generation, whose top bit is never set.
     constexpr std::uint64_t kPositional = std::uint64_t{1} << 63U;

@@ -75,11 +75,11 @@ public:
                                        "Level to load from the assets directory, or cornell for the Cornell box")
                 .Get();
         m_settings.mouseSensitivity = app.MouseSensitivity();
-        m_settings.darkness =
-            static_cast<float>(app.CVars()
-                                   .Register<double>("sandbox.darkness", 1.0,
-                                                     "1 is the factory's darkness; 0 shows it brighter, without fog")
-                                   .Get());
+        m_settings.darkness = static_cast<float>(
+            app.CVars()
+                .Register<double>("sandbox.darkness", 1.0,
+                                  "1 is the factory's darkness; 0 shows it brighter, without its haze")
+                .Get());
         m_settings.startWithFlashlight =
             app.CVars().Register<bool>("sandbox.flashlight", false, "Start with the flashlight on").Get();
         m_start =

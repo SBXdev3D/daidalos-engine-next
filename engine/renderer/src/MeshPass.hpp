@@ -17,6 +17,8 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "LightSampling.hpp"
@@ -53,9 +55,11 @@ struct FrameTargets {
     /// What luminance in nits is multiplied by before tonemapping (ADR-0043): lights, emission and the sky
     /// reach the GPU multiplied by it, so that its targets hold values near those of the screen.
     float exposure = 1.0f;
-    /// Multiplies the fog's color, which is given as it looks at the atmosphere's ev100, into the GPU's
-    /// exposure (ADR-0048).
-    float fogScale = 1.0f;
+    /// The fog in front of each point of the view (VolumetricFog::Output), which the composite, glass and
+    /// particles read (ADR-0051). Null for no fog.
+    rhi::TextureHandle fog;
+    /// Seconds, by which the noise of fog volumes moves.
+    float time = 0.0f;
     /// Smoother surfaces trace sharp reflections, which show emissive lights (ADR-0044): with reflections,
     /// the smaller of GlobalIllumination::kSharpRoughness and the roughness above which no reflection is
     /// traced; 0 without.
@@ -82,6 +86,10 @@ struct CompositeInputs {
     rhi::TextureHandle diffuse;
     rhi::TextureHandle specular;
     rhi::TextureHandle depth;
+    /// FrameTargets::fog, which the composite reads, or null.
+    rhi::TextureHandle fog;
+    /// The fog alone, over black: its debug view.
+    bool fogOnly = false;
 };
 
 /// The perspective a frame is drawn with, reverse-Z, as the upscalers that reconstruct depth need it.
@@ -227,7 +235,8 @@ public:
     [[nodiscard]] std::uint32_t FrameDataIndex() const;
     /// Where each light of the frame prepared before this one is in this one's list (ADR-0044): the storage
     /// index of a uint per light, kGone for a light that is gone, and the number of lights it maps. Then a
-    /// uint per light of the prepared frame: 1 for a light the frame before did not have.
+    /// uint per light of the prepared frame, of flags: kLightNew for a light the frame before did not have,
+    /// kLightMoved for one that moved since, whose light the histories must follow at once.
     [[nodiscard]] std::uint32_t LightMapIndex() const;
     [[nodiscard]] std::uint32_t PreviousLightCount() const { return m_mappedLightCount; }
 
@@ -300,9 +309,12 @@ private:
         std::uint64_t jointCapacity = 0;
         rhi::BufferHandle lights;
         std::uint64_t lightCapacity = 0;
-        /// The alias table of the light sources, by power.
+        /// The alias table of the light sources, by power, and the volumetric fog's, by power near the camera
+        /// (FogSourceWeight).
         rhi::BufferHandle sources;
         std::uint64_t sourceCapacity = 0;
+        rhi::BufferHandle fogSources;
+        std::uint64_t fogSourceCapacity = 0;
         /// LightMapIndex's buffer.
         rhi::BufferHandle lightMap;
         std::uint64_t lightMapCapacity = 0;
@@ -312,6 +324,9 @@ private:
         std::uint64_t emissiveDrawCapacity = 0;
         rhi::BufferHandle emissiveTriangles;
         std::uint64_t emissiveTriangleCapacity = 0;
+        /// The boxes of fog (ADR-0051).
+        rhi::BufferHandle fogVolumes;
+        std::uint64_t fogVolumeCapacity = 0;
     };
 
     MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
@@ -338,7 +353,8 @@ private:
         std::uint32_t sourceCount = 0;
         std::uint32_t emissiveTriangleCount = 0;
     };
-    [[nodiscard]] core::Result<FrameLights> PrepareLights(FrameSlot& slot, const SceneView& view, float exposure);
+    [[nodiscard]] core::Result<FrameLights> PrepareLights(FrameSlot& slot, const SceneView& view, float exposure,
+                                                          const glm::vec3& cameraPosition);
     /// The emissive source of a mesh and a material, made on first use, its emission read back if the GPU
     /// has written it. Null if it cannot be made.
     EmissiveSource* FindEmissiveSource(MeshHandle mesh, MaterialHandle material);
@@ -391,6 +407,9 @@ private:
     /// The light sources of the last frame prepared, which name its lights (ADR-0044), and its number of
     /// lights, which the next frame maps; the number of lights the prepared frame's map holds.
     std::vector<LightRange> m_previousRanges;
+    /// Where each analytic light of the last frame prepared was, by its identity key: position and direction,
+    /// to tell the lights that moved.
+    std::unordered_map<std::uint64_t, std::pair<glm::vec3, glm::vec3>> m_previousPlaces;
     std::uint32_t m_lightCount = 0;
     std::uint32_t m_mappedLightCount = 0;
     /// Counts the frames prepared with a camera, which the readback of emission waits on.

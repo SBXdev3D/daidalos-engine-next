@@ -140,8 +140,11 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     const float3 normal = normalRoughness.xyz;
     const float4 diffuse = Load(g_temporal.diffuse, pixel);
     const float3 specular = Load(g_temporal.specular, pixel).rgb;
-    // Shadow rays aimed at random points of a light: the light may be noisy.
-    const bool stochastic = diffuse.a > 0.5;
+    // The lighting's flags: shadow rays aimed at random points of a light, so the light may be noisy; and the
+    // light chosen moved since the last frame, so the history lags behind it.
+    const uint flags = uint(diffuse.a + 0.5);
+    const bool stochastic = (flags & 1u) != 0;
+    const bool moving = (flags & 2u) != 0;
 
     // The neighbourhood: its range of light bounds the history, so that light that goes out or comes on
     // shows at once; and its moments, from the neighbours on the same surface, give the variance while
@@ -203,7 +206,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     float3 averageSpecular = specular;
     float4 moments = LumaMoments(diffuse.rgb, specular);
     if (historyWeight > 0.01) {
-        frames = min(round(historyFrames / historyWeight) + 1.0, kMaxFrames);
+        frames = min(round(historyFrames / historyWeight) + 1.0, moving ? kMovingLightFrames : kMaxFrames);
         const float weight = 1.0 / frames;
         // The history is kept within the neighbourhood's range, widened by the noise of one frame until
         // now: where the light was not noisy, a light that went out or a shadow that moved away shows at

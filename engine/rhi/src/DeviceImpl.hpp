@@ -36,8 +36,9 @@ inline constexpr std::uint32_t kMaxBindlessTextures = 4096;
 inline constexpr std::uint32_t kMaxBindlessBuffers = 4096;
 /// Cube textures that shaders can sample at the same time.
 inline constexpr std::uint32_t kMaxBindlessCubes = 64;
-/// Storage textures that shaders can read and write at the same time.
-inline constexpr std::uint32_t kMaxStorageImages = 64;
+/// Storage textures that shaders can read and write at the same time. A resize holds twice the targets for
+/// a few frames: those in flight keep their slots until the GPU is done with them.
+inline constexpr std::uint32_t kMaxStorageImages = 128;
 /// Top-level acceleration structures that shaders can trace at the same time.
 inline constexpr std::uint32_t kMaxBindlessAccelerationStructures = 16;
 
@@ -65,6 +66,8 @@ struct TextureData {
     std::uint32_t mipLevels = 1;
     /// 6 for a cube, 1 otherwise.
     std::uint32_t layers = 1;
+    /// Slices of a 3D texture; 1 otherwise.
+    std::uint32_t depth = 1;
     Format format = Format::Undefined;
     TextureUsage usage = TextureUsage::None;
     AccessState access;

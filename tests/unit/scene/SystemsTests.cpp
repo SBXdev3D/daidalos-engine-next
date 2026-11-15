@@ -237,6 +237,33 @@ TEST(ExtractScene, LightsTakeTheirPlaceAndDirectionFromTheirEntity) {
     EXPECT_EQ(light.radius, 0.1f);
 }
 
+TEST(ExtractScene, FogVolumesAreBoxesAtTheirEntity) {
+    ecs::World world;
+    const ecs::Entity dust = AddAt(world, {2.0f, 1.0f, -3.0f});
+    world.Get<ecs::LocalTransform>(dust).scale = glm::vec3(4.0f, 2.0f, 6.0f);
+    world.Add<scene::FogVolume>(
+        dust, scene::FogVolume{
+                  .density = 0.5f, .albedo = {0.7f, 0.8f, 0.9f}, .noise = 0.5f, .noiseVelocity = {0.0f, 1.0f, 0.0f}});
+    world.Add<scene::FogVolume>(AddAt(world, {}), scene::FogVolume{.enabled = false});
+    world.Add<scene::FogVolume>(AddAt(world, {}), scene::FogVolume{.density = 0.0f});
+    ecs::PropagateTransforms(world);
+
+    SceneView view;
+    scene::ExtractScene(world, view);
+    ASSERT_EQ(view.fogVolumes.size(), 1U) << "Disabled and empty boxes are left out";
+    const renderer::FogVolume& volume = view.fogVolumes[0];
+    // The unit cube, scaled to the box's size, at the entity.
+    EXPECT_NEAR(glm::distance(glm::vec3(volume.world * glm::vec4(0.5f, 0.5f, 0.5f, 1.0f)), glm::vec3(4.0f, 2.0f, 0.0f)),
+                0.0f, 1e-5f);
+    EXPECT_EQ(volume.density, 0.5f);
+    EXPECT_EQ(volume.albedo, glm::vec3(0.7f, 0.8f, 0.9f));
+    EXPECT_EQ(volume.noise, 0.5f);
+    EXPECT_EQ(volume.noiseVelocity, glm::vec3(0.0f, 1.0f, 0.0f));
+
+    scene::ExtractScene(world, view);
+    EXPECT_EQ(view.fogVolumes.size(), 1U) << "A view reused for the next frame starts over";
+}
+
 TEST(ExtractScene, LightsAndDrawsAreNamedByTheirEntity) {
     ecs::World world;
     const ecs::Entity lamp = AddAt(world, {});

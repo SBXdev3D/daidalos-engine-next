@@ -56,6 +56,8 @@ dai_add_module(NAME renderer
         src/TemporalResolvePass.hpp
         src/UiPass.cpp
         src/UiPass.hpp
+        src/VolumetricFog.cpp
+        src/VolumetricFog.hpp
     PUBLIC_DEPS
         daidalos::core
         daidalos::platform
@@ -72,8 +74,9 @@ dai_add_shaders(TARGET daidalos_renderer
         shaders/RestirCandidates.slang shaders/RestirTemporal.slang shaders/RestirSpatial.slang
         shaders/RestirSpatialUnbiased.slang shaders/RestirShade.slang
         shaders/EmissiveAverage.slang shaders/EmissiveTriangles.slang shaders/ExposureHistogram.slang shaders/Bloom.slang
+        shaders/FogLighting.slang shaders/FogIntegrate.slang
     INCLUDES shaders/Bsdf.slang shaders/RayQueries.slangh shaders/GlobalIllumination.slangh shaders/MeshCommon.slangh shaders/MeshTypes.slangh shaders/Particles.slangh
-        shaders/Denoiser.slangh shaders/Random.slangh shaders/Lights.slangh shaders/GBuffer.slangh shaders/Restir.slangh shaders/RestirSpatial.slangh)
+        shaders/Denoiser.slangh shaders/Random.slangh shaders/Lights.slangh shaders/GBuffer.slangh shaders/Restir.slangh shaders/RestirSpatial.slangh shaders/Fog.slangh)
 
 # AMD FSR 3.1's upscaler (ADR-0050): AMD's passes, unchanged, through the engine's callbacks. Its headers
 # test macros they leave undefined (15205) and keep code after a return (41000); its pyramids use quad

@@ -9,6 +9,9 @@
 
 // Frames a pixel averages at most: older light weighs less and less.
 static const float kMaxFrames = 32.0;
+// Frames averaged at most where the light chosen moved since the last frame, as a flashlight with the camera:
+// a longer history lags behind it, which a surface that comes out from behind something shows (ADR-0051).
+static const float kMovingLightFrames = 4.0;
 
 // Every texture the denoiser writes is half floats (rhi::Format::Rgba16Float).
 [[vk::binding(4, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> g_halfStorageImages[];
