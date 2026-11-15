@@ -107,6 +107,8 @@ struct FogVolume {
     float noise = 0.0f;
     float noiseFrequency = 1.0f;
     glm::vec3 noiseVelocity{0.0f};
+    /// Light the fog gives off, per color, as renderer::FogVolume::glow: a toxic gas glowing in the dark.
+    glm::vec3 glow{0.0f};
     bool enabled = true;
 };
 

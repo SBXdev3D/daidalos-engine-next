@@ -1,10 +1,11 @@
 # Daidalos Engine Next
-# Copyright (C) 2011-2026 Stéphane Baudoux
+# Copyright (C) 2011-2026 StÃ©phane Baudoux
 # SPDX-License-Identifier: MIT OR Apache-2.0
 
 """Dresses the factory with the effects of ADR-0053 (step 9.24): fire in the pit of the south room, drips,
-a shorting cable, dust in the lamps' light, flies, moths, rain through the big room's open roof, and what
-each material is made of, for impacts by surface.
+a shorting cable, dust in the lamps' light, flies, moths, rain through the big room's open roof, the green
+gas as glowing boxes of fog in place of the legacy level's sprites (step 9.25), and what each material is
+made of, for impacts by surface.
 
     python scripts/dress_factory.py [assets/Factory]
 
@@ -119,16 +120,58 @@ def dressing():
          ((OPENING[0] + OPENING[1]) / 2, (rain_top + rain_bottom) / 2, (OPENING[2] + OPENING[3]) / 2), up,
          (OPENING[1] - OPENING[0], rain_top - rain_bottom, OPENING[3] - OPENING[2])),
     ]
+    # The toxic gas, as boxes of fog that glow (ADR-0051) instead of the legacy level's sprites. Underground,
+    # it lies on the floor of the corridor between the ladders (-8.4 m), thins going up and drifts out of the
+    # two ducts where the fans turn; in the shaft under the glass, it fills the shaft and rises.
+    gas = "density={density};falloff={falloff};color=0.45:0.9:0.4;edge={edge};noise=1;noise_frequency={frequency};" \
+          "noise_velocity={velocity};glow=0.004:0.03:0.008"
+    nodes += [
+        ("fog;" + gas.format(density=0.4, falloff=0.3, edge=0.15, frequency=1.6, velocity="0.15,0,-0.05"),
+         (-36.25, -7.7, -49.0), up, (6.5, 1.4, 24.0)),
+        ("fog;" + gas.format(density=0.4, falloff=0.3, edge=0.2, frequency=1.6, velocity="0.5,0,0"),
+         (-42.75, -7.7, -42.0), up, (6.5, 1.4, 3.0)),
+        ("fog;" + gas.format(density=0.4, falloff=0.3, edge=0.2, frequency=1.6, velocity="0.5,0,0"),
+         (-42.75, -7.7, -52.5), up, (6.5, 1.4, 3.0)),
+        ("fog;" + gas.format(density=0.25, falloff=4.0, edge=0.1, frequency=0.5, velocity="0,0.5,0"),
+         (36.5, -7.05, -38.5), up, (7.0, 13.9, 3.5)),
+    ]
     # Water running off the roof's edge, under it, around the opening.
     for x, z in ((-9.2, -33.0), (9.2, -36.5), (-9.2, -44.0), (9.2, -46.0), (-3.0, -29.8), (4.5, -48.7)):
         nodes.append(("particles;effect=drip", (x, ROOF - 0.05, z), up, None))
     return nodes
 
 
+REPLACED = {"particles;effect=green_fog", "particles;effect=green_smoke"}
+
+
+def remove_nodes(gltf, unwanted):
+    """Removes the root nodes without children that `unwanted` picks, and renumbers the others."""
+    nodes = gltf["nodes"]
+    removed = {index for index, node in enumerate(nodes) if unwanted(node)}
+    if not removed:
+        return
+    if any(nodes[index].get("children") for index in removed) or \
+            any(child in removed for node in nodes for child in node.get("children", [])):
+        sys.exit("Only root nodes without children can be removed")
+    new_index = {}
+    for index in range(len(nodes)):
+        if index not in removed:
+            new_index[index] = len(new_index)
+    gltf["nodes"] = [node for index, node in enumerate(nodes) if index not in removed]
+    for node in gltf["nodes"]:
+        if "children" in node:
+            node["children"] = [new_index[child] for child in node["children"]]
+    for scene in gltf["scenes"]:
+        scene["nodes"] = [new_index[index] for index in scene["nodes"] if index not in removed]
+
+
 def main():
     directory = Path(sys.argv[1] if len(sys.argv) > 1 else "assets/Factory")
     path = directory / "Factory.gltf"
     gltf = json.loads(path.read_text(encoding="utf-8"))
+
+    # The legacy level's green fog and smoke were sprites; boxes of fog replace them.
+    remove_nodes(gltf, lambda node: node["name"] in REPLACED)
 
     # Remove what an earlier run added: its nodes are the last ones, and nothing points at them.
     nodes = gltf["nodes"]

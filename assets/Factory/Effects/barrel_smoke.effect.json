@@ -1,0 +1,27 @@
+{
+    "comment": "Smoke curling out of a hot barrel after a shot: thin wisps that rise, spread and fade. The game sets the rate, from how hot the barrel is; the wisps stay where they were, so they trail when the weapon moves. Unlit, a faint grey: the barrel is outside the cones of the lamps and the flashlight, and lit smoke there was a dark shape.",
+    "texture": "../particles.png",
+    "columns": 4,
+    "cell": 0,
+    "lit": false,
+    "color": [[0, [0.08, 0.08, 0.08, 0.3]], [0.3, [0.06, 0.06, 0.06, 0.18]], [1, [0.05, 0.05, 0.05, 0]]],
+    "fadeIn": 0.05,
+    "lifetime": [1.2, 2.2],
+    "size": [0.012, 0.02],
+    "sizeOverLife": [[0, 1], [1, 7]],
+    "spawnRadius": 0.004,
+    "speed": [0.03, 0.08],
+    "spread": 30,
+    "gravity": -0.04,
+    "drag": 1.2,
+    "turbulence": 0.6,
+    "turbulenceScale": 0.12,
+    "anisotropy": 0.5,
+    "rotationSpeed": 20,
+    "softness": 0.02,
+    "inheritVelocity": 0,
+    "emitter": {
+        "rate": 0,
+        "radius": 1
+    }
+}
