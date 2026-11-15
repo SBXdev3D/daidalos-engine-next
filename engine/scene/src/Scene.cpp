@@ -71,8 +71,26 @@ void Scene::RunFrame(core::Seconds delta, float fixedAlpha) {
     animation::UpdateAnimators(m_world, static_cast<float>(delta.count()));
 }
 
+void Scene::ReloadChangedParticleEffects() {
+    for (const ParticleEffectAsset& reloaded : m_assets.ReloadChangedParticleEffects()) {
+        m_world.Each<ParticleEmitter>([&](ecs::Entity /*entity*/, ParticleEmitter& emitter) {
+            if (emitter.effect == reloaded.effect) {
+                emitter.emission = reloaded.emission;
+            }
+        });
+    }
+}
+
 void Scene::Extract(renderer::SceneView& view) {
     DAI_PROFILE_SCOPE("scene::Extract");
+#if DAI_DEV_TOOLS
+    // Effect files edited while the game runs (ADR-0053).
+    constexpr std::chrono::milliseconds kEffectCheckPeriod{500};
+    if (const auto now = std::chrono::steady_clock::now(); now - m_effectsChecked >= kEffectCheckPeriod) {
+        m_effectsChecked = now;
+        ReloadChangedParticleEffects();
+    }
+#endif
     ecs::PropagateTransforms(m_world);
     ExtractScene(m_world, view, m_activeCamera);
     view.atmosphere = m_atmosphere;

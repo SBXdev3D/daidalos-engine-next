@@ -113,7 +113,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     const float step = g_particles.timeStep;
     particle.velocity.y -= 9.81 * effect.gravity * step;
     particle.velocity *= max(1.0 - effect.drag * step, 0.0);
-    particle.position += particle.velocity * step;
+    // Size, emission and speed over life (ADR-0053).
+    const float4 scales = SampleCurve(particle.effect, kCurveScales, particle.age / particle.lifetime);
+    particle.position += particle.velocity * scales.z * step;
     particle.rotation += particle.rotationSpeed * step;
 
     const float depth = dot(particle.position - frame.cameraPosition, frame.cameraForward);
@@ -138,7 +140,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     }
     if ((effect.flags & kEffectLit) != 0) {
         const bool first = particle.lightSamples <= 0.0;
-        const float radius = particle.size * lerp(1.0, effect.growth, saturate(particle.age / particle.lifetime)) * 0.5;
+        const float radius = particle.size * scales.x * 0.5;
         const float3 sampled = LightSmoke(frame, SmokeReceiver(frame, particle.position, radius), particle.reservoir,
                                           first, index * 9781u + g_particles.seed * 26699u);
         particle.light = first ? sampled : lerp(particle.light, sampled, kLightBlend);

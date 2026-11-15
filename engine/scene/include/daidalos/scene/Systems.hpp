@@ -8,7 +8,9 @@
 #include <daidalos/ecs/World.hpp>
 #include <daidalos/physics/PhysicsWorld.hpp>
 #include <daidalos/renderer/SceneView.hpp>
+#include <daidalos/scene/Components.hpp>
 
+#include <cstdint>
 #include <vector>
 
 namespace daidalos::scene {
@@ -25,9 +27,13 @@ namespace daidalos::scene {
 /// the previous one; an entity drawn for the first time has no motion.
 void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity activeCamera = {});
 
-/// Adds the particles that each enabled ParticleEmitter emits over delta seconds, at its world transform.
-/// Run it after ecs::PropagateTransforms.
+/// Adds the particles that each enabled ParticleEmitter emits over delta seconds, at its world transform:
+/// by its rate, by the distance it went since the last frame, spread along the way, and by its bursts
+/// (ADR-0053). Spawns carry the emitter's velocity. Run it after ecs::PropagateTransforms.
 void EmitParticles(ecs::World& world, float delta, std::vector<renderer::ParticleSpawn>& spawns);
+
+/// How many times a burst fires between from and to seconds of its emitter's life, from included, to not.
+[[nodiscard]] std::uint32_t BurstsBetween(const ParticleBurst& burst, float from, float to);
 
 /// Moves the body of each entity with a KinematicBody to its LocalTransform.
 void SyncKinematicBodies(ecs::World& world, physics::PhysicsWorld& physics, float step);

@@ -26,44 +26,66 @@ struct Particle {
     float3 light;
     float lightSamples; // Frames of samples it holds; 0 until it is first lit.
     uint4 reservoir;    // The light it keeps choosing (Lights.slangh, Pack).
+    float3 axis;        // The effect's axis, turned like the emitter was (ADR-0053).
+    float startFrame;   // Its first frame of the flipbook.
 };
 
 static const uint kEffectLit = 1;
 static const uint kEffectCollides = 2;
 static const uint kEffectAdditive = 4;
+static const uint kEffectLoop = 8;
+static const uint kEffectRandomStart = 16;
+
+// renderer::ParticleShape and renderer::ParticleOrientation.
+static const uint kShapeBox = 0;
+static const uint kShapeCylinder = 1;
+static const uint kShapeCone = 2;
+static const uint kShapeLine = 3;
+static const uint kOrientCamera = 0;
+static const uint kOrientVelocity = 1;
+static const uint kOrientAxis = 2;
+static const uint kOrientPlane = 3;
 
 struct ParticleEffectData {
-    float4 startColor;
-    float4 endColor;
     float3 spawnBox;     // Half extents, in the emitter's frame.
     float spawnRadius;   // Added: a random point in a sphere.
     float3 direction;    // In the emitter's frame.
     float spread;        // Radians around the direction.
+    float3 axis;         // Of Axis and Plane particles, in the emitter's frame.
+    float stretch;       // Seconds of motion a Velocity particle stretches over.
     float speedMin;
     float speedMax;
     float lifeMin;
     float lifeMax;
     float sizeMin;
     float sizeMax;
-    float growth;        // Size at the end of its life, relative to the start.
     float gravity;       // Multiplies the Earth's.
     float drag;          // Fraction of the speed lost per second.
     float rotationSpeed; // Radians per second, either way.
     float softness;      // Meters over which it fades into what it touches.
     float bounce;        // Speed kept when it bounces off a surface.
+    float fadeIn;        // Fraction of its life over which it fades in.
+    float inheritVelocity;
+    float frameRate;     // Frames per second of the flipbook; 0 plays it once over the life.
+    uint shape;
+    uint orientation;
     uint texture;
-    uint cell;
+    uint cell;           // The flipbook's first cell.
     uint columns;
+    uint rows;
+    uint frames;
     uint flags;
+    uint2 padding;
 };
 
 struct ParticleSpawn {
     float3 position;
     uint effect;
     float4 rotation; // Quaternion (x, y, z, w) of the emitter.
+    float3 previous; // Where the emitter was last frame: particles are spread along the way.
     uint first;      // Particles spawned by the requests before this one.
+    float3 velocity; // The emitter's.
     uint count;
-    uint2 padding;
 };
 
 // Every particle pass uses these push constants, each the fields it needs.
@@ -91,7 +113,7 @@ struct ParticlePushConstants {
     float3 cameraRight;
     uint materialBuffer;
     float3 cameraUp;
-    float padding3;
+    uint curves; // Each effect's curves over life (renderer::BakeParticleCurves).
     uint lightMap; // The simulation: for each of the last frame's lights, its index in this frame's (ADR-0044).
     uint previousLightCount;
 };
@@ -108,6 +130,20 @@ struct ParticlePushConstants {
 #endif
 [[vk::binding(2, 0)]] StructuredBuffer<ParticleEffectData> g_particleEffects[];
 [[vk::binding(2, 0)]] StructuredBuffer<ParticleSpawn> g_particleSpawns[];
+[[vk::binding(2, 0)]] StructuredBuffer<float4> g_particleCurves[];
+
+// Samples per curve, and the curves of each effect: color, then size, emission and speed.
+static const uint kCurveSamples = 256;
+static const uint kCurveColor = 0;
+static const uint kCurveScales = 1;
+
+// An effect's curve at a moment of the life, from 0 to 1, blended between its samples.
+float4 SampleCurve(uint effect, uint curve, float life) {
+    const float x = saturate(life) * float(kCurveSamples - 1);
+    const uint i = min(uint(x), kCurveSamples - 2);
+    const uint base = (effect * 2 + curve) * kCurveSamples + i;
+    return lerp(g_particleCurves[g_particles.curves][base], g_particleCurves[g_particles.curves][base + 1], x - float(i));
+}
 
 static const uint kDeadCounter = 0;
 static const uint kAliveCounter = 1;

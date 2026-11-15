@@ -39,6 +39,7 @@ dai_add_module(NAME renderer
         src/MeshPass.cpp
         src/MeshPass.hpp
         src/ParticlePass.cpp
+        src/Particles.cpp
         src/ParticlePass.hpp
         src/Primitives.cpp
         src/PathTracerPass.cpp

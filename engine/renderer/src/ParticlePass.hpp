@@ -20,7 +20,7 @@ namespace daidalos::renderer {
 
 class RenderGraph;
 
-/// Particles simulated on the GPU (ADR-0025): one pool of kMaxParticles, with a dead list and two alive
+/// Particles simulated on the GPU (ADR-0025, ADR-0053): one pool of kMaxParticles, with a dead list and two alive
 /// lists. Each frame emits, simulates, sorts by depth and draws them with one indirect draw; the CPU
 /// never reads them back. The Device must outlive it.
 class ParticlePass {
@@ -34,6 +34,9 @@ public:
     ~ParticlePass();
 
     [[nodiscard]] core::Result<ParticleEffectHandle> CreateEffect(const ParticleEffectDesc& desc);
+    /// Changes an effect in place, as when its file is edited: particles alive take the change. False if
+    /// the effect is gone.
+    bool UpdateEffect(ParticleEffectHandle effect, const ParticleEffectDesc& desc);
     /// Particles of the effect still alive keep using its slot, which a new effect may reuse.
     void DestroyEffect(ParticleEffectHandle effect);
 
@@ -84,6 +87,7 @@ private:
 
     [[nodiscard]] core::Result<void> CreateResources(rhi::Format colorFormat);
     [[nodiscard]] core::Result<void> ReserveEffectSlot(std::uint32_t index);
+    void WriteEffect(std::uint32_t index, const ParticleEffectDesc& desc);
 
     rhi::Device* m_device;
     rhi::PipelineHandle m_emit;
@@ -101,6 +105,7 @@ private:
     std::uint32_t m_current = 0;
     core::SlotPool<Effect, ParticleEffectTag> m_effects;
     rhi::BufferHandle m_effectTable;
+    rhi::BufferHandle m_curveTable;
     std::uint32_t m_effectCapacity = 0;
     std::array<FrameSlot, rhi::kFramesInFlight> m_frameSlots;
     std::uint32_t m_nextFrameSlot = 0;

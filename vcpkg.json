@@ -30,6 +30,7 @@
     "miniaudio",
     "mikktspace",
     "shader-slang",
+    "simdjson",
     "spdlog",
     "stb",
     "tl-expected",

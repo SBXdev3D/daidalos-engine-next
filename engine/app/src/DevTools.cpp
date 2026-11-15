@@ -176,7 +176,9 @@ void DevTools::AddEngineInspectors() {
     AddInspector<scene::ParticleEmitter>("Particle emitter", [](scene::ParticleEmitter& emitter) {
         ImGui::Text("Effect %u", emitter.effect.Index());
         ImGui::Checkbox("Enabled", &emitter.enabled);
-        ImGui::DragFloat("Per second", &emitter.rate, 0.1f, 0.0f, 10000.0f);
+        ImGui::DragFloat("Per second", &emitter.emission.rate, 0.1f, 0.0f, 10000.0f);
+        ImGui::DragFloat("Per meter", &emitter.emission.ratePerMeter, 0.1f, 0.0f, 10000.0f);
+        ImGui::Text("%zu bursts, %.1f s old", emitter.emission.bursts.size(), static_cast<double>(emitter.age));
     });
     AddInspector<scene::KinematicBody>("Kinematic body",
                                        [](scene::KinematicBody& body) { ImGui::Text("Body %u", body.id.value); });

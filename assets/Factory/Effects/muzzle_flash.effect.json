@@ -1,0 +1,13 @@
+{
+    "comment": "The flash of a shot at a gun's muzzle.",
+    "texture": "../particles.png",
+    "columns": 4,
+    "cell": 3,
+    "color": [[0, [2.5, 2.2, 1, 1]], [1, [2.5, 1.6, 0.6, 0]]],
+    "additive": true,
+    "lit": false,
+    "lifetime": [0.06, 0.08],
+    "size": [0.05, 0.08],
+    "spawnRadius": 0.02,
+    "softness": 0.02
+}

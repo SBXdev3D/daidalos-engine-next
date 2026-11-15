@@ -29,6 +29,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 METERS_PER_UNIT = 0.35
 # Brushes that were markers for the legacy sky, or that are not visible geometry.
+# The effect file each legacy particle template became (assets/Factory/Effects, ADR-0053).
+EFFECT_FILES = {"smokeLeakEmitter": "smoke_leak", "smokeGreenEmitter": "green_smoke", "fogGreenEmitter": "green_fog"}
+
 SKIPPED_TEXTURES = {"sky_d.png", "collision.png", "default.png"}
 # Textures with holes in them.
 ALPHA_TESTED_TEXTURES = {"grid_1d.png", "grid_2d.png", "bars_d.tga", "bars_d.png"}
@@ -846,8 +849,9 @@ def convert(source, scene, output):
                 elif kind is not None:
                     add_entity(kind, node, absolute, rotation, scale)
                 elif node.get("type") == "9" and node.get("emitterName"):
-                    # A particle emitter: the game knows its effects by their legacy names.
-                    writer.node(f"particles;effect={node.get('emitterName')}", to_engine(absolute))
+                    # A particle emitter, which names the effect file it emits (ADR-0053).
+                    effect = EFFECT_FILES.get(node.get("emitterName"), node.get("emitterName"))
+                    writer.node(f"particles;effect={effect}", to_engine(absolute))
                     counts["particles"] = counts.get("particles", 0) + 1
                 elif node.get("type") == "5" and node.get("file"):
                     add_static(node.get("file"), texture_of(node), absolute, rotation, scale)
