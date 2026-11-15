@@ -1971,9 +1971,10 @@ void SaveForInspection(const char* name, const Image& image, rhi::Extent extent)
     }
 }
 
-// The Cornell box in fog, lit by a narrow spot, with a dense box of fog on the floor (ADR-0051).
+// The Cornell box in fog, lit by a narrow spot, with a dense box of fog on the floor (ADR-0051). On the
+// ground, the box's fog is denser at the floor and halves every 0.3 m up.
 SceneView FoggyCornellBox(const std::function<renderer::MaterialHandle(const MaterialDesc&)>& material,
-                          renderer::MeshHandle cube) {
+                          renderer::MeshHandle cube, bool onTheGround = false) {
     const renderer::CornellBox box = renderer::MakeCornellBox();
     SceneView view;
     view.camera = LookAt(box.eye, box.target, box.verticalFov);
@@ -1991,9 +1992,10 @@ SceneView FoggyCornellBox(const std::function<renderer::MaterialHandle(const Mat
     }
     view.fogVolumes.push_back(
         {.world = glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.6f, 0.6f, 0.4f)), glm::vec3(2.4f, 1.2f, 2.4f)),
-         .density = 0.8f,
+         .density = onTheGround ? 1.2f : 0.8f,
          .albedo = glm::vec3(0.8f, 0.85f, 0.9f),
-         .edge = 0.4f});
+         .edge = 0.4f,
+         .falloffHeight = onTheGround ? 0.3f : 0.0f});
     return view;
 }
 
@@ -2042,6 +2044,40 @@ TEST_F(PathTracerTest, VolumetricFogMatchesThePathTracer) {
     EXPECT_LT(foggedFlip, 0.12f);
     EXPECT_LT(foggedFlip, 0.7f * unfoggedFlip);
     EXPECT_NEAR(foggedTotal / tracedTotal, 1.0, 0.05);
+}
+
+TEST_F(PathTracerTest, FogOnTheGroundMatchesThePathTracer) {
+    // The same, with the box's fog lying on the floor: a layer much thinner than the froxels' slices, which
+    // hold one medium each, against the path tracer's exact density.
+    const SceneView view = FoggyCornellBox([this](const MaterialDesc& desc) { return Material(desc); }, m_cube, true);
+    SceneView clear = view;
+    clear.atmosphere.fog.density = 0.0f;
+    clear.fogVolumes.clear();
+    constexpr rhi::Extent kExtent{128, 128};
+    const Image traced = Trace(view, kExtent, {.maxBounces = 1, .seed = 3}, 1024);
+    const Image fogged = Rasterize(
+        view, kExtent, {.frames = 32, .warmup = 32, .fog = renderer::FroxelGrid{.tileSize = 1, .slices = 64}});
+    const Image unfogged = Rasterize(clear, kExtent, {.frames = 32, .warmup = 4});
+    SaveForInspection("ground-fog-traced", traced, kExtent);
+    SaveForInspection("ground-fog-froxels", fogged, kExtent);
+
+    const float foggedFlip = Flip(traced, fogged, kExtent);
+    const float unfoggedFlip = Flip(traced, unfogged, kExtent);
+    double tracedTotal = 0.0;
+    double foggedTotal = 0.0;
+    for (std::size_t index = 0; index < traced.size(); ++index) {
+        tracedTotal += Luminance(traced[index]);
+        foggedTotal += Luminance(fogged[index]);
+    }
+    RecordProperty("flip", std::to_string(foggedFlip));
+    RecordProperty("brightness", std::to_string(foggedTotal / tracedTotal));
+    std::printf("FLIP %.4f ground fog, %.4f without; brightness %.4f\n", foggedFlip, unfoggedFlip,
+                foggedTotal / tracedTotal);
+    // Measured on an RTX 3090: FLIP 0.089, 0.166 without fog; brightness 0.935. The froxels lose 6% of the
+    // light to the thin layer, which their slices spread.
+    EXPECT_LT(foggedFlip, 0.12f);
+    EXPECT_LT(foggedFlip, 0.7f * unfoggedFlip);
+    EXPECT_NEAR(foggedTotal / tracedTotal, 1.0, 0.1);
 }
 
 TEST_F(PathTracerTest, FogAmongAThousandLightsMatchesThePathTracer) {

@@ -58,6 +58,7 @@ void ExtractFogVolumes(ecs::World& world, renderer::SceneView& view) {
                                        .density = volume.density,
                                        .albedo = volume.albedo,
                                        .edge = volume.edge,
+                                       .falloffHeight = volume.falloffHeight,
                                        .noise = volume.noise,
                                        .noiseFrequency = volume.noiseFrequency,
                                        .noiseVelocity = volume.noiseVelocity});

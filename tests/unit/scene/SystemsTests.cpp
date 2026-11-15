@@ -241,9 +241,11 @@ TEST(ExtractScene, FogVolumesAreBoxesAtTheirEntity) {
     ecs::World world;
     const ecs::Entity dust = AddAt(world, {2.0f, 1.0f, -3.0f});
     world.Get<ecs::LocalTransform>(dust).scale = glm::vec3(4.0f, 2.0f, 6.0f);
-    world.Add<scene::FogVolume>(
-        dust, scene::FogVolume{
-                  .density = 0.5f, .albedo = {0.7f, 0.8f, 0.9f}, .noise = 0.5f, .noiseVelocity = {0.0f, 1.0f, 0.0f}});
+    world.Add<scene::FogVolume>(dust, scene::FogVolume{.density = 0.5f,
+                                                       .albedo = {0.7f, 0.8f, 0.9f},
+                                                       .falloffHeight = 0.5f,
+                                                       .noise = 0.5f,
+                                                       .noiseVelocity = {0.0f, 1.0f, 0.0f}});
     world.Add<scene::FogVolume>(AddAt(world, {}), scene::FogVolume{.enabled = false});
     world.Add<scene::FogVolume>(AddAt(world, {}), scene::FogVolume{.density = 0.0f});
     ecs::PropagateTransforms(world);
@@ -257,6 +259,7 @@ TEST(ExtractScene, FogVolumesAreBoxesAtTheirEntity) {
                 0.0f, 1e-5f);
     EXPECT_EQ(volume.density, 0.5f);
     EXPECT_EQ(volume.albedo, glm::vec3(0.7f, 0.8f, 0.9f));
+    EXPECT_EQ(volume.falloffHeight, 0.5f);
     EXPECT_EQ(volume.noise, 0.5f);
     EXPECT_EQ(volume.noiseVelocity, glm::vec3(0.0f, 1.0f, 0.0f));
 

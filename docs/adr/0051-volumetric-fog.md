@@ -24,6 +24,8 @@ The rendering plan (section 8) asks for a camera-aligned grid of about 160 × 90
 
 **One lookup for everything.** The composite, glass and particles read that texture at their depth, and the sky is seen through the fog to the far plane. Each pixel reads it half a froxel off, a different way each pixel and frame (interleaved gradient noise): temporal antialiasing averages these offsets, which blends neighbouring froxels' noise instead of showing the grid. `renderer.debug_view fog` shows the scattered light alone. `renderer.volumetric_fog false` clears the air.
 
+**Fog on the ground** (added before 9.18). A box can lie on the ground: with a falloff height in meters (`FogVolume::falloffHeight`), its density halves every falloff going up its Y axis from its bottom face, which then does not thin, as the fog rests on the floor there. The density never exceeds the box's, so the path tracer's bound holds. Fog is only where the level puts it: with the level's haze at 0, a box fogs one room's floor and nothing else. The factory places its boxes as glTF nodes named `fog;density=...;falloff=...;edge=...;noise=...;noise_frequency=...;noise_velocity=x,y,z;color=r:g:b:a`, their scale the box's size, as it places its lamps; `scripts/import_legacy_level.py` writes them (`EXTRA_FOG`): fog no higher than 80 cm over the floor of the big room, and thicker down the narrow corridor past the second door. Fog does not gather around lights by itself: a lamp lights the fog that is there.
+
 **Light to surfaces crosses the level's fog.** Every light sample loses what the level's fog takes between the light and the point (`LevelFogTransmittance`), analytically. Boxes of fog do not shadow light.
 
 **The path tracer has fog** (ADR-0034). Paths find where light scatters by delta tracking, against the densest the fog gets; there the lights are sampled through the phase function and the path goes on in a direction the phase function draws. Shadow rays lose what ratio tracking estimates, boxes included. It is the reference the froxels are measured against.
@@ -43,9 +45,10 @@ RTX 3090. Against the path tracer, direct light only in both (one scattering, or
 |---|---|---|---|
 | Cornell box, a narrow spot, haze and a dense box | 0.090 | 0.165 | 0.99 |
 | The same, a grid 8 times coarser | 0.32 | | |
+| The same box lying on the floor, halving every 0.3 m | 0.089 | 0.166 | 0.935 |
 | A thousand lamps and a panel, black walls | 0.088, one frame 0.098 | | 0.98 to 1.00 |
 
-A grid as coarse as the light's cone blurs it into a glow around the lamp. Among the thousand lamps, drawing by power alone measured 0.083 to 0.089 averaged and 0.101 to 0.103 for one frame: the two tables cost nothing there, where every lamp is near the camera; their gain is the flashlight's, in play.
+A grid as coarse as the light's cone blurs it into a glow around the lamp. Fog on the ground is a layer far thinner than a slice, whose froxels hold one medium each: they lose 6% of the light against the path tracer's exact density, and a layer seen far away, where slices are meters deep, spreads into a faint tint rather than a layer. Among the thousand lamps, drawing by power alone measured 0.083 to 0.089 averaged and 0.101 to 0.103 for one frame: the two tables cost nothing there, where every lamp is near the camera; their gain is the flashlight's, in play.
 
 In the factory at 1440p, the two passes cost 0.38 ms. Dropped on the way, measured: 24 candidates instead of 8 (0.86 ms, little gain); a 3×3 blur of the froxels before adding them up (FLIP 0.090 to 0.119, +0.3 ms); weighing samples by the inverse of their brightness in the history, which took the glow away with the noise.
 
@@ -61,5 +64,6 @@ In the factory at 1440p, the two passes cost 0.38 ms. Dropped on the way, measur
 ## Tests
 
 - **`PathTracerTest.VolumetricFogMatchesThePathTracer`:** the Cornell box in fog, below FLIP 0.12 and well below the image without fog, within 5% of the path tracer's brightness.
+- **`PathTracerTest.FogOnTheGroundMatchesThePathTracer`:** the same box lying on the floor, below FLIP 0.12 and well below the image without fog, within 10% of the path tracer's brightness.
 - **`PathTracerTest.FogAmongAThousandLightsMatchesThePathTracer`:** below FLIP 0.11 averaged and 0.13 for one frame, within 5% of its brightness.
 - **`FogSourceWeight.KeepsThePowerOfLightsNearTheCameraAndLowersFarOnes`**, **`ExtractScene.FogVolumesAreBoxesAtTheirEntity`**, **`GpuTest.A3DTextureIsSampledAndStoredThroughTheBindlessArrays`**, and `RendererTest.ShowsEachDebugView` with the fog view.
