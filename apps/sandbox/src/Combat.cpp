@@ -25,6 +25,7 @@
 #include <cmath>
 #include <optional>
 #include <random>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -239,6 +240,33 @@ void Kill(scene::Scene& scene, Zombie& zombie, Arsenal* arsenal) {
     }
 }
 
+// What a shot throws out where it lands: an effect and how many of its particles.
+struct Impact {
+    renderer::ParticleEffectHandle effect;
+    int count = 0;
+};
+
+// The effects of a shot's impact on a surface (ADR-0053): blood from flesh, sparks from metal, dust and
+// chips from stone, dust and splinters from wood, shards from glass, and dust from what has no surface.
+std::vector<Impact> ImpactsOf(const ParticleEffects& effects, std::string_view surface) {
+    if (surface == "flesh") {
+        return {{effects.blood, 20}};
+    }
+    if (surface == "metal") {
+        return {{effects.sparks, 12}};
+    }
+    if (surface == "concrete" || surface == "stone") {
+        return {{effects.impactDust, 1}, {effects.impactChips, 6}};
+    }
+    if (surface == "wood") {
+        return {{effects.impactDust, 1}, {effects.impactSplinters, 6}};
+    }
+    if (surface == "glass") {
+        return {{effects.impactGlass, 8}};
+    }
+    return {{effects.impactDust, 1}};
+}
+
 // Where the muzzle is, from the eye: right, low and ahead, where the weapons are held.
 constexpr glm::vec3 kMuzzleOffset{0.08f, -0.075f, -0.65f};
 // Where casings leave the weapon, and the way they go: out of its right side, up and a little back.
@@ -281,8 +309,8 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
         }
     }
 
-    // A flash and a puff of smoke at the muzzle, and where each pellet lands, blood on a zombie and
-    // sparks anywhere else.
+    // A flash and a puff of smoke at the muzzle, and where each pellet lands, what the surface it hits
+    // throws out: blood from a zombie, sparks from metal, chips from stone, splinters from wood, glass.
     if (const ParticleEffects* effects = world.TryGet<ParticleEffects>(playerEntity)) {
         const glm::vec3 muzzle = eye.translation + eye.rotation * kMuzzleOffset;
         scene.SpawnParticles(effects->muzzleFlash, muzzle, aim, 3);
@@ -291,9 +319,13 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
                              eye.rotation * glm::normalize(kEjectDirection), 1);
         std::vector<physics::BodyId> zombieBodies;
         world.Each<Zombie>([&](ecs::Entity, const Zombie& zombie) { zombieBodies.push_back(zombie.body); });
+        const BodySurfaces* surfaces = world.TryGet<BodySurfaces>(playerEntity);
         for (const physics::RayHit& hit : hits) {
             const bool flesh = std::ranges::find(zombieBodies, hit.body) != zombieBodies.end();
-            scene.SpawnParticles(flesh ? effects->blood : effects->sparks, hit.position, hit.normal, flesh ? 20 : 12);
+            const std::string_view surface = surfaces != nullptr ? surfaces->Of(hit.body) : std::string_view{};
+            for (const Impact& impact : ImpactsOf(*effects, flesh ? "flesh" : surface)) {
+                scene.SpawnParticles(impact.effect, hit.position, hit.normal, impact.count);
+            }
         }
     }
 

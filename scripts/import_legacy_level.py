@@ -14,6 +14,9 @@ They are converted to the engine's conventions: right-handed, in meters, -Z forw
 
 The level's materials have since taken new textures (ADR-0046): run scripts/convert_factory_textures.py
 after this script, or the legacy textures come back.
+
+It no longer reproduces the committed level, which later steps edited (the lamps' lights, the shaft's glass,
+the doors' emissive lamps); scripts/dress_factory.py adds the factory's effects and surfaces to the committed file.
 """
 
 import argparse

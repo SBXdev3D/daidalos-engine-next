@@ -287,7 +287,11 @@ ParticleEffects LoadParticleEffects(scene::Scene& scene, const std::string& dire
             .sparks = load("sparks"),
             .gunSmoke = load("gun_smoke"),
             .muzzleFlash = load("muzzle_flash"),
-            .casings = load("shell_casings")};
+            .casings = load("shell_casings"),
+            .impactDust = load("impact_dust"),
+            .impactChips = load("impact_chips"),
+            .impactSplinters = load("impact_splinters"),
+            .impactGlass = load("impact_glass")};
 }
 
 /// Steam around a leak, which blows along -Z as its smoke does (ADR-0051): a box of fog that starts at the
@@ -1003,7 +1007,9 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
     }
     physics::PhysicsWorld& physics = scene.Physics();
 
-    // What the game needs from the geometry: the level to walk on, and the size of the doors.
+    // What the game needs from the geometry: the level to walk on, what each of its parts is made of, and
+    // the size of the doors.
+    BodySurfaces surfaces;
     std::map<std::string_view, const scene::Model::Node*> modelNodes;
     for (const scene::Model::Node& node : model.nodes) {
         modelNodes.emplace(node.name, &node);
@@ -1012,7 +1018,10 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
         }
         for (const std::uint32_t index : node.parts) {
             const scene::Model::Part& part = model.parts[index];
-            DAI_TRY(physics.AddStaticMesh(part.positions, part.indices, node.local));
+            DAI_TRY_ASSIGN(physics::BodyId body, physics.AddStaticMesh(part.positions, part.indices, node.local));
+            if (!part.surface.empty()) {
+                surfaces.surfaces.emplace(body.value, part.surface);
+            }
         }
     }
 
@@ -1131,10 +1140,18 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
                     DAI_TRY_ASSIGN(physics::BodyId box,
                                    physics.AddKinematicBox(halfExtents, (low + high) * 0.5f, transform));
                     world.Add<scene::KinematicBody>(entity, box);
+                    // A door is made of what its first part with a surface is made of.
+                    for (const std::uint32_t index : found->second->parts) {
+                        if (!model.parts[index].surface.empty()) {
+                            surfaces.surfaces.emplace(box.value, model.parts[index].surface);
+                            break;
+                        }
+                    }
                 }
             }
         }
     }
+    world.Add<BodySurfaces>(playerEntity, std::move(surfaces));
     ecs::LocalTransform start;
     start.translation = eye;
     world.Add<ecs::LocalTransform>(playerEntity, start);
