@@ -284,7 +284,8 @@ TEST(ExtractScene, FogVolumesAreBoxesAtTheirEntity) {
                                                        .albedo = {0.7f, 0.8f, 0.9f},
                                                        .falloffHeight = 0.5f,
                                                        .noise = 0.5f,
-                                                       .noiseVelocity = {0.0f, 1.0f, 0.0f}});
+                                                       .noiseVelocity = {0.0f, 1.0f, 0.0f},
+                                                       .glow = {0.0f, 0.2f, 0.05f}});
     world.Add<scene::FogVolume>(AddAt(world, {}), scene::FogVolume{.enabled = false});
     world.Add<scene::FogVolume>(AddAt(world, {}), scene::FogVolume{.density = 0.0f});
     ecs::PropagateTransforms(world);
@@ -301,6 +302,7 @@ TEST(ExtractScene, FogVolumesAreBoxesAtTheirEntity) {
     EXPECT_EQ(volume.falloffHeight, 0.5f);
     EXPECT_EQ(volume.noise, 0.5f);
     EXPECT_EQ(volume.noiseVelocity, glm::vec3(0.0f, 1.0f, 0.0f));
+    EXPECT_EQ(volume.glow, glm::vec3(0.0f, 0.2f, 0.05f));
 
     scene::ExtractScene(world, view);
     EXPECT_EQ(view.fogVolumes.size(), 1U) << "A view reused for the next frame starts over";

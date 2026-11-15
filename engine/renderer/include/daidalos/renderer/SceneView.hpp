@@ -91,6 +91,9 @@ struct FogVolume {
     float noise = 0.0f;
     float noiseFrequency = 1.0f;
     glm::vec3 noiseVelocity{0.0f};
+    /// Light the fog gives off, per color: the radiance of the box's fog where it is too thick to see
+    /// through, as a toxic gas glows in the dark. Each meter adds this times its density. 0 for none.
+    glm::vec3 glow{0.0f};
 };
 
 /// The level's fog and sky. The sky shows where nothing is drawn, and lights the scene through the rays of

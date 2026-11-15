@@ -161,8 +161,11 @@ struct FogVolumeData {
     /// Halvings of the density per unit of the box's height, from its bottom; 0 for none.
     float heightFalloff;
     float padding;
+    /// Radiance given off per unit of extinction (FogVolume::glow).
+    glm::vec3 glow;
+    float padding2;
 };
-static_assert(sizeof(FogVolumeData) == 112);
+static_assert(sizeof(FogVolumeData) == 128);
 
 struct LightData {
     glm::vec3 position;
@@ -962,7 +965,9 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                               .noise = std::clamp(volume.noise, 0.0f, 1.0f),
                               .edge = std::clamp(volume.edge, 0.0f, 1.0f),
                               .heightFalloff = volume.falloffHeight > 0.0f ? height / volume.falloffHeight : 0.0f,
-                              .padding = 0.0f};
+                              .padding = 0.0f,
+                              .glow = glm::max(volume.glow, glm::vec3(0.0f)),
+                              .padding2 = 0.0f};
         }
     }
 

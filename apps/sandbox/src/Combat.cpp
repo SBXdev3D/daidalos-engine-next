@@ -54,19 +54,28 @@ struct WeaponSpec {
     /// Where the weapon is held, in the camera's space, and its size.
     glm::vec3 offset;
     float scale;
+    /// The end of its barrel, in the model's space, where smoke comes out after a shot.
+    glm::vec3 muzzle;
+    /// Seconds of smoke that a shot adds to the barrel: a shotgun's blast heats it more.
+    float smoke;
 };
 
 constexpr std::array<WeaponSpec, kWeaponKinds> kWeapons{{
     {"handgun.gltf", "handgun_fire.wav", "handgun_reload.wav", 12, 108, 10, 1, 0.025f, 0.35f, 1.5f,
-     glm::vec3(0.05f, -0.1f, -0.2f), 0.36f},
+     glm::vec3(0.05f, -0.1f, -0.2f), 0.36f, glm::vec3(0.0f, 0.112f, -0.199f), 1.5f},
     {"shotgun.gltf", "shotgun_fire.wav", "shotgun_reload.wav", 7, 43, 12, 5, 0.0875f, 1.2f, 2.8f,
-     glm::vec3(0.035f, -0.135f, -0.24f), 0.72f},
+     glm::vec3(0.035f, -0.135f, -0.24f), 0.72f, glm::vec3(0.0f, 0.038f, -0.78f), 2.5f},
 }};
 
 constexpr float kWeaponRange = 100.0f * kLegacyUnit;
 constexpr float kSwitchTime = 0.4f;    // Seconds for the new weapon to come up.
 constexpr float kWeaponDrop = 0.6f;    // Meters below its place, where a weapon is out of view.
 constexpr float kGunshotAlert = 20.0f; // Meters: zombies this close hear a shot and come.
+// Smoke from a hot barrel (ADR-0053): wisps per second while it has this many seconds of smoke or more, fewer
+// as it cools, and no more than this many seconds of it however fast the shots come.
+constexpr float kBarrelSmokeRate = 30.0f;
+constexpr float kBarrelSmokeFull = 1.0f;
+constexpr float kBarrelSmokeMost = 4.0f;
 
 constexpr float kZombieRadius = 0.3f;
 constexpr float kZombieHeight = 1.6f;
@@ -133,6 +142,8 @@ struct Arsenal {
     audio::ClipHandle moan;
     std::array<audio::ClipHandle, 3> groans;
     std::array<ecs::Entity, kWeaponKinds> models;
+    /// Emits the smoke of a hot barrel at the muzzle of the weapon in hand, as the camera's child.
+    ecs::Entity barrelSmoke;
     std::minstd_rand random{std::random_device{}()};
 };
 
@@ -284,6 +295,7 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
     --weapon.magazine;
     player.weaponBusy = spec.fireDelay;
     player.muzzleFlashTime = kMuzzleFlashTime;
+    player.barrelHeat = std::min(player.barrelHeat + spec.smoke, kBarrelSmokeMost);
 
     std::minstd_rand fallback;
     std::minstd_rand& random = arsenal != nullptr ? arsenal->random : fallback;
@@ -377,6 +389,16 @@ void PlaceWeapons(ecs::World& world, const Player& player, const Arsenal& arsena
         }
         transform->translation = kWeapons[kind].offset - math::kUp * drop;
         transform->scale = glm::vec3(kWeapons[kind].scale);
+        if (kind == static_cast<std::size_t>(player.weapon)) {
+            // The barrel's smoke comes out of the muzzle of the weapon in hand, wherever it is held.
+            if (auto* smoke = world.TryGet<ecs::LocalTransform>(arsenal.barrelSmoke)) {
+                smoke->translation = transform->translation + kWeapons[kind].scale * kWeapons[kind].muzzle;
+            }
+        }
+    }
+    if (auto* emitter = world.TryGet<scene::ParticleEmitter>(arsenal.barrelSmoke)) {
+        emitter->emission.rate =
+            player.dead ? 0.0f : kBarrelSmokeRate * std::clamp(player.barrelHeat / kBarrelSmokeFull, 0.0f, 1.0f);
     }
 }
 
@@ -580,6 +602,15 @@ void SetUpCombat(scene::Scene& scene, ecs::Entity playerEntity, const std::strin
                 renderer.castsShadows = renderer.castsShadows && !world.IsDescendantOf(entity, root);
             });
     }
+    if (const ParticleEffects* effects = world.TryGet<ParticleEffects>(playerEntity)) {
+        arsenal.barrelSmoke = world.Create();
+        world.Add<ecs::LocalTransform>(arsenal.barrelSmoke);
+        if (world.SetParent(arsenal.barrelSmoke, playerEntity)) {
+            world.Add<scene::ParticleEmitter>(
+                arsenal.barrelSmoke,
+                scene::ParticleEmitter{.effect = effects->barrelSmoke, .emission = {.rate = 0.0f, .radius = 1.0f}});
+        }
+    }
     const Arsenal& added = world.Add<Arsenal>(playerEntity, std::move(arsenal));
     PlaceWeapons(world, world.Get<Player>(playerEntity), added);
 }
@@ -641,6 +672,7 @@ void UpdateWeapons(scene::Scene& scene, ecs::Entity playerEntity, const input::I
     player.weaponBusy = std::max(player.weaponBusy - delta, 0.0f);
     player.switching = std::min(player.switching + delta, kSwitchTime);
     player.hurtTime = std::max(player.hurtTime - delta, 0.0f);
+    player.barrelHeat = std::max(player.barrelHeat - delta, 0.0f);
 
     if (!player.dead) {
         std::optional<WeaponKind> wanted;
@@ -654,6 +686,7 @@ void UpdateWeapons(scene::Scene& scene, ecs::Entity playerEntity, const input::I
         if (wanted.has_value() && *wanted != player.weapon && player.weapons[static_cast<std::size_t>(*wanted)].owned) {
             player.weapon = *wanted;
             player.reloading = false;
+            player.barrelHeat = 0.0f; // The weapon put away takes its smoke with it.
             player.weaponBusy = kSwitchTime;
             player.switching = 0.0f;
             if (arsenal != nullptr) {

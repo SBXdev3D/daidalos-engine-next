@@ -28,6 +28,8 @@ struct FogVolumeData {
     float edge;           // Fraction of the half-size over which the density thins at the faces.
     float heightFalloff;  // Halvings of the density per unit of the box's height, from its bottom; 0 for none.
     float padding;
+    float3 glow;          // Radiance given off per unit of extinction: a glowing gas.
+    float padding2;
 };
 
 [[vk::binding(2, 0)]] StructuredBuffer<FogVolumeData> g_fogVolumes[];
@@ -119,10 +121,12 @@ float FogVolumeMajorant(FogVolumeData volume) {
     return volume.density * (1.0 + volume.noise);
 }
 
-// What the fog is at a point: the light it loses per meter, and the light it scatters per meter, per color.
+// What the fog is at a point: the light it loses per meter, the light it scatters per meter, per color, and
+// the light it gives off per meter, per color.
 struct FogMedium {
     float extinction;
     float3 scattering;
+    float3 emission;
 };
 
 // The level's fog and its boxes, at a point. All fog is within the view distance of the camera: beyond it,
@@ -131,6 +135,7 @@ FogMedium FogMediumAt(FrameData frame, float3 position) {
     FogMedium medium;
     medium.extinction = 0.0;
     medium.scattering = float3(0.0, 0.0, 0.0);
+    medium.emission = float3(0.0, 0.0, 0.0);
     if (distance(position, frame.cameraPosition) >= frame.farPlane) {
         return medium;
     }
@@ -141,6 +146,7 @@ FogMedium FogMediumAt(FrameData frame, float3 position) {
         const float density = FogVolumeDensity(volume, position, frame.time);
         medium.extinction += density;
         medium.scattering += density * volume.albedo;
+        medium.emission += density * volume.glow;
     }
     return medium;
 }

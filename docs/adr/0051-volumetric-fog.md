@@ -58,6 +58,7 @@ In the factory at 1440p, the two passes cost 0.38 ms. Dropped on the way, measur
 - Where a light moved, surfaces and fog are noisier while it moves: the history that hid the noise is what lagged. Standing still, the flashlight does not move, and the histories are whole again.
 - The radiance cache still lags behind a moving light by a few frames (ADR-0040): the flag does not reach it.
 - Boxes of fog do not shadow the light that crosses them, nor do particles; ADR-0041's Phase 11 puts particles in the acceleration structure and lights smoke as density.
+- **Glowing fog** (step 9.25, 2026-11-15): a box of fog can give off light of its own, `glow`, the radiance of its fog where too thick to see through: each meter adds the glow times the density, in the froxels as in the path tracer, where delta tracking stops in proportion to the extinction and counts the glow over it. The factory's toxic gas shows in the dark without a lamp. Glowing fog inside a solid glows into the froxels' slice at its faces, where lit fog would be in shadow: boxes that glow stay out of walls and blocks.
 - The factory's haze is now dark where no lamp reaches it, and its fog no longer depends on a color: the steam of the leak shows in the flashlight, and the dust of the start room in the lamp's cone.
 - The RHI's storage image slots go from 64 to 128: a resize holds twice the targets until the GPU is done with the old ones, and the fog's three new textures exceeded 64.
 
@@ -65,5 +66,6 @@ In the factory at 1440p, the two passes cost 0.38 ms. Dropped on the way, measur
 
 - **`PathTracerTest.VolumetricFogMatchesThePathTracer`:** the Cornell box in fog, below FLIP 0.12 and well below the image without fog, within 5% of the path tracer's brightness.
 - **`PathTracerTest.FogOnTheGroundMatchesThePathTracer`:** the same box lying on the floor, below FLIP 0.12 and well below the image without fog, within 10% of the path tracer's brightness.
+- **`PathTracerTest.GlowingFogMatchesThePathTracer`:** a glowing box on the floor in front of the blocks, below FLIP 0.15 and 0.8 of the image without its glow, within 10% of the path tracer's brightness (FLIP 0.134, brightness 0.92 measured: the box spans one or two slices).
 - **`PathTracerTest.FogAmongAThousandLightsMatchesThePathTracer`:** below FLIP 0.11 averaged and 0.13 for one frame, within 5% of its brightness.
 - **`FogSourceWeight.KeepsThePowerOfLightsNearTheCameraAndLowersFarOnes`**, **`ExtractScene.FogVolumesAreBoxesAtTheirEntity`**, **`GpuTest.A3DTextureIsSampledAndStoredThroughTheBindlessArrays`**, and `RendererTest.ShowsEachDebugView` with the fog view.

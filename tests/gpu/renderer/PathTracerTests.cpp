@@ -1972,9 +1972,9 @@ void SaveForInspection(const char* name, const Image& image, rhi::Extent extent)
 }
 
 // The Cornell box in fog, lit by a narrow spot, with a dense box of fog on the floor (ADR-0051). On the
-// ground, the box's fog is denser at the floor and halves every 0.3 m up.
+// ground, the box's fog is denser at the floor and halves every 0.3 m up. The box's fog may glow.
 SceneView FoggyCornellBox(const std::function<renderer::MaterialHandle(const MaterialDesc&)>& material,
-                          renderer::MeshHandle cube, bool onTheGround = false) {
+                          renderer::MeshHandle cube, bool onTheGround = false, glm::vec3 glow = glm::vec3(0.0f)) {
     const renderer::CornellBox box = renderer::MakeCornellBox();
     SceneView view;
     view.camera = LookAt(box.eye, box.target, box.verticalFov);
@@ -1995,7 +1995,8 @@ SceneView FoggyCornellBox(const std::function<renderer::MaterialHandle(const Mat
          .density = onTheGround ? 1.2f : 0.8f,
          .albedo = glm::vec3(0.8f, 0.85f, 0.9f),
          .edge = 0.4f,
-         .falloffHeight = onTheGround ? 0.3f : 0.0f});
+         .falloffHeight = onTheGround ? 0.3f : 0.0f,
+         .glow = glow});
     return view;
 }
 
@@ -2077,6 +2078,48 @@ TEST_F(PathTracerTest, FogOnTheGroundMatchesThePathTracer) {
     // light to the thin layer, which their slices spread.
     EXPECT_LT(foggedFlip, 0.12f);
     EXPECT_LT(foggedFlip, 0.7f * unfoggedFlip);
+    EXPECT_NEAR(foggedTotal / tracedTotal, 1.0, 0.1);
+}
+
+TEST_F(PathTracerTest, GlowingFogMatchesThePathTracer) {
+    // A box of fog that gives off a green light of its own, as the factory's toxic gas does, lying on the
+    // floor in front of the blocks: the froxels add its glow where they hold the fog, the path tracer where its
+    // paths meet it, and both lose it through the fog in front. The box stays out of the blocks: fog inside a
+    // solid glows too, in the froxels' slice at its faces, while lit fog there is in shadow (ADR-0051).
+    const glm::vec3 glow{0.05f, 0.4f, 0.1f};
+    const glm::mat4 open =
+        glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-1.2f, 0.6f, 1.6f)), glm::vec3(1.8f, 1.2f, 1.4f));
+    SceneView view = FoggyCornellBox([this](const MaterialDesc& desc) { return Material(desc); }, m_cube, true, glow);
+    SceneView plain = FoggyCornellBox([this](const MaterialDesc& desc) { return Material(desc); }, m_cube, true);
+    view.fogVolumes[0].world = open;
+    plain.fogVolumes[0].world = open;
+    constexpr rhi::Extent kExtent{128, 128};
+    const renderer::FroxelGrid grid{.tileSize = 1, .slices = 64};
+    const Image traced = Trace(view, kExtent, {.maxBounces = 1, .seed = 3}, 1024);
+    const Image fogged = Rasterize(view, kExtent, {.frames = 32, .warmup = 32, .fog = grid});
+    const Image unlit = Rasterize(plain, kExtent, {.frames = 32, .warmup = 32, .fog = grid});
+    SaveForInspection("glowing-fog-traced", traced, kExtent);
+    SaveForInspection("glowing-fog-froxels", fogged, kExtent);
+
+    const float glowingFlip = Flip(traced, fogged, kExtent);
+    const float plainFlip = Flip(traced, unlit, kExtent);
+    double tracedTotal = 0.0;
+    double foggedTotal = 0.0;
+    double plainTotal = 0.0;
+    for (std::size_t index = 0; index < traced.size(); ++index) {
+        tracedTotal += Luminance(traced[index]);
+        foggedTotal += Luminance(fogged[index]);
+        plainTotal += Luminance(unlit[index]);
+    }
+    RecordProperty("flip", std::to_string(glowingFlip));
+    RecordProperty("brightness", std::to_string(foggedTotal / tracedTotal));
+    std::printf("FLIP %.4f glowing fog, %.4f without its glow; brightness %.4f, %.4f without its glow\n", glowingFlip,
+                plainFlip, foggedTotal / tracedTotal, plainTotal / tracedTotal);
+    // Measured on an RTX 3090: FLIP 0.134, 0.188 without its glow; brightness 0.92. The box, 1.4 m deep at 8 m
+    // from the camera, spans one or two slices, and its layer on the ground loses some of its glow to them as
+    // lit fog does (0.98 for the same box without falloff).
+    EXPECT_LT(glowingFlip, 0.15f);
+    EXPECT_LT(glowingFlip, 0.8f * plainFlip);
     EXPECT_NEAR(foggedTotal / tracedTotal, 1.0, 0.1);
 }
 

@@ -208,6 +208,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         if (collision >= 0.0) {
             const float3 position = ray.Origin + ray.Direction * collision;
             const FogMedium medium = FogMediumAt(frame, position);
+            // A glowing fog gives off light where the path meets it: delta tracking stops in proportion to
+            // the extinction, so what it gives off per meter counts divided by it.
+            radiance += throughput * medium.emission / max(medium.extinction, 1e-6);
             // Absorbed or scattered, as the albedo says, per color.
             throughput *= medium.scattering / max(medium.extinction, 1e-6);
             if (g_path.directOnly == 0 || bounce == 0) {

@@ -291,7 +291,8 @@ ParticleEffects LoadParticleEffects(scene::Scene& scene, const std::string& dire
             .impactDust = load("impact_dust"),
             .impactChips = load("impact_chips"),
             .impactSplinters = load("impact_splinters"),
-            .impactGlass = load("impact_glass")};
+            .impactGlass = load("impact_glass"),
+            .barrelSmoke = load("barrel_smoke")};
 }
 
 /// Steam around a leak, which blows along -Z as its smoke does (ADR-0051): a box of fog that starts at the
@@ -530,9 +531,10 @@ glm::vec3 Vector(const NodeDescription& description, std::string_view key) {
 }
 
 /// A box of fog that the level places (ADR-0051): "fog;density=0.1;falloff=0.4;color=r:g:b:a;edge=0.3;
-/// noise=0.5;noise_frequency=1;noise_velocity=x,y,z". The node's transform is the box, the cube from -0.5 to
-/// 0.5 scaled to its size. With a falloff in meters, the fog lies on the ground: it halves every falloff
-/// going up from the box's bottom, which belongs on the floor.
+/// noise=0.5;noise_frequency=1;noise_velocity=x,y,z;glow=r:g:b". The node's transform is the box, the cube
+/// from -0.5 to 0.5 scaled to its size. With a falloff in meters, the fog lies on the ground: it halves every
+/// falloff going up from the box's bottom, which belongs on the floor. A glow, in nits, makes it give off light
+/// of its own: a toxic gas that shows in the dark.
 void AddFog(ecs::World& world, ecs::Entity entity, const NodeDescription& node) {
     world.Add<scene::FogVolume>(entity, scene::FogVolume{.density = Number(node, "density", 0.1f),
                                                          .albedo = Color(node, "color", kFogAlbedo),
@@ -540,7 +542,8 @@ void AddFog(ecs::World& world, ecs::Entity entity, const NodeDescription& node) 
                                                          .falloffHeight = Number(node, "falloff", 0.0f),
                                                          .noise = Number(node, "noise", 0.0f),
                                                          .noiseFrequency = Number(node, "noise_frequency", 1.0f),
-                                                         .noiseVelocity = Vector(node, "noise_velocity")});
+                                                         .noiseVelocity = Vector(node, "noise_velocity"),
+                                                         .glow = Color(node, "glow", glm::vec3(0.0f))});
 }
 
 std::optional<PickupKind> PickupOf(std::string_view kind) {

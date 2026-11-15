@@ -124,7 +124,8 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     if (medium.extinction > 0.0) {
         const float3 view = normalize(position - frame.cameraPosition);
         const FogLight light = InScattered(frame, position, view, random);
-        current.rgb = medium.scattering * light.light;
+        // What it scatters of the light, and what it gives off itself.
+        current.rgb = medium.scattering * light.light + medium.emission;
         moving = light.moving;
     }
 

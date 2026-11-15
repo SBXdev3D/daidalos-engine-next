@@ -71,6 +71,8 @@ struct ParticleEffects {
     daidalos::renderer::ParticleEffectHandle impactChips;
     daidalos::renderer::ParticleEffectHandle impactSplinters;
     daidalos::renderer::ParticleEffectHandle impactGlass;
+    /// Curling out of a hot barrel after a shot, at a rate the game sets (ADR-0053).
+    daidalos::renderer::ParticleEffectHandle barrelSmoke;
 };
 
 /// What the level's bodies are made of, by body, from their materials' surface (ADR-0053): "concrete",
@@ -120,6 +122,8 @@ struct Player {
     daidalos::ecs::Entity muzzleFlash;
     /// Seconds left of the light of the last shot.
     float muzzleFlashTime = 0.0f;
+    /// Seconds of smoke left in the barrel of the weapon in hand: each shot adds some, and it cools.
+    float barrelHeat = 0.0f;
     bool hasRedCard = false;
     /// Last thing that happened, and how long it stays on screen, in seconds.
     std::string message;
