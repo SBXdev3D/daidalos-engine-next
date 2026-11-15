@@ -1,0 +1,21 @@
+{
+    "comment": "Glass breaking where a shot hits it.",
+    "mesh": "Meshes/shard.glb",
+    "collision": "bounce",
+    "bounce": 0.2,
+    "lifetime": [
+        5,
+        6
+    ],
+    "size": [
+        0.3,
+        0.8
+    ],
+    "spread": 50,
+    "speed": [
+        0.5,
+        2.5
+    ],
+    "gravity": 1,
+    "rotationSpeed": 720
+}

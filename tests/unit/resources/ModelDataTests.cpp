@@ -95,6 +95,14 @@ TEST(LoadModelFile, EmissionLightsUnlessItsExtrasSayOtherwise) {
     EXPECT_FALSE(model->materials[1].emissiveLight);
 }
 
+TEST(LoadModelFile, ExtrasSayWhatAMaterialIsMadeOf) {
+    const core::Result<ModelData> model = resources::LoadModelFile(kAssets / "lamp.gltf");
+    ASSERT_TRUE(model.has_value()) << core::Format(model.error());
+    ASSERT_EQ(model->materials.size(), 2U);
+    EXPECT_TRUE(model->materials[0].surface.empty()) << "unless they say";
+    EXPECT_EQ(model->materials[1].surface, "metal");
+}
+
 TEST(LoadModelFile, ReadsTheLightsOfKhrLightsPunctual) {
     const core::Result<ModelData> model = resources::LoadModelFile(kAssets / "lamp.gltf");
     ASSERT_TRUE(model.has_value()) << core::Format(model.error());

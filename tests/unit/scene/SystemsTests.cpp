@@ -639,6 +639,178 @@ TEST(ExtractRibbons, ADisabledRibbonShowsNothingAndItsLightFades) {
     EXPECT_NEAR(off.lights[0].color.r, 10.0f / std::exp(1.0f), 1e-3f);
 }
 
+namespace {
+
+// A camera at a place, looking along -Z.
+scene::EmissionView ViewFrom(const glm::vec3& eye, float density = 1.0f) {
+    return {.density = density, .camera = glm::translate(glm::mat4(1.0f), eye), .fieldOfView = glm::radians(90.0f)};
+}
+
+std::uint32_t Count(const std::vector<renderer::ParticleSpawn>& spawns) {
+    std::uint32_t total = 0;
+    for (const renderer::ParticleSpawn& spawn : spawns) {
+        total += spawn.count;
+    }
+    return total;
+}
+
+} // namespace
+
+TEST(MaySee, WithinReachAndViewOnly) {
+    const scene::EmissionView view = ViewFrom(glm::vec3(0.0f));
+    EXPECT_TRUE(scene::MaySee(view, {0.0f, 0.0f, -10.0f}, 1.0f, 50.0f)) << "ahead";
+    EXPECT_FALSE(scene::MaySee(view, {0.0f, 0.0f, -60.0f}, 1.0f, 50.0f)) << "too far";
+    EXPECT_FALSE(scene::MaySee(view, {0.0f, 0.0f, 10.0f}, 1.0f, 50.0f)) << "behind";
+    EXPECT_TRUE(scene::MaySee(view, {0.0f, 0.0f, 1.5f}, 2.0f, 50.0f)) << "behind, but its particles reach the camera";
+    EXPECT_TRUE(scene::MaySee(view, {12.0f, 0.0f, -10.0f}, 1.0f, 50.0f)) << "at the edge of a wide view";
+    EXPECT_TRUE(scene::MaySee({}, {0.0f, 0.0f, 100.0f}, 1.0f, 50.0f)) << "without a camera";
+}
+
+TEST(EmitParticles, AnEmitterOutOfViewEmitsNothingButKeepsItsLight) {
+    ecs::World world;
+    const ecs::Entity behind = AddAt(world, {0.0f, 0.0f, 20.0f});
+    scene::ParticleEmission emission{.rate = 100.0f};
+    emission.light = scene::EmitterLight{.intensity = 5.0f};
+    world.Add<scene::ParticleEmitter>(behind, renderer::ParticleEffectHandle(1, 1), emission);
+    ecs::PropagateTransforms(world);
+    std::vector<renderer::ParticleSpawn> spawns;
+    scene::EmitParticles(world, 0.1f, spawns, ViewFrom(glm::vec3(0.0f)));
+    EXPECT_TRUE(spawns.empty());
+    EXPECT_FLOAT_EQ(world.Get<scene::ParticleEmitter>(behind).activity, 1.0f);
+    scene::EmitParticles(world, 0.1f, spawns, ViewFrom({0.0f, 0.0f, 25.0f}));
+    EXPECT_EQ(Count(spawns), 10U) << "in view again";
+}
+
+TEST(EmitParticles, DensityScalesRatesAndBurstsKeepOne) {
+    ecs::World world;
+    const ecs::Entity entity = AddAt(world, glm::vec3(0.0f));
+    scene::ParticleEmission emission{.rate = 100.0f};
+    emission.bursts = {{.time = 0.0f, .count = 1}, {.time = 0.0f, .count = 40}};
+    world.Add<scene::ParticleEmitter>(entity, renderer::ParticleEffectHandle(1, 1), emission);
+    ecs::PropagateTransforms(world);
+    std::vector<renderer::ParticleSpawn> spawns;
+    scene::EmitParticles(world, 0.1f, spawns, {.density = 0.5f});
+    EXPECT_EQ(Count(spawns), 5U + 1U + 20U);
+}
+
+TEST(EmitParticles, ASurfaceEmitsOnItsTrianglesAlongTheirNormal) {
+    ecs::World world;
+    const ecs::Entity entity = AddAt(world, {0.0f, 1.0f, 0.0f});
+    // A square of 2 m lying flat, facing up, and a sliver of no area.
+    const std::vector<glm::vec3> positions{
+        {-1.0f, 0.0f, -1.0f}, {1.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 1.0f}, {-1.0f, 0.0f, 1.0f}, {5.0f, 0.0f, 0.0f}};
+    const std::vector<std::uint32_t> indices{0, 2, 1, 0, 3, 2, 4, 4, 4};
+    std::shared_ptr<const scene::MeshSurface> surface = scene::MakeMeshSurface(positions, indices);
+    ASSERT_NE(surface, nullptr);
+    EXPECT_EQ(surface->cumulativeArea.size(), 2U) << "no triangle without area";
+    EXPECT_FLOAT_EQ(surface->cumulativeArea.back(), 4.0f);
+    world.Add<scene::ParticleEmitter>(entity, scene::ParticleEmitter{.effect = renderer::ParticleEffectHandle(1, 1),
+                                                                     .emission = {.rate = 200.0f},
+                                                                     .surface = surface});
+    ecs::PropagateTransforms(world);
+    std::vector<renderer::ParticleSpawn> spawns;
+    scene::EmitParticles(world, 0.1f, spawns);
+    ASSERT_EQ(spawns.size(), 20U) << "one spawn per particle";
+    glm::vec3 mean(0.0f);
+    for (const renderer::ParticleSpawn& spawn : spawns) {
+        EXPECT_EQ(spawn.count, 1U);
+        EXPECT_NEAR(spawn.position.y, 1.0f, 1e-5f);
+        EXPECT_LE(std::abs(spawn.position.x), 1.0f + 1e-5f);
+        EXPECT_LE(std::abs(spawn.position.z), 1.0f + 1e-5f);
+        EXPECT_NEAR(glm::distance(spawn.rotation * glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)), 0.0f,
+                    1e-4f)
+            << "leaving along the normal";
+        mean += spawn.position;
+    }
+    mean /= static_cast<float>(spawns.size());
+    EXPECT_LT(std::abs(mean.x), 0.5f) << "spread over the square";
+    EXPECT_EQ(scene::MakeMeshSurface(positions, std::vector<std::uint32_t>{4, 4, 4}), nullptr);
+}
+
+TEST(EmitWeather, OnlyOverThePartOfTheZoneWithinReach) {
+    ecs::World world;
+    const ecs::Entity zone = world.Create();
+    ecs::LocalTransform transform;
+    transform.translation = {0.0f, 10.0f, 0.0f};
+    transform.scale = {100.0f, 4.0f, 100.0f};
+    world.Add<ecs::LocalTransform>(zone, transform);
+    world.Add<scene::WeatherZone>(
+        zone, scene::WeatherZone{.effect = renderer::ParticleEffectHandle(1, 1), .rate = 10.0f, .reach = 5.0f});
+    ecs::PropagateTransforms(world);
+    std::vector<renderer::ParticleSpawn> spawns;
+    scene::EmitWeather(world, 0.1f, spawns, ViewFrom({0.0f, 1.5f, 0.0f}));
+    ASSERT_EQ(spawns.size(), 1U);
+    // 10 m by 10 m within reach, 10 a square meter a second, for a tenth of a second.
+    EXPECT_EQ(spawns[0].count, 100U);
+    EXPECT_EQ(spawns[0].position, glm::vec3(0.0f, 12.0f, 0.0f)) << "at the zone's top, over the camera";
+    EXPECT_EQ(spawns[0].scale, glm::vec3(5.0f, 1.0f, 5.0f));
+
+    spawns.clear();
+    scene::EmitWeather(world, 0.1f, spawns, ViewFrom({48.0f, 1.5f, 0.0f}));
+    ASSERT_EQ(spawns.size(), 1U);
+    EXPECT_EQ(spawns[0].count, 70U) << "7 m of the camera's 10 are in the zone";
+    EXPECT_FLOAT_EQ(spawns[0].position.x, 46.5f);
+
+    spawns.clear();
+    scene::EmitWeather(world, 0.1f, spawns, ViewFrom({80.0f, 1.5f, 0.0f}));
+    EXPECT_TRUE(spawns.empty()) << "out of reach";
+    scene::EmitWeather(world, 0.1f, spawns, {});
+    EXPECT_TRUE(spawns.empty()) << "no camera";
+}
+
+TEST(StrikeBrightness, FlashesThenFlickersThenStops) {
+    const glm::vec2 flickers{0.1f, 0.25f};
+    EXPECT_FLOAT_EQ(scene::StrikeBrightness(0.0f, flickers, 0.5f), 1.0f);
+    EXPECT_LT(scene::StrikeBrightness(0.09f, flickers, 0.5f), 0.2f);
+    EXPECT_FLOAT_EQ(scene::StrikeBrightness(0.1f, flickers, 0.5f), 1.0f);
+    EXPECT_FLOAT_EQ(scene::StrikeBrightness(0.6f, flickers, 0.5f), 0.0f);
+    EXPECT_FLOAT_EQ(scene::StrikeBrightness(-0.1f, flickers, 0.5f), 0.0f);
+}
+
+TEST(UpdateLightning, StrikesFlashesTheLightAndThundersLater) {
+    ecs::World world;
+    const ecs::Entity moon = AddAt(world, glm::vec3(0.0f));
+    world.Add<scene::Light>(moon, scene::Light{.type = renderer::LightType::Directional, .intensity = 1.0f});
+    const ecs::Entity storm = world.Create();
+    ecs::LocalTransform box;
+    box.translation = {0.0f, 20.0f, -343.0f};
+    box.scale = {10.0f, 20.0f, 1.0f};
+    world.Add<ecs::LocalTransform>(storm, box);
+    scene::RibbonEffect bolt;
+    bolt.shape = scene::RibbonShape::Bolt;
+    world.Add<scene::Lightning>(storm, scene::Lightning{.bolt = std::make_shared<const scene::RibbonEffect>(bolt),
+                                                        .light = moon,
+                                                        .flash = 10.0f,
+                                                        .interval = {1.0f, 1.0f}});
+    const scene::EmissionView camera = ViewFrom(glm::vec3(0.0f));
+    std::vector<scene::Thunder> thunder;
+    const auto frame = [&](float delta) {
+        SceneView view;
+        ecs::PropagateTransforms(world);
+        scene::ExtractScene(world, view);
+        scene::UpdateLightning(world, delta, view, camera, thunder);
+        return view;
+    };
+    SceneView view = frame(0.5f);
+    ASSERT_EQ(view.lights.size(), 1U);
+    const glm::vec3 calm = view.lights[0].color;
+    EXPECT_TRUE(view.ribbons.empty()) << "not yet";
+    view = frame(0.6f);
+    ASSERT_EQ(view.lights.size(), 1U);
+    EXPECT_NEAR(view.lights[0].color.r, calm.r * 10.0f, 1e-3f) << "the flash";
+    ASSERT_FALSE(view.ribbons.empty());
+    EXPECT_GT(view.ribbons[0].points.front().position.y, view.ribbons[0].points.back().position.y)
+        << "from the top down";
+    view = frame(0.6f);
+    EXPECT_EQ(view.lights[0].color, calm) << "over";
+    EXPECT_TRUE(thunder.empty()) << "sound takes a second to come 343 m";
+    for (int step = 0; step < 6; ++step) {
+        frame(0.1f);
+    }
+    ASSERT_FALSE(thunder.empty());
+    EXPECT_NEAR(thunder[0].distance, 343.0f, 30.0f);
+}
+
 TEST(Flicker, StaysBetweenOneAndOneLessItsDepth) {
     float lowest = 1.0f;
     float highest = 0.0f;

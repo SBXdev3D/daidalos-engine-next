@@ -34,11 +34,11 @@ constexpr std::uint32_t kMaxWorkerThreads = 4;
 constexpr std::uint32_t kProbeWarmupFrames = 90;
 constexpr std::uint32_t kProbeFrames = 120;
 // The settings the presets decide, which ChooseQuality puts back to the preset.
-constexpr std::array<std::string_view, 11> kPresetSettings{
+constexpr std::array<std::string_view, 12> kPresetSettings{
     "renderer.render_scale",         "renderer.min_render_scale", "renderer.indirect_light",
     "renderer.gi_bounces",           "renderer.gi_rays",          "renderer.reflections",
     "renderer.reflection_roughness", "renderer.restir_spatial",   "renderer.volumetric_fog",
-    "renderer.fog_slices",           "renderer.fog_tile"};
+    "renderer.fog_slices",           "renderer.fog_tile",         "renderer.particle_density"};
 
 /// The variable's value if something set it, the preset's otherwise.
 template <class T>
@@ -350,6 +350,9 @@ core::Result<void> Application::LoadConfiguration() {
             "renderer.fog_slices", 64, "Slices of the volumetric fog in depth, from 16 to 256: finer, for their cost");
         m_fogTile = m_cvars.Register<std::int64_t>(
             "renderer.fog_tile", 16, "Pixels across a cell of the volumetric fog, from 8 to 32: finer, for their cost");
+        m_particleDensity = m_cvars.Register<double>(
+            "renderer.particle_density", 1.0,
+            "Multiplies the particles that emitters and weather emit, from 0 to 1: fewer, for their cost");
         m_quality = m_cvars.Register<std::string>(
             "renderer.quality", "auto",
             "Quality preset: low, medium, high or ultra; auto measures the GPU at the first launch and chooses. "
@@ -643,7 +646,8 @@ QualitySettings Application::EffectiveQualitySettings() const {
             .restirSpatial = Preset(*m_restirSpatial, preset.restirSpatial),
             .volumetricFog = Preset(*m_volumetricFog, preset.volumetricFog),
             .fogSlices = Preset(*m_fogSlices, preset.fogSlices),
-            .fogTile = Preset(*m_fogTile, preset.fogTile)};
+            .fogTile = Preset(*m_fogTile, preset.fogTile),
+            .particleDensity = Preset(*m_particleDensity, preset.particleDensity)};
 }
 
 std::filesystem::path Application::PipelineCachePath() const {
@@ -709,8 +713,12 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_scene.atmosphere = {};
     m_scene.lights.clear();
     m_scene.particleSpawns.clear();
+    m_scene.ribbons.clear();
     m_scene.timeStep = 0.0f;
     if (m_currentScene) {
+        const QualitySettings emission = EffectiveQualitySettings();
+        m_currentScene->SetEmission(static_cast<float>(std::clamp(emission.particleDensity, 0.0, 1.0)),
+                                    FieldOfViewRadians(*m_fieldOfView));
         m_currentScene->Extract(m_scene);
     }
     handler.OnRender(*this, m_scene);

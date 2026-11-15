@@ -98,9 +98,19 @@ void Scene::Extract(renderer::SceneView& view) {
     view.cut = std::exchange(m_cut, false);
     view.particleSpawns = std::move(m_bursts);
     m_bursts.clear();
-    EmitParticles(m_world, m_frameDelta, view.particleSpawns);
+    // Who sees the particles: the view's camera.
+    m_emission.camera =
+        view.camera.has_value() ? std::optional<glm::mat4>(glm::inverse(view.camera->view)) : std::nullopt;
+    EmissionView emission = m_emission;
+    if (view.camera.has_value() && view.camera->verticalFov.has_value()) {
+        // A camera of its own field of view, top to bottom: across, as wide as 21:9 at most.
+        emission.fieldOfView = 2.0f * std::atan(std::tan(*view.camera->verticalFov * 0.5f) * 21.0f / 9.0f);
+    }
+    EmitParticles(m_world, m_frameDelta, view.particleSpawns, emission);
+    EmitWeather(m_world, m_frameDelta, view.particleSpawns, emission);
     ExtractEmitterLights(m_world, view);
     ExtractRibbons(m_world, m_frameDelta, view);
+    UpdateLightning(m_world, m_frameDelta, view, emission, m_thunder);
 
     SyncSoundEmitters(m_world, m_sounds);
     if (view.camera.has_value()) {

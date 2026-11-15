@@ -157,6 +157,9 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
         Model::Part& part = parts.emplace_back();
         part.mesh = mesh;
         part.material = primitive.material.has_value() ? materials[*primitive.material] : renderer::MaterialHandle{};
+        if (primitive.material.has_value()) {
+            part.surface = data.materials[*primitive.material].surface;
+        }
         part.positions.reserve(primitive.mesh.vertices.size());
         for (const resources::Vertex& vertex : primitive.mesh.vertices) {
             part.positions.push_back(vertex.position);

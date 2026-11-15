@@ -2,7 +2,8 @@
 # Copyright (C) 2011-2026 Stéphane Baudoux
 # SPDX-License-Identifier: MIT OR Apache-2.0
 
-"""Writes the meshes of mesh particles and the images of ribbons (ADR-0053), so that the engine owns them.
+"""Writes the meshes of mesh particles, the images of ribbons and the sprites of small particles (ADR-0053), so
+that the engine owns them.
 
     python scripts/make_particle_assets.py [assets/Factory/Effects]
 
@@ -132,6 +133,90 @@ def paper():
     return positions, normals, uvs, [0, 2, 1, 0, 3, 2]
 
 
+def lump(seed, size, flatness):
+    """A broken lump: a box of size meters across, its corners pushed about, flat-faced, flattened by flatness."""
+    rng = random.Random(seed)
+    corners = [(x * size * 0.5 * rng.uniform(0.6, 1.0), y * size * 0.5 * flatness * rng.uniform(0.6, 1.0),
+                z * size * 0.5 * rng.uniform(0.6, 1.0)) for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)]
+    # The six faces of the box, by corner (x, y, z bits), counterclockwise from outside.
+    faces = [(0, 1, 3, 2), (4, 6, 7, 5), (0, 4, 5, 1), (2, 3, 7, 6), (0, 2, 6, 4), (1, 5, 7, 3)]
+    positions, normals, uvs, indices = [], [], [], []
+    for face in faces:
+        for a, b, c in ((face[0], face[1], face[2]), (face[0], face[2], face[3])):
+            pa, pb, pc = corners[a], corners[b], corners[c]
+            e1 = tuple(pb[i] - pa[i] for i in range(3))
+            e2 = tuple(pc[i] - pa[i] for i in range(3))
+            n = normalize((e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]))
+            start = len(positions)
+            for p in (pa, pb, pc):
+                positions.append(p)
+                normals.append(n)
+                uvs.append((p[0] / size + 0.5, p[2] / size + 0.5))
+            indices += [start, start + 1, start + 2]
+    return positions, normals, uvs, indices
+
+
+def splinter():
+    """A splinter of wood, 8 cm long, pointed at both ends, 4 mm thick."""
+    return plate([(-0.04, 0.0), (-0.01, -0.005), (0.035, -0.003), (0.04, 0.001), (0.0, 0.006)], 0.004)
+
+
+def atlas_cell(index, x, y):
+    """The sprites of particles, in a grid of 4 by 4 cells: a color and opacity from -1 to 1 across the cell."""
+    r = math.hypot(x, y)
+    def soft(radius, power=2.0):
+        return max(0.0, 1.0 - (r / radius) ** power)
+    if index == 0:  # A raindrop's streak, along the cell's height: stretched along the drop's motion.
+        return 1.0, 1.0, 1.0, max(0.0, 1.0 - (abs(x) / 0.18) ** 2) * max(0.0, 1.0 - abs(y) ** 4) * 0.8
+    if index == 1:  # A ripple: a thin ring, lying on water.
+        return 1.0, 1.0, 1.0, max(0.0, 1.0 - abs(r - 0.75) / 0.12) * 0.9
+    if index == 2:  # A splash: droplets thrown up and out.
+        value = 0.0
+        for k in range(7):
+            angle = k * 2.0 * math.pi / 7.0 + 0.4
+            cx, cy = 0.55 * math.cos(angle), 0.55 * math.sin(angle) * 0.8 - 0.1
+            value = max(value, max(0.0, 1.0 - math.hypot(x - cx, y - cy) / 0.16))
+        return 1.0, 1.0, 1.0, min(1.0, value * 1.5)
+    if index == 3:  # A soft dot: a mote of dust, a spore.
+        return 1.0, 1.0, 1.0, soft(1.0) ** 2
+    if index == 4:  # A snowflake: a soft star of six arms.
+        arms = abs(math.cos(3.0 * math.atan2(y, x))) ** 8
+        return 1.0, 1.0, 1.0, min(1.0, soft(0.9) * (0.35 + 0.65 * arms) + soft(0.25))
+    if index == 5:  # A flake of ash: a grey irregular scrap.
+        edge = 0.6 + 0.15 * math.sin(5.0 * math.atan2(y, x)) + 0.1 * math.sin(11.0 * math.atan2(y, x))
+        return 0.5, 0.5, 0.5, 1.0 if r < edge else 0.0
+    if index == 6:  # An ember: a white-hot core in a glow, which the effect's color tints.
+        return 1.0, 1.0, 1.0, min(1.0, soft(0.3) + 0.5 * soft(1.0) ** 3)
+    if index == 7:  # A bubble: a ring with a highlight.
+        ring = max(0.0, 1.0 - abs(r - 0.8) / 0.12)
+        highlight = max(0.0, 1.0 - math.hypot(x + 0.35, y + 0.35) / 0.2)
+        return 1.0, 1.0, 1.0, min(1.0, 0.15 * soft(0.85, 8) + 0.7 * ring + highlight)
+    if index in (8, 9):  # A fly, wings out then in: a dark body, grey wings.
+        body = (x / 0.18) ** 2 + (y / 0.38) ** 2 < 1.0
+        spread = 0.55 if index == 8 else 0.25
+        wing = any(((x - side * spread) / 0.35) ** 2 + ((y + 0.1) / 0.18) ** 2 < 1.0 for side in (-1, 1))
+        if body:
+            return 0.03, 0.03, 0.02, 1.0
+        return (0.5, 0.5, 0.55, 0.45) if wing else (0.0, 0.0, 0.0, 0.0)
+    if index == 10:  # A moth: a pale body with broad wings.
+        wing = any(((x - side * 0.45) / 0.45) ** 2 + (y / 0.55) ** 2 < 1.0 for side in (-1, 1))
+        body = (x / 0.12) ** 2 + (y / 0.5) ** 2 < 1.0
+        return (0.75, 0.7, 0.6, 1.0) if wing or body else (0.0, 0.0, 0.0, 0.0)
+    if index == 11:  # A drop of water, round, for drips and spray.
+        return 1.0, 1.0, 1.0, min(1.0, soft(0.6, 4) * 0.8 + max(0.0, 1.0 - math.hypot(x + 0.2, y + 0.2) / 0.15))
+    return 0.0, 0.0, 0.0, 0.0
+
+
+def write_atlas(path, cell=64, grid=4):
+    def pixel(px, py):
+        index = (py // cell) * grid + px // cell
+        x = ((px % cell) + 0.5) / cell * 2.0 - 1.0
+        y = ((py % cell) + 0.5) / cell * 2.0 - 1.0
+        color = atlas_cell(index, x, y)
+        return tuple(max(0, min(255, round(c * 255))) for c in color)
+    write_png(path, cell * grid, cell * grid, pixel)
+
+
 def write_png(path, width, height, pixel):
     """An RGBA image, pixel(x, y) giving four bytes."""
     rows = b"".join(b"\0" + b"".join(bytes(pixel(x, y)) for x in range(width)) for y in range(height))
@@ -161,6 +246,14 @@ def main():
     write_glb(meshes / "casing.glb", *casing(), brass)
     write_glb(meshes / "shard.glb", *shard(), glass)
     write_glb(meshes / "paper.glb", *paper(), sheet)
+    concrete = {"name": "Concrete", "pbrMetallicRoughness": {"baseColorFactor": [0.42, 0.41, 0.39, 1.0],
+                                                             "metallicFactor": 0.0, "roughnessFactor": 0.95}}
+    wood = {"name": "Wood", "pbrMetallicRoughness": {"baseColorFactor": [0.45, 0.3, 0.16, 1.0], "metallicFactor": 0.0,
+                                                     "roughnessFactor": 0.8}}
+    write_glb(meshes / "chip.glb", *lump(3, 0.02, 0.6), concrete)
+    write_glb(meshes / "debris.glb", *lump(5, 0.08, 0.7), concrete)
+    write_glb(meshes / "splinter.glb", *splinter(), wood)
+    write_atlas(out / "sprites.png")
 
     alpha = lambda v: max(0, min(255, round(profile(v) * 255)))
     write_png(out / "ribbon_glow.png", 8, 64, lambda x, y: (255, 255, 255, alpha((y + 0.5) / 64)))

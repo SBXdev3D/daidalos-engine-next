@@ -67,6 +67,9 @@ struct MaterialData {
     /// The emission lights the scene (ADR-0044). The material's glTF extras {"light": false} make it only
     /// seen.
     bool emissiveLight = true;
+    /// What the surface is made of, from the material's glTF extras {"surface": "metal"}: what impacts throw
+    /// up and how they sound (ADR-0053). Empty when the file does not say.
+    std::string surface;
     float metallicFactor = 1.0f;
     float roughnessFactor = 1.0f;
     float normalScale = 1.0f;

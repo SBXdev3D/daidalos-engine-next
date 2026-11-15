@@ -1,0 +1,46 @@
+{
+    "comment": "Snow falling through a broken roof; it stays where it lands. Placed by weather zones.",
+    "texture": "sprites.png",
+    "columns": 4,
+    "cell": 4,
+    "color": [
+        [
+            0,
+            [
+                1,
+                1,
+                1,
+                0.9
+            ]
+        ]
+    ],
+    "collision": "stick",
+    "lifetime": [
+        15,
+        15
+    ],
+    "size": [
+        0.015,
+        0.03
+    ],
+    "spawnBox": [
+        1,
+        0,
+        1
+    ],
+    "direction": [
+        0,
+        -1,
+        0
+    ],
+    "speed": [
+        0.8,
+        1.2
+    ],
+    "gravity": 0.08,
+    "drag": 0.8,
+    "turbulence": 1,
+    "turbulenceScale": 2,
+    "rotationSpeed": 60,
+    "softness": 0.01
+}

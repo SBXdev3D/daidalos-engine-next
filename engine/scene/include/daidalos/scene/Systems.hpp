@@ -10,7 +10,10 @@
 #include <daidalos/renderer/SceneView.hpp>
 #include <daidalos/scene/Components.hpp>
 
+#include <glm/mat4x4.hpp>
+
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace daidalos::scene {
@@ -27,10 +30,43 @@ namespace daidalos::scene {
 /// the previous one; an entity drawn for the first time has no motion.
 void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity activeCamera = {});
 
+/// Who sees the particles, and how many are worth emitting (ADR-0053).
+struct EmissionView {
+    /// Multiplies emitters' rates and bursts, and weather's: renderer.particle_density.
+    float density = 1.0f;
+    /// The camera's world matrix, if any: emitters out of reach or out of view emit nothing.
+    std::optional<glm::mat4> camera;
+    /// Radians across the view, left to right, as the renderer's field of view; the view is taken as tall as
+    /// 4:3.
+    float fieldOfView = 1.5f;
+};
+
+/// Whether particles within radius of a point may be seen: within distance of the camera, and in its view
+/// with that margin. Without a camera, they may.
+[[nodiscard]] bool MaySee(const EmissionView& view, const glm::vec3& point, float radius, float distance);
+
 /// Adds the particles that each enabled ParticleEmitter emits over delta seconds, at its world transform:
 /// by its rate, by the distance it went since the last frame, spread along the way, and by its bursts
-/// (ADR-0053). Spawns carry the emitter's velocity. Run it after ecs::PropagateTransforms.
-void EmitParticles(ecs::World& world, float delta, std::vector<renderer::ParticleSpawn>& spawns);
+/// (ADR-0053), times the view's density. Spawns carry the emitter's velocity. Emitters with a surface emit on
+/// its triangles, one spawn per particle. Emitters that the view may not see emit nothing, but keep time and
+/// their light. Run it after ecs::PropagateTransforms.
+void EmitParticles(ecs::World& world, float delta, std::vector<renderer::ParticleSpawn>& spawns,
+                   const EmissionView& view = {});
+
+/// Adds the particles of the enabled WeatherZones over delta seconds: over the part of each zone within its
+/// reach of the camera, at its top, times the view's density. Without a camera, nothing.
+void EmitWeather(ecs::World& world, float delta, std::vector<renderer::ParticleSpawn>& spawns,
+                 const EmissionView& view);
+
+/// Moves the storms of Lightning entities on by delta seconds: strikes when it is time, draws the bolt while
+/// it lasts and makes its light flash in the view, and adds the thunder that reaches the camera to thunder.
+/// Run it after ExtractScene, which puts the light in the view.
+void UpdateLightning(ecs::World& world, float delta, renderer::SceneView& view, const EmissionView& camera,
+                     std::vector<Thunder>& thunder);
+
+/// How bright a strike is at time seconds into it, from 0 to 1: a first flash, then two flickers at the given
+/// times, each fading in a few hundredths of a second; nothing after duration.
+[[nodiscard]] float StrikeBrightness(float time, const glm::vec2& flickers, float duration);
 
 /// Adds the ribbons of the enabled RibbonEmitters to the view, built at their world transforms, and the lights
 /// of those that give off light, after delta seconds (ADR-0053). Run it after ecs::PropagateTransforms.

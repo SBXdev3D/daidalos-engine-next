@@ -206,6 +206,9 @@ struct ParticleSpawn {
     /// Same as position when it did not move.
     std::optional<glm::vec3> previousPosition;
     glm::vec3 velocity{0.0f};
+    /// Stretches the effect's shape along the emitter's axes: a zone of rain spawns its drops over the part
+    /// of it near the camera (ADR-0053).
+    glm::vec3 scale{1.0f};
 };
 
 /// A point of a ribbon (ADR-0053).

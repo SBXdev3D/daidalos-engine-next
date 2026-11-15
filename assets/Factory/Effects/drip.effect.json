@@ -1,0 +1,39 @@
+{
+    "comment": "A drop falling from a leaking ceiling or pipe, which splashes where it lands.",
+    "texture": "sprites.png",
+    "columns": 4,
+    "cell": 11,
+    "color": [
+        [
+            0,
+            [
+                0.7,
+                0.8,
+                0.9,
+                0.7
+            ]
+        ]
+    ],
+    "fadeIn": 0,
+    "collision": "die",
+    "onHit": {
+        "effect": "drip_splash.effect.json",
+        "count": 1
+    },
+    "lifetime": [
+        3,
+        3
+    ],
+    "size": [
+        0.012,
+        0.014
+    ],
+    "orientation": "velocity",
+    "stretch": 0.01,
+    "gravity": 1,
+    "softness": 0.01,
+    "emitter": {
+        "rate": 0.7,
+        "radius": 3
+    }
+}

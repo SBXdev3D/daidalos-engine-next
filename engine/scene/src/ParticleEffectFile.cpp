@@ -276,6 +276,10 @@ core::Result<ParticleEmission> Emission(Element value) {
             DAI_TRY_ASSIGN(emission.rate, Number(field, "emitter.rate"));
         } else if (name == "ratePerMeter") {
             DAI_TRY_ASSIGN(emission.ratePerMeter, Number(field, "emitter.ratePerMeter"));
+        } else if (name == "distance") {
+            DAI_TRY_ASSIGN(emission.distance, Number(field, "emitter.distance"));
+        } else if (name == "radius") {
+            DAI_TRY_ASSIGN(emission.radius, Number(field, "emitter.radius"));
         } else if (name == "bursts") {
             simdjson::dom::array bursts;
             if (field.get_array().get(bursts) != simdjson::SUCCESS) {
@@ -397,6 +401,8 @@ core::Result<void> Read(ParticleEffectFile& file, std::string_view key, Element 
         file.emission.rate = emission.rate;
         file.emission.ratePerMeter = emission.ratePerMeter;
         file.emission.bursts = std::move(emission.bursts);
+        file.emission.distance = emission.distance;
+        file.emission.radius = emission.radius;
     } else if (key == "light") {
         DAI_TRY_ASSIGN(file.emission.light, Light(value));
     } else {

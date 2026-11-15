@@ -323,9 +323,34 @@ void AddDust(ecs::World& world, const glm::vec3& start) {
                                                        .noiseVelocity = {0.08f, 0.03f, 0.0f}});
 }
 
-/// A level emitter, by the name of its effect file, emitting as the file says.
+/// The entity of the level node of this name, if any.
+std::optional<ecs::Entity> NodeEntity(std::span<const std::pair<ecs::Entity, std::string>> nodes,
+                                      std::string_view name) {
+    const auto named = std::ranges::find(nodes, name, [](const auto& pair) -> std::string_view { return pair.second; });
+    return named != nodes.end() ? std::optional<ecs::Entity>(named->first) : std::nullopt;
+}
+
+/// The triangles of a model's node, all its parts together, in the node's frame.
+std::shared_ptr<const scene::MeshSurface> SurfaceOf(const scene::Model& model, const scene::Model::Node& node) {
+    std::vector<glm::vec3> positions;
+    std::vector<std::uint32_t> indices;
+    for (const std::uint32_t index : node.parts) {
+        const scene::Model::Part& part = model.parts[index];
+        const auto first = static_cast<std::uint32_t>(positions.size());
+        positions.insert(positions.end(), part.positions.begin(), part.positions.end());
+        for (const std::uint32_t vertex : part.indices) {
+            indices.push_back(first + vertex);
+        }
+    }
+    return scene::MakeMeshSurface(positions, indices);
+}
+
+/// A level emitter, by the name of its effect file, emitting as the file says. With "surface=<node>", it
+/// emits on that node's triangles instead (ADR-0053): what burns, what crumbles; with "burst=<count>:<seconds>",
+/// only bursts of that many, that often.
 void AddParticleEmitter(scene::Scene& scene, ecs::Entity entity, const NodeDescription& node,
-                        const std::string& directory) {
+                        const std::string& directory, const scene::Model& model,
+                        std::span<const std::pair<ecs::Entity, std::string>> nodes) {
     const auto found = node.attributes.find("effect");
     const std::string_view name = found == node.attributes.end() ? std::string_view{} : found->second;
     core::Result<scene::ParticleEffectAsset> effect = scene.Assets().LoadParticleEffect(EffectPath(directory, name));
@@ -333,7 +358,38 @@ void AddParticleEmitter(scene::Scene& scene, ecs::Entity entity, const NodeDescr
         DAI_LOG_WARNING("sandbox", "Particle emitter without its effect: {}", core::Format(effect.error()));
         return;
     }
-    scene.World().Add<scene::ParticleEmitter>(entity, effect->effect, effect->emission);
+    scene::ParticleEmitter emitter{.effect = effect->effect, .emission = effect->emission};
+    // "burst=<count>:<interval>" emits only that burst, again and again: impacts and explosions shown on
+    // their own.
+    if (const auto burst = node.attributes.find("burst"); burst != node.attributes.end()) {
+        const std::string_view text = burst->second;
+        const std::size_t colon = text.find(':');
+        scene::ParticleBurst repeated{.count = 1, .interval = 1.0f};
+        std::from_chars(text.data(), text.data() + std::min(colon, text.size()), repeated.count);
+        if (colon != std::string_view::npos) {
+            std::from_chars(text.data() + colon + 1, text.data() + text.size(), repeated.interval);
+        }
+        emitter.emission.rate = 0.0f;
+        emitter.emission.ratePerMeter = 0.0f;
+        emitter.emission.bursts = {repeated};
+    }
+    if (const auto surface = node.attributes.find("surface"); surface != node.attributes.end()) {
+        const auto modelNode = std::ranges::find(model.nodes, surface->second, &scene::Model::Node::name);
+        const std::optional<ecs::Entity> target = NodeEntity(nodes, surface->second);
+        if (modelNode == model.nodes.end() || !target) {
+            DAI_LOG_WARNING("sandbox", "Particle emitter '{}': no node '{}' to emit on", name, surface->second);
+            return;
+        }
+        emitter.surface = SurfaceOf(model, *modelNode);
+        if (emitter.surface == nullptr) {
+            DAI_LOG_WARNING("sandbox", "Particle emitter '{}': node '{}' has no triangles", name, surface->second);
+            return;
+        }
+        // On the node that has the triangles, which moves them.
+        scene.World().Add<scene::ParticleEmitter>(*target, std::move(emitter));
+        return;
+    }
+    scene.World().Add<scene::ParticleEmitter>(entity, std::move(emitter));
     if (name == "smoke_leak") {
         AddSteam(scene.World(), entity);
     }
@@ -361,6 +417,84 @@ void AddRibbonEmitter(scene::Scene& scene, ecs::Entity entity, const NodeDescrip
         }
     }
     scene.World().Add<scene::RibbonEmitter>(entity, std::move(ribbon));
+}
+
+/// A level box where it rains or snows (ADR-0053): "weather;effect=rain;rate=60;reach=15". The node's
+/// transform is the box, the cube from -0.5 to 0.5.
+void AddWeather(scene::Scene& scene, ecs::Entity entity, const NodeDescription& node, const std::string& directory) {
+    const auto found = node.attributes.find("effect");
+    const std::string_view name = found == node.attributes.end() ? std::string_view{} : found->second;
+    core::Result<scene::ParticleEffectAsset> effect = scene.Assets().LoadParticleEffect(EffectPath(directory, name));
+    if (!effect) {
+        DAI_LOG_WARNING("sandbox", "Weather without its effect: {}", core::Format(effect.error()));
+        return;
+    }
+    scene.World().Add<scene::WeatherZone>(entity, scene::WeatherZone{.effect = effect->effect,
+                                                                     .rate = Number(node, "rate", 50.0f),
+                                                                     .reach = Number(node, "reach", 15.0f)});
+}
+
+/// A level storm's lightning (ADR-0053): "lightning;bolt=lightning;light=<node>;flash=30;interval=6:15;
+/// duration=0.5", striking in the node's box, flashing the light of the named node.
+void AddLightning(scene::Scene& scene, ecs::Entity entity, const NodeDescription& node, const std::string& directory,
+                  std::span<const std::pair<ecs::Entity, std::string>> nodes) {
+    scene::Lightning lightning;
+    const auto bolt = node.attributes.find("bolt");
+    core::Result<std::shared_ptr<const scene::RibbonEffect>> ribbon = scene.Assets().LoadRibbonEffect(
+        RibbonPath(directory, bolt == node.attributes.end() ? std::string_view("lightning") : bolt->second));
+    if (ribbon) {
+        lightning.bolt = *ribbon;
+    } else {
+        DAI_LOG_WARNING("sandbox", "Lightning without its bolt: {}", core::Format(ribbon.error()));
+    }
+    if (const auto light = node.attributes.find("light"); light != node.attributes.end()) {
+        if (const std::optional<ecs::Entity> found = NodeEntity(nodes, light->second)) {
+            lightning.light = *found;
+        } else {
+            DAI_LOG_WARNING("sandbox", "Lightning: no node '{}' to flash", light->second);
+        }
+    }
+    lightning.flash = Number(node, "flash", lightning.flash);
+    lightning.duration = Number(node, "duration", lightning.duration);
+    if (const auto interval = node.attributes.find("interval"); interval != node.attributes.end()) {
+        const std::string_view text = interval->second;
+        const std::size_t colon = text.find(':');
+        std::from_chars(text.data(), text.data() + std::min(colon, text.size()), lightning.interval.x);
+        lightning.interval.y = lightning.interval.x;
+        if (colon != std::string_view::npos) {
+            std::from_chars(text.data() + colon + 1, text.data() + text.size(), lightning.interval.y);
+        }
+    }
+    scene.World().Add<scene::Lightning>(entity, std::move(lightning));
+}
+
+glm::vec3 Vector(const NodeDescription& description, std::string_view key);
+
+/// A level point that pulls particles and turns them around its +Y (ADR-0053): "attractor;effect=flies;
+/// strength=2;vortex=3;radius=1.5", moving only that effect's particles if it names one.
+void AddAttractor(scene::Scene& scene, ecs::Entity entity, const NodeDescription& node, const std::string& directory) {
+    scene::ParticleAttractor attractor{.strength = Number(node, "strength", 1.0f),
+                                       .vortex = Number(node, "vortex", 0.0f),
+                                       .radius = Number(node, "radius", 0.0f)};
+    if (const auto found = node.attributes.find("effect"); found != node.attributes.end()) {
+        core::Result<scene::ParticleEffectAsset> effect =
+            scene.Assets().LoadParticleEffect(EffectPath(directory, found->second));
+        if (!effect) {
+            DAI_LOG_WARNING("sandbox", "Attractor without its effect: {}", core::Format(effect.error()));
+            return;
+        }
+        attractor.effect = effect->effect;
+    }
+    scene.World().Add<scene::ParticleAttractor>(entity, attractor);
+}
+
+/// A level box of wind (ADR-0053): "wind;velocity=x,y,z;gust=0.5;gust_frequency=0.3;edge=0.3", its velocity
+/// in the node's frame; the node's transform is the box.
+void AddWind(ecs::World& world, ecs::Entity entity, const NodeDescription& node) {
+    world.Add<scene::WindVolume>(entity, scene::WindVolume{.velocity = Vector(node, "velocity"),
+                                                           .gust = Number(node, "gust", 0.0f),
+                                                           .gustFrequency = Number(node, "gust_frequency", 0.2f),
+                                                           .edge = Number(node, "edge", 0.3f)});
 }
 
 void AddAlarmLights(ecs::World& world, ecs::Entity alarm, const NodeDescription& node) {
@@ -952,7 +1086,15 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
         } else if (const auto sky = node.attributes.find("name"); node.kind == "sky" && sky != node.attributes.end()) {
             DAI_TRY(LoadSky(scene, directory, sky->second));
         } else if (node.kind == "particles") {
-            AddParticleEmitter(scene, entity, node, directory);
+            AddParticleEmitter(scene, entity, node, directory, model, nodes);
+        } else if (node.kind == "attractor") {
+            AddAttractor(scene, entity, node, directory);
+        } else if (node.kind == "wind") {
+            AddWind(world, entity, node);
+        } else if (node.kind == "weather") {
+            AddWeather(scene, entity, node, directory);
+        } else if (node.kind == "lightning") {
+            AddLightning(scene, entity, node, directory, nodes);
         } else if (node.kind == "ribbon") {
             AddRibbonEmitter(scene, entity, node, directory, nodes);
         } else if (node.kind == "fog") {

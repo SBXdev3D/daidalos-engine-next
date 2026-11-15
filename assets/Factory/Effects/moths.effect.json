@@ -1,0 +1,39 @@
+{
+    "comment": "Moths circling a lamp, kept there by an attractor.",
+    "texture": "sprites.png",
+    "columns": 4,
+    "cell": 10,
+    "color": [
+        [
+            0,
+            [
+                1,
+                1,
+                1,
+                1
+            ]
+        ]
+    ],
+    "lifetime": [
+        30,
+        40
+    ],
+    "size": [
+        0.03,
+        0.04
+    ],
+    "spawnRadius": 0.5,
+    "speed": [
+        0.3,
+        0.8
+    ],
+    "drag": 0.5,
+    "turbulence": 3,
+    "turbulenceScale": 0.6,
+    "rotationSpeed": 200,
+    "softness": 0.01,
+    "emitter": {
+        "rate": 0.3,
+        "radius": 2
+    }
+}

@@ -1,0 +1,73 @@
+{
+    "comment": "A candle's flame: a small flipbook flame standing up, and its small flickering light.",
+    "texture": "fire.ktx2",
+    "columns": 8,
+    "rows": 8,
+    "frames": 64,
+    "frameRate": 30,
+    "loop": true,
+    "randomStartFrame": true,
+    "color": [
+        [
+            0,
+            [
+                1,
+                1,
+                1,
+                1
+            ]
+        ],
+        [
+            0.7,
+            [
+                1,
+                1,
+                1,
+                1
+            ]
+        ],
+        [
+            1,
+            [
+                1,
+                1,
+                1,
+                0
+            ]
+        ]
+    ],
+    "emissionOverLife": 4,
+    "additive": true,
+    "lit": false,
+    "lifetime": [
+        0.3,
+        0.4
+    ],
+    "size": [
+        0.05,
+        0.07
+    ],
+    "orientation": "axis",
+    "speed": [
+        0.02,
+        0.05
+    ],
+    "softness": 0.02,
+    "emitter": {
+        "rate": 20,
+        "radius": 0.2
+    },
+    "light": {
+        "temperature": 1800,
+        "intensity": 3,
+        "range": 3,
+        "radius": 0.02,
+        "offset": [
+            0,
+            0.04,
+            0
+        ],
+        "flickerRate": 9,
+        "flickerDepth": 0.2
+    }
+}

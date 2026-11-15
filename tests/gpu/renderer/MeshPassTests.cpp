@@ -1146,6 +1146,21 @@ renderer::Ribbon Band(const glm::vec4& color, float z) {
 
 } // namespace
 
+TEST_F(ParticleTest, ASpawnsScaleStretchesTheEffectsShape) {
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    desc.size = {0.3f, 0.3f};
+    desc.spawnBox = {1.0f, 0.0f, 0.0f};
+    const renderer::ParticleEffectHandle effect = Effect(desc);
+    const auto widest = [&](float scale) {
+        RenderWithParticles({TestCamera()}, {}, 1000.0f);
+        const renderer::ParticleSpawn spawn{.effect = effect, .count = 400, .scale = {scale, 1.0f, 1.0f}};
+        RenderWithParticles({TestCamera()}, std::span(&spawn, 1), kPastFadeIn);
+        return Pixel(static_cast<std::uint32_t>(32.0f + 2.3f * kPixelsPerMeter), 32);
+    };
+    EXPECT_NE(widest(1.0f), glm::ivec3(0, 255, 0)) << "a box 1 m either way";
+    EXPECT_EQ(widest(3.0f), glm::ivec3(0, 255, 0)) << "stretched to 3 m";
+}
+
 TEST_F(ParticleTest, MeshParticleIsASurfaceOfTheGBuffer) {
     const MeshHandle cube = Mesh(renderer::MakeCube());
     const renderer::ParticleSpawn spawn{.effect = Effect(Cubes(cube, Material({0.0f, 1.0f, 0.0f}))), .count = 1};

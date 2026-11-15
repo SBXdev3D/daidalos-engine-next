@@ -1,0 +1,48 @@
+{
+    "comment": "A tracer: a bright streak along a shot's path, gone where it hits.",
+    "texture": "../particles.png",
+    "columns": 4,
+    "cell": 1,
+    "color": [
+        [
+            0,
+            [
+                8,
+                6,
+                3,
+                1
+            ]
+        ]
+    ],
+    "fadeIn": 0,
+    "additive": true,
+    "lit": false,
+    "collision": "die",
+    "lifetime": [
+        0.3,
+        0.3
+    ],
+    "size": [
+        0.02,
+        0.02
+    ],
+    "orientation": "velocity",
+    "stretch": 0.012,
+    "speed": [
+        120,
+        120
+    ],
+    "softness": 0.02,
+    "emitter": {
+        "rate": 0,
+        "radius": 30,
+        "distance": 80,
+        "bursts": [
+            {
+                "time": 0,
+                "count": 1,
+                "interval": 0.3
+            }
+        ]
+    }
+}

@@ -43,8 +43,8 @@ struct ParticleEffectFile {
 ///   "line", and "collision" "none", "bounce", "stick" or "die";
 /// - "onDeath" and "onHit" are objects with "effect", the path of another effect file relative to this
 ///   one's directory, and "count";
-/// - "emitter" gives ParticleEmission: "rate", "ratePerMeter", and "bursts", a list of objects with
-///   "time", "count", "interval" and "repeats";
+/// - "emitter" gives ParticleEmission: "rate", "ratePerMeter", "bursts", a list of objects with "time",
+///   "count", "interval" and "repeats", and "distance" and "radius", within which it may be seen;
 /// - "lightMaps" is the paths of the two six-way light maps, positive then negative;
 /// - "light" gives EmitterLight: "color", "temperature", "intensity", "range", "radius", "offset", "fade",
 ///   "flickerRate" and "flickerDepth";

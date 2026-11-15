@@ -12,6 +12,7 @@
     "rotationSpeed": 5.7296,
     "softness": 0.8,
     "emitter": {
-        "rate": 50
+        "rate": 50,
+        "radius": 5
     }
 }

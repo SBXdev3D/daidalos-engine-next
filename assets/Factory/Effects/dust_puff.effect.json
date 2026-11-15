@@ -1,0 +1,51 @@
+{
+    "comment": "A small puff of dust, where debris lands.",
+    "texture": "../particles.png",
+    "columns": 4,
+    "cell": 0,
+    "color": [
+        [
+            0,
+            [
+                0.55,
+                0.5,
+                0.45,
+                0.3
+            ]
+        ],
+        [
+            1,
+            [
+                0.55,
+                0.5,
+                0.45,
+                0
+            ]
+        ]
+    ],
+    "lifetime": [
+        0.8,
+        1.5
+    ],
+    "size": [
+        0.1,
+        0.15
+    ],
+    "sizeOverLife": [
+        [
+            0,
+            1
+        ],
+        [
+            1,
+            4
+        ]
+    ],
+    "spread": 70,
+    "speed": [
+        0.1,
+        0.4
+    ],
+    "drag": 2,
+    "softness": 0.1
+}
