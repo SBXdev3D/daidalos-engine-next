@@ -82,6 +82,18 @@ TEST(SlotPool, ForEachVisitsLiveObjectsOnly) {
     EXPECT_EQ(visited, "ac");
 }
 
+TEST(SlotPool, HandleAtGivesTheLiveHandleOfASlot) {
+    Pool pool;
+    const ItemHandle first = pool.Insert("first");
+    EXPECT_EQ(pool.HandleAt(first.Index()), first);
+    pool.Remove(first);
+    EXPECT_TRUE(pool.HandleAt(first.Index()).IsNull()) << "an empty slot";
+    const ItemHandle reused = pool.Insert("second");
+    ASSERT_EQ(reused.Index(), first.Index());
+    EXPECT_EQ(pool.HandleAt(reused.Index()), reused) << "the slot's new generation";
+    EXPECT_TRUE(pool.HandleAt(99).IsNull()) << "out of range";
+}
+
 TEST(Handle, HashesDistinguishGenerations) {
     std::unordered_set<ItemHandle> handles;
     handles.insert(ItemHandle(1, 1));

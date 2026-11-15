@@ -7,6 +7,7 @@
 #include <daidalos/core/Result.hpp>
 #include <daidalos/core/SlotPool.hpp>
 #include <daidalos/renderer/Particles.hpp>
+#include <daidalos/renderer/SceneView.hpp>
 #include <daidalos/rhi/Device.hpp>
 
 #include <glm/vec3.hpp>
@@ -15,14 +16,16 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <vector>
 
 namespace daidalos::renderer {
 
 class RenderGraph;
 
 /// Particles simulated on the GPU (ADR-0025, ADR-0053): one pool of kMaxParticles, with a dead list and two alive
-/// lists. Each frame emits, simulates, sorts by depth and draws them with one indirect draw; the CPU
-/// never reads them back. The Device must outlive it.
+/// lists. Each frame spawns what the last frame's particles asked for, emits, simulates, sorts by depth and
+/// draws them with one indirect draw. The CPU reads back only the impacts that effects report, two frames
+/// late. The Device must outlive it.
 class ParticlePass {
 public:
     static core::Result<ParticlePass> Create(rhi::Device& device, rhi::Format colorFormat);
@@ -40,11 +43,12 @@ public:
     /// Particles of the effect still alive keep using its slot, which a new effect may reuse.
     void DestroyEffect(ParticleEffectHandle effect);
 
-    /// Adds the passes that emit the spawns, move every particle by timeStep and sort them, in the group
-    /// "Simulation". depth and normals come from the G-buffer; frameBuffer is the storage index of the
-    /// frame's FrameData. Spawns of destroyed effects are skipped.
-    /// What lit particles cast their shadow rays against (ADR-0044): the frame's structure, built before,
-    /// the storage indices of its instances and materials, and the skinned vertices that rays read, or null.
+    /// Impacts a frame can report to the CPU; more are dropped.
+    static constexpr std::uint32_t kMaxHits = 1024;
+
+    /// What colliding particles meet and lit particles cast their shadow rays against (ADR-0044,
+    /// ADR-0053): the frame's structure, built before, the storage indices of its instances and materials,
+    /// and the skinned vertices that rays read, or null.
     struct Shadows {
         rhi::AccelerationStructureHandle structure;
         std::uint32_t instanceBuffer = 0;
@@ -57,10 +61,26 @@ public:
         std::uint32_t lightMap = 0;
         std::uint32_t previousLightCount = 0;
     };
-    /// The simulation also lights lit particles, each keeping the light it chose, with its shadows (ADR-0044).
-    [[nodiscard]] core::Result<void> AddSimulation(RenderGraph& graph, std::span<const ParticleSpawn> spawns,
-                                                   float timeStep, std::uint32_t frameBuffer, rhi::TextureHandle depth,
-                                                   rhi::TextureHandle normals, const Shadows& shadows);
+    /// Adds the passes that spawn the view's particles and those the last frame asked for, move every
+    /// particle by the view's time step, in the level's wind, the view's wind volumes and attractors, against
+    /// the frame's structure, and sort them, in the group "Simulation". frameBuffer is the storage index of
+    /// the frame's FrameData. Spawns of destroyed effects are skipped. The simulation also lights lit
+    /// particles, each keeping the light it chose, with its shadows (ADR-0044).
+    [[nodiscard]] core::Result<void> AddSimulation(RenderGraph& graph, const SceneView& view, std::uint32_t frameBuffer,
+                                                   const Shadows& shadows);
+
+    /// An impact reported by an effect (ParticleHit), with the material as an index of the frame's table.
+    struct Hit {
+        glm::vec3 position{0.0f};
+        glm::vec3 normal{0.0f};
+        ParticleEffectHandle effect;
+        std::uint32_t material = 0;
+    };
+    /// The impacts of the simulation recorded kFramesInFlight AddSimulation calls before the last, which the
+    /// GPU has finished since: what the last call found.
+    [[nodiscard]] std::span<const Hit> Hits() const { return m_hits; }
+    /// The particles alive after that same simulation.
+    [[nodiscard]] std::uint32_t AliveCount() const { return m_aliveCount; }
 
     /// What the particles leave in their second target, the reactive mask of temporal antialiasing
     /// (ADR-0037): how much they cover each pixel, where the history is not to be trusted.
@@ -77,19 +97,28 @@ public:
 
 private:
     struct Effect {};
-    /// Spawn requests of one frame in flight.
+    /// Spawn requests, forces and parameters of one frame in flight, and the hits it reports.
     struct FrameSlot {
         rhi::BufferHandle spawns;
         std::uint64_t spawnCapacity = 0;
+        rhi::BufferHandle forces;
+        std::uint64_t forceCapacity = 0;
+        rhi::BufferHandle parameters;
+        rhi::BufferHandle hits;
+        /// The GPU has written its hits: a simulation was recorded with this slot.
+        bool used = false;
     };
 
     explicit ParticlePass(rhi::Device& device) : m_device(&device) {}
 
     [[nodiscard]] core::Result<void> CreateResources(rhi::Format colorFormat);
+    /// Reads the hits the slot's last simulation reported.
+    void ReadHits(const FrameSlot& slot);
     [[nodiscard]] core::Result<void> ReserveEffectSlot(std::uint32_t index);
     void WriteEffect(std::uint32_t index, const ParticleEffectDesc& desc);
 
     rhi::Device* m_device;
+    rhi::PipelineHandle m_subEmit;
     rhi::PipelineHandle m_emit;
     rhi::PipelineHandle m_simulate;
     rhi::PipelineHandle m_finish;
@@ -98,6 +127,8 @@ private:
     rhi::BufferHandle m_particles;
     rhi::BufferHandle m_dead;
     std::array<rhi::BufferHandle, 2> m_alive;
+    /// What particles ask the next frame to spawn: one list is written while the other is spawned.
+    std::array<rhi::BufferHandle, 2> m_subSpawns;
     rhi::BufferHandle m_keys;
     rhi::BufferHandle m_counters;
     rhi::BufferHandle m_arguments;
@@ -110,6 +141,8 @@ private:
     std::array<FrameSlot, rhi::kFramesInFlight> m_frameSlots;
     std::uint32_t m_nextFrameSlot = 0;
     std::uint32_t m_frame = 0;
+    std::vector<Hit> m_hits;
+    std::uint32_t m_aliveCount = 0;
 };
 
 } // namespace daidalos::renderer

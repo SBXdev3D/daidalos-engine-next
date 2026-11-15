@@ -19,6 +19,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace daidalos::renderer {
 
@@ -172,6 +173,9 @@ struct FrameStats {
     /// Analytic lights and emissive triangles that light (ADR-0044).
     std::uint32_t lights = 0;
     std::uint32_t particleSpawns = 0;
+    /// Particle impacts read back by the last frame (ParticleHits), and the particles alive then.
+    std::uint32_t particleHits = 0;
+    std::uint32_t particlesAlive = 0;
     /// Instances of the frame's acceleration structure, and how many skinned draws had one built.
     std::uint32_t rayInstances = 0;
     std::uint32_t skinnedStructures = 0;
@@ -255,6 +259,9 @@ public:
     /// GPU time of each pass of a recent frame, which the GPU finished a frame or two ago. Empty on a
     /// device without timestamps, and for the first frames.
     [[nodiscard]] std::span<const PassTime> GpuTimes() const;
+    /// The impacts that effects reporting hits made in the frame rendered kFramesInFlight frames before the
+    /// last (ADR-0053): the GPU has finished it. For decals and sounds.
+    [[nodiscard]] std::vector<ParticleHit> ParticleHits() const;
     /// Counts of the last frame drawn, and of the objects held now.
     [[nodiscard]] FrameStats Stats() const;
     /// The last luminance histogram auto-exposure read back: weights by bin, from black to bright, in log2

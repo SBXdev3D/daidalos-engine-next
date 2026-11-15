@@ -5,7 +5,7 @@
 #ifndef DAIDALOS_PARTICLES_SLANGH
 #define DAIDALOS_PARTICLES_SLANGH
 
-// What the particle passes share (ADR-0025). Each structure matches its C++ twin in
+// What the particle passes share (ADR-0025, ADR-0053). Each structure matches its C++ twin in
 // engine/renderer/src/ParticlePass.cpp.
 
 #define DAI_NO_MESH_PUSH_CONSTANTS
@@ -28,13 +28,28 @@ struct Particle {
     uint4 reservoir;    // The light it keeps choosing (Lights.slangh, Pack).
     float3 axis;        // The effect's axis, turned like the emitter was (ADR-0053).
     float startFrame;   // Its first frame of the flipbook.
+    uint state;         // kParticleResting once it has come to rest on a surface.
+    float padding0;
+    float padding1;
+    float padding2;
 };
 
+static const uint kParticleResting = 1;
+
 static const uint kEffectLit = 1;
-static const uint kEffectCollides = 2;
+static const uint kEffectReportsHits = 2;
 static const uint kEffectAdditive = 4;
 static const uint kEffectLoop = 8;
 static const uint kEffectRandomStart = 16;
+
+// No effect: a sub-emitter that spawns nothing, a force that moves every effect.
+static const uint kNoEffect = 0xFFFFFFFF;
+
+// renderer::ParticleCollision.
+static const uint kCollisionNone = 0;
+static const uint kCollisionBounce = 1;
+static const uint kCollisionStick = 2;
+static const uint kCollisionDie = 3;
 
 // renderer::ParticleShape and renderer::ParticleOrientation.
 static const uint kShapeBox = 0;
@@ -60,7 +75,7 @@ struct ParticleEffectData {
     float sizeMin;
     float sizeMax;
     float gravity;       // Multiplies the Earth's.
-    float drag;          // Fraction of the speed lost per second.
+    float drag;          // Fraction of its speed relative to the air lost per second.
     float rotationSpeed; // Radians per second, either way.
     float softness;      // Meters over which it fades into what it touches.
     float bounce;        // Speed kept when it bounces off a surface.
@@ -75,7 +90,16 @@ struct ParticleEffectData {
     uint rows;
     uint frames;
     uint flags;
-    uint2 padding;
+    uint collision;
+    uint deathEffect; // Spawned where a particle dies of age, deathCount of it.
+    uint deathCount;
+    uint hitEffect;   // Spawned where a particle hits a surface, hitCount of it.
+    uint hitCount;
+    float turbulence;      // Meters per second squared of curl noise.
+    float turbulenceScale; // Meters across its swirls.
+    float padding0;
+    float padding1;
+    float padding2;
 };
 
 struct ParticleSpawn {
@@ -87,6 +111,67 @@ struct ParticleSpawn {
     float3 velocity; // The emitter's.
     uint count;
 };
+
+// New particles that the GPU asks for, where particles died or hit something (ADR-0053): read the next frame.
+struct ParticleSubSpawn {
+    float3 position;
+    uint effect;
+    float3 direction; // The new particles' effect direction turns towards it, as an emitter's +Y.
+    uint count;
+    float3 velocity;  // The particle's, which the new ones inherit as their effect says.
+    uint padding;
+};
+
+// renderer::WindVolume and renderer::ParticleAttractor, in one kind of record.
+static const uint kForceWind = 0;
+static const uint kForceAttractor = 1;
+struct ParticleForce {
+    float4 toBox0; // Wind: the rows of the matrix from the world into its box, the cube from -0.5 to 0.5.
+    float4 toBox1;
+    float4 toBox2;
+    float3 vector; // Wind: its velocity, meters per second. Attractor: its position.
+    uint kind;
+    float3 axis;   // Attractor: the axis it turns particles around.
+    uint effect;   // Attractor: the only effect it moves, or kNoEffect for all.
+    float strength;      // Attractor: meters per second squared towards it.
+    float vortex;        // Attractor: meters per second squared around its axis.
+    float radius;        // Attractor: where its pull fades to nothing; 0 reaches everywhere.
+    float gust;          // Wind: how much it varies, from 0 (steady) to 1.
+    float gustFrequency; // Wind: gusts per second.
+    float edge;          // Wind: the fraction of the box's half-size over which it fades at the faces.
+    float padding0;
+    float padding1;
+};
+
+// A hit reported to the CPU (renderer::ParticleHit). Element 0 of the buffer is its header: the count of
+// hits, then the particles alive after the frame.
+struct ParticleHitData {
+    float3 position;
+    uint effect;
+    float3 normal;
+    uint material;
+};
+
+// The simulation's frame, besides the push constants: the air, the forces, and the lists of events.
+struct ParticleFrame {
+    float3 wind;           // The level's, meters per second.
+    uint forceCount;
+    float windGust;
+    float windGustFrequency;
+    uint forces;           // Storage index of the forces.
+    uint hits;             // Storage index of this frame's hits, for the CPU.
+    uint subSpawnsIn;      // Storage index of the sub-spawns of the last frame, spawned this frame.
+    uint subSpawnsOut;     // Storage index of this frame's, spawned the next.
+    uint subCounterIn;     // Their counters, in the counters buffer.
+    uint subCounterOut;
+    uint hitCapacity;
+    uint padding0;
+    uint padding1;
+    uint padding2;
+};
+
+// Requests a frame can make of the next, and the hits it can report.
+static const uint kMaxSubSpawns = 4096;
 
 // Every particle pass uses these push constants, each the fields it needs.
 struct ParticlePushConstants {
@@ -105,7 +190,7 @@ struct ParticlePushConstants {
     float timeStep;
     uint seed;
     uint depthTexture;
-    uint normalTexture;
+    uint parameters; // The simulation and sub-emission: the frame's ParticleFrame.
     uint sortBlock;
     uint sortStep;
     uint capacity;
@@ -131,6 +216,12 @@ struct ParticlePushConstants {
 [[vk::binding(2, 0)]] StructuredBuffer<ParticleEffectData> g_particleEffects[];
 [[vk::binding(2, 0)]] StructuredBuffer<ParticleSpawn> g_particleSpawns[];
 [[vk::binding(2, 0)]] StructuredBuffer<float4> g_particleCurves[];
+[[vk::binding(2, 0)]] StructuredBuffer<ParticleFrame> g_particleFrames[];
+[[vk::binding(2, 0)]] StructuredBuffer<ParticleForce> g_particleForces[];
+#ifndef DAI_PARTICLES_READ_ONLY
+[[vk::binding(2, 0)]] RWStructuredBuffer<ParticleSubSpawn> g_particleSubSpawns[];
+[[vk::binding(2, 0)]] RWStructuredBuffer<ParticleHitData> g_particleHits[];
+#endif
 
 // Samples per curve, and the curves of each effect: color, then size, emission and speed.
 static const uint kCurveSamples = 256;
@@ -148,6 +239,7 @@ float4 SampleCurve(uint effect, uint curve, float life) {
 static const uint kDeadCounter = 0;
 static const uint kAliveCounter = 1;
 static const uint kNextAliveCounter = 2;
+// Then the two lists of sub-spawns' counters, 3 and 4, which swap each frame.
 
 // A small, good hash (PCG), for random numbers on the GPU.
 uint Hash(uint value) {
@@ -159,6 +251,16 @@ uint Hash(uint value) {
 float3 Rotate(float4 q, float3 v) {
     const float3 t = 2.0 * cross(q.xyz, v);
     return v + q.w * t + cross(q.xyz, t);
+}
+
+// The shortest rotation from +Y to a unit direction, as a quaternion (x, y, z, w).
+float4 RotationFromUp(float3 direction) {
+    const float cosine = direction.y;
+    if (cosine < -0.9999) {
+        return float4(1.0, 0.0, 0.0, 0.0); // Half a turn around X.
+    }
+    const float3 axis = cross(float3(0.0, 1.0, 0.0), direction);
+    return normalize(float4(axis, 1.0 + cosine));
 }
 
 #endif

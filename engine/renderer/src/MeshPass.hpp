@@ -179,6 +179,8 @@ public:
     [[nodiscard]] const Counts& LastCounts() const { return m_counts; }
     [[nodiscard]] std::size_t MeshCount() const { return m_meshes.Size(); }
     [[nodiscard]] std::size_t MaterialCount() const { return m_materials.Size(); }
+    /// The material at an index of the material table, as rays and particles report it, or null if it is gone.
+    [[nodiscard]] MaterialHandle MaterialAt(std::uint32_t index) const { return m_materials.HandleAt(index); }
     /// Adds the pass that skins the prepared frame's skinned draws, if it has any, as "Skinning". It must
     /// come before every pass that draws or traces them.
     void AddSkinning(RenderGraph& graph);

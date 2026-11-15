@@ -752,15 +752,25 @@ protected:
         return m_textures.back();
     }
 
-    // Renders the meshes of the view, then simulates and draws the particles over them.
+    // Renders the meshes of the view, then simulates and draws the particles over them: they meet the
+    // view's meshes, and move in its wind and attractors.
     void RenderWithParticles(const SceneView& view, std::span<const renderer::ParticleSpawn> spawns, float step) {
         Render(view);
+        SceneView particles = view;
+        particles.particleSpawns.assign(spawns.begin(), spawns.end());
+        particles.timeStep = step;
         ASSERT_TRUE(Device()
                         .Submit([&](rhi::CommandList& commands) {
                             renderer::RenderGraph graph;
                             EXPECT_TRUE(m_particles
-                                            ->AddSimulation(graph, spawns, step, m_pass->FrameDataIndex(), m_depth,
-                                                            m_normals, {})
+                                            ->AddSimulation(graph, particles, m_pass->FrameDataIndex(),
+                                                            {.structure = m_scene->Structure(),
+                                                             .instanceBuffer = m_pass->InstanceDataIndex(),
+                                                             .materialBuffer = m_pass->MaterialDataIndex(),
+                                                             .skinnedVertices = m_pass->SkinnedVertices(),
+                                                             .emissiveTriangles = m_pass->EmissiveTriangles(),
+                                                             .lightMap = m_pass->LightMapIndex(),
+                                                             .previousLightCount = m_pass->PreviousLightCount()})
                                             .has_value());
                             m_particles->AddDraw(graph, m_pass->FrameDataIndex(), m_depth, m_color, m_reactive,
                                                  glm::vec3(1, 0, 0), glm::vec3(0, 1, 0));
@@ -1016,6 +1026,175 @@ TEST_F(ParticleTest, UpdatedEffectChangesTheParticlesAlive) {
     EXPECT_EQ(Pixel(32, 32), glm::ivec3(255, 0, 0));
     m_particles->DestroyEffect(effect);
     EXPECT_FALSE(m_particles->UpdateEffect(effect, Square(m_white, {1.0f, 0.0f, 0.0f})));
+}
+
+namespace {
+
+// A red wall across the view, a meter behind the origin, which particles can meet.
+SceneView WithWall(MeshHandle wall, MaterialHandle red) {
+    return {TestCamera(), {{wall, glm::mat4(1.0f), red}}};
+}
+
+} // namespace
+
+TEST_F(ParticleTest, ParticlesPassThroughSurfacesWithoutCollision) {
+    const SceneView view = WithWall(Mesh(MakeQuad(-3.0f, 3.0f, -3.0f, 3.0f, -1.0f)), Material({1.0f, 0.0f, 0.0f}));
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    desc.direction = {0.0f, 0.0f, -1.0f};
+    desc.speed = {2.0f, 2.0f};
+    desc.size = {0.3f, 0.3f};
+    const renderer::ParticleSpawn spawn{.effect = Effect(desc), .count = 1};
+    RenderWithParticles(view, std::span(&spawn, 1), kPastFadeIn);
+    EXPECT_GT(Pixel(32, 32).r, 100) << "behind the wall";
+    EXPECT_LT(Pixel(32, 32).g, 16);
+}
+
+TEST_F(ParticleTest, StickingParticleStaysWhereItHits) {
+    const SceneView view = WithWall(Mesh(MakeQuad(-3.0f, 3.0f, -3.0f, 3.0f, -1.0f)), Material({1.0f, 0.0f, 0.0f}));
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    desc.direction = {0.0f, 0.0f, -1.0f};
+    desc.speed = {2.0f, 2.0f};
+    desc.size = {0.3f, 0.3f};
+    desc.collision = renderer::ParticleCollision::Stick;
+    const renderer::ParticleSpawn spawn{.effect = Effect(desc), .count = 1};
+    RenderWithParticles(view, std::span(&spawn, 1), kPastFadeIn);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0)) << "on the wall's face";
+    RenderWithParticles(view, {}, 1.0f);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0)) << "still there";
+}
+
+TEST_F(ParticleTest, BouncingParticleComesBackOffTheWall) {
+    // Along +X at 1 m/s, and towards the wall at 2 m/s: it hits at 0.5 s, 0.5 m to the side, and comes back
+    // out to about 0.85 m in front of the origin and 1.45 m to the side by 1.5 s, in steps of 0.1 s.
+    const SceneView view = WithWall(Mesh(MakeQuad(-3.0f, 3.0f, -3.0f, 3.0f, -1.0f)), Material({1.0f, 0.0f, 0.0f}));
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    desc.direction = glm::normalize(glm::vec3(1.0f, 0.0f, -2.0f));
+    desc.speed = glm::vec2(glm::sqrt(5.0f));
+    desc.size = {0.6f, 0.6f};
+    desc.collision = renderer::ParticleCollision::Bounce;
+    desc.bounce = 1.0f;
+    RenderWithParticles(view, {}, 1000.0f);
+    const renderer::ParticleSpawn spawn{.effect = Effect(desc), .count = 1};
+    for (int frame = 0; frame < 15; ++frame) {
+        RenderWithParticles(view, frame == 0 ? std::span(&spawn, 1) : std::span<const renderer::ParticleSpawn>{}, 0.1f);
+    }
+    const auto bounced = static_cast<std::uint32_t>(32.0f + 1.45f * 5.0f / 4.15f * kPixelsPerMeter);
+    EXPECT_EQ(Pixel(bounced, 32), glm::ivec3(0, 255, 0));
+}
+
+TEST_F(ParticleTest, HitSpawnsTheSubEmittersEffectAndIsReported) {
+    const MaterialHandle red = Material({1.0f, 0.0f, 0.0f});
+    const SceneView view = WithWall(Mesh(MakeQuad(-3.0f, 3.0f, -3.0f, 3.0f, -1.0f)), red);
+    const renderer::ParticleEffectHandle splash = Effect({0.0f, 0.0f, 1.0f});
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    desc.direction = {0.0f, 0.0f, -1.0f};
+    desc.speed = {2.0f, 2.0f};
+    desc.size = {0.3f, 0.3f};
+    desc.collision = renderer::ParticleCollision::Die;
+    desc.reportHits = true;
+    desc.onHit = {.effect = splash, .count = 1};
+    const renderer::ParticleEffectHandle drop = Effect(desc);
+    const renderer::ParticleSpawn spawn{.effect = drop, .count = 1};
+    RenderWithParticles(view, std::span(&spawn, 1), 1.0f);
+    EXPECT_GT(Pixel(32, 32).r, 100) << "the drop died on the wall";
+    RenderWithParticles(view, {}, kPastFadeIn);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 0, 255)) << "its splash, the next frame";
+
+    // The CPU reads the hit once the GPU has finished its frame.
+    std::vector<renderer::ParticlePass::Hit> hits;
+    for (std::uint32_t frame = 0; frame < rhi::kFramesInFlight && hits.empty(); ++frame) {
+        RenderWithParticles(view, {}, 0.0f);
+        hits.assign(m_particles->Hits().begin(), m_particles->Hits().end());
+    }
+    ASSERT_EQ(hits.size(), 1U);
+    EXPECT_EQ(hits[0].effect, drop);
+    EXPECT_EQ(hits[0].material, red.Index());
+    EXPECT_NEAR(hits[0].position.z, -1.0f, 0.01f);
+    EXPECT_NEAR(glm::distance(hits[0].normal, glm::vec3(0.0f, 0.0f, 1.0f)), 0.0f, 1e-3f) << "towards the drop";
+    RenderWithParticles(view, {}, 0.0f);
+    EXPECT_TRUE(m_particles->Hits().empty()) << "each hit is read once";
+}
+
+TEST_F(ParticleTest, DeathSpawnsTheSubEmittersEffectWhereItDied) {
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    desc.lifetime = {1.0f, 1.0f};
+    desc.onDeath = {.effect = Effect({0.0f, 0.0f, 1.0f}), .count = 1};
+    const renderer::ParticleSpawn spawn{.effect = Effect(desc), .count = 1};
+    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), kPastFadeIn);
+    EXPECT_TRUE(IsBackground(32, 32)) << "it died";
+    RenderWithParticles({TestCamera()}, {}, kPastFadeIn);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 0, 255));
+}
+
+TEST_F(ParticleTest, WindCarriesParticlesByTheirDrag) {
+    // In a wind of 1 m/s along +X, a particle of high drag soon moves with it: 1.4 m in 1.5 s.
+    const auto carried = static_cast<std::uint32_t>(32.0f + 1.4f * kPixelsPerMeter);
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    desc.drag = 10.0f;
+    SceneView windy{TestCamera()};
+    windy.atmosphere.wind = {1.0f, 0.0f, 0.0f};
+    const renderer::ParticleSpawn spawn{.effect = Effect(desc), .count = 1};
+    RenderWithParticles(windy, std::span(&spawn, 1), kPastFadeIn);
+    EXPECT_EQ(Pixel(carried, 32), glm::ivec3(0, 255, 0));
+    EXPECT_TRUE(IsBackground(32, 32));
+
+    // Without drag, it is too heavy for the wind.
+    desc.drag = 0.0f;
+    RenderWithParticles(windy, {}, 1000.0f);
+    const renderer::ParticleSpawn heavy{.effect = Effect(desc), .count = 1};
+    RenderWithParticles(windy, std::span(&heavy, 1), kPastFadeIn);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0));
+}
+
+TEST_F(ParticleTest, WindVolumesBlowOnlyInsideTheirBox) {
+    const auto carried = static_cast<std::uint32_t>(32.0f + 1.4f * kPixelsPerMeter);
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    desc.drag = 10.0f;
+    SceneView view{TestCamera()};
+    view.windVolumes.push_back(
+        {.world = glm::scale(glm::mat4(1.0f), glm::vec3(10.0f)), .velocity = {1.0f, 0.0f, 0.0f}, .edge = 0.0f});
+    const renderer::ParticleSpawn spawn{.effect = Effect(desc), .count = 1};
+    RenderWithParticles(view, std::span(&spawn, 1), kPastFadeIn);
+    EXPECT_EQ(Pixel(carried, 32), glm::ivec3(0, 255, 0));
+
+    view.windVolumes[0].world = glm::translate(glm::mat4(1.0f), glm::vec3(50.0f, 0.0f, 0.0f));
+    RenderWithParticles(view, {}, 1000.0f);
+    RenderWithParticles(view, std::span(&spawn, 1), kPastFadeIn);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0)) << "a box far away";
+}
+
+TEST_F(ParticleTest, TurbulenceStirsStillParticles) {
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    desc.size = {0.3f, 0.3f};
+    desc.turbulence = 5.0f;
+    RenderOne(desc, kPastFadeIn);
+    EXPECT_TRUE(IsBackground(32, 32));
+}
+
+TEST_F(ParticleTest, AttractorsPullTheirEffectOnly) {
+    // 2 m/s squared towards the origin, from 2 m to its left, in five steps of 0.2 s: 1.2 m closer.
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    desc.fadeIn = 0.0f;
+    const renderer::ParticleEffectHandle pulled = Effect(desc);
+    const renderer::ParticleEffectHandle other = Effect(desc);
+    const auto start = static_cast<std::uint32_t>(32.0f - 2.0f * kPixelsPerMeter);
+    const auto closer = static_cast<std::uint32_t>(32.0f - 0.8f * kPixelsPerMeter);
+    for (const auto& [effect, moves] : {std::pair{pulled, true}, std::pair{other, false}}) {
+        SceneView view{TestCamera()};
+        view.particleAttractors.push_back({.effect = pulled, .strength = 2.0f});
+        RenderWithParticles(view, {}, 1000.0f);
+        const renderer::ParticleSpawn spawn{.effect = effect, .position = {-2.0f, 0.0f, 0.0f}, .count = 1};
+        for (int frame = 0; frame < 5; ++frame) {
+            RenderWithParticles(view, frame == 0 ? std::span(&spawn, 1) : std::span<const renderer::ParticleSpawn>{},
+                                0.2f);
+        }
+        if (moves) {
+            EXPECT_EQ(Pixel(closer, 32), glm::ivec3(0, 255, 0));
+            EXPECT_TRUE(IsBackground(start, 32));
+        } else {
+            EXPECT_EQ(Pixel(start, 32), glm::ivec3(0, 255, 0)) << "another effect";
+        }
+    }
 }
 
 TEST_F(MeshPassTest, DestroyedMeshIsSkipped) {

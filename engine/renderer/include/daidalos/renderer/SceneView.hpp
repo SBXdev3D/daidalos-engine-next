@@ -115,6 +115,40 @@ struct Atmosphere {
     bool autoExposure = false;
     float ev100Min = 0.0f;
     float ev100Max = 0.0f;
+    /// Air moving through the whole level, meters per second, which carries particles by their drag
+    /// (ADR-0053): through a broken roof, a courtyard. It gusts by up to windGust of itself, 0 to 1,
+    /// windGustFrequency times a second.
+    glm::vec3 wind{0.0f};
+    float windGust = 0.0f;
+    float windGustFrequency = 0.2f;
+};
+
+/// Air moving through a box (ADR-0053): a draft under a door, the blast of a fan. The box is the cube from
+/// -0.5 to 0.5 in world's space: its scale is the box's size. Its wind adds to the level's.
+struct WindVolume {
+    glm::mat4 world{1.0f};
+    /// Meters per second, in the world's frame.
+    glm::vec3 velocity{0.0f};
+    /// How much it gusts, from 0 (steady) to 1, and how many times a second.
+    float gust = 0.0f;
+    float gustFrequency = 0.2f;
+    /// The wind fades to nothing towards the faces over this fraction of the box's half-size.
+    float edge = 0.3f;
+};
+
+/// A point that pulls particles towards it and turns them around an axis (ADR-0053): flies around a corpse,
+/// moths around a lamp.
+struct ParticleAttractor {
+    glm::vec3 position{0.0f};
+    /// The axis it turns particles around, counterclockwise looking down it.
+    glm::vec3 axis{0.0f, 1.0f, 0.0f};
+    /// The only effect it moves, or null for every effect.
+    ParticleEffectHandle effect;
+    /// Meters per second squared towards it, and around its axis.
+    float strength = 1.0f;
+    float vortex = 0.0f;
+    /// Where its pull fades to nothing, in meters; 0 reaches everywhere.
+    float radius = 0.0f;
 };
 
 /// A directional light is infinitely far, as the sun or the moon: it shines along its direction everywhere,
@@ -163,6 +197,9 @@ struct SceneView {
     std::vector<FogVolume> fogVolumes;
     /// New particles of the frame (ADR-0025).
     std::vector<ParticleSpawn> particleSpawns;
+    /// What moves particles besides gravity and the level's wind (ADR-0053).
+    std::vector<WindVolume> windVolumes;
+    std::vector<ParticleAttractor> particleAttractors;
     /// Seconds since the previous frame, by which particles move.
     float timeStep = 0.0f;
     /// The view does not follow from the previous one, after a teleport or a change of scene: nothing

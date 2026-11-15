@@ -16,9 +16,13 @@ namespace daidalos::scene {
 /// A particle effect as a file describes it (ADR-0053): what its particles look like and how they move,
 /// the image they use, and how its emitters emit unless they say otherwise.
 struct ParticleEffectFile {
-    /// Its texture is not set: the file names it, relative to the file's own directory.
+    /// Its texture and its sub-emitters' effects are not set: the file names them, relative to its own
+    /// directory.
     renderer::ParticleEffectDesc desc;
     std::string texture;
+    /// The effect files of onDeath and onHit, or empty.
+    std::string deathEffect;
+    std::string hitEffect;
     ParticleEmission emission;
 };
 
@@ -29,8 +33,10 @@ struct ParticleEffectFile {
 /// - "lifetime", "size" and "speed" are a number, or the two numbers they are picked between;
 /// - "color" is a list of [time, [r, g, b, a]] keys (a defaults to 1), and the curves over life lists of
 ///   [time, value] keys, or a number that holds over the whole life;
-/// - "orientation" is "camera", "velocity", "axis" or "plane", and "shape" "box", "cylinder", "cone" or
-///   "line";
+/// - "orientation" is "camera", "velocity", "axis" or "plane", "shape" "box", "cylinder", "cone" or
+///   "line", and "collision" "none", "bounce", "stick" or "die";
+/// - "onDeath" and "onHit" are objects with "effect", the path of another effect file relative to this
+///   one's directory, and "count";
 /// - "emitter" gives ParticleEmission: "rate", "ratePerMeter", and "bursts", a list of objects with
 ///   "time", "count", "interval" and "repeats";
 /// - "comment" is free text.

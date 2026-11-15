@@ -1,6 +1,6 @@
 # Architecture
 
-How the engine is built today, through Phase 9.19: real lights and emissive surfaces with soft ray-traced shadows, sampled by ReSTIR DI over a G-buffer, indirect light from a bounce lit by the lights and a radiance cache, ray-traced reflections and glass, their denoiser, temporal antialiasing that upscales from a resolution that moves to hold the frame rate, the image formed by an adapting eye, bloom and AgX for SDR and HDR10 displays, a sky, PBR materials, normal maps and particles on the GPU, whose effects are files. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
+How the engine is built today, through Phase 9.20: real lights and emissive surfaces with soft ray-traced shadows, sampled by ReSTIR DI over a G-buffer, indirect light from a bounce lit by the lights and a radiance cache, ray-traced reflections and glass, their denoiser, temporal antialiasing that upscales from a resolution that moves to hold the frame rate, the image formed by an adapting eye, bloom and AgX for SDR and HDR10 displays, a sky, PBR materials, normal maps and particles on the GPU, whose effects are files. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
 
 ## Modules
 
@@ -294,15 +294,15 @@ Particles live on the GPU, in one pool of 65,536 (ADR-0025, ADR-0053). The CPU o
 flowchart LR
     F["Effect files<br/>.effect.json"] -->|"AssetLibrary"| R["Effect table and<br/>curves on the GPU"]
     E["ParticleEmitter entities,<br/>Scene::SpawnParticles"] -->|"Extract"| V["SceneView::particleSpawns"]
-    V --> EM["Emit<br/>slots from the dead list,<br/>in the effect's shape"]
+    V --> EM["Emit<br/>last frame's sub-spawns,<br/>then the CPU's, in the<br/>effect's shape"]
     R --> EM
-    EM --> SI["Simulate<br/>gravity, drag, bounces<br/>off the G-buffer, light"]
+    EM --> SI["Simulate<br/>gravity, air, turbulence,<br/>attractors, rays against<br/>the structure, light"]
     SI --> FI["Finish<br/>draw arguments"]
     FI --> SO["Bitonic sort<br/>back to front"]
     SO --> D["Indirect draw<br/>turned, flipbook,<br/>soft, premultiplied"]
 ```
 
-An effect is a JSON file (`.effect.json`, `scene::ParseParticleEffect`): its texture, relative to the file, a flipbook of cells of its grid with frames blended, color and opacity on a gradient over life, size, emission and speed on curves, how its quads turn (facing the camera, stretched along their velocity, turning around an axis, or lying in a plane), where particles appear (a box and sphere, a cylinder, a cone that opens out, a line), how they move, and how its emitters emit. Angles are in degrees there, and unknown keys are errors that name them. `AssetLibrary::LoadParticleEffect` loads a file once with its texture, and in development builds the scene reads changed files again twice a second, updating the effects in place and their emitters' emission. The renderer bakes each effect's curves into 256 samples in a buffer, which the passes read by life. The sandbox's effects are in `assets/Factory/Effects/`, and the level's glTF nodes `particles;effect=<file>` name theirs. Effects can also be created from a `ParticleEffectDesc` in code, as tests do; `AssetLibrary::CreateParticleEffect` owns them with the level's other assets. Particles hide behind meshes and fade into them, lit ones take the light the simulation keeps for each of them: each particle keeps the light it chose, as ReSTIR does for pixels, tested for shadows, and additive ones glow in the same draw as the smoke.
+An effect is a JSON file (`.effect.json`, `scene::ParseParticleEffect`): its texture, relative to the file, a flipbook of cells of its grid with frames blended, color and opacity on a gradient over life, size, emission and speed on curves, how its quads turn (facing the camera, stretched along their velocity, turning around an axis, or lying in a plane), where particles appear (a box and sphere, a cylinder, a cone that opens out, a line), how they move, and how its emitters emit. Angles are in degrees there, and unknown keys are errors that name them. `AssetLibrary::LoadParticleEffect` loads a file once with its texture, and in development builds the scene reads changed files again twice a second, updating the effects in place and their emitters' emission. The renderer bakes each effect's curves into 256 samples in a buffer, which the passes read by life. Particles move in the air: gravity, then drag towards the air's velocity, the level's wind (`Atmosphere::wind`) and boxes of wind (`scene::WindVolume`) with gusts, then curl-noise turbulence and attractors (`scene::ParticleAttractor`), which can be kept to one effect. Colliding effects trace their motion of the frame against the frame's acceleration structure, glass included, and bounce, stick or die where they hit; a particle too slow to leave a surface slides, then rests. Impacts can spawn another effect the next frame, as can deaths: the simulation appends requests to one of two lists that swap each frame. Effects that report hits write them to the frame slot's buffer, which the CPU reads when the slot comes round again, with the count of particles alive: `Renderer::ParticleHits` gives each hit's effect and the material it hit, for decals and sounds. The sandbox's effects are in `assets/Factory/Effects/`, and the level's glTF nodes `particles;effect=<file>` name theirs. Effects can also be created from a `ParticleEffectDesc` in code, as tests do; `AssetLibrary::CreateParticleEffect` owns them with the level's other assets. Particles hide behind meshes and fade into them, lit ones take the light the simulation keeps for each of them: each particle keeps the light it chose, as ReSTIR does for pixels, tested for shadows, and additive ones glow in the same draw as the smoke.
 
 ## Tests
 
@@ -319,7 +319,7 @@ A tag `vX.Y.Z` runs the Release workflow (ADR-0038): it builds the `*-shipping` 
 
 - Only the factory's upgraded textures are KTX2 (ADR-0046); the rest is PNG, decoded to RGBA8 at load.
 - Height maps are not used: the factory's wait in `assets/Factory/Source/` for Phase 11.
-- Particles only collide with what is on screen.
+- A particle at rest stays where it rested, even if the surface it rests on moves away.
 - Particles are lit evenly from every side, and cast no shadow: their indirect light is that of the surfaces behind them.
 - What the cache holds lags a few frames behind a moving light, and starts over after a cut while the cache fills: light that bounced more than once, since the first bounce is lit at once.
 - Indirect light, the cache and the bounce, takes 1.5 ms at 1080p on an RTX 3090 in the factory (ADR-0045).

@@ -184,6 +184,8 @@ private:
     std::vector<renderer::ParticleEffectHandle> m_particleEffects;
     /// Effects loaded from files, by identity.
     std::unordered_map<std::string, EffectFile> m_effectFiles;
+    /// The effect files being read, each reading the next for its sub-emitters.
+    std::vector<std::string> m_effectsReading;
     std::vector<PendingLoad> m_pending;
 };
 

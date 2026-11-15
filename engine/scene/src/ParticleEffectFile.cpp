@@ -171,6 +171,45 @@ core::Result<renderer::ParticleShape> Shape(Element value, std::string_view key)
     return Invalid(key, "must be \"box\", \"cylinder\", \"cone\" or \"line\"");
 }
 
+core::Result<renderer::ParticleCollision> Collision(Element value, std::string_view key) {
+    DAI_TRY_ASSIGN(std::string_view name, Text(value, key));
+    if (name == "none") {
+        return renderer::ParticleCollision::None;
+    }
+    if (name == "bounce") {
+        return renderer::ParticleCollision::Bounce;
+    }
+    if (name == "stick") {
+        return renderer::ParticleCollision::Stick;
+    }
+    if (name == "die") {
+        return renderer::ParticleCollision::Die;
+    }
+    return Invalid(key, "must be \"none\", \"bounce\", \"stick\" or \"die\"");
+}
+
+// A sub-emitter: the path of its effect file, and how many particles it spawns.
+core::Result<void> SubEmitter(Element value, std::string_view key, std::string& effect, std::uint32_t& count) {
+    simdjson::dom::object object;
+    if (value.get_object().get(object) != simdjson::SUCCESS) {
+        return Invalid(key, "must be an object with \"effect\" and \"count\"");
+    }
+    for (const auto [name, field] : object) {
+        if (name == "effect") {
+            DAI_TRY_ASSIGN(std::string_view path, Text(field, std::format("{}.effect", key)));
+            effect = path;
+        } else if (name == "count") {
+            DAI_TRY_ASSIGN(count, Count(field, std::format("{}.count", key)));
+        } else {
+            return Invalid(std::format("{}.{}", key, name), "is not a key of a sub-emitter");
+        }
+    }
+    if (effect.empty()) {
+        return Invalid(std::format("{}.effect", key), "is required");
+    }
+    return {};
+}
+
 core::Result<ParticleBurst> Burst(Element value) {
     simdjson::dom::object object;
     if (value.get_object().get(object) != simdjson::SUCCESS) {
@@ -256,10 +295,20 @@ core::Result<void> Read(ParticleEffectFile& file, std::string_view key, Element 
         DAI_TRY_ASSIGN(desc.additive, Boolean(value, key));
     } else if (key == "lit") {
         DAI_TRY_ASSIGN(desc.lit, Boolean(value, key));
-    } else if (key == "collides") {
-        DAI_TRY_ASSIGN(desc.collides, Boolean(value, key));
+    } else if (key == "collision") {
+        DAI_TRY_ASSIGN(desc.collision, Collision(value, key));
     } else if (key == "bounce") {
         DAI_TRY_ASSIGN(desc.bounce, Number(value, key));
+    } else if (key == "reportHits") {
+        DAI_TRY_ASSIGN(desc.reportHits, Boolean(value, key));
+    } else if (key == "onDeath") {
+        DAI_TRY(SubEmitter(value, key, file.deathEffect, desc.onDeath.count));
+    } else if (key == "onHit") {
+        DAI_TRY(SubEmitter(value, key, file.hitEffect, desc.onHit.count));
+    } else if (key == "turbulence") {
+        DAI_TRY_ASSIGN(desc.turbulence, Number(value, key));
+    } else if (key == "turbulenceScale") {
+        DAI_TRY_ASSIGN(desc.turbulenceScale, Number(value, key));
     } else if (key == "lifetime") {
         DAI_TRY_ASSIGN(desc.lifetime, Range(value, key));
     } else if (key == "size") {
@@ -333,6 +382,9 @@ core::Result<ParticleEffectFile> ParseParticleEffect(std::string_view json) {
     }
     if (desc.lifetime.x <= 0.0f) {
         return Invalid("lifetime", "must be more than 0");
+    }
+    if (desc.turbulenceScale <= 0.0f) {
+        return Invalid("turbulenceScale", "must be more than 0");
     }
     return file;
 }
