@@ -478,6 +478,10 @@ core::Result<ParticleEffectHandle> Renderer::CreateParticleEffect(const Particle
     return m_impl->particlePass->CreateEffect(desc);
 }
 
+bool Renderer::UpdateParticleEffect(ParticleEffectHandle effect, const ParticleEffectDesc& desc) {
+    return m_impl->particlePass->UpdateEffect(effect, desc);
+}
+
 void Renderer::DestroyParticleEffect(ParticleEffectHandle effect) {
     m_impl->particlePass->DestroyEffect(effect);
 }

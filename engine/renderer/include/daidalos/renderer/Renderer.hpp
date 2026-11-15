@@ -225,6 +225,9 @@ public:
 
     /// The texture must outlive the effect.
     [[nodiscard]] core::Result<ParticleEffectHandle> CreateParticleEffect(const ParticleEffectDesc& desc);
+    /// Changes an effect in place, as when its file is edited: particles alive take the change at once.
+    /// False if the effect is gone.
+    bool UpdateParticleEffect(ParticleEffectHandle effect, const ParticleEffectDesc& desc);
     void DestroyParticleEffect(ParticleEffectHandle effect);
 
     void SetVsync(bool vsync);

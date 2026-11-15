@@ -12,6 +12,8 @@
 #include <array>
 #include <chrono>
 #include <format>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <utility>
 
@@ -218,6 +220,66 @@ AssetLibrary::CreateParticleEffect(const renderer::ParticleEffectDesc& desc) {
     DAI_TRY_ASSIGN(renderer::ParticleEffectHandle effect, m_renderer->CreateParticleEffect(desc));
     m_particleEffects.push_back(effect);
     return effect;
+}
+
+core::Result<ParticleEffectFile> AssetLibrary::ReadParticleEffect(const std::string& identity,
+                                                                  const std::filesystem::path& file) {
+    std::ifstream stream(file, std::ios::binary);
+    if (!stream) {
+        return core::MakeError(core::ErrorCode::IoError, kModule, std::format("Cannot read '{}'", identity));
+    }
+    const std::string json{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+    core::Result<ParticleEffectFile> parsed = ParseParticleEffect(json);
+    if (!parsed) {
+        return core::MakeError(parsed.error().code, kModule, std::format("'{}': {}", identity, parsed.error().message));
+    }
+    // The texture is found from the file's directory.
+    const std::size_t slash = identity.rfind('/');
+    const std::string directory = slash == std::string::npos ? std::string{} : identity.substr(0, slash + 1);
+    core::Result<rhi::TextureHandle> texture = LoadTexture(directory + parsed->texture);
+    if (!texture) {
+        return core::MakeError(texture.error().code, kModule,
+                               std::format("'{}': its texture: {}", identity, texture.error().message));
+    }
+    parsed->desc.texture = *texture;
+    return parsed;
+}
+
+core::Result<ParticleEffectAsset> AssetLibrary::LoadParticleEffect(std::string_view path) {
+    DAI_TRY_ASSIGN(std::string identity, resources::NormalizeAssetPath(path));
+    if (const auto found = m_effectFiles.find(identity); found != m_effectFiles.end()) {
+        return found->second.asset;
+    }
+    DAI_TRY_ASSIGN(std::filesystem::path file, resources::ResolveAssetPath(m_root, identity));
+    std::error_code error;
+    const std::filesystem::file_time_type written = std::filesystem::last_write_time(file, error);
+    DAI_TRY_ASSIGN(ParticleEffectFile read, ReadParticleEffect(identity, file));
+    DAI_TRY_ASSIGN(renderer::ParticleEffectHandle effect, CreateParticleEffect(read.desc));
+    const ParticleEffectAsset asset{effect, std::move(read.emission)};
+    m_effectFiles.emplace(std::move(identity), EffectFile{asset, std::move(file), written});
+    return asset;
+}
+
+std::vector<ParticleEffectAsset> AssetLibrary::ReloadChangedParticleEffects() {
+    std::vector<ParticleEffectAsset> reloaded;
+    for (auto& [identity, loaded] : m_effectFiles) {
+        std::error_code error;
+        const std::filesystem::file_time_type written = std::filesystem::last_write_time(loaded.file, error);
+        if (error || written == loaded.written) {
+            continue;
+        }
+        loaded.written = written;
+        core::Result<ParticleEffectFile> read = ReadParticleEffect(identity, loaded.file);
+        if (!read) {
+            DAI_LOG_WARNING(kModule, "Particle effect not reloaded: {}", core::Format(read.error()));
+            continue;
+        }
+        m_renderer->UpdateParticleEffect(loaded.asset.effect, read->desc);
+        loaded.asset.emission = std::move(read->emission);
+        reloaded.push_back(loaded.asset);
+        DAI_LOG_INFO(kModule, "Reloaded particle effect '{}'", identity);
+    }
+    return reloaded;
 }
 
 core::Result<rhi::TextureHandle> AssetLibrary::LoadTexture(std::string_view path, resources::TextureUse use) {

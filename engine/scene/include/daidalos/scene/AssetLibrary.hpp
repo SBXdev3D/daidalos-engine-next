@@ -12,6 +12,7 @@
 #include <daidalos/renderer/Renderer.hpp>
 #include <daidalos/resources/Cache.hpp>
 #include <daidalos/scene/Components.hpp>
+#include <daidalos/scene/ParticleEffectFile.hpp>
 #include <daidalos/ui/Font.hpp>
 
 #include <glm/mat4x4.hpp>
@@ -26,6 +27,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace daidalos::scene {
@@ -65,6 +67,12 @@ struct Model {
     std::shared_ptr<const animation::ClipSet> clips;
 };
 
+/// A particle effect loaded from its file (ADR-0053), and how its emitters emit unless they say otherwise.
+struct ParticleEffectAsset {
+    renderer::ParticleEffectHandle effect;
+    ParticleEmission emission;
+};
+
 /// Loads assets to the GPU, once each, and owns what it loaded (ADR-0016). Everything is released
 /// together when the library is destroyed: nothing is counted and nothing is evicted, so a scene
 /// keeps a library for as long as it needs its assets. Entities drawing destroyed assets are
@@ -88,6 +96,15 @@ public:
     /// Creates a particle effect that the library owns and releases with its other assets.
     [[nodiscard]] core::Result<renderer::ParticleEffectHandle>
     CreateParticleEffect(const renderer::ParticleEffectDesc& desc);
+
+    /// Returns a particle effect from its file (ParseParticleEffect), loading it and its texture the first
+    /// time. A missing or invalid file is an error that names it, and the next request tries again.
+    [[nodiscard]] core::Result<ParticleEffectAsset> LoadParticleEffect(std::string_view path);
+
+    /// Reads again the effect files that changed on disk since they were read, and updates their effects in
+    /// place: particles alive take the change. Returns those it updated. A file that no longer reads keeps
+    /// its effect as it was, with a warning. For hot reload in development builds.
+    std::vector<ParticleEffectAsset> ReloadChangedParticleEffects();
 
     /// Returns a texture, loading it the first time, such as the image of particles. The handle lives as
     /// long as the library.
@@ -147,6 +164,15 @@ private:
     [[nodiscard]] core::Result<const Model*> Build(std::string key, core::Result<DecodedModel> decoded);
     [[nodiscard]] core::Result<rhi::TextureHandle> FindOrCreateTexture(DecodedImage& image);
     [[nodiscard]] core::Result<Model> BuildModel(DecodedModel& decoded, const std::string& key);
+    /// An effect file's effect, with its texture loaded, and its emission.
+    [[nodiscard]] core::Result<ParticleEffectFile> ReadParticleEffect(const std::string& identity,
+                                                                      const std::filesystem::path& file);
+
+    struct EffectFile {
+        ParticleEffectAsset asset;
+        std::filesystem::path file;
+        std::filesystem::file_time_type written;
+    };
 
     renderer::Renderer* m_renderer;
     std::filesystem::path m_root;
@@ -156,6 +182,8 @@ private:
     std::vector<renderer::MeshHandle> m_meshes;
     std::vector<renderer::MaterialHandle> m_materials;
     std::vector<renderer::ParticleEffectHandle> m_particleEffects;
+    /// Effects loaded from files, by identity.
+    std::unordered_map<std::string, EffectFile> m_effectFiles;
     std::vector<PendingLoad> m_pending;
 };
 

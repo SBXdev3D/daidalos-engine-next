@@ -11,6 +11,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/matrix.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -159,26 +160,56 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
 }
 
 void EmitParticles(ecs::World& world, float delta, std::vector<renderer::ParticleSpawn>& spawns) {
-    world.Each<ecs::WorldTransform, ParticleEmitter>(
-        [&](ecs::Entity /*entity*/, const ecs::WorldTransform& transform, ParticleEmitter& emitter) {
-            if (!emitter.enabled || emitter.rate <= 0.0f) {
-                emitter.pending = 0.0f;
-                return;
-            }
-            emitter.pending += emitter.rate * delta;
-            const float whole = std::floor(emitter.pending);
-            emitter.pending -= whole;
-            if (whole < 1.0f) {
-                return;
-            }
-            const glm::mat3 axes(glm::normalize(glm::vec3(transform.matrix[0])),
-                                 glm::normalize(glm::vec3(transform.matrix[1])),
-                                 glm::normalize(glm::vec3(transform.matrix[2])));
-            spawns.push_back({.effect = emitter.effect,
-                              .position = glm::vec3(transform.matrix[3]),
-                              .rotation = glm::quat_cast(axes),
-                              .count = static_cast<std::uint32_t>(whole)});
-        });
+    world.Each<ecs::WorldTransform, ParticleEmitter>([&](ecs::Entity /*entity*/, const ecs::WorldTransform& transform,
+                                                         ParticleEmitter& emitter) {
+        if (!emitter.enabled) {
+            emitter.pending = 0.0f;
+            emitter.age = 0.0f;
+            emitter.lastPosition.reset();
+            return;
+        }
+        const glm::vec3 position(transform.matrix[3]);
+        const glm::vec3 moved = emitter.lastPosition.has_value() ? position - *emitter.lastPosition : glm::vec3(0.0f);
+        const ParticleEmission& emission = emitter.emission;
+        emitter.pending +=
+            std::max(emission.rate, 0.0f) * delta + std::max(emission.ratePerMeter, 0.0f) * glm::length(moved);
+        const float whole = std::floor(emitter.pending);
+        emitter.pending -= whole;
+        std::uint32_t count = static_cast<std::uint32_t>(whole);
+        for (const ParticleBurst& burst : emission.bursts) {
+            count += BurstsBetween(burst, emitter.age, emitter.age + delta) * burst.count;
+        }
+        emitter.age += delta;
+        const std::optional<glm::vec3> previous = std::exchange(emitter.lastPosition, position);
+        if (count == 0) {
+            return;
+        }
+        const glm::mat3 axes(glm::normalize(glm::vec3(transform.matrix[0])),
+                             glm::normalize(glm::vec3(transform.matrix[1])),
+                             glm::normalize(glm::vec3(transform.matrix[2])));
+        spawns.push_back({.effect = emitter.effect,
+                          .position = position,
+                          .rotation = glm::quat_cast(axes),
+                          .count = count,
+                          .previousPosition = previous,
+                          .velocity = previous.has_value() && delta > 0.0f ? moved / delta : glm::vec3(0.0f)});
+    });
+}
+
+std::uint32_t BurstsBetween(const ParticleBurst& burst, float from, float to) {
+    if (to <= from) {
+        return 0;
+    }
+    if (burst.interval <= 0.0f) {
+        return burst.time >= from && burst.time < to ? 1U : 0U;
+    }
+    // The firings at time + k * interval, k from 0, that fall in [from, to).
+    const double first = std::max(0.0, std::ceil((static_cast<double>(from) - burst.time) / burst.interval));
+    double last = std::ceil((static_cast<double>(to) - burst.time) / burst.interval) - 1.0;
+    if (burst.repeats > 0) {
+        last = std::min(last, static_cast<double>(burst.repeats) - 1.0);
+    }
+    return last >= first ? static_cast<std::uint32_t>(last - first + 1.0) : 0U;
 }
 
 void SyncKinematicBodies(ecs::World& world, physics::PhysicsWorld& physics, float step) {

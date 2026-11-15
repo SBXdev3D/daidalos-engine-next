@@ -13,6 +13,7 @@
 #include <daidalos/renderer/SceneView.hpp>
 #include <daidalos/scene/AssetLibrary.hpp>
 
+#include <chrono>
 #include <filesystem>
 #include <optional>
 #include <vector>
@@ -77,6 +78,10 @@ public:
     /// over instead of smearing the jump (ADR-0037). A scene's first view is always one.
     void CutView() { m_cut = true; }
 
+    /// Reads again the particle effect files changed on disk (AssetLibrary::ReloadChangedParticleEffects),
+    /// and gives their emitters the files' emission. Development builds do it twice a second in Extract.
+    void ReloadChangedParticleEffects();
+
 private:
     // In this order, so that entities are gone before the assets they refer to.
     AssetLibrary m_assets;
@@ -93,6 +98,8 @@ private:
     /// Seconds of the last frame, for the particles of the next view.
     float m_frameDelta = 0.0f;
     std::vector<renderer::ParticleSpawn> m_bursts;
+    /// When Extract last looked for changed effect files.
+    std::chrono::steady_clock::time_point m_effectsChecked;
 };
 
 } // namespace daidalos::scene

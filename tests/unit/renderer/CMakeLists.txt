@@ -8,6 +8,7 @@ dai_add_test(NAME daidalos_renderer_tests
 
         LightSamplingTests.cpp
         LightUnitsTests.cpp
+        ParticleCurvesTests.cpp
         JitterTests.cpp
         PrimitivesTests.cpp
         RenderGraphTests.cpp

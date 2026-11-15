@@ -42,48 +42,60 @@ struct GpuParticle {
     glm::vec3 light;
     float lightSamples;
     std::array<std::uint32_t, 4> reservoir;
+    glm::vec3 axis;
+    float startFrame;
 };
-static_assert(sizeof(GpuParticle) == 80);
+static_assert(sizeof(GpuParticle) == 96);
 
 constexpr std::uint32_t kEffectLit = 1;
 constexpr std::uint32_t kEffectCollides = 2;
 constexpr std::uint32_t kEffectAdditive = 4;
+constexpr std::uint32_t kEffectLoop = 8;
+constexpr std::uint32_t kEffectRandomStart = 16;
 
 struct GpuEffect {
-    glm::vec4 startColor;
-    glm::vec4 endColor;
     glm::vec3 spawnBox;
     float spawnRadius;
     glm::vec3 direction;
     float spread;
+    glm::vec3 axis;
+    float stretch;
     float speedMin;
     float speedMax;
     float lifeMin;
     float lifeMax;
     float sizeMin;
     float sizeMax;
-    float growth;
     float gravity;
     float drag;
     float rotationSpeed;
     float softness;
     float bounce;
+    float fadeIn;
+    float inheritVelocity;
+    float frameRate;
+    std::uint32_t shape;
+    std::uint32_t orientation;
     std::uint32_t texture;
     std::uint32_t cell;
     std::uint32_t columns;
+    std::uint32_t rows;
+    std::uint32_t frames;
     std::uint32_t flags;
+    std::array<std::uint32_t, 2> padding;
 };
-static_assert(sizeof(GpuEffect) == 128);
+static_assert(sizeof(GpuEffect) == 144);
 
 struct GpuSpawn {
     glm::vec3 position;
     std::uint32_t effect;
     glm::vec4 rotation;
+    glm::vec3 previous;
     std::uint32_t first;
+    glm::vec3 velocity;
     std::uint32_t count;
-    std::array<std::uint32_t, 2> padding;
 };
-static_assert(sizeof(GpuSpawn) == 48);
+static_assert(sizeof(GpuSpawn) == 64);
 
 struct ParticlePushConstants {
     std::uint32_t particles;
@@ -109,7 +121,7 @@ struct ParticlePushConstants {
     glm::vec3 cameraRight;
     std::uint32_t materialBuffer;
     glm::vec3 cameraUp;
-    float padding3;
+    std::uint32_t curves;
     std::uint32_t lightMap;
     std::uint32_t previousLightCount;
 };
@@ -119,6 +131,47 @@ constexpr std::uint32_t kGroupSize = 64;
 constexpr std::uint32_t kGroups = (kMaxParticles + kGroupSize - 1) / kGroupSize;
 constexpr std::uint32_t kInitialEffectCapacity = 16;
 constexpr std::uint64_t kInitialSpawnCapacity = 64;
+// Each effect's curves: color, then size, emission and speed (BakeParticleCurves).
+constexpr std::uint64_t kCurveBytes = std::uint64_t{2} * kParticleCurveSamples * sizeof(glm::vec4);
+
+glm::vec3 Normalized(const glm::vec3& direction) {
+    return glm::length(direction) > 0.0f ? glm::normalize(direction) : glm::vec3(0.0f, 1.0f, 0.0f);
+}
+
+GpuEffect ToGpu(const ParticleEffectDesc& desc, std::uint32_t texture) {
+    const std::uint32_t flags = (desc.lit ? kEffectLit : 0U) | (desc.collides ? kEffectCollides : 0U) |
+                                (desc.additive ? kEffectAdditive : 0U) | (desc.loop ? kEffectLoop : 0U) |
+                                (desc.randomStartFrame ? kEffectRandomStart : 0U);
+    return {.spawnBox = desc.spawnBox,
+            .spawnRadius = desc.spawnRadius,
+            .direction = Normalized(desc.direction),
+            .spread = desc.spread,
+            .axis = Normalized(desc.axis),
+            .stretch = desc.stretch,
+            .speedMin = desc.speed.x,
+            .speedMax = desc.speed.y,
+            .lifeMin = desc.lifetime.x,
+            .lifeMax = desc.lifetime.y,
+            .sizeMin = desc.size.x,
+            .sizeMax = desc.size.y,
+            .gravity = desc.gravity,
+            .drag = desc.drag,
+            .rotationSpeed = desc.rotationSpeed,
+            .softness = desc.softness,
+            .bounce = desc.bounce,
+            .fadeIn = desc.fadeIn,
+            .inheritVelocity = desc.inheritVelocity,
+            .frameRate = desc.frameRate,
+            .shape = static_cast<std::uint32_t>(desc.shape),
+            .orientation = static_cast<std::uint32_t>(desc.orientation),
+            .texture = texture,
+            .cell = desc.cell,
+            .columns = desc.columns,
+            .rows = desc.rows == 0 ? desc.columns : desc.rows,
+            .frames = std::max(desc.frames, 1U),
+            .flags = flags,
+            .padding = {}};
+}
 // The sort's groups, as in ParticleSort.slang: each sorts kSortLocal keys in its own memory.
 constexpr std::uint32_t kSortThreads = 1024;
 constexpr std::uint32_t kSortLocal = 2 * kSortThreads;
@@ -135,16 +188,16 @@ ParticlePass::ParticlePass(ParticlePass&& other) noexcept
       m_alive(std::exchange(other.m_alive, {})), m_keys(std::exchange(other.m_keys, {})),
       m_counters(std::exchange(other.m_counters, {})), m_arguments(std::exchange(other.m_arguments, {})),
       m_current(other.m_current), m_effects(std::exchange(other.m_effects, {})),
-      m_effectTable(std::exchange(other.m_effectTable, {})), m_effectCapacity(std::exchange(other.m_effectCapacity, 0)),
-      m_frameSlots(std::exchange(other.m_frameSlots, {})), m_nextFrameSlot(other.m_nextFrameSlot),
-      m_frame(other.m_frame) {}
+      m_effectTable(std::exchange(other.m_effectTable, {})), m_curveTable(std::exchange(other.m_curveTable, {})),
+      m_effectCapacity(std::exchange(other.m_effectCapacity, 0)), m_frameSlots(std::exchange(other.m_frameSlots, {})),
+      m_nextFrameSlot(other.m_nextFrameSlot), m_frame(other.m_frame) {}
 
 ParticlePass::~ParticlePass() {
     for (const rhi::PipelineHandle pipeline : {m_emit, m_simulate, m_finish, m_sort, m_draw}) {
         m_device->DestroyPipeline(pipeline);
     }
     for (const rhi::BufferHandle buffer :
-         {m_particles, m_dead, m_alive[0], m_alive[1], m_keys, m_counters, m_arguments, m_effectTable}) {
+         {m_particles, m_dead, m_alive[0], m_alive[1], m_keys, m_counters, m_arguments, m_effectTable, m_curveTable}) {
         m_device->DestroyBuffer(buffer);
     }
     for (const FrameSlot& slot : m_frameSlots) {
@@ -219,52 +272,52 @@ core::Result<void> ParticlePass::ReserveEffectSlot(std::uint32_t index) {
                                                                     .usage = rhi::BufferUsage::Storage,
                                                                     .memory = rhi::MemoryLocation::CpuToGpu,
                                                                     .name = "Particle effects"}));
+    DAI_TRY_ASSIGN(rhi::BufferHandle curves, m_device->CreateBuffer({.size = capacity * kCurveBytes,
+                                                                     .usage = rhi::BufferUsage::Storage,
+                                                                     .memory = rhi::MemoryLocation::CpuToGpu,
+                                                                     .name = "Particle curves"}));
     if (m_effectTable) {
-        // Frames in flight keep reading the old table, which goes away after them.
+        // Frames in flight keep reading the old tables, which go away after them.
         std::memcpy(m_device->Mapped(table).data(), m_device->Mapped(m_effectTable).data(),
                     m_effectCapacity * sizeof(GpuEffect));
+        std::memcpy(m_device->Mapped(curves).data(), m_device->Mapped(m_curveTable).data(),
+                    m_effectCapacity * kCurveBytes);
         m_device->DestroyBuffer(m_effectTable);
+        m_device->DestroyBuffer(m_curveTable);
     }
+    m_curveTable = curves;
     m_effectTable = table;
     m_effectCapacity = capacity;
     return {};
 }
 
 core::Result<ParticleEffectHandle> ParticlePass::CreateEffect(const ParticleEffectDesc& desc) {
-    DAI_ASSERT(desc.texture, "A particle effect needs a texture");
-    DAI_ASSERT(desc.columns > 0 && desc.cell < desc.columns * desc.columns, "The cell must be in the grid");
-    const std::uint32_t flags =
-        (desc.lit ? kEffectLit : 0U) | (desc.collides ? kEffectCollides : 0U) | (desc.additive ? kEffectAdditive : 0U);
-    const GpuEffect data{desc.startColor,
-                         desc.endColor,
-                         desc.spawnBox,
-                         desc.spawnRadius,
-                         glm::length(desc.direction) > 0.0f ? glm::normalize(desc.direction) : glm::vec3(0, 1, 0),
-                         desc.spread,
-                         desc.speed.x,
-                         desc.speed.y,
-                         desc.lifetime.x,
-                         desc.lifetime.y,
-                         desc.size.x,
-                         desc.size.y,
-                         desc.growth,
-                         desc.gravity,
-                         desc.drag,
-                         desc.rotationSpeed,
-                         desc.softness,
-                         desc.bounce,
-                         m_device->BindlessIndex(desc.texture),
-                         desc.cell,
-                         desc.columns,
-                         flags};
     const ParticleEffectHandle effect = m_effects.Insert({});
     if (core::Result<void> reserved = ReserveEffectSlot(effect.Index()); !reserved) {
         m_effects.Remove(effect);
         return tl::unexpected(std::move(reserved.error()));
     }
-    std::memcpy(m_device->Mapped(m_effectTable).data() + std::size_t{effect.Index()} * sizeof(GpuEffect), &data,
-                sizeof(data));
+    WriteEffect(effect.Index(), desc);
     return effect;
+}
+
+bool ParticlePass::UpdateEffect(ParticleEffectHandle effect, const ParticleEffectDesc& desc) {
+    if (m_effects.TryGet(effect) == nullptr) {
+        return false;
+    }
+    WriteEffect(effect.Index(), desc);
+    return true;
+}
+
+void ParticlePass::WriteEffect(std::uint32_t index, const ParticleEffectDesc& desc) {
+    DAI_ASSERT(desc.texture, "A particle effect needs a texture");
+    const std::uint32_t rows = desc.rows == 0 ? desc.columns : desc.rows;
+    DAI_ASSERT(desc.columns > 0 && desc.cell + std::max(desc.frames, 1U) <= desc.columns * rows,
+               "The flipbook must be in the grid");
+    const GpuEffect data = ToGpu(desc, m_device->BindlessIndex(desc.texture));
+    std::memcpy(m_device->Mapped(m_effectTable).data() + std::size_t{index} * sizeof(GpuEffect), &data, sizeof(data));
+    const std::vector<glm::vec4> curves = BakeParticleCurves(desc);
+    std::memcpy(m_device->Mapped(m_curveTable).data() + index * kCurveBytes, curves.data(), kCurveBytes);
 }
 
 void ParticlePass::DestroyEffect(ParticleEffectHandle effect) {
@@ -287,12 +340,14 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, std::span<con
             continue;
         }
         const std::uint32_t count = std::min(spawn.count, kMaxParticles - emitted);
-        requests.push_back({spawn.position,
-                            spawn.effect.Index(),
-                            glm::vec4(spawn.rotation.x, spawn.rotation.y, spawn.rotation.z, spawn.rotation.w),
-                            emitted,
-                            count,
-                            {}});
+        requests.push_back(
+            {.position = spawn.position,
+             .effect = spawn.effect.Index(),
+             .rotation = glm::vec4(spawn.rotation.x, spawn.rotation.y, spawn.rotation.z, spawn.rotation.w),
+             .previous = spawn.previousPosition.value_or(spawn.position),
+             .first = emitted,
+             .velocity = spawn.velocity,
+             .count = count});
         emitted += count;
     }
     if (slot.spawnCapacity < std::max<std::size_t>(requests.size(), 1)) {
@@ -320,6 +375,7 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, std::span<con
     push.counters = m_device->StorageIndex(m_counters);
     push.arguments = m_device->StorageIndex(m_arguments);
     push.effects = m_device->StorageIndex(m_effectTable);
+    push.curves = m_device->StorageIndex(m_curveTable);
     push.spawns = m_device->StorageIndex(slot.spawns);
     push.spawnCount = static_cast<std::uint32_t>(requests.size());
     push.emitCount = emitted;
@@ -398,6 +454,7 @@ void ParticlePass::AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::T
     push.particles = m_device->StorageIndex(m_particles);
     push.keys = m_device->StorageIndex(m_keys);
     push.effects = m_device->StorageIndex(m_effectTable);
+    push.curves = m_device->StorageIndex(m_curveTable);
     push.frameBuffer = frameBuffer;
     push.depthTexture = m_device->BindlessIndex(depth);
     push.capacity = kMaxParticles;

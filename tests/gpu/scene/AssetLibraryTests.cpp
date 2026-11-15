@@ -11,6 +11,9 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <optional>
 #include <string>
 #include <vector>
@@ -98,6 +101,65 @@ TEST_F(AssetLibraryTest, MissingTextureFailsTheModelAndNamesTheFile) {
     EXPECT_EQ(model.error().code, core::ErrorCode::NotFound);
     EXPECT_NE(model.error().message.find("no-such-image.png"), std::string::npos);
     EXPECT_EQ(library.ModelCount(), 0U);
+}
+
+TEST_F(AssetLibraryTest, EveryFactoryEffectFileLoads) {
+    AssetLibrary library(*m_renderer, DAI_PROJECT_ASSET_DIR);
+    std::size_t count = 0;
+    for (const auto& entry :
+         std::filesystem::directory_iterator(std::filesystem::path(DAI_PROJECT_ASSET_DIR) / "Factory" / "Effects")) {
+        const std::string name = entry.path().filename().string();
+        const core::Result<scene::ParticleEffectAsset> effect = library.LoadParticleEffect("Factory/Effects/" + name);
+        EXPECT_TRUE(effect.has_value()) << name << ": " << core::Format(effect.error());
+        ++count;
+    }
+    EXPECT_GE(count, 7U);
+    EXPECT_EQ(library.TextureCount(), 1U) << "they share the factory's atlas";
+}
+
+TEST_F(AssetLibraryTest, EditedEffectFileIsReloadedInPlace) {
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / "daidalos-effect-reload";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root / "Effects");
+    std::filesystem::copy_file(std::filesystem::path(kAssets) / "checker.png", root / "checker.png");
+    const auto write = [&](float rate) {
+        std::ofstream(root / "Effects" / "puff.effect.json")
+            << R"({"texture": "../checker.png", "emitter": {"rate": )" << rate << "}}";
+    };
+    write(5.0f);
+    AssetLibrary library(*m_renderer, root);
+    const core::Result<scene::ParticleEffectAsset> loaded = library.LoadParticleEffect("Effects/puff.effect.json");
+    ASSERT_TRUE(loaded.has_value()) << core::Format(loaded.error());
+    EXPECT_FLOAT_EQ(loaded->emission.rate, 5.0f);
+    EXPECT_TRUE(library.ReloadChangedParticleEffects().empty()) << "nothing changed yet";
+
+    write(7.0f);
+    // File systems keep coarse times: make sure this one moves.
+    std::filesystem::last_write_time(root / "Effects" / "puff.effect.json",
+                                     std::filesystem::file_time_type::clock::now() + std::chrono::seconds(2));
+    const std::vector<scene::ParticleEffectAsset> reloaded = library.ReloadChangedParticleEffects();
+    ASSERT_EQ(reloaded.size(), 1U);
+    EXPECT_EQ(reloaded[0].effect, loaded->effect) << "the same effect, changed in place";
+    EXPECT_FLOAT_EQ(reloaded[0].emission.rate, 7.0f);
+
+    // A broken file keeps the effect as it was.
+    std::ofstream(root / "Effects" / "puff.effect.json") << R"({"texture": )";
+    std::filesystem::last_write_time(root / "Effects" / "puff.effect.json",
+                                     std::filesystem::file_time_type::clock::now() + std::chrono::seconds(4));
+    EXPECT_TRUE(library.ReloadChangedParticleEffects().empty());
+    EXPECT_FLOAT_EQ(library.LoadParticleEffect("Effects/puff.effect.json")->emission.rate, 7.0f);
+}
+
+TEST_F(AssetLibraryTest, EffectFileWithAMissingTextureNamesBoth) {
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / "daidalos-effect-texture";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root);
+    std::ofstream(root / "lost.effect.json") << R"({"texture": "nowhere.png"})";
+    AssetLibrary library(*m_renderer, root);
+    const core::Result<scene::ParticleEffectAsset> effect = library.LoadParticleEffect("lost.effect.json");
+    ASSERT_FALSE(effect.has_value());
+    EXPECT_NE(effect.error().message.find("lost.effect.json"), std::string::npos);
+    EXPECT_NE(effect.error().message.find("nowhere.png"), std::string::npos);
 }
 
 TEST_F(AssetLibraryTest, MissingModelIsNotFound) {

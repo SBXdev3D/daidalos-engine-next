@@ -1,6 +1,6 @@
 # Architecture
 
-How the engine is built today, through Phase 9.18: real lights and emissive surfaces with soft ray-traced shadows, sampled by ReSTIR DI over a G-buffer, indirect light from a bounce lit by the lights and a radiance cache, ray-traced reflections and glass, their denoiser, temporal antialiasing that upscales from a resolution that moves to hold the frame rate, the image formed by an adapting eye, bloom and AgX for SDR and HDR10 displays, a sky, PBR materials, normal maps and particles on the GPU. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
+How the engine is built today, through Phase 9.19: real lights and emissive surfaces with soft ray-traced shadows, sampled by ReSTIR DI over a G-buffer, indirect light from a bounce lit by the lights and a radiance cache, ray-traced reflections and glass, their denoiser, temporal antialiasing that upscales from a resolution that moves to hold the frame rate, the image formed by an adapting eye, bloom and AgX for SDR and HDR10 displays, a sky, PBR materials, normal maps and particles on the GPU, whose effects are files. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
 
 ## Modules
 
@@ -288,19 +288,21 @@ The console runs a command, shows a cvar, or sets one for this run; its log is a
 
 ## Particles
 
-Particles live on the GPU, in one pool of 16,384 (ADR-0025). The CPU only sends the frame's spawn requests: `scene::ParticleEmitter` entities emit at a steady rate, and `Scene::SpawnParticles` adds bursts.
+Particles live on the GPU, in one pool of 65,536 (ADR-0025, ADR-0053). The CPU only sends the frame's spawn requests: `scene::ParticleEmitter` entities emit by their rate, by the meters they travel (spread along the way they went, carrying their velocity), and in bursts on a schedule, and `Scene::SpawnParticles` adds one-shot bursts.
 
 ```mermaid
 flowchart LR
+    F["Effect files<br/>.effect.json"] -->|"AssetLibrary"| R["Effect table and<br/>curves on the GPU"]
     E["ParticleEmitter entities,<br/>Scene::SpawnParticles"] -->|"Extract"| V["SceneView::particleSpawns"]
-    V --> EM["Emit<br/>slots from the dead list"]
+    V --> EM["Emit<br/>slots from the dead list,<br/>in the effect's shape"]
+    R --> EM
     EM --> SI["Simulate<br/>gravity, drag, bounces<br/>off the G-buffer, light"]
     SI --> FI["Finish<br/>draw arguments"]
     FI --> SO["Bitonic sort<br/>back to front"]
-    SO --> D["Indirect draw<br/>soft, premultiplied"]
+    SO --> D["Indirect draw<br/>turned, flipbook,<br/>soft, premultiplied"]
 ```
 
-Effects are created on the Renderer from a `ParticleEffectDesc`; `AssetLibrary::CreateParticleEffect` owns them with the level's other assets. Particles hide behind meshes and fade into them, lit ones take the light the simulation keeps for each of them: each particle keeps the light it chose, as ReSTIR does for pixels, tested for shadows, and additive ones glow in the same draw as the smoke.
+An effect is a JSON file (`.effect.json`, `scene::ParseParticleEffect`): its texture, relative to the file, a flipbook of cells of its grid with frames blended, color and opacity on a gradient over life, size, emission and speed on curves, how its quads turn (facing the camera, stretched along their velocity, turning around an axis, or lying in a plane), where particles appear (a box and sphere, a cylinder, a cone that opens out, a line), how they move, and how its emitters emit. Angles are in degrees there, and unknown keys are errors that name them. `AssetLibrary::LoadParticleEffect` loads a file once with its texture, and in development builds the scene reads changed files again twice a second, updating the effects in place and their emitters' emission. The renderer bakes each effect's curves into 256 samples in a buffer, which the passes read by life. The sandbox's effects are in `assets/Factory/Effects/`, and the level's glTF nodes `particles;effect=<file>` name theirs. Effects can also be created from a `ParticleEffectDesc` in code, as tests do; `AssetLibrary::CreateParticleEffect` owns them with the level's other assets. Particles hide behind meshes and fade into them, lit ones take the light the simulation keeps for each of them: each particle keeps the light it chose, as ReSTIR does for pixels, tested for shadows, and additive ones glow in the same draw as the smoke.
 
 ## Tests
 

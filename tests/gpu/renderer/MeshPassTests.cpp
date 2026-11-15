@@ -699,6 +699,9 @@ protected:
     void TearDown() override {
         if (m_particles.has_value()) {
             m_particles.reset();
+            for (const rhi::TextureHandle texture : m_textures) {
+                Device().DestroyTexture(texture);
+            }
             Device().DestroyTexture(m_white);
             Device().DestroyTexture(m_reactive);
         }
@@ -706,17 +709,47 @@ protected:
     }
 
     // An opaque square of one meter, unlit, that stays where it appears for ten seconds.
-    renderer::ParticleEffectHandle Effect(const glm::vec3& color) {
-        core::Result<renderer::ParticleEffectHandle> effect =
-            m_particles->CreateEffect({.texture = m_white,
-                                       .startColor = glm::vec4(color, 1.0f),
-                                       .endColor = glm::vec4(color, 1.0f),
-                                       .lit = false,
-                                       .lifetime = {10.0f, 10.0f},
-                                       .size = {1.0f, 1.0f},
-                                       .softness = 0.001f});
+    static renderer::ParticleEffectDesc Square(rhi::TextureHandle texture, const glm::vec3& color) {
+        return {.texture = texture,
+                .color = {{0.0f, glm::vec4(color, 1.0f)}},
+                .lit = false,
+                .lifetime = {10.0f, 10.0f},
+                .size = {1.0f, 1.0f},
+                .softness = 0.001f};
+    }
+    renderer::ParticleEffectHandle Effect(const renderer::ParticleEffectDesc& desc) {
+        core::Result<renderer::ParticleEffectHandle> effect = m_particles->CreateEffect(desc);
         EXPECT_TRUE(effect.has_value());
         return effect.value_or(renderer::ParticleEffectHandle{});
+    }
+    renderer::ParticleEffectHandle Effect(const glm::vec3& color) { return Effect(Square(m_white, color)); }
+
+    // One particle of the effect at the origin, drawn after step seconds of its life, alone: the particles
+    // of earlier frames are gone.
+    void RenderOne(const renderer::ParticleEffectDesc& desc, float step) {
+        RenderWithParticles({TestCamera()}, {}, 1000.0f);
+        const renderer::ParticleSpawn spawn{.effect = Effect(desc), .count = 1};
+        RenderWithParticles({TestCamera()}, std::span(&spawn, 1), step);
+    }
+
+    // A flipbook of two frames side by side, red then blue, each two pixels wide so that filtering at a
+    // frame's center does not reach the other.
+    rhi::TextureHandle RedThenBlue() {
+        resources::ImageData image;
+        image.width = 4;
+        image.height = 1;
+        image.format = resources::PixelFormat::Rgba8Unorm;
+        for (const std::array<std::uint8_t, 4> pixel :
+             {std::array<std::uint8_t, 4>{255, 0, 0, 255}, std::array<std::uint8_t, 4>{255, 0, 0, 255},
+              std::array<std::uint8_t, 4>{0, 0, 255, 255}, std::array<std::uint8_t, 4>{0, 0, 255, 255}}) {
+            for (const std::uint8_t value : pixel) {
+                image.pixels.push_back(static_cast<std::byte>(value));
+            }
+        }
+        core::Result<rhi::TextureHandle> texture = renderer::CreateTexture(Device(), image, "Red then blue");
+        EXPECT_TRUE(texture.has_value());
+        m_textures.push_back(texture.value_or(rhi::TextureHandle{}));
+        return m_textures.back();
     }
 
     // Renders the meshes of the view, then simulates and draws the particles over them.
@@ -742,8 +775,12 @@ protected:
     // Particles fade in over the first tenth of their life: a step past it shows them whole.
     static constexpr float kPastFadeIn = 1.5f;
 
+    // One meter at the origin, in pixels: the camera is 5 m away, with a field of view of 60 degrees.
+    static constexpr float kPixelsPerMeter = 32.0f / 2.8867513f;
+
     std::optional<renderer::ParticlePass> m_particles;
     rhi::TextureHandle m_white;
+    std::vector<rhi::TextureHandle> m_textures;
     rhi::TextureHandle m_reactive;
 };
 
@@ -816,6 +853,169 @@ TEST_F(ParticleTest, FullPoolDropsNewParticles) {
     RenderWithParticles({TestCamera()}, std::span(&spawn, 1), kPastFadeIn);
     RenderWithParticles({TestCamera()}, std::span(&spawn, 1), kPastFadeIn);
     EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0));
+}
+
+TEST_F(ParticleTest, ColorFollowsItsGradientOverLife) {
+    renderer::ParticleEffectDesc desc = Square(m_white, {});
+    desc.color = {{0.0f, {1.0f, 0.0f, 0.0f, 1.0f}}, {1.0f, {0.0f, 0.0f, 1.0f, 1.0f}}};
+    RenderOne(desc, 5.0f);
+    const glm::ivec3 pixel = Pixel(32, 32);
+    EXPECT_NEAR(pixel.r, 128, 2);
+    EXPECT_EQ(pixel.g, 0);
+    EXPECT_NEAR(pixel.b, 128, 2);
+}
+
+TEST_F(ParticleTest, EmissionCurveScalesItsLight) {
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    desc.emissionOverLife = {{0.0f, 0.5f}};
+    RenderOne(desc, kPastFadeIn);
+    EXPECT_NEAR(Pixel(32, 32).g, 128, 2);
+}
+
+TEST_F(ParticleTest, SizeCurveShrinksIt) {
+    // Half a meter across at half its life: 2.8 pixels from its center, where a whole one reaches 5.5.
+    const auto edge = static_cast<std::uint32_t>(32.0f + 0.4f * kPixelsPerMeter);
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    RenderOne(desc, 5.0f);
+    ASSERT_EQ(Pixel(edge, 32), glm::ivec3(0, 255, 0));
+    desc.sizeOverLife = {{0.0f, 1.0f}, {1.0f, 0.0f}};
+    RenderOne(desc, 5.0f);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0));
+    EXPECT_TRUE(IsBackground(edge, 32));
+}
+
+TEST_F(ParticleTest, FlipbookPlaysAtItsFrameRateAndHoldsItsLastFrame) {
+    renderer::ParticleEffectDesc desc = Square(RedThenBlue(), glm::vec3(1.0f));
+    desc.columns = 2;
+    desc.rows = 1;
+    desc.frames = 2;
+    desc.frameRate = 1.0f;
+    desc.loop = false;
+    desc.fadeIn = 0.0f;
+    RenderOne(desc, 0.0f);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(255, 0, 0)) << "the first frame";
+    RenderOne(desc, 0.5f);
+    EXPECT_NEAR(Pixel(32, 32).r, 128, 2) << "half way, the frames are blended";
+    EXPECT_NEAR(Pixel(32, 32).b, 128, 2);
+    RenderOne(desc, 3.0f);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 0, 255)) << "held on the last frame";
+    desc.loop = true;
+    RenderOne(desc, 4.0f);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(255, 0, 0)) << "looped back to the first";
+}
+
+TEST_F(ParticleTest, FlipbookOverLifePlaysOnce) {
+    renderer::ParticleEffectDesc desc = Square(RedThenBlue(), glm::vec3(1.0f));
+    desc.columns = 2;
+    desc.rows = 1;
+    desc.frames = 2;
+    desc.fadeIn = 0.0f;
+    RenderOne(desc, 9.9f);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 0, 255));
+}
+
+TEST_F(ParticleTest, VelocityParticlesStretchAlongTheirMotion) {
+    // Moving along +X at 0.1 m/s, stretched over 20 s of motion: 3 m long, 1 m wide.
+    const auto along = static_cast<std::uint32_t>(32.0f + 1.2f * kPixelsPerMeter);
+    const auto across = static_cast<std::uint32_t>(32.0f + 0.8f * kPixelsPerMeter);
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    desc.direction = {1.0f, 0.0f, 0.0f};
+    desc.speed = {0.1f, 0.1f};
+    desc.fadeIn = 0.0f;
+    RenderOne(desc, 0.0f);
+    ASSERT_TRUE(IsBackground(along, 32)) << "facing the camera, it is a square";
+    desc.orientation = renderer::ParticleOrientation::Velocity;
+    desc.stretch = 20.0f;
+    RenderOne(desc, 0.0f);
+    EXPECT_EQ(Pixel(along, 32), glm::ivec3(0, 255, 0));
+    EXPECT_TRUE(IsBackground(32, across));
+}
+
+TEST_F(ParticleTest, PlaneParticlesLieAcrossTheirAxis) {
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    desc.orientation = renderer::ParticleOrientation::Plane;
+    RenderOne(desc, kPastFadeIn);
+    EXPECT_TRUE(IsBackground(32, 32)) << "a floor seen edge on";
+    desc.axis = {0.0f, 0.0f, 1.0f};
+    RenderOne(desc, kPastFadeIn);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0)) << "a wall facing the camera";
+}
+
+TEST_F(ParticleTest, AxisParticlesTurnOnlyAroundTheirAxis) {
+    // A square of 2 m whose axis leans towards the camera, in XZ: seen along -Z, it reaches 1 m either way
+    // across Y, but along X its axis is foreshortened to 0.54 m.
+    const auto reach = static_cast<std::uint32_t>(32.0f + 0.77f * kPixelsPerMeter);
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    desc.orientation = renderer::ParticleOrientation::Axis;
+    desc.axis = {1.0f, 0.0f, 2.0f};
+    desc.size = {2.0f, 2.0f};
+    RenderOne(desc, kPastFadeIn);
+    EXPECT_EQ(Pixel(32, reach), glm::ivec3(0, 255, 0));
+    EXPECT_TRUE(IsBackground(reach, 32));
+}
+
+TEST_F(ParticleTest, LineShapeSpawnsAlongTheEmittersX) {
+    const auto far = static_cast<std::uint32_t>(2.0f * kPixelsPerMeter);
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    desc.shape = renderer::ParticleShape::Line;
+    desc.spawnBox = {2.5f, 0.0f, 0.0f};
+    desc.size = {0.3f, 0.3f};
+    const renderer::ParticleSpawn spawn{.effect = Effect(desc), .count = 500};
+    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), kPastFadeIn);
+    EXPECT_EQ(Pixel(32 + far, 32), glm::ivec3(0, 255, 0));
+    EXPECT_EQ(Pixel(32 - far, 32), glm::ivec3(0, 255, 0));
+    EXPECT_TRUE(IsBackground(32, 32 + far));
+}
+
+TEST_F(ParticleTest, SpawnsAreSpreadAlongTheWayTheEmitterWent) {
+    const auto far = static_cast<std::uint32_t>(2.0f * kPixelsPerMeter);
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    desc.size = {0.3f, 0.3f};
+    const renderer::ParticleSpawn spawn{.effect = Effect(desc),
+                                        .position = {2.5f, 0.0f, 0.0f},
+                                        .count = 500,
+                                        .previousPosition = glm::vec3(-2.5f, 0, 0)};
+    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), kPastFadeIn);
+    EXPECT_EQ(Pixel(32 + far, 32), glm::ivec3(0, 255, 0));
+    EXPECT_EQ(Pixel(32 - far, 32), glm::ivec3(0, 255, 0));
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0));
+}
+
+TEST_F(ParticleTest, ParticlesInheritTheirEmittersVelocity) {
+    // Still in the effect, carried at 1 m/s along +X by the emitter, for 1.5 s.
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    desc.inheritVelocity = 1.0f;
+    const renderer::ParticleSpawn spawn{.effect = Effect(desc), .count = 1, .velocity = {1.0f, 0.0f, 0.0f}};
+    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), 1.5f);
+    EXPECT_TRUE(IsBackground(32, 32));
+    EXPECT_EQ(Pixel(static_cast<std::uint32_t>(32.0f + 1.5f * kPixelsPerMeter), 32), glm::ivec3(0, 255, 0));
+}
+
+TEST_F(ParticleTest, ConeOpensOutTowardsItsRim) {
+    // Leaving a disc of 2 m across +Y, opened by up to 90 degrees at the rim, at 1 m/s for a second: the
+    // rim's particles go out sideways, its center's straight up.
+    renderer::ParticleEffectDesc desc = Square(m_white, {0.0f, 1.0f, 0.0f});
+    desc.shape = renderer::ParticleShape::Cone;
+    desc.spawnRadius = 1.0f;
+    desc.spread = glm::radians(90.0f);
+    desc.speed = {1.0f, 1.0f};
+    desc.size = {0.3f, 0.3f};
+    const renderer::ParticleSpawn spawn{.effect = Effect(desc), .count = 2000};
+    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), 1.0f);
+    EXPECT_EQ(Pixel(static_cast<std::uint32_t>(32.0f + 1.9f * kPixelsPerMeter), 32), glm::ivec3(0, 255, 0));
+    EXPECT_EQ(Pixel(32, static_cast<std::uint32_t>(32.0f - 0.9f * kPixelsPerMeter)), glm::ivec3(0, 255, 0));
+}
+
+TEST_F(ParticleTest, UpdatedEffectChangesTheParticlesAlive) {
+    const renderer::ParticleEffectHandle effect = Effect({0.0f, 1.0f, 0.0f});
+    const renderer::ParticleSpawn spawn{.effect = effect, .count = 1};
+    RenderWithParticles({TestCamera()}, std::span(&spawn, 1), kPastFadeIn);
+    ASSERT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0));
+    EXPECT_TRUE(m_particles->UpdateEffect(effect, Square(m_white, {1.0f, 0.0f, 0.0f})));
+    RenderWithParticles({TestCamera()}, {}, 0.1f);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(255, 0, 0));
+    m_particles->DestroyEffect(effect);
+    EXPECT_FALSE(m_particles->UpdateEffect(effect, Square(m_white, {1.0f, 0.0f, 0.0f})));
 }
 
 TEST_F(MeshPassTest, DestroyedMeshIsSkipped) {

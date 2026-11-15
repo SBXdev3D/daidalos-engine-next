@@ -316,7 +316,8 @@ TEST(ExtractScene, LightsAreTheSizeOfABulbUnlessToldOtherwise) {
 TEST(EmitParticles, RateAccumulatesAcrossFrames) {
     ecs::World world;
     const ecs::Entity emitter = AddAt(world, {1.0f, 2.0f, 3.0f});
-    world.Add<scene::ParticleEmitter>(emitter, renderer::ParticleEffectHandle(1, 1), 30.0f);
+    world.Add<scene::ParticleEmitter>(emitter, renderer::ParticleEffectHandle(1, 1),
+                                      scene::ParticleEmission{.rate = 30.0f});
     ecs::PropagateTransforms(world);
 
     std::vector<renderer::ParticleSpawn> spawns;
@@ -336,7 +337,8 @@ TEST(EmitParticles, RateAccumulatesAcrossFrames) {
 
 TEST(EmitParticles, DisabledEmitterEmitsNothing) {
     ecs::World world;
-    world.Add<scene::ParticleEmitter>(AddAt(world, {}), renderer::ParticleEffectHandle(1, 1), 1000.0f, false);
+    world.Add<scene::ParticleEmitter>(AddAt(world, {}), renderer::ParticleEffectHandle(1, 1),
+                                      scene::ParticleEmission{.rate = 1000.0f}, false);
     ecs::PropagateTransforms(world);
     std::vector<renderer::ParticleSpawn> spawns;
     scene::EmitParticles(world, 1.0f, spawns);
@@ -347,7 +349,8 @@ TEST(EmitParticles, SpawnsTurnWithTheirEntity) {
     ecs::World world;
     const ecs::Entity emitter = AddAt(world, {});
     world.Get<ecs::LocalTransform>(emitter).rotation = glm::angleAxis(glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    world.Add<scene::ParticleEmitter>(emitter, renderer::ParticleEffectHandle(1, 1), 100.0f);
+    world.Add<scene::ParticleEmitter>(emitter, renderer::ParticleEffectHandle(1, 1),
+                                      scene::ParticleEmission{.rate = 100.0f});
     ecs::PropagateTransforms(world);
     std::vector<renderer::ParticleSpawn> spawns;
     scene::EmitParticles(world, 0.1f, spawns);
@@ -355,6 +358,77 @@ TEST(EmitParticles, SpawnsTurnWithTheirEntity) {
     // The effect's +Y, turned a quarter around X, points along +Z.
     EXPECT_NEAR(glm::distance(spawns[0].rotation * glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)), 0.0f,
                 1e-5f);
+}
+
+namespace {
+
+// The particles an emitter of the given emission spawns in a frame of delta seconds.
+std::uint32_t Emitted(ecs::World& world, float delta) {
+    std::vector<renderer::ParticleSpawn> spawns;
+    ecs::PropagateTransforms(world);
+    scene::EmitParticles(world, delta, spawns);
+    std::uint32_t total = 0;
+    for (const renderer::ParticleSpawn& spawn : spawns) {
+        total += spawn.count;
+    }
+    return total;
+}
+
+} // namespace
+
+TEST(EmitParticles, EmitsPerMeterSpreadAlongTheWay) {
+    ecs::World world;
+    const ecs::Entity emitter = AddAt(world, {});
+    world.Add<scene::ParticleEmitter>(emitter, renderer::ParticleEffectHandle(1, 1),
+                                      scene::ParticleEmission{.rate = 0.0f, .ratePerMeter = 10.0f});
+    EXPECT_EQ(Emitted(world, 0.1f), 0U) << "nowhere to come from on the first frame";
+    world.Get<ecs::LocalTransform>(emitter).translation = {2.0f, 0.0f, 0.0f};
+    ecs::PropagateTransforms(world);
+    std::vector<renderer::ParticleSpawn> spawns;
+    scene::EmitParticles(world, 0.5f, spawns);
+    ASSERT_EQ(spawns.size(), 1U);
+    EXPECT_EQ(spawns[0].count, 20U);
+    EXPECT_EQ(spawns[0].position, glm::vec3(2.0f, 0.0f, 0.0f));
+    ASSERT_TRUE(spawns[0].previousPosition.has_value());
+    EXPECT_EQ(*spawns[0].previousPosition, glm::vec3(0.0f));
+    EXPECT_EQ(spawns[0].velocity, glm::vec3(4.0f, 0.0f, 0.0f));
+}
+
+TEST(EmitParticles, BurstsFireOnTheirSchedule) {
+    ecs::World world;
+    world.Add<scene::ParticleEmitter>(
+        AddAt(world, {}), renderer::ParticleEffectHandle(1, 1),
+        scene::ParticleEmission{
+            .rate = 0.0f,
+            .bursts = {{.time = 0.0f, .count = 5}, {.time = 1.0f, .count = 2, .interval = 0.5f, .repeats = 3}}});
+    EXPECT_EQ(Emitted(world, 0.5f), 5U) << "the first burst, at once";
+    EXPECT_EQ(Emitted(world, 0.4f), 0U);
+    EXPECT_EQ(Emitted(world, 0.2f), 2U) << "the second, at 1 s";
+    EXPECT_EQ(Emitted(world, 1.0f), 4U) << "at 1.5 and 2 s, the last of its three";
+    EXPECT_EQ(Emitted(world, 10.0f), 0U);
+}
+
+TEST(EmitParticles, EnabledAgainItStartsOver) {
+    ecs::World world;
+    const ecs::Entity entity = AddAt(world, {});
+    world.Add<scene::ParticleEmitter>(entity, renderer::ParticleEffectHandle(1, 1),
+                                      scene::ParticleEmission{.rate = 0.0f, .bursts = {{.time = 0.0f, .count = 3}}});
+    EXPECT_EQ(Emitted(world, 0.1f), 3U);
+    EXPECT_EQ(Emitted(world, 0.1f), 0U);
+    world.Get<scene::ParticleEmitter>(entity).enabled = false;
+    EXPECT_EQ(Emitted(world, 0.1f), 0U);
+    world.Get<scene::ParticleEmitter>(entity).enabled = true;
+    EXPECT_EQ(Emitted(world, 0.1f), 3U);
+}
+
+TEST(BurstsBetween, CountsTheFiringsInAHalfOpenSpan) {
+    const scene::ParticleBurst once{.time = 1.0f};
+    EXPECT_EQ(scene::BurstsBetween(once, 0.0f, 1.0f), 0U) << "the end is not included";
+    EXPECT_EQ(scene::BurstsBetween(once, 1.0f, 2.0f), 1U) << "the start is";
+    const scene::ParticleBurst forever{.time = 0.0f, .interval = 0.25f};
+    EXPECT_EQ(scene::BurstsBetween(forever, 0.0f, 1.0f), 4U);
+    EXPECT_EQ(scene::BurstsBetween(forever, 100.0f, 101.0f), 4U);
+    EXPECT_EQ(scene::BurstsBetween(forever, 1.0f, 1.0f), 0U);
 }
 
 TEST(ExtractScene, AMeshDrawnForTheFirstTimeHasNotMoved) {

@@ -69,10 +69,12 @@ Five steps of Phase 9, 9.19 to 9.23, each its own pull request, in this order, b
 
 - **Effect files.** An effect is a JSON file (`.effect.json`), read with simdjson, which fastgltf already brings. Every field of `ParticleEffectDesc` is in it, and the new ones below. A level names its emitters' effects by file, as glTF nodes `particles;<effect>` do today with a code name. Development builds reload a file when it changes. The C++ description stays, for tests. The factory's seven effects move to files and look the same.
 - **Flipbooks.** An effect plays a run of the atlas's cells over its life, or at a rate, looped or not, from a random start frame; frames are blended, so that slow fire does not step.
-- **Curves over life.** Color and opacity follow a gradient, and size, emission and speed a curve, of up to eight keys each. They are baked into one row each of a shared texture, 256 samples across, and read by life.
+- **Curves over life.** Color and opacity follow a gradient, and size, emission and speed a curve, each of as many keys as the file gives, blended linearly. They are baked into 256 samples each, in a buffer beside the effect table, and read by life.
 - **Shapes.** A particle faces the camera (as now), stretches along its velocity on screen (rain, sparks, tracers), turns only around an axis (flames, a column of smoke), or lies in a plane of the world (ripples, splashes, a decal-like burst on a floor).
-- **Emission.** Spawn shapes gain the cone, the cylinder, the line and the triangles of a mesh. An emitter can emit per meter it travels as well as per second, inherit a fraction of its velocity, and fire bursts on a schedule.
+- **Emission.** Spawn shapes gain the cone, the cylinder and the line. An emitter can emit per meter it travels as well as per second, its particles spread along the way it went that frame, inherit a fraction of its velocity, and fire bursts on a schedule. Disabling an emitter starts it over, so a burst fires again when it is enabled.
 - **Pool.** 65,536 particles. The sort is measured first: if sorting the whole pool costs more than 0.3 ms at 1080p on the RTX 3090, the sort covers the alive particles only, rounded up to a power of two on the GPU and dispatched indirectly, which ADR-0025 turned down when the pool was small.
+
+As built: the simulation group (emission, simulation, finish and the sort of the whole pool) takes 0.14 ms in the factory at 1080p on the RTX 3090, against 0.11 ms with the old pool of 16,384: the sort stays over the whole pool. Spawning on the triangles of a mesh moved to step 9.23: it needs each mesh's triangles and their areas on the GPU, which only emissive meshes have today, and its users, burning objects and debris falling from a surface, come in that step. Effect files name their texture relative to themselves, give angles in degrees, and reject unknown keys; the factory's level nodes name the files, `particles;effect=smoke_leak`.
 
 ### 9.20 How they move
 
@@ -94,6 +96,7 @@ Five steps of Phase 9, 9.19 to 9.23, each its own pull request, in this order, b
 
 ### 9.23 The effects, and weather seen from inside
 
+- **Spawning on a mesh.** Particles appear on the triangles of the emitter's mesh, drawn by area: what burns, what crumbles. Moved here from step 9.19.
 - **Rain and snow zones.** Boxes in the level (`scene::WeatherZone`) where it rains or snows. An emitter follows the camera and spawns only inside the zones within its reach, so an indoor scene with one courtyard spends nothing on the rest. Particles stop at roofs by step 9.20's collisions, with a splash.
 - **Lightning.** A scripted flash: the level's directional light (the moon through the windows) jumps for a few frames, a ribbon bolt shows behind the windows, and an event for Phase 12's thunder, after a delay.
 - **The effects of the list above**, as files, in a test room (`effects.scene`, as the dark corridor), each measured. The factory gets fire in its furnace area, drips, sparks from a cable, dust motes, flies, casings, impacts by surface, and keeps its seven. The sandbox's weapons spawn impacts by the surface they hit.

@@ -12,6 +12,7 @@
 #include <glm/mat4x4.hpp>
 #include <glm/trigonometric.hpp>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -106,15 +107,37 @@ struct FogVolume {
     bool enabled = true;
 };
 
-/// ECS component: emits particles of an effect at the entity's WorldTransform, at a steady rate. The
-/// effect's directions are in the entity's frame (ADR-0025).
-struct ParticleEmitter {
-    renderer::ParticleEffectHandle effect;
+/// A burst of an emitter (ADR-0053): count particles at time seconds after it starts, then every interval
+/// seconds, repeats times in all (0: for ever). Without an interval, it fires once.
+struct ParticleBurst {
+    float time = 0.0f;
+    std::uint32_t count = 1;
+    float interval = 0.0f;
+    std::uint32_t repeats = 0;
+};
+
+/// How an emitter emits (ADR-0053): an effect file gives its emitters these, which each can change.
+struct ParticleEmission {
     /// Particles per second.
     float rate = 10.0f;
+    /// Particles per meter the emitter travels, spread along the way: trails.
+    float ratePerMeter = 0.0f;
+    std::vector<ParticleBurst> bursts;
+};
+
+/// ECS component: emits particles of an effect at the entity's WorldTransform, at a steady rate, as it
+/// moves, and in bursts. The effect's directions are in the entity's frame (ADR-0025). Disabling it starts
+/// it over: enabled again, it fires its bursts again.
+struct ParticleEmitter {
+    renderer::ParticleEffectHandle effect;
+    ParticleEmission emission;
     bool enabled = true;
     /// The fraction of a particle carried over to the next frame.
     float pending = 0.0f;
+    /// Seconds since it started, for its bursts.
+    float age = 0.0f;
+    /// Where it was last frame, once it has emitted.
+    std::optional<glm::vec3> lastPosition;
 };
 
 /// ECS component: the entity's LocalTransform moves a kinematic body of the scene's physics. The entity

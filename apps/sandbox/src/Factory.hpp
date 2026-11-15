@@ -56,12 +56,9 @@ struct WeaponState {
 
 [[nodiscard]] daidalos::input::ActionMap MakeActions();
 
-/// The particle effects of the game, created with the level's assets, as a component of the camera
-/// entity. The level's emitters name theirs as the legacy game did.
+/// The particle effects that the game's code spawns, loaded from their files with the level's assets
+/// (ADR-0053), as a component of the camera entity. The level's emitters name their own files.
 struct ParticleEffects {
-    daidalos::renderer::ParticleEffectHandle smokeLeak;
-    daidalos::renderer::ParticleEffectHandle greenSmoke;
-    daidalos::renderer::ParticleEffectHandle greenFog;
     daidalos::renderer::ParticleEffectHandle blood;
     daidalos::renderer::ParticleEffectHandle sparks;
     daidalos::renderer::ParticleEffectHandle gunSmoke;
