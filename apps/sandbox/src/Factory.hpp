@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
 namespace sandbox {
 
@@ -65,6 +66,22 @@ struct ParticleEffects {
     daidalos::renderer::ParticleEffectHandle muzzleFlash;
     /// Thrown out of the weapon's side at each shot (ADR-0053).
     daidalos::renderer::ParticleEffectHandle casings;
+    /// Where a shot lands, by what it hits (ADR-0053): dust, and chips of stone, splinters of wood, glass.
+    daidalos::renderer::ParticleEffectHandle impactDust;
+    daidalos::renderer::ParticleEffectHandle impactChips;
+    daidalos::renderer::ParticleEffectHandle impactSplinters;
+    daidalos::renderer::ParticleEffectHandle impactGlass;
+};
+
+/// What the level's bodies are made of, by body, from their materials' surface (ADR-0053): "concrete",
+/// "metal", "wood", "glass". A body that is not here is of no known surface. A component of the camera entity.
+struct BodySurfaces {
+    std::unordered_map<std::uint32_t, std::string> surfaces;
+
+    [[nodiscard]] std::string_view Of(daidalos::physics::BodyId body) const {
+        const auto found = surfaces.find(body.value);
+        return found == surfaces.end() ? std::string_view{} : std::string_view(found->second);
+    }
 };
 
 /// The player's state, as a component of the camera entity.

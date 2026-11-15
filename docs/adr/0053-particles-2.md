@@ -141,6 +141,16 @@ As built, in two steps (approved 2026-11-15): this one builds what the effects n
 - **Costs**, at 1080p on the RTX 3090: in the test room's hall, 19,149 particles take 0.34 ms (simulation 0.18 ms, drawing 0.16 ms); in the courtyard under the storm, 23,808 take 0.34 ms. Rain at 120 per square meter and second filled the pool; the room's is 30. In the factory, the simulation takes 0.11 ms at the start.
 - **Breath** is a file the room shows; giving it to the player in cold rooms is gameplay (Phase 13).
 
+### 9.24 The factory's effects
+
+As built:
+
+- **Where they are placed**: `scripts/dress_factory.py` adds them to the committed `Factory.gltf`, as nodes named as a level's are, marked `{"dressing": true}` in their extras so that it can run again. It does not add them to the importer's lists: `scripts/import_legacy_level.py` no longer writes the committed level, which later steps edited (the lamps' lights, the shaft's glass, the doors' emissive lamps). The Phase 10 editor takes over from both.
+- **What and where**: the pit of the south room, open to the sky at the end of the foggy corridor, is the furnace: four fires 2.8 m down, which light its walls, with heat haze, embers and a column of smoke rising out of it. Drips fall from the corridor's ceiling, one through its lamp's light, and run off the edge of the big room's roof. A cut cable shorts in the corridor from the start room, sparks and an arc. Dust drifts in the start room and the big room's entrance, moths circle the lamp there, flies hang over the underground's green fog and in the last room. The legacy factory has no furnace: the pit was chosen for it.
+- **Rain in the big room**: a weather zone over its open roof (17 by 17.5 m), from above the roof's edge to below its floor, so that drops fall into the pit too. Seen against the sky through the opening, and in the flashlight's beam below it. No lightning: it would flash the moon over the whole level.
+- **Impacts by surface**: each part of the level is its own physics body already, one per material, so the sandbox keeps a table from body to its material's surface (`BodySurfaces`), and doors take their model's. Jolt's per-triangle materials were not needed. A shot throws blood from a zombie, sparks from metal, dust and chips from stone, dust and splinters from wood, shards from glass, and dust from what has no surface. `dress_factory.py` names the surfaces of the factory's materials: the walls, floors and ceilings are stone or concrete, two crates wood and one metal, the railings, doors, lockers, vents and lamps metal, the shaft's glass and the lamps' covers glass. The pickups have none.
+- **Costs**, at 1080p on the RTX 3090: under the rain, 10,709 particles take 0.34 ms (simulation 0.19 ms, drawing 0.15 ms); at the fire, 0.26 ms. The budget is 1 ms.
+
 ### Budget and quality
 
 Particles, all their passes together, cost at most 1 ms at 1080p on the RTX 3090 in the factory with its new effects, and 1.5 ms in the test room under a storm. Emitters farther than their effect's distance, or out of view with a margin, do not emit. `renderer.particle_density` scales emission rates, and the presets set it (ADR-0052): 0.5 on Low, 1 above. Every new pipeline is created at load (ADR-0052).

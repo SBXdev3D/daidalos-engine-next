@@ -34,7 +34,7 @@ flowchart LR
 | 6: Physics, audio and animation | Walking with collisions, jumps, crouching, ladders and solid doors, sound, skinned zombies and turning fans, hitscan handgun and shotgun, zombies that hunt, wounds and death | Done |
 | 7: Modern rendering | Real lights replacing the fog, the flashlight's shadow, rotating alarms, normal maps, ambient occlusion, particles for smoke, blood and green fog | 7.1 to 7.4 done: lights, alarms, normal maps, shadows, ambient occlusion, particles |
 | 8: GUI | The game's own HUD, crosshair, menus and loading screen | Done: HUD and crosshair in every build; loading screen with the turning gear, main, pause and options menus, death and "factory cleared" screens; developer tools in development builds |
-| 9: Ray-traced rendering | Soft ray-traced shadows, the sky through the openings, moonlight and bounced light, reflections in metal and polished floors, glass over the shaft where a zombie patrols, lamps in real units; then many lights, exposure and volumetric fog: lamps' cones in the haze, dust in the start room, steam at the leak, fog lying on the floor of the big room and the corridor; quality presets; then fire in the furnace area, drips, sparks from a cable, dust motes, flies, casings and impacts by surface | 9.1 to 9.21 done (the effects in files, their motion, light and heat), 9.22 and 9.23 next |
+| 9: Ray-traced rendering | Soft ray-traced shadows, the sky through the openings, moonlight and bounced light, reflections in metal and polished floors, glass over the shaft where a zombie patrols, lamps in real units; then many lights, exposure and volumetric fog: lamps' cones in the haze, dust in the start room, steam at the leak, fog lying on the floor of the big room and the corridor; quality presets; then fire in the furnace area, drips, sparks from a cable, dust motes, flies, casings and impacts by surface | Done: through 9.24, fire in the south room's pit, drips, a shorting cable, dust, moths and flies, rain through the big room's open roof, impacts by surface |
 | 10: Level editor | The factory's lights and sky in a level file, new rooms built without code | |
 | 11: Materials, lights and atmosphere | Wet floors and puddles, decals of blood and grime, a better flashlight, flickering and dying lamps, film grain | |
 | 12: Sound | Doors that muffle sound, reverb that follows the rooms, music that follows the danger | |
@@ -64,7 +64,7 @@ The level loads behind the legacy loading screen, then waits behind the main men
 
 In development builds, the key under Escape opens the developer tools: the console (`help` lists its commands, `restart` starts over), statistics, the entities with the player's state, and the loaded resources.
 
-`scripts/import_legacy_level.py` is not part of running the demo. It converts the legacy level again, or brings more legacy content over. It also bakes the animated MilkShape models to glTF files of their own: the zombie, the fans and the handgun, whose clips are the frame ranges the legacy game played.
+`scripts/import_legacy_level.py` is not part of running the demo. It converts the legacy level again, or brings more legacy content over. It also bakes the animated MilkShape models to glTF files of their own: the zombie, the fans and the handgun, whose clips are the frame ranges the legacy game played. The committed level has since been edited by later steps, so the importer no longer reproduces it; `scripts/dress_factory.py` adds the factory's effects and what its materials are made of.
 
 ## The fight
 
