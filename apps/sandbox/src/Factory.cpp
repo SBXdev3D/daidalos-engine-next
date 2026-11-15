@@ -82,9 +82,11 @@ constexpr float kEyeClosesStops = 2.5f;
 // The legacy sky's colors, in nits: as bright on screen at EV100 3 as they were before physical units.
 constexpr float kSkyLuminance = 9.6f;
 // The haze: a share of the light lost per meter, mostly scattered, a little more of the blue, and forwards.
-constexpr float kFogDensity = 0.03f;
+// Thin, as indoor haze is (about 300 m of visibility): enough for the lamps' cones to show, not so much that
+// the flashlight, at the eye and looked along, fills the view with its beam.
+constexpr float kFogDensity = 0.01f;
 constexpr glm::vec3 kFogAlbedo{0.8f, 0.82f, 0.85f};
-constexpr float kFogAnisotropy = 0.4f;
+constexpr float kFogAnisotropy = 0.3f;
 // The steam of the leak: meters long and across, and its density at the heart.
 constexpr float kSteamLength = 4.0f;
 constexpr float kSteamWidth = 1.6f;
