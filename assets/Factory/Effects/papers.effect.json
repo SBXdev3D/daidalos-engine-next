@@ -1,0 +1,18 @@
+{
+    "comment": "Loose papers that a draft carries along and lets fall: light, turning slowly, slowed by the air.",
+    "mesh": "Meshes/paper.glb",
+    "collision": "bounce",
+    "bounce": 0.05,
+    "lifetime": [8, 11],
+    "size": [0.8, 1.2],
+    "shape": "box",
+    "spawnBox": [1, 0.2, 1],
+    "spread": 40,
+    "speed": [0.2, 0.6],
+    "gravity": 0.12,
+    "drag": 1.5,
+    "turbulence": 2.5,
+    "turbulenceScale": 1.5,
+    "rotationSpeed": 150,
+    "emitter": { "rate": 1.5 }
+}

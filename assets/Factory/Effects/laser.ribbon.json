@@ -1,0 +1,12 @@
+{
+    "comment": "A red laser beam, thin and steady, with streaks running along it.",
+    "texture": "ribbon_streaks.png",
+    "shape": "line",
+    "color": [[0, [8, 0.3, 0.15, 1]], [1, [8, 0.3, 0.15, 1]]],
+    "width": 0.012,
+    "length": 6,
+    "tiling": 0.4,
+    "scroll": 3,
+    "softness": 0.02,
+    "light": { "color": [1, 0.05, 0.02], "intensity": 3, "range": 2, "radius": 0.02 }
+}

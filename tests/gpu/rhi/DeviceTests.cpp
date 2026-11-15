@@ -484,6 +484,54 @@ TEST_F(GpuTest, IndirectDrawUsesTheArgumentsTheGpuWrote) {
     }
 }
 
+TEST_F(GpuTest, IndexedIndirectDrawUsesTheArgumentsInTheBuffer) {
+    constexpr rhi::Extent kExtent{8, 8};
+    const core::Result<rhi::BufferHandle> indices = Device().CreateBuffer(
+        {.size = 3 * sizeof(std::uint32_t), .usage = rhi::BufferUsage::Index | rhi::BufferUsage::TransferDst});
+    const core::Result<rhi::BufferHandle> arguments = Device().CreateBuffer(
+        {.size = 5 * sizeof(std::uint32_t), .usage = rhi::BufferUsage::Indirect | rhi::BufferUsage::TransferDst});
+    const core::Result<rhi::TextureHandle> target =
+        Device().CreateTexture({.extent = kExtent,
+                                .format = rhi::Format::Rgba8Unorm,
+                                .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::TransferSrc,
+                                .name = "Target"});
+    const core::Result<rhi::BufferHandle> readback = Device().CreateBuffer(
+        {.size = 8 * 8 * 4, .usage = rhi::BufferUsage::TransferDst, .memory = rhi::MemoryLocation::GpuToCpu});
+    const core::Result<rhi::PipelineHandle> triangle =
+        Device().CreatePipeline({.vertexShader = rhi::ToSpirv(kTriangleTestVsSpirv),
+                                 .fragmentShader = rhi::ToSpirv(kTriangleTestPsSpirv),
+                                 .colorFormat = rhi::Format::Rgba8Unorm,
+                                 .cull = rhi::CullMode::None,
+                                 .name = "Triangle"});
+    ASSERT_TRUE(indices && arguments && target && readback && triangle);
+    const std::array<std::uint32_t, 3> indexData{0, 1, 2};
+    // Three indices, one instance.
+    const std::array<std::uint32_t, 5> argumentData{3, 1, 0, 0, 0};
+    ASSERT_TRUE(Device().UploadBuffer(*indices, std::as_bytes(std::span(indexData))));
+    ASSERT_TRUE(Device().UploadBuffer(*arguments, std::as_bytes(std::span(argumentData))));
+
+    ASSERT_TRUE(Device()
+                    .Submit([&](rhi::CommandList& commands) {
+                        commands.Discard(*target, rhi::TextureState::ColorTarget);
+                        commands.BeginRendering({.colorTarget = *target, .clearColor = glm::vec4(0.0f)});
+                        commands.BindPipeline(*triangle);
+                        commands.BindIndexBuffer(*indices, rhi::IndexType::Uint32);
+                        commands.DrawIndexedIndirect(*arguments);
+                        commands.EndRendering();
+                        commands.Transition(*target, rhi::TextureState::TransferSrc);
+                        commands.CopyTextureToBuffer(*target, *readback);
+                    })
+                    .has_value());
+
+    const auto* pixels = reinterpret_cast<const std::uint8_t*>(Device().Mapped(*readback).data());
+    EXPECT_EQ(pixels[(4 * 8 + 4) * 4], 255) << "the triangle covers the target";
+    Device().DestroyPipeline(*triangle);
+    Device().DestroyTexture(*target);
+    for (const rhi::BufferHandle buffer : {*indices, *arguments, *readback}) {
+        Device().DestroyBuffer(buffer);
+    }
+}
+
 TEST_F(GpuTest, ARenderingWritesSeveralColorTargets) {
     constexpr rhi::Extent kExtent{8, 8};
     const auto texture = [&](const char* name) {

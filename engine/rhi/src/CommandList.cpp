@@ -373,6 +373,11 @@ void CommandList::DrawIndirect(BufferHandle arguments, std::uint64_t offset) {
                       sizeof(VkDrawIndirectCommand));
 }
 
+void CommandList::DrawIndexedIndirect(BufferHandle arguments, std::uint64_t offset) {
+    vkCmdDrawIndexedIndirect(m_recording->commands, m_recording->device->buffers.Get(arguments).buffer, offset, 1,
+                             sizeof(VkDrawIndexedIndirectCommand));
+}
+
 void CommandList::Dispatch(std::uint32_t groupsX, std::uint32_t groupsY, std::uint32_t groupsZ) {
     vkCmdDispatch(m_recording->commands, groupsX, groupsY, groupsZ);
 }

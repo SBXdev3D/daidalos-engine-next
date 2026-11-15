@@ -13,6 +13,8 @@
 #include <glm/vec4.hpp>
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -491,6 +493,150 @@ TEST(ExtractEmitterLights, AnEmitterLightsAsItEmitsAndFadesAfter) {
     ASSERT_EQ(lit.size(), 1U);
     EXPECT_NEAR(lit[0].color.r, 20.0f / std::exp(1.0f), 1e-3f) << "fading over a second";
     EXPECT_TRUE(lights(20.0f).empty()) << "out";
+}
+
+TEST(MakeBolt, SplitsALineBetweenItsEnds) {
+    const std::vector<std::vector<glm::vec3>> bolt = scene::MakeBolt(5, 0.15f, 0.0f, 3);
+    ASSERT_EQ(bolt.size(), 1U) << "no branches";
+    const std::vector<glm::vec3>& points = bolt.front();
+    ASSERT_EQ(points.size(), 33U) << "2^5 segments";
+    EXPECT_EQ(points.front(), glm::vec3(0.0f));
+    EXPECT_EQ(points.back(), glm::vec3(1.0f, 0.0f, 0.0f));
+    bool moved = false;
+    for (std::size_t i = 0; i < points.size(); ++i) {
+        // Middles move aside only: along the line, the points are evenly spread.
+        EXPECT_NEAR(points[i].x, static_cast<float>(i) / 32.0f, 1e-5f);
+        // At most the first displacement, plus half of it, a quarter...
+        EXPECT_LE(std::abs(points[i].y), 0.3f);
+        EXPECT_LE(std::abs(points[i].z), 0.3f);
+        moved = moved || points[i].y != 0.0f;
+    }
+    EXPECT_TRUE(moved);
+}
+
+TEST(MakeBolt, TheSameSeedMakesTheSameBolt) {
+    EXPECT_EQ(scene::MakeBolt(6, 0.2f, 0.3f, 11), scene::MakeBolt(6, 0.2f, 0.3f, 11));
+    EXPECT_NE(scene::MakeBolt(6, 0.2f, 0.3f, 11), scene::MakeBolt(6, 0.2f, 0.3f, 12));
+}
+
+TEST(MakeBolt, BranchesStartOnTheBolt) {
+    const std::vector<std::vector<glm::vec3>> bolt = scene::MakeBolt(6, 0.2f, 1.0f, 5);
+    ASSERT_GT(bolt.size(), 1U);
+    for (std::size_t branch = 1; branch < bolt.size(); ++branch) {
+        ASSERT_GE(bolt[branch].size(), 3U);
+        EXPECT_NE(std::ranges::find(bolt.front(), bolt[branch].front()), bolt.front().end());
+    }
+}
+
+namespace {
+
+// A ribbon emitter of an effect, at a place, reaching a target if given.
+ecs::Entity AddRibbon(ecs::World& world, const scene::RibbonEffect& effect, const glm::vec3& position,
+                      ecs::Entity target = {}) {
+    const ecs::Entity entity = AddAt(world, position);
+    world.Add<scene::RibbonEmitter>(
+        entity, scene::RibbonEmitter{.effect = std::make_shared<const scene::RibbonEffect>(effect), .target = target});
+    return entity;
+}
+
+SceneView Ribbons(ecs::World& world, float delta) {
+    SceneView view;
+    ecs::PropagateTransforms(world);
+    scene::ExtractRibbons(world, delta, view);
+    return view;
+}
+
+} // namespace
+
+TEST(ExtractRibbons, ALineGoesFromItsEmitterToItsTarget) {
+    ecs::World world;
+    scene::RibbonEffect effect;
+    effect.color = {{0.0f, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f)}, {1.0f, glm::vec4(0.0f, 0.0f, 1.0f, 1.0f)}};
+    effect.width = {{0.0f, 0.1f}, {1.0f, 0.3f}};
+    effect.tiling = 2.0f;
+    const ecs::Entity target = AddAt(world, {4.0f, 0.0f, 0.0f});
+    AddRibbon(world, effect, {0.0f, 0.0f, 0.0f}, target);
+    const SceneView view = Ribbons(world, 0.1f);
+    ASSERT_EQ(view.ribbons.size(), 1U);
+    const std::vector<renderer::RibbonPoint>& points = view.ribbons[0].points;
+    ASSERT_GE(points.size(), 2U);
+    EXPECT_EQ(points.front().position, glm::vec3(0.0f));
+    EXPECT_NEAR(glm::distance(points.back().position, glm::vec3(4.0f, 0.0f, 0.0f)), 0.0f, 1e-5f);
+    EXPECT_EQ(points.front().color, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+    EXPECT_EQ(points.back().color, glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
+    EXPECT_FLOAT_EQ(points.front().width, 0.1f);
+    EXPECT_FLOAT_EQ(points.back().width, 0.3f);
+    EXPECT_FLOAT_EQ(points.back().u - points.front().u, 2.0f) << "4 m at 2 m per repeat";
+}
+
+TEST(ExtractRibbons, WithoutATargetALineGoesUpItsEmitter) {
+    ecs::World world;
+    scene::RibbonEffect effect;
+    effect.length = 3.0f;
+    AddRibbon(world, effect, {1.0f, 0.0f, 0.0f});
+    const SceneView view = Ribbons(world, 0.1f);
+    ASSERT_EQ(view.ribbons.size(), 1U);
+    EXPECT_NEAR(glm::distance(view.ribbons[0].points.back().position, glm::vec3(1.0f, 3.0f, 0.0f)), 0.0f, 1e-5f);
+}
+
+TEST(ExtractRibbons, ABoltKeepsItsShapeUntilItsRefresh) {
+    ecs::World world;
+    scene::RibbonEffect effect;
+    effect.shape = scene::RibbonShape::Bolt;
+    effect.generations = 4;
+    effect.displacement = 0.2f;
+    effect.refresh = 0.1f;
+    AddRibbon(world, effect, {0.0f, 0.0f, 0.0f}, AddAt(world, {0.0f, 0.0f, -2.0f}));
+    const SceneView first = Ribbons(world, 0.01f);
+    ASSERT_EQ(first.ribbons.size(), 1U);
+    EXPECT_EQ(first.ribbons[0].points.size(), 17U);
+    const SceneView same = Ribbons(world, 0.02f);
+    EXPECT_EQ(same.ribbons[0].points[8].position, first.ribbons[0].points[8].position);
+    const SceneView next = Ribbons(world, 0.2f);
+    EXPECT_NE(next.ribbons[0].points[8].position, first.ribbons[0].points[8].position);
+    EXPECT_NEAR(glm::distance(next.ribbons[0].points.back().position, glm::vec3(0.0f, 0.0f, -2.0f)), 0.0f, 1e-5f);
+}
+
+TEST(ExtractRibbons, ATrailFollowsWhereItsEmitterWent) {
+    ecs::World world;
+    scene::RibbonEffect effect;
+    effect.shape = scene::RibbonShape::Trail;
+    effect.duration = 1.0f;
+    effect.spacing = 0.1f;
+    const ecs::Entity wisp = AddAt(world, {0.0f, 0.0f, 0.0f});
+    world.Add<scene::RibbonEmitter>(
+        wisp, scene::RibbonEmitter{.effect = std::make_shared<const scene::RibbonEffect>(effect)});
+    EXPECT_TRUE(Ribbons(world, 0.1f).ribbons.empty()) << "one point is no ribbon";
+    for (int step = 1; step <= 5; ++step) {
+        world.Get<ecs::LocalTransform>(wisp).translation = {static_cast<float>(step), 0.0f, 0.0f};
+        Ribbons(world, 0.1f);
+    }
+    world.Get<ecs::LocalTransform>(wisp).translation = {6.0f, 0.0f, 0.0f};
+    SceneView view = Ribbons(world, 0.1f);
+    ASSERT_EQ(view.ribbons.size(), 1U);
+    EXPECT_EQ(view.ribbons[0].points.front().position, glm::vec3(6.0f, 0.0f, 0.0f)) << "newest first";
+    EXPECT_EQ(view.ribbons[0].points.size(), 7U);
+    // A second on, the old points are gone.
+    for (int step = 0; step < 12; ++step) {
+        view = Ribbons(world, 0.1f);
+    }
+    EXPECT_TRUE(view.ribbons.empty() || view.ribbons[0].points.size() <= 2U);
+}
+
+TEST(ExtractRibbons, ADisabledRibbonShowsNothingAndItsLightFades) {
+    ecs::World world;
+    scene::RibbonEffect effect;
+    effect.light = scene::EmitterLight{.intensity = 10.0f, .range = 3.0f, .fade = 1.0f};
+    const ecs::Entity arc = AddRibbon(world, effect, {0.0f, 0.0f, 0.0f});
+    const SceneView lit = Ribbons(world, 0.1f);
+    ASSERT_EQ(lit.ribbons.size(), 1U);
+    ASSERT_EQ(lit.lights.size(), 1U);
+    EXPECT_NEAR(glm::distance(lit.lights[0].position, glm::vec3(0.0f, 0.5f, 0.0f)), 0.0f, 1e-5f) << "at its middle";
+    world.Get<scene::RibbonEmitter>(arc).enabled = false;
+    const SceneView off = Ribbons(world, 1.0f);
+    EXPECT_TRUE(off.ribbons.empty());
+    ASSERT_EQ(off.lights.size(), 1U);
+    EXPECT_NEAR(off.lights[0].color.r, 10.0f / std::exp(1.0f), 1e-3f);
 }
 
 TEST(Flicker, StaysBetweenOneAndOneLessItsDepth) {

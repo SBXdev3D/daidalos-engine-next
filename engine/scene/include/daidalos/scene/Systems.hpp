@@ -32,6 +32,17 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
 /// (ADR-0053). Spawns carry the emitter's velocity. Run it after ecs::PropagateTransforms.
 void EmitParticles(ecs::World& world, float delta, std::vector<renderer::ParticleSpawn>& spawns);
 
+/// Adds the ribbons of the enabled RibbonEmitters to the view, built at their world transforms, and the lights
+/// of those that give off light, after delta seconds (ADR-0053). Run it after ecs::PropagateTransforms.
+void ExtractRibbons(ecs::World& world, float delta, renderer::SceneView& view);
+
+/// A bolt from (0, 0, 0) to (1, 0, 0), split generations times, each middle pushed aside in Y and Z by up
+/// to displacement, halved at each split; a middle starts a branch with the chance branches, which goes on
+/// from it, split as many times as are left. The bolt first, then its branches. The same seed gives the same
+/// bolt.
+[[nodiscard]] std::vector<std::vector<glm::vec3>> MakeBolt(std::uint32_t generations, float displacement,
+                                                           float branches, std::uint32_t seed);
+
 /// Adds the lights of the emitters whose effect gives off light (EmitterLight), as bright as they are active.
 /// Run it after EmitParticles, which keeps their activity.
 void ExtractEmitterLights(ecs::World& world, renderer::SceneView& view);

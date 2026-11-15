@@ -41,7 +41,9 @@ float3 PreviousPosition(InstanceData instance, float3 position, uint vertexId) {
     return float3(previous[first], previous[first + 1], previous[first + 2]);
 }
 
-// Skinned draws are bound at their first vertex, so the vertex index counts from the draw's first.
+// Skinned draws are bound at their first vertex, so the vertex index counts from the draw's first. Shaders
+// with their own vertex shader define DAI_CUSTOM_VERTEX_SHADER.
+#ifndef DAI_CUSTOM_VERTEX_SHADER
 VertexOutput VSMain(VertexInput input, uint vertexId : SV_VulkanVertexID) {
     const FrameData frame = g_frames[g_push.frameBuffer][0];
     const InstanceData instance = g_instances[g_push.instanceBuffer][g_push.instanceIndex];
@@ -60,6 +62,7 @@ VertexOutput VSMain(VertexInput input, uint vertexId : SV_VulkanVertexID) {
     output.worldPosition = worldPosition.xyz;
     return output;
 }
+#endif
 
 // Below the output's resolution, textures are sampled with the bias of the render scale, so that they keep
 // the detail the upscaler can show (ADR-0049).

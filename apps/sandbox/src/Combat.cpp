@@ -241,6 +241,9 @@ void Kill(scene::Scene& scene, Zombie& zombie, Arsenal* arsenal) {
 
 // Where the muzzle is, from the eye: right, low and ahead, where the weapons are held.
 constexpr glm::vec3 kMuzzleOffset{0.08f, -0.075f, -0.65f};
+// Where casings leave the weapon, and the way they go: out of its right side, up and a little back.
+constexpr glm::vec3 kEjectOffset{0.12f, -0.1f, -0.35f};
+constexpr glm::vec3 kEjectDirection{0.8f, 0.55f, 0.25f};
 
 // How long a shot lights the room, in seconds.
 constexpr float kMuzzleFlashTime = 0.06f;
@@ -284,6 +287,8 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
         const glm::vec3 muzzle = eye.translation + eye.rotation * kMuzzleOffset;
         scene.SpawnParticles(effects->muzzleFlash, muzzle, aim, 3);
         scene.SpawnParticles(effects->gunSmoke, muzzle, math::kUp, 6);
+        scene.SpawnParticles(effects->casings, eye.translation + eye.rotation * kEjectOffset,
+                             eye.rotation * glm::normalize(kEjectDirection), 1);
         std::vector<physics::BodyId> zombieBodies;
         world.Each<Zombie>([&](ecs::Entity, const Zombie& zombie) { zombieBodies.push_back(zombie.body); });
         for (const physics::RayHit& hit : hits) {

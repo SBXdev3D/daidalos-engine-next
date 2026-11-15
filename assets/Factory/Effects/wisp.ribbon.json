@@ -1,0 +1,12 @@
+{
+    "comment": "A wisp's trail: where a presence has been over the last second and a half, fading behind it.",
+    "texture": "ribbon_glow.png",
+    "shape": "trail",
+    "duration": 1.5,
+    "spacing": 0.05,
+    "color": [[0, [0.6, 1.2, 1, 1]], [1, [0.2, 0.5, 0.6, 0]]],
+    "width": [[0, 0.08], [1, 0.01]],
+    "tiling": 0.5,
+    "scroll": 0.5,
+    "light": { "color": [0.5, 1, 0.9], "intensity": 2, "range": 3, "radius": 0.05 }
+}

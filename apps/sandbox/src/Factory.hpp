@@ -63,6 +63,8 @@ struct ParticleEffects {
     daidalos::renderer::ParticleEffectHandle sparks;
     daidalos::renderer::ParticleEffectHandle gunSmoke;
     daidalos::renderer::ParticleEffectHandle muzzleFlash;
+    /// Thrown out of the weapon's side at each shot (ADR-0053).
+    daidalos::renderer::ParticleEffectHandle casings;
 };
 
 /// The player's state, as a component of the camera entity.
@@ -130,6 +132,11 @@ void Teleport(daidalos::scene::Scene& scene, daidalos::ecs::Entity entity, const
 /// player's entity.
 [[nodiscard]] daidalos::core::Result<daidalos::ecs::Entity>
 BuildLevel(daidalos::scene::Scene& scene, const daidalos::scene::Model& model, std::string_view levelPath);
+
+/// Puts the effects of mesh particles and ribbons in front of a place (ADR-0053), for sandbox.showcase: an
+/// electric arc, a laser, lightning, breaking glass, papers in the air and a wisp that circles. Their files
+/// are in the level's directory. yaw is the way the place looks, as sandbox.start gives it, in radians.
+void AddEffectShowcase(daidalos::scene::Scene& scene, std::string_view levelPath, const glm::vec3& eye, float yaw);
 
 /// What the input does to the world. The input and the actions must outlive the scene.
 void AddSystems(daidalos::scene::Scene& scene, const daidalos::input::InputState& input,

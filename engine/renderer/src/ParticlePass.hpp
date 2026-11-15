@@ -21,15 +21,18 @@
 
 namespace daidalos::renderer {
 
+class MeshPass;
 class RenderGraph;
 
 /// Particles simulated on the GPU (ADR-0025, ADR-0053): one pool of kMaxParticles, with a dead list and two alive
 /// lists. Each frame spawns what the last frame's particles asked for, emits, simulates, sorts by depth and
-/// draws them with one indirect draw. The CPU reads back only the impacts that effects report, two frames
-/// late. The Device must outlive it.
+/// draws them with one indirect draw, with the frame's ribbons among them. Mesh effects draw theirs into the
+/// G-buffer instead, one indirect draw each. The CPU reads back only the impacts that effects report, two
+/// frames late. The Device must outlive it.
 class ParticlePass {
 public:
-    static core::Result<ParticlePass> Create(rhi::Device& device, rhi::Format colorFormat);
+    /// colorFormat is the frame's, and depthFormat the G-buffer's, which mesh particles are drawn into.
+    static core::Result<ParticlePass> Create(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
 
     ParticlePass(ParticlePass&& other) noexcept;
     ParticlePass& operator=(ParticlePass&& other) = delete;
@@ -37,10 +40,14 @@ public:
     ParticlePass& operator=(const ParticlePass&) = delete;
     ~ParticlePass();
 
-    [[nodiscard]] core::Result<ParticleEffectHandle> CreateEffect(const ParticleEffectDesc& desc);
+    /// Mesh effects at once: more are simulated, not drawn.
+    static constexpr std::uint32_t kMaxMeshEffects = 32;
+    /// meshes owns the meshes and materials of mesh effects.
+    [[nodiscard]] core::Result<ParticleEffectHandle> CreateEffect(const ParticleEffectDesc& desc,
+                                                                  const MeshPass& meshes);
     /// Changes an effect in place, as when its file is edited: particles alive take the change. False if
     /// the effect is gone.
-    bool UpdateEffect(ParticleEffectHandle effect, const ParticleEffectDesc& desc);
+    bool UpdateEffect(ParticleEffectHandle effect, const ParticleEffectDesc& desc, const MeshPass& meshes);
     /// Particles of the effect still alive keep using its slot, which a new effect may reuse.
     void DestroyEffect(ParticleEffectHandle effect);
 
@@ -64,11 +71,18 @@ public:
     };
     /// Adds the passes that spawn the view's particles and those the last frame asked for, move every
     /// particle by the view's time step, in the level's wind, the view's wind volumes and attractors, against
-    /// the frame's structure, and sort them, in the group "Simulation". frameBuffer is the storage index of
-    /// the frame's FrameData. Spawns of destroyed effects are skipped. The simulation also lights lit
-    /// particles, each keeping the light it chose, with its shadows (ADR-0044).
+    /// the frame's structure, and sort them with the view's ribbons, in the group "Simulation". frameBuffer is
+    /// the storage index of the frame's FrameData. Spawns of destroyed effects are skipped. The simulation
+    /// also lights lit particles, each keeping the light it chose, with its shadows (ADR-0044). It comes
+    /// before the G-buffer, which draws mesh particles.
     [[nodiscard]] core::Result<void> AddSimulation(RenderGraph& graph, const SceneView& view, std::uint32_t frameBuffer,
-                                                   const Shadows& shadows);
+                                                   const Shadows& shadows, const MeshPass& meshes);
+
+    /// Whether an effect draws meshes, and the buffers RecordMeshes reads, for the G-buffer's pass.
+    [[nodiscard]] bool HasMeshes() const;
+    [[nodiscard]] std::vector<rhi::BufferUse> MeshBuffers() const;
+    /// Draws the mesh particles the last simulation moved, inside the G-buffer's rendering (ADR-0053).
+    void RecordMeshes(rhi::CommandList& commands, std::uint32_t frameBuffer, const MeshPass& meshes) const;
 
     /// An impact reported by an effect (ParticleHit), with the material as an index of the frame's table.
     struct Hit {
@@ -110,6 +124,12 @@ public:
 
 private:
     struct Effect {};
+    /// A mesh effect's list of particles to draw.
+    struct MeshSlot {
+        ParticleEffectHandle effect;
+        MeshHandle mesh;
+        MaterialHandle material;
+    };
     /// Spawn requests, forces and parameters of one frame in flight, and the hits it reports.
     struct FrameSlot {
         rhi::BufferHandle spawns;
@@ -118,17 +138,29 @@ private:
         std::uint64_t forceCapacity = 0;
         rhi::BufferHandle parameters;
         rhi::BufferHandle hits;
+        /// The frame's ribbons, their points and their segments (ADR-0053).
+        rhi::BufferHandle ribbons;
+        std::uint64_t ribbonCapacity = 0;
+        rhi::BufferHandle ribbonPoints;
+        std::uint64_t pointCapacity = 0;
+        rhi::BufferHandle ribbonSegments;
+        std::uint64_t segmentCapacity = 0;
         /// The GPU has written its hits: a simulation was recorded with this slot.
         bool used = false;
     };
 
     explicit ParticlePass(rhi::Device& device) : m_device(&device) {}
 
-    [[nodiscard]] core::Result<void> CreateResources(rhi::Format colorFormat);
+    [[nodiscard]] core::Result<void> CreateResources(rhi::Format colorFormat, rhi::Format depthFormat);
+    /// Writes the frame's ribbons into the slot's buffers.
+    [[nodiscard]] core::Result<std::uint32_t> WriteRibbons(FrameSlot& slot, std::span<const Ribbon> ribbons);
+    /// The mesh slot of an effect, which it takes if it draws a mesh and has none, or leaves if it does not:
+    /// kNoMeshSlot if it draws none, kMaxMeshEffects if every slot is taken.
+    std::uint32_t AssignMeshSlot(ParticleEffectHandle effect, const ParticleEffectDesc& desc);
     /// Reads the hits the slot's last simulation reported.
     void ReadHits(const FrameSlot& slot);
     [[nodiscard]] core::Result<void> ReserveEffectSlot(std::uint32_t index);
-    void WriteEffect(std::uint32_t index, const ParticleEffectDesc& desc);
+    void WriteEffect(ParticleEffectHandle effect, const ParticleEffectDesc& desc, const MeshPass& meshes);
 
     rhi::Device* m_device;
     rhi::PipelineHandle m_subEmit;
@@ -138,6 +170,15 @@ private:
     rhi::PipelineHandle m_sort;
     rhi::PipelineHandle m_draw;
     rhi::PipelineHandle m_distort;
+    /// Mesh particles in the G-buffer, one-sided and two-sided.
+    rhi::PipelineHandle m_meshDraw;
+    rhi::PipelineHandle m_meshDrawDoubleSided;
+    rhi::BufferHandle m_meshLists;
+    std::array<MeshSlot, kMaxMeshEffects> m_meshSlots{};
+    /// The storage index of the last simulation's frame parameters, which the draw reads.
+    std::uint32_t m_parameters = 0;
+    /// The last simulation's time step, from which mesh particles' motion vectors come.
+    float m_timeStep = 0.0f;
     rhi::BufferHandle m_particles;
     rhi::BufferHandle m_dead;
     std::array<rhi::BufferHandle, 2> m_alive;

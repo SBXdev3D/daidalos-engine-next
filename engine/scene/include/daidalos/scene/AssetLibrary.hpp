@@ -101,9 +101,14 @@ public:
     /// time. A missing or invalid file is an error that names it, and the next request tries again.
     [[nodiscard]] core::Result<ParticleEffectAsset> LoadParticleEffect(std::string_view path);
 
-    /// Reads again the effect files that changed on disk since they were read, and updates their effects in
-    /// place: particles alive take the change. Returns those it updated. A file that no longer reads keeps
-    /// its effect as it was, with a warning. For hot reload in development builds.
+    /// Returns a ribbon from its file (ParseRibbonEffect), loading it and its texture the first time. Every
+    /// emitter that loads it shares it. A missing or invalid file is an error that names it.
+    [[nodiscard]] core::Result<std::shared_ptr<const RibbonEffect>> LoadRibbonEffect(std::string_view path);
+
+    /// Reads again the effect and ribbon files that changed on disk since they were read, and updates their
+    /// effects in place: particles alive and ribbons take the change. Returns the particle effects it
+    /// updated. A file that no longer reads keeps its effect as it was, with a warning. For hot reload in
+    /// development builds.
     std::vector<ParticleEffectAsset> ReloadChangedParticleEffects();
 
     /// Returns a texture, loading it the first time, such as the image of particles. The handle lives as
@@ -173,6 +178,14 @@ private:
         std::filesystem::path file;
         std::filesystem::file_time_type written;
     };
+    struct RibbonFile {
+        std::shared_ptr<RibbonEffect> effect;
+        std::filesystem::path file;
+        std::filesystem::file_time_type written;
+    };
+    /// A ribbon file's effect, with its texture loaded.
+    [[nodiscard]] core::Result<RibbonEffect> ReadRibbonEffect(const std::string& identity,
+                                                              const std::filesystem::path& file);
 
     renderer::Renderer* m_renderer;
     std::filesystem::path m_root;
@@ -184,6 +197,8 @@ private:
     std::vector<renderer::ParticleEffectHandle> m_particleEffects;
     /// Effects loaded from files, by identity.
     std::unordered_map<std::string, EffectFile> m_effectFiles;
+    /// Ribbons loaded from files, by identity.
+    std::unordered_map<std::string, RibbonFile> m_ribbonFiles;
     /// The effect files being read, each reading the next for its sub-emitters.
     std::vector<std::string> m_effectsReading;
     std::vector<PendingLoad> m_pending;

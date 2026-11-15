@@ -235,15 +235,31 @@ core::Result<ParticleEffectFile> AssetLibrary::ReadParticleEffect(const std::str
     if (!parsed) {
         return core::MakeError(parsed.error().code, kModule, std::format("'{}': {}", identity, parsed.error().message));
     }
-    // The texture is found from the file's directory.
+    // The texture and the mesh are found from the file's directory.
     const std::size_t slash = identity.rfind('/');
     const std::string directory = slash == std::string::npos ? std::string{} : identity.substr(0, slash + 1);
-    core::Result<rhi::TextureHandle> texture = LoadTexture(directory + parsed->texture);
-    if (!texture) {
-        return core::MakeError(texture.error().code, kModule,
-                               std::format("'{}': its texture: {}", identity, texture.error().message));
+    if (!parsed->texture.empty()) {
+        core::Result<rhi::TextureHandle> texture = LoadTexture(directory + parsed->texture);
+        if (!texture) {
+            return core::MakeError(texture.error().code, kModule,
+                                   std::format("'{}': its texture: {}", identity, texture.error().message));
+        }
+        parsed->desc.texture = *texture;
     }
-    parsed->desc.texture = *texture;
+    if (!parsed->mesh.empty()) {
+        // A mesh effect draws the first part of its model, with its material.
+        core::Result<const Model*> model = LoadModel(directory + parsed->mesh);
+        if (!model) {
+            return core::MakeError(model.error().code, kModule,
+                                   std::format("'{}': its mesh: {}", identity, model.error().message));
+        }
+        if ((*model)->parts.empty()) {
+            return core::MakeError(core::ErrorCode::InvalidArgument, kModule,
+                                   std::format("'{}': its mesh '{}' has no mesh", identity, parsed->mesh));
+        }
+        parsed->desc.mesh = (*model)->parts.front().mesh;
+        parsed->desc.material = (*model)->parts.front().material;
+    }
     if (!parsed->lightPositive.empty()) {
         // Light maps are amounts of light, not colors: read as they are.
         for (auto [path, handle] : {std::pair{&parsed->lightPositive, &parsed->desc.lightPositive},
@@ -297,7 +313,61 @@ core::Result<ParticleEffectAsset> AssetLibrary::LoadParticleEffect(std::string_v
     return asset;
 }
 
+core::Result<RibbonEffect> AssetLibrary::ReadRibbonEffect(const std::string& identity,
+                                                          const std::filesystem::path& file) {
+    std::ifstream stream(file, std::ios::binary);
+    if (!stream) {
+        return core::MakeError(core::ErrorCode::IoError, kModule, std::format("Cannot read '{}'", identity));
+    }
+    const std::string json{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+    core::Result<RibbonEffectFile> parsed = ParseRibbonEffect(json);
+    if (!parsed) {
+        return core::MakeError(parsed.error().code, kModule, std::format("'{}': {}", identity, parsed.error().message));
+    }
+    if (!parsed->texture.empty()) {
+        const std::size_t slash = identity.rfind('/');
+        const std::string directory = slash == std::string::npos ? std::string{} : identity.substr(0, slash + 1);
+        core::Result<rhi::TextureHandle> texture = LoadTexture(directory + parsed->texture);
+        if (!texture) {
+            return core::MakeError(texture.error().code, kModule,
+                                   std::format("'{}': its texture: {}", identity, texture.error().message));
+        }
+        parsed->effect.texture = *texture;
+    }
+    return std::move(parsed->effect);
+}
+
+core::Result<std::shared_ptr<const RibbonEffect>> AssetLibrary::LoadRibbonEffect(std::string_view path) {
+    DAI_TRY_ASSIGN(std::string identity, resources::NormalizeAssetPath(path));
+    if (const auto found = m_ribbonFiles.find(identity); found != m_ribbonFiles.end()) {
+        return std::shared_ptr<const RibbonEffect>(found->second.effect);
+    }
+    DAI_TRY_ASSIGN(std::filesystem::path file, resources::ResolveAssetPath(m_root, identity));
+    std::error_code error;
+    const std::filesystem::file_time_type written = std::filesystem::last_write_time(file, error);
+    DAI_TRY_ASSIGN(RibbonEffect read, ReadRibbonEffect(identity, file));
+    auto effect = std::make_shared<RibbonEffect>(std::move(read));
+    m_ribbonFiles.emplace(std::move(identity), RibbonFile{effect, std::move(file), written});
+    return std::shared_ptr<const RibbonEffect>(std::move(effect));
+}
+
 std::vector<ParticleEffectAsset> AssetLibrary::ReloadChangedParticleEffects() {
+    // Ribbons change in place, for every emitter that shares them.
+    for (auto& [identity, loaded] : m_ribbonFiles) {
+        std::error_code error;
+        const std::filesystem::file_time_type written = std::filesystem::last_write_time(loaded.file, error);
+        if (error || written == loaded.written) {
+            continue;
+        }
+        loaded.written = written;
+        core::Result<RibbonEffect> read = ReadRibbonEffect(identity, loaded.file);
+        if (!read) {
+            DAI_LOG_WARNING(kModule, "Ribbon not reloaded: {}", core::Format(read.error()));
+            continue;
+        }
+        *loaded.effect = std::move(*read);
+        DAI_LOG_INFO(kModule, "Reloaded ribbon '{}'", identity);
+    }
     std::vector<ParticleEffectAsset> reloaded;
     for (auto& [identity, loaded] : m_effectFiles) {
         std::error_code error;
