@@ -1,0 +1,47 @@
+{
+    "comment": "A ring spreading on a wet floor.",
+    "texture": "sprites.png",
+    "columns": 4,
+    "cell": 1,
+    "color": [
+        [
+            0,
+            [
+                0.8,
+                0.85,
+                0.9,
+                0.5
+            ]
+        ],
+        [
+            1,
+            [
+                0.8,
+                0.85,
+                0.9,
+                0
+            ]
+        ]
+    ],
+    "fadeIn": 0,
+    "lifetime": [
+        0.8,
+        0.8
+    ],
+    "size": [
+        0.05,
+        0.05
+    ],
+    "sizeOverLife": [
+        [
+            0,
+            1
+        ],
+        [
+            1,
+            8
+        ]
+    ],
+    "orientation": "plane",
+    "softness": 0.0
+}

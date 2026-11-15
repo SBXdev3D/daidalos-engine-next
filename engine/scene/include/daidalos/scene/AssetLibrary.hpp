@@ -37,6 +37,8 @@ struct Model {
     struct Part {
         renderer::MeshHandle mesh;
         renderer::MaterialHandle material;
+        /// What its material is made of (resources::MaterialData::surface), or empty.
+        std::string surface;
         /// The triangles, also kept on the CPU for collisions and queries. Skinned ones are in their
         /// bind pose.
         std::vector<glm::vec3> positions;

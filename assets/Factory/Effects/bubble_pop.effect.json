@@ -1,0 +1,46 @@
+{
+    "comment": "A bubble popping into droplets.",
+    "texture": "sprites.png",
+    "columns": 4,
+    "cell": 2,
+    "color": [
+        [
+            0,
+            [
+                0.5,
+                0.9,
+                0.4,
+                0.7
+            ]
+        ],
+        [
+            1,
+            [
+                0.5,
+                0.9,
+                0.4,
+                0
+            ]
+        ]
+    ],
+    "fadeIn": 0,
+    "lifetime": [
+        0.15,
+        0.15
+    ],
+    "size": [
+        0.06,
+        0.06
+    ],
+    "sizeOverLife": [
+        [
+            0,
+            0.5
+        ],
+        [
+            1,
+            1.4
+        ]
+    ],
+    "softness": 0.01
+}

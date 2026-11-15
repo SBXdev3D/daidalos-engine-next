@@ -1,0 +1,43 @@
+{
+    "comment": "Dust hanging in the air, which shows where a lamp's cone or a flashlight crosses it.",
+    "texture": "sprites.png",
+    "columns": 4,
+    "cell": 3,
+    "color": [
+        [
+            0,
+            [
+                1,
+                1,
+                1,
+                0.5
+            ]
+        ]
+    ],
+    "fadeIn": 0.2,
+    "lifetime": [
+        6,
+        10
+    ],
+    "size": [
+        0.004,
+        0.008
+    ],
+    "spawnBox": [
+        1.5,
+        1.5,
+        1.5
+    ],
+    "speed": [
+        0,
+        0.02
+    ],
+    "drag": 1,
+    "turbulence": 0.05,
+    "anisotropy": 0.6,
+    "softness": 0.01,
+    "emitter": {
+        "rate": 40,
+        "radius": 3
+    }
+}

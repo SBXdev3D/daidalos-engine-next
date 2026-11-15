@@ -36,6 +36,8 @@ struct QualitySettings {
     bool volumetricFog = true;
     std::int64_t fogSlices = 64;
     std::int64_t fogTile = 16;
+    /// renderer.particle_density: multiplies what emitters and weather emit (ADR-0053).
+    double particleDensity = 1.0;
 
     bool operator==(const QualitySettings&) const = default;
 };

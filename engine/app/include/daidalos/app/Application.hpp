@@ -234,6 +234,7 @@ private:
     std::optional<core::CVar<bool>> m_volumetricFog;
     std::optional<core::CVar<std::int64_t>> m_fogSlices;
     std::optional<core::CVar<std::int64_t>> m_fogTile;
+    std::optional<core::CVar<double>> m_particleDensity;
     std::optional<core::CVar<std::string>> m_quality;
     std::optional<core::CVar<bool>> m_restirSpatial;
     std::optional<core::CVar<bool>> m_restirUnbiased;

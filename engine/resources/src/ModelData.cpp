@@ -37,6 +37,8 @@ constexpr std::string_view kModule = "resources";
 struct Extras {
     // Materials whose extras hold {"light": false}: their emission lights nothing (ADR-0044).
     std::set<std::size_t> unlitMaterials;
+    // Materials whose extras name what they are made of: {"surface": "metal"} (ADR-0053).
+    std::map<std::size_t, std::string> surfaces;
 };
 
 void ReadExtras(simdjson::dom::object* extras, std::size_t objectIndex, fastgltf::Category objectType,
@@ -47,6 +49,10 @@ void ReadExtras(simdjson::dom::object* extras, std::size_t objectIndex, fastgltf
     bool light = true;
     if ((*extras)["light"].get_bool().get(light) == simdjson::SUCCESS && !light) {
         static_cast<Extras*>(userPointer)->unlitMaterials.insert(objectIndex);
+    }
+    std::string_view surface;
+    if ((*extras)["surface"].get_string().get(surface) == simdjson::SUCCESS) {
+        static_cast<Extras*>(userPointer)->surfaces[objectIndex] = std::string(surface);
     }
 }
 
@@ -149,6 +155,9 @@ core::Result<void> ModelBuilder::AddMaterials() {
         MaterialData data;
         data.name = material.name;
         data.emissiveLight = !m_extras.unlitMaterials.contains(index);
+        if (const auto surface = m_extras.surfaces.find(index); surface != m_extras.surfaces.end()) {
+            data.surface = surface->second;
+        }
         const auto& pbr = material.pbrData;
         data.baseColorFactor = {pbr.baseColorFactor[0], pbr.baseColorFactor[1], pbr.baseColorFactor[2],
                                 pbr.baseColorFactor[3]};

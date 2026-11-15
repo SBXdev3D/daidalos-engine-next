@@ -12,10 +12,12 @@
 #include <daidalos/renderer/Renderer.hpp>
 #include <daidalos/renderer/SceneView.hpp>
 #include <daidalos/scene/AssetLibrary.hpp>
+#include <daidalos/scene/Systems.hpp>
 
 #include <chrono>
 #include <filesystem>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace daidalos::scene {
@@ -58,6 +60,15 @@ public:
     void SpawnParticles(renderer::ParticleEffectHandle effect, const glm::vec3& position, const glm::vec3& direction,
                         std::uint32_t count);
 
+    /// How many particles are worth emitting, and how wide the camera sees (EmissionView), from the next
+    /// Extract: renderer.particle_density and the field of view.
+    void SetEmission(float density, float fieldOfView) {
+        m_emission.density = density;
+        m_emission.fieldOfView = fieldOfView;
+    }
+    /// The thunder that reached the camera since the last call (Lightning), for sounds.
+    [[nodiscard]] std::vector<Thunder> TakeThunder() { return std::exchange(m_thunder, {}); }
+
     /// Stops time in the scene, for a game's pause menu: its systems, physics, animations, particles and
     /// sounds hold where they are, and it is still drawn as it was.
     void SetPaused(bool paused);
@@ -98,6 +109,8 @@ private:
     /// Seconds of the last frame, for the particles of the next view.
     float m_frameDelta = 0.0f;
     std::vector<renderer::ParticleSpawn> m_bursts;
+    EmissionView m_emission;
+    std::vector<Thunder> m_thunder;
     /// When Extract last looked for changed effect files.
     std::chrono::steady_clock::time_point m_effectsChecked;
 };

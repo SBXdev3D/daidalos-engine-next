@@ -156,6 +156,14 @@ TEST(ParseParticleEffect, TextureIsRequired) {
     EXPECT_NE(ErrorOf(R"({"columns": 2})").find("texture"), std::string::npos);
 }
 
+TEST(ParseParticleEffect, EmitterSaysWhereItMayBeSeen) {
+    const core::Result<ParticleEffectFile> parsed =
+        ParseParticleEffect(R"({"texture": "a.png", "emitter": {"distance": 30, "radius": 4}})");
+    ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
+    EXPECT_FLOAT_EQ(parsed->emission.distance, 30.0f);
+    EXPECT_FLOAT_EQ(parsed->emission.radius, 4.0f);
+}
+
 TEST(ParseParticleEffect, AMeshEffectNeedsNoTexture) {
     const core::Result<ParticleEffectFile> parsed = ParseParticleEffect(R"({"mesh": "Meshes/casing.glb"})");
     ASSERT_TRUE(parsed.has_value()) << parsed.error().message;

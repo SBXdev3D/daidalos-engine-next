@@ -23,7 +23,8 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     const float4 rotation = RotationFromUp(normalize(spawn.direction + 0.0001));
     for (uint i = 0; i < spawn.count; ++i) {
         uint seed = Hash(id.x * 7919u + i * 104729u + g_particles.seed * 26699u);
-        if (!SpawnParticle(spawn.effect, spawn.position, spawn.position, 0.0, rotation, spawn.velocity, seed)) {
+        if (!SpawnParticle(spawn.effect, spawn.position, spawn.position, 0.0, rotation, spawn.velocity,
+                           float3(1.0, 1.0, 1.0), seed)) {
             return;
         }
     }

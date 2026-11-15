@@ -19,7 +19,7 @@ The factory at 1080p on an RTX 3090, everything on at full resolution, took 7.2 
 
 ## Decision
 
-**Presets of the settings that exist.** `renderer.quality` is `low`, `medium`, `high`, `ultra`, or `auto` until the first launch has chosen. A preset decides eleven settings: the render scale and the lowest one dynamic resolution goes to, indirect light, its bounces and rays, reflections and the roughness they stop at, ReSTIR's spatial reuse, the volumetric fog, its slices and its cell size (`renderer.fog_tile`, new). Each was measured in the factory's big room at 1080p (below), and the presets were built from what each costs:
+**Presets of the settings that exist.** `renderer.quality` is `low`, `medium`, `high`, `ultra`, or `auto` until the first launch has chosen. A preset decides eleven settings (twelve since ADR-0053 added `renderer.particle_density`): the render scale and the lowest one dynamic resolution goes to, indirect light, its bounces and rays, reflections and the roughness they stop at, ReSTIR's spatial reuse, the volumetric fog, its slices and its cell size (`renderer.fog_tile`, new). Each was measured in the factory's big room at 1080p (below), and the presets were built from what each costs:
 
 | Setting | Low | Medium | High | Ultra |
 |---|---|---|---|---|

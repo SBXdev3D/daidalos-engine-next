@@ -17,6 +17,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -167,7 +168,32 @@ struct ParticleEmission {
     std::vector<ParticleBurst> bursts;
     /// The light it gives off, if any.
     std::optional<EmitterLight> light;
+    /// Beyond this many meters from the camera, it emits nothing; its light stays (ADR-0053).
+    float distance = 50.0f;
+    /// Meters around it that its particles reach: it emits while that sphere may be in view.
+    float radius = 2.0f;
 };
+
+/// The triangles of a mesh that particles appear on, drawn by area (ADR-0053): what burns, what crumbles.
+/// Positions are in the frame of the entity that emits.
+struct MeshSurface {
+    /// Three corners per triangle.
+    std::vector<glm::vec3> corners;
+    /// The area of the triangles up to and including each, for drawing one by area.
+    std::vector<float> cumulativeArea;
+};
+
+/// The surface of a mesh's triangles, or nothing if they have no area.
+[[nodiscard]] std::shared_ptr<const MeshSurface> MakeMeshSurface(std::span<const glm::vec3> positions,
+                                                                 std::span<const std::uint32_t> indices);
+
+/// A point on a surface and the normal there, from three random numbers in [0, 1): the first picks the
+/// triangle by area, the other two the point in it, evenly.
+struct SurfacePoint {
+    glm::vec3 position{0.0f};
+    glm::vec3 normal{0.0f, 1.0f, 0.0f};
+};
+[[nodiscard]] SurfacePoint SamplePoint(const MeshSurface& surface, float pick, float u, float v);
 
 /// ECS component: emits particles of an effect at the entity's WorldTransform, at a steady rate, as it
 /// moves, and in bursts. The effect's directions are in the entity's frame (ADR-0025). Disabling it starts
@@ -176,6 +202,11 @@ struct ParticleEmitter {
     renderer::ParticleEffectHandle effect;
     ParticleEmission emission;
     bool enabled = true;
+    /// If set, particles appear on its triangles, each leaving along the normal where it appears (the
+    /// effect's +Y), instead of at the entity.
+    std::shared_ptr<const MeshSurface> surface;
+    /// Counts the points drawn on the surface, for the next random ones.
+    std::uint32_t drawn = 0;
     /// The fraction of a particle carried over to the next frame.
     float pending = 0.0f;
     /// Seconds since it started, for its bursts.
@@ -184,6 +215,21 @@ struct ParticleEmitter {
     std::optional<glm::vec3> lastPosition;
     /// From 1 while it emits to 0 once it has stopped for a while: how bright its light is.
     float activity = 0.0f;
+};
+
+/// ECS component: a box where it rains or snows, at the entity's WorldTransform (ADR-0053): the cube from -0.5 to
+/// 0.5, scaled to the zone's size; a turned box counts as its bounds. Its effect's particles appear at its top,
+/// only over the part of it within reach of the camera, so a level with one courtyard spends nothing on the
+/// rest. The effect falls along its direction, and its spawn box spans the zone where its X and Z are 1.
+struct WeatherZone {
+    renderer::ParticleEffectHandle effect;
+    /// Particles per square meter per second.
+    float rate = 50.0f;
+    /// Meters from the camera, across, within which it rains.
+    float reach = 15.0f;
+    bool enabled = true;
+    /// The fraction of a particle carried over to the next frame.
+    float pending = 0.0f;
 };
 
 /// The shape of a ribbon (ADR-0053).
@@ -254,6 +300,44 @@ struct RibbonEmitter {
     std::deque<TrailPoint> trail;
     /// From 1 while enabled to 0 once it has been disabled a while: how bright its light is.
     float activity = 0.0f;
+};
+
+/// ECS component: a storm's lightning (ADR-0053). Now and then a bolt strikes inside the box of the entity's
+/// WorldTransform, from its top face down to its bottom one, a light flashes, and thunder follows, as late as
+/// sound takes to come from the bolt to the camera (Scene::TakeThunder).
+struct Lightning {
+    /// The bolt's ribbon; its length and target are the strike's.
+    std::shared_ptr<const RibbonEffect> bolt;
+    /// A light entity, the moon through the windows, which flashes: its light times up to flash.
+    ecs::Entity light;
+    float flash = 30.0f;
+    /// Seconds between strikes, picked between the two.
+    glm::vec2 interval{6.0f, 15.0f};
+    /// How long a strike lasts, its flickers included.
+    float duration = 0.5f;
+    bool enabled = true;
+
+    /// Seconds to the next strike, and since the last.
+    float untilStrike = -1.0f;
+    float sinceStrike = std::numeric_limits<float>::infinity();
+    std::uint32_t strikes = 0;
+    /// The last strike's ends, and when its flickers come, in seconds from its start.
+    glm::vec3 top{0.0f};
+    glm::vec3 bottom{0.0f};
+    glm::vec3 flickers{0.0f};
+    std::vector<std::vector<glm::vec3>> shape;
+    /// Thunder on its way: where it came from, and seconds until it arrives.
+    struct Rumble {
+        glm::vec3 position{0.0f};
+        float delay = 0.0f;
+    };
+    std::vector<Rumble> rumbles;
+};
+
+/// Thunder reaching the camera (Lightning): where the bolt was, and how far.
+struct Thunder {
+    glm::vec3 position{0.0f};
+    float distance = 0.0f;
 };
 
 /// ECS component: the entity's LocalTransform moves a kinematic body of the scene's physics. The entity

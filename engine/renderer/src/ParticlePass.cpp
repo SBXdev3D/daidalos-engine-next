@@ -223,8 +223,10 @@ struct GpuSpawn {
     std::uint32_t first;
     glm::vec3 velocity;
     std::uint32_t count;
+    glm::vec3 scale;
+    std::uint32_t padding;
 };
-static_assert(sizeof(GpuSpawn) == 64);
+static_assert(sizeof(GpuSpawn) == 80);
 
 struct ParticlePushConstants {
     std::uint32_t particles;
@@ -734,7 +736,9 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, const SceneVi
              .previous = spawn.previousPosition.value_or(spawn.position),
              .first = emitted,
              .velocity = spawn.velocity,
-             .count = count});
+             .count = count,
+             .scale = spawn.scale,
+             .padding = 0});
         emitted += count;
     }
     if (slot.spawnCapacity < std::max<std::size_t>(requests.size(), 1)) {

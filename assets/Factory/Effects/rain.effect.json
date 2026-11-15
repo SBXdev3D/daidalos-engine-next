@@ -1,0 +1,49 @@
+{
+    "comment": "Rain: streaks that fall, die where they hit, and splash. Placed by weather zones.",
+    "texture": "sprites.png",
+    "columns": 4,
+    "cell": 0,
+    "color": [
+        [
+            0,
+            [
+                0.7,
+                0.75,
+                0.8,
+                0.35
+            ]
+        ]
+    ],
+    "fadeIn": 0,
+    "collision": "die",
+    "onHit": {
+        "effect": "rain_splash.effect.json",
+        "count": 1
+    },
+    "lifetime": [
+        2.5,
+        2.5
+    ],
+    "size": [
+        0.012,
+        0.015
+    ],
+    "orientation": "velocity",
+    "stretch": 0.03,
+    "spawnBox": [
+        1,
+        0,
+        1
+    ],
+    "direction": [
+        0,
+        -1,
+        0
+    ],
+    "spread": 2,
+    "speed": [
+        8,
+        9
+    ],
+    "softness": 0.02
+}

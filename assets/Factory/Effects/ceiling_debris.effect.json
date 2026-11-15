@@ -1,0 +1,46 @@
+{
+    "comment": "Bits of concrete falling with the dust, which puff where they land.",
+    "mesh": "Meshes/chip.glb",
+    "collision": "bounce",
+    "bounce": 0.25,
+    "onHit": {
+        "effect": "dust_puff.effect.json",
+        "count": 2
+    },
+    "lifetime": [
+        8,
+        8
+    ],
+    "size": [
+        0.7,
+        2
+    ],
+    "shape": "line",
+    "spawnBox": [
+        1.5,
+        0,
+        0
+    ],
+    "direction": [
+        0,
+        -1,
+        0
+    ],
+    "speed": [
+        0,
+        0.3
+    ],
+    "gravity": 1,
+    "rotationSpeed": 400,
+    "emitter": {
+        "rate": 0,
+        "radius": 4,
+        "bursts": [
+            {
+                "time": 1,
+                "count": 12,
+                "interval": 6
+            }
+        ]
+    }
+}

@@ -1,0 +1,46 @@
+{
+    "comment": "Ash drifting down through a broken roof, swirled by the air; it stays where it lands. Placed by weather zones.",
+    "texture": "sprites.png",
+    "columns": 4,
+    "cell": 5,
+    "color": [
+        [
+            0,
+            [
+                0.35,
+                0.35,
+                0.35,
+                0.9
+            ]
+        ]
+    ],
+    "collision": "stick",
+    "lifetime": [
+        12,
+        12
+    ],
+    "size": [
+        0.01,
+        0.02
+    ],
+    "spawnBox": [
+        1,
+        0,
+        1
+    ],
+    "direction": [
+        0,
+        -1,
+        0
+    ],
+    "speed": [
+        0.3,
+        0.6
+    ],
+    "gravity": 0.03,
+    "drag": 1.5,
+    "turbulence": 1.5,
+    "turbulenceScale": 2,
+    "rotationSpeed": 180,
+    "softness": 0.01
+}

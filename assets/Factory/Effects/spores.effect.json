@@ -1,0 +1,43 @@
+{
+    "comment": "Spores and toxic gas specks hanging over something rotten.",
+    "texture": "sprites.png",
+    "columns": 4,
+    "cell": 3,
+    "color": [
+        [
+            0,
+            [
+                0.5,
+                1,
+                0.3,
+                0.6
+            ]
+        ]
+    ],
+    "fadeIn": 0.3,
+    "lifetime": [
+        6,
+        10
+    ],
+    "size": [
+        0.01,
+        0.02
+    ],
+    "spawnBox": [
+        1,
+        0.5,
+        1
+    ],
+    "speed": [
+        0.02,
+        0.1
+    ],
+    "gravity": -0.01,
+    "drag": 1,
+    "turbulence": 0.3,
+    "softness": 0.02,
+    "emitter": {
+        "rate": 15,
+        "radius": 2.5
+    }
+}

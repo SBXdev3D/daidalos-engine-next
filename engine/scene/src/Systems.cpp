@@ -8,6 +8,7 @@
 #include <daidalos/scene/Components.hpp>
 #include <daidalos/scene/Systems.hpp>
 
+#include <glm/common.hpp>
 #include <glm/geometric.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/matrix.hpp>
@@ -16,6 +17,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <random>
 #include <span>
 #include <utility>
@@ -196,8 +198,93 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
     ExtractParticleForces(world, view);
 }
 
-void EmitParticles(ecs::World& world, float delta, std::vector<renderer::ParticleSpawn>& spawns) {
-    world.Each<ecs::WorldTransform, ParticleEmitter>([&](ecs::Entity /*entity*/, const ecs::WorldTransform& transform,
+namespace {
+
+/// A random number in [0, 1) from a seed, the same for the same seed.
+float Hashed(std::uint32_t seed) {
+    std::uint32_t state = seed * 747796405U + 2891336453U;
+    const std::uint32_t word = ((state >> ((state >> 28U) + 4U)) ^ state) * 277803737U;
+    return static_cast<float>(((word >> 22U) ^ word) >> 8U) / 16777216.0f;
+}
+
+/// Counts scaled by the density; a burst of at least one keeps one.
+std::uint32_t Scaled(std::uint32_t count, float density) {
+    if (count == 0) {
+        return 0;
+    }
+    return std::max(1U, static_cast<std::uint32_t>(std::lround(static_cast<float>(count) * density)));
+}
+
+} // namespace
+
+std::shared_ptr<const MeshSurface> MakeMeshSurface(std::span<const glm::vec3> positions,
+                                                   std::span<const std::uint32_t> indices) {
+    auto surface = std::make_shared<MeshSurface>();
+    float total = 0.0f;
+    for (std::size_t i = 0; i + 2 < indices.size(); i += 3) {
+        if (indices[i] >= positions.size() || indices[i + 1] >= positions.size() ||
+            indices[i + 2] >= positions.size()) {
+            continue;
+        }
+        const glm::vec3 a = positions[indices[i]];
+        const glm::vec3 b = positions[indices[i + 1]];
+        const glm::vec3 c = positions[indices[i + 2]];
+        const float area = 0.5f * glm::length(glm::cross(b - a, c - a));
+        if (area <= 0.0f) {
+            continue;
+        }
+        total += area;
+        surface->corners.insert(surface->corners.end(), {a, b, c});
+        surface->cumulativeArea.push_back(total);
+    }
+    if (surface->cumulativeArea.empty()) {
+        return nullptr;
+    }
+    return surface;
+}
+
+SurfacePoint SamplePoint(const MeshSurface& surface, float pick, float u, float v) {
+    const float total = surface.cumulativeArea.back();
+    const auto found = std::upper_bound(surface.cumulativeArea.begin(), surface.cumulativeArea.end(), pick * total);
+    const std::size_t triangle = std::min<std::size_t>(static_cast<std::size_t>(found - surface.cumulativeArea.begin()),
+                                                       surface.cumulativeArea.size() - 1);
+    // Folding the square onto the triangle keeps points even.
+    if (u + v > 1.0f) {
+        u = 1.0f - u;
+        v = 1.0f - v;
+    }
+    const glm::vec3& a = surface.corners[triangle * 3];
+    const glm::vec3& b = surface.corners[triangle * 3 + 1];
+    const glm::vec3& c = surface.corners[triangle * 3 + 2];
+    return {.position = a + (b - a) * u + (c - a) * v, .normal = glm::normalize(glm::cross(b - a, c - a))};
+}
+
+bool MaySee(const EmissionView& view, const glm::vec3& point, float radius, float distance) {
+    if (!view.camera.has_value()) {
+        return true;
+    }
+    const glm::vec3 eye((*view.camera)[3]);
+    const glm::vec3 forward = -glm::normalize(glm::vec3((*view.camera)[2]));
+    const glm::vec3 toPoint = point - eye;
+    const float length = glm::length(toPoint);
+    if (length - radius > distance) {
+        return false;
+    }
+    if (length <= radius) {
+        return true;
+    }
+    // A cone around the view as wide as its corners at 4:3, widened by the angle the sphere spans.
+    constexpr float kTallest = 3.0f / 4.0f;
+    const float halfTan = std::tan(view.fieldOfView * 0.5f);
+    const float corner = std::atan(halfTan * std::sqrt(1.0f + kTallest * kTallest));
+    const float margin = std::asin(std::min(radius / length, 1.0f));
+    const float angle = std::acos(std::clamp(glm::dot(toPoint / length, forward), -1.0f, 1.0f));
+    return angle <= corner + margin;
+}
+
+void EmitParticles(ecs::World& world, float delta, std::vector<renderer::ParticleSpawn>& spawns,
+                   const EmissionView& view) {
+    world.Each<ecs::WorldTransform, ParticleEmitter>([&](ecs::Entity entity, const ecs::WorldTransform& transform,
                                                          ParticleEmitter& emitter) {
         const float fade = emitter.emission.light.has_value() ? emitter.emission.light->fade : 0.0f;
         const auto dim = [&] { emitter.activity = fade > 0.0f ? emitter.activity * std::exp(-delta / fade) : 0.0f; };
@@ -211,13 +298,15 @@ void EmitParticles(ecs::World& world, float delta, std::vector<renderer::Particl
         const glm::vec3 position(transform.matrix[3]);
         const glm::vec3 moved = emitter.lastPosition.has_value() ? position - *emitter.lastPosition : glm::vec3(0.0f);
         const ParticleEmission& emission = emitter.emission;
+        const float density = std::max(view.density, 0.0f);
         emitter.pending +=
-            std::max(emission.rate, 0.0f) * delta + std::max(emission.ratePerMeter, 0.0f) * glm::length(moved);
+            (std::max(emission.rate, 0.0f) * delta + std::max(emission.ratePerMeter, 0.0f) * glm::length(moved)) *
+            density;
         const float whole = std::floor(emitter.pending);
         emitter.pending -= whole;
         std::uint32_t count = static_cast<std::uint32_t>(whole);
         for (const ParticleBurst& burst : emission.bursts) {
-            count += BurstsBetween(burst, emitter.age, emitter.age + delta) * burst.count;
+            count += BurstsBetween(burst, emitter.age, emitter.age + delta) * Scaled(burst.count, density);
         }
         // Active while it emits steadily or has just emitted; its light fades once it stops.
         if (emission.rate > 0.0f || count > 0) {
@@ -227,19 +316,92 @@ void EmitParticles(ecs::World& world, float delta, std::vector<renderer::Particl
         }
         emitter.age += delta;
         const std::optional<glm::vec3> previous = std::exchange(emitter.lastPosition, position);
-        if (count == 0) {
+        // What no one may see is not emitted; its time and light go on.
+        if (count == 0 || !MaySee(view, position, emission.radius, emission.distance)) {
             return;
         }
         const glm::mat3 axes(glm::normalize(glm::vec3(transform.matrix[0])),
                              glm::normalize(glm::vec3(transform.matrix[1])),
                              glm::normalize(glm::vec3(transform.matrix[2])));
+        const glm::vec3 velocity = previous.has_value() && delta > 0.0f ? moved / delta : glm::vec3(0.0f);
+        if (emitter.surface != nullptr) {
+            // Each particle on its own point of the surface, leaving along the normal there.
+            const glm::mat3 normals = glm::transpose(glm::inverse(glm::mat3(transform.matrix)));
+            const std::uint32_t seed = entity.Index() * 2654435761U;
+            for (std::uint32_t i = 0; i < count; ++i) {
+                const std::uint32_t n = emitter.drawn++ * 3U;
+                const SurfacePoint point =
+                    SamplePoint(*emitter.surface, Hashed(seed ^ n), Hashed(seed ^ (n + 1)), Hashed(seed ^ (n + 2)));
+                const glm::vec3 normal = glm::normalize(normals * point.normal);
+                spawns.push_back({.effect = emitter.effect,
+                                  .position = glm::vec3(transform.matrix * glm::vec4(point.position, 1.0f)),
+                                  .rotation = glm::quat(glm::vec3(0.0f, 1.0f, 0.0f), normal),
+                                  .count = 1,
+                                  .velocity = velocity});
+            }
+            return;
+        }
         spawns.push_back({.effect = emitter.effect,
                           .position = position,
                           .rotation = glm::quat_cast(axes),
                           .count = count,
                           .previousPosition = previous,
-                          .velocity = previous.has_value() && delta > 0.0f ? moved / delta : glm::vec3(0.0f)});
+                          .velocity = velocity});
     });
+}
+
+void EmitWeather(ecs::World& world, float delta, std::vector<renderer::ParticleSpawn>& spawns,
+                 const EmissionView& view) {
+    if (!view.camera.has_value()) {
+        return;
+    }
+    const glm::vec3 eye((*view.camera)[3]);
+    world.Each<ecs::WorldTransform, WeatherZone>([&](ecs::Entity /*entity*/, const ecs::WorldTransform& transform,
+                                                     WeatherZone& zone) {
+        if (!zone.enabled) {
+            zone.pending = 0.0f;
+            return;
+        }
+        // The zone's bounds, and their part across within reach of the camera.
+        const glm::vec3 center(transform.matrix[3]);
+        const glm::vec3 half =
+            0.5f * (glm::abs(glm::vec3(transform.matrix[0])) + glm::abs(glm::vec3(transform.matrix[1])) +
+                    glm::abs(glm::vec3(transform.matrix[2])));
+        const glm::vec2 low =
+            glm::max(glm::vec2(center.x, center.z) - glm::vec2(half.x, half.z), glm::vec2(eye.x, eye.z) - zone.reach);
+        const glm::vec2 high =
+            glm::min(glm::vec2(center.x, center.z) + glm::vec2(half.x, half.z), glm::vec2(eye.x, eye.z) + zone.reach);
+        if (low.x >= high.x || low.y >= high.y) {
+            zone.pending = 0.0f;
+            return;
+        }
+        const glm::vec2 size = high - low;
+        zone.pending += std::max(zone.rate, 0.0f) * size.x * size.y * delta * std::max(view.density, 0.0f);
+        const float whole = std::floor(zone.pending);
+        zone.pending -= whole;
+        if (whole <= 0.0f) {
+            return;
+        }
+        const glm::vec2 middle = (low + high) * 0.5f;
+        spawns.push_back({.effect = zone.effect,
+                          .position = {middle.x, center.y + half.y, middle.y},
+                          .count = static_cast<std::uint32_t>(whole),
+                          .scale = {size.x * 0.5f, 1.0f, size.y * 0.5f}});
+    });
+}
+
+float StrikeBrightness(float time, const glm::vec2& flickers, float duration) {
+    if (time < 0.0f || time > duration) {
+        return 0.0f;
+    }
+    constexpr float kFade = 0.04f;
+    float brightness = 0.0f;
+    for (const float start : {0.0f, flickers.x, flickers.y}) {
+        if (time >= start) {
+            brightness = std::max(brightness, std::exp(-(time - start) / kFade));
+        }
+    }
+    return brightness;
 }
 
 float Flicker(float rate, float depth, float time, std::uint32_t seed) {
@@ -547,6 +709,91 @@ void SyncSoundEmitters(ecs::World& world, audio::SoundWorld& sounds) {
         [&sounds](ecs::Entity /*entity*/, const SoundEmitter& emitter, const ecs::WorldTransform& transform) {
             sounds.SetPosition(emitter.voice, glm::vec3(transform.matrix[3]));
         });
+}
+
+void UpdateLightning(ecs::World& world, float delta, renderer::SceneView& view, const EmissionView& camera,
+                     std::vector<Thunder>& thunder) {
+    constexpr float kSpeedOfSound = 343.0f;
+    const std::optional<glm::vec3> eye =
+        camera.camera.has_value() ? std::optional<glm::vec3>(glm::vec3((*camera.camera)[3])) : std::nullopt;
+    world.Each<ecs::WorldTransform, Lightning>([&](ecs::Entity entity, const ecs::WorldTransform& transform,
+                                                   Lightning& storm) {
+        // Thunder on its way.
+        for (Lightning::Rumble& rumble : storm.rumbles) {
+            rumble.delay -= delta;
+            if (rumble.delay <= 0.0f) {
+                thunder.push_back({.position = rumble.position,
+                                   .distance = eye.has_value() ? glm::distance(*eye, rumble.position) : 0.0f});
+            }
+        }
+        std::erase_if(storm.rumbles, [](const Lightning::Rumble& rumble) { return rumble.delay <= 0.0f; });
+
+        const std::uint32_t seed = entity.Index() * 7919U + storm.strikes * 104729U;
+        const auto pickInterval = [&](std::uint32_t salt) {
+            return glm::mix(storm.interval.x, storm.interval.y, Hashed(seed ^ salt));
+        };
+        if (storm.untilStrike < 0.0f) {
+            storm.untilStrike = pickInterval(11U);
+        }
+        if (storm.enabled) {
+            storm.untilStrike -= delta;
+        }
+        storm.sinceStrike += delta;
+        if (storm.enabled && storm.untilStrike <= 0.0f) {
+            // A bolt from a point of the box's top to one of its bottom.
+            const auto inBox = [&](float x, float y, float z) {
+                return glm::vec3(transform.matrix * glm::vec4(x - 0.5f, y, z - 0.5f, 1.0f));
+            };
+            storm.top = inBox(Hashed(seed ^ 1U), 0.5f, Hashed(seed ^ 2U));
+            storm.bottom = inBox(Hashed(seed ^ 3U), -0.5f, Hashed(seed ^ 4U));
+            storm.flickers = {0.06f + 0.06f * Hashed(seed ^ 5U), 0.18f + 0.12f * Hashed(seed ^ 6U), 0.0f};
+            const RibbonEffect* bolt = storm.bolt.get();
+            storm.shape = bolt != nullptr ? MakeBolt(bolt->generations, bolt->displacement, bolt->branches, seed)
+                                          : std::vector<std::vector<glm::vec3>>{};
+            storm.sinceStrike = 0.0f;
+            ++storm.strikes;
+            storm.untilStrike = pickInterval(13U);
+            const glm::vec3 middle = (storm.top + storm.bottom) * 0.5f;
+            storm.rumbles.push_back(
+                {.position = middle, .delay = eye.has_value() ? glm::distance(*eye, middle) / kSpeedOfSound : 0.0f});
+        }
+
+        const float brightness = StrikeBrightness(storm.sinceStrike, glm::vec2(storm.flickers), storm.duration);
+        if (brightness <= 0.0f) {
+            return;
+        }
+        // The light flashes: its entry in the view, by its name.
+        if (world.IsAlive(storm.light)) {
+            const renderer::SceneId id = SceneIdOf(storm.light);
+            for (renderer::Light& light : view.lights) {
+                if (light.id == id) {
+                    light.color *= 1.0f + (storm.flash - 1.0f) * brightness;
+                }
+            }
+        }
+        if (storm.bolt == nullptr) {
+            return;
+        }
+        const glm::vec3 line = storm.bottom - storm.top;
+        const float length = glm::length(line);
+        if (length <= 1.0e-4f) {
+            return;
+        }
+        const glm::vec3 forward = line / length;
+        const glm::vec3 helper =
+            std::abs(forward.y) < 0.99f ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
+        const glm::vec3 side = glm::normalize(glm::cross(forward, helper));
+        const glm::vec3 up = glm::cross(side, forward);
+        for (std::size_t i = 0; i < storm.shape.size(); ++i) {
+            std::vector<glm::vec3> positions;
+            std::vector<float> along;
+            for (const glm::vec3& p : storm.shape[i]) {
+                positions.push_back(storm.top + line * p.x + (side * p.y + up * p.z) * length);
+                along.push_back(std::clamp(p.x, 0.0f, 1.0f));
+            }
+            view.ribbons.push_back(BuildRibbon(*storm.bolt, positions, along, i == 0 ? 1.0f : 0.6f, brightness, 0.0f));
+        }
+    });
 }
 
 } // namespace daidalos::scene

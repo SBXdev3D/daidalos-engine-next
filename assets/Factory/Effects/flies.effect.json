@@ -1,0 +1,43 @@
+{
+    "comment": "Flies buzzing around a corpse, kept there by an attractor; their wings flicker.",
+    "texture": "sprites.png",
+    "columns": 4,
+    "cell": 8,
+    "frames": 2,
+    "frameRate": 40,
+    "loop": true,
+    "randomStartFrame": true,
+    "color": [
+        [
+            0,
+            [
+                1,
+                1,
+                1,
+                1
+            ]
+        ]
+    ],
+    "fadeIn": 0.05,
+    "lifetime": [
+        20,
+        30
+    ],
+    "size": [
+        0.012,
+        0.015
+    ],
+    "spawnRadius": 0.8,
+    "speed": [
+        0.3,
+        1
+    ],
+    "drag": 0.8,
+    "turbulence": 4,
+    "turbulenceScale": 0.4,
+    "softness": 0.01,
+    "emitter": {
+        "rate": 3,
+        "radius": 2
+    }
+}

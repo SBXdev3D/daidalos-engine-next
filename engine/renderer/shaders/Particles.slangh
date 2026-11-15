@@ -137,6 +137,8 @@ struct ParticleSpawn {
     uint first;      // Particles spawned by the requests before this one.
     float3 velocity; // The emitter's.
     uint count;
+    float3 scale;    // Stretches the effect's shape along the emitter's axes.
+    uint padding;
 };
 
 // New particles that the GPU asks for, where particles died or hit something (ADR-0053): read the next frame.

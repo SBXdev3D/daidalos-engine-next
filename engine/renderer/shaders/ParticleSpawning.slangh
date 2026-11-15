@@ -12,9 +12,10 @@
 
 // Spawns one particle of an effect, turned like its emitter (rotation), along the way the emitter went
 // this frame (from previous to position, at along, from 0 to 1), carrying the emitter's velocity as the
-// effect says. Returns false when the pool is full: the particle is dropped.
+// effect says; scale stretches the effect's shape along the emitter's axes. Returns false when the pool is
+// full: the particle is dropped.
 bool SpawnParticle(uint effectIndex, float3 position, float3 previous, float along, float4 rotation, float3 velocity,
-                   uint seed) {
+                   float3 scale, uint seed) {
     uint dead;
     InterlockedAdd(g_particleLists[g_particles.counters][kDeadCounter], 0xFFFFFFFF, dead);
     if (dead == 0 || dead > g_particles.capacity) {
@@ -61,7 +62,7 @@ bool SpawnParticle(uint effectIndex, float3 position, float3 previous, float alo
     }
 
     Particle particle;
-    particle.position = lerp(previous, position, along) + Rotate(rotation, offset);
+    particle.position = lerp(previous, position, along) + Rotate(rotation, offset * scale);
     particle.velocity = Rotate(rotation, direction) * lerp(effect.speedMin, effect.speedMax, Random(seed)) +
                         velocity * effect.inheritVelocity;
     particle.age = 0.0;

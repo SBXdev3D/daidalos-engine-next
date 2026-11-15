@@ -1,0 +1,58 @@
+{
+    "comment": "A thin thread of smoke from a cigarette, curling as it rises, glowing when lit from behind.",
+    "texture": "../particles.png",
+    "columns": 4,
+    "cell": 0,
+    "color": [
+        [
+            0,
+            [
+                0.8,
+                0.8,
+                0.8,
+                0.12
+            ]
+        ],
+        [
+            1,
+            [
+                0.8,
+                0.8,
+                0.8,
+                0
+            ]
+        ]
+    ],
+    "lifetime": [
+        3,
+        5
+    ],
+    "size": [
+        0.03,
+        0.04
+    ],
+    "sizeOverLife": [
+        [
+            0,
+            1
+        ],
+        [
+            1,
+            6
+        ]
+    ],
+    "speed": [
+        0.1,
+        0.2
+    ],
+    "gravity": -0.03,
+    "drag": 0.5,
+    "turbulence": 0.8,
+    "turbulenceScale": 0.2,
+    "anisotropy": 0.5,
+    "softness": 0.05,
+    "emitter": {
+        "rate": 6,
+        "radius": 1
+    }
+}
