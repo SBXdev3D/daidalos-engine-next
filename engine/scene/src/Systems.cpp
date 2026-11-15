@@ -195,10 +195,13 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
 void EmitParticles(ecs::World& world, float delta, std::vector<renderer::ParticleSpawn>& spawns) {
     world.Each<ecs::WorldTransform, ParticleEmitter>([&](ecs::Entity /*entity*/, const ecs::WorldTransform& transform,
                                                          ParticleEmitter& emitter) {
+        const float fade = emitter.emission.light.has_value() ? emitter.emission.light->fade : 0.0f;
+        const auto dim = [&] { emitter.activity = fade > 0.0f ? emitter.activity * std::exp(-delta / fade) : 0.0f; };
         if (!emitter.enabled) {
             emitter.pending = 0.0f;
             emitter.age = 0.0f;
             emitter.lastPosition.reset();
+            dim();
             return;
         }
         const glm::vec3 position(transform.matrix[3]);
@@ -211,6 +214,12 @@ void EmitParticles(ecs::World& world, float delta, std::vector<renderer::Particl
         std::uint32_t count = static_cast<std::uint32_t>(whole);
         for (const ParticleBurst& burst : emission.bursts) {
             count += BurstsBetween(burst, emitter.age, emitter.age + delta) * burst.count;
+        }
+        // Active while it emits steadily or has just emitted; its light fades once it stops.
+        if (emission.rate > 0.0f || count > 0) {
+            emitter.activity = 1.0f;
+        } else {
+            dim();
         }
         emitter.age += delta;
         const std::optional<glm::vec3> previous = std::exchange(emitter.lastPosition, position);
@@ -227,6 +236,45 @@ void EmitParticles(ecs::World& world, float delta, std::vector<renderer::Particl
                           .previousPosition = previous,
                           .velocity = previous.has_value() && delta > 0.0f ? moved / delta : glm::vec3(0.0f)});
     });
+}
+
+float Flicker(float rate, float depth, float time, std::uint32_t seed) {
+    if (rate <= 0.0f || depth <= 0.0f) {
+        return 1.0f;
+    }
+    // Three waves out of step with each other, and with other emitters': it never quite repeats.
+    const float phase = 6.2831853f * rate * time;
+    const auto offset = [seed](std::uint32_t salt) {
+        return static_cast<float>(((seed + salt) * 2654435761U) >> 16U & 0xFFFFU) / 65535.0f * 6.2831853f;
+    };
+    const float wave = 0.5f * std::sin(phase + offset(1)) + 0.3f * std::sin(phase * 2.31f + offset(2)) +
+                       0.2f * std::sin(phase * 4.73f + offset(3));
+    return 1.0f - depth * (0.5f + 0.5f * wave);
+}
+
+void ExtractEmitterLights(ecs::World& world, renderer::SceneView& view) {
+    world.Each<ecs::WorldTransform, ParticleEmitter>(
+        [&](ecs::Entity entity, const ecs::WorldTransform& transform, const ParticleEmitter& emitter) {
+            if (!emitter.emission.light.has_value() || emitter.activity <= 0.001f) {
+                return;
+            }
+            const EmitterLight& light = *emitter.emission.light;
+            const float intensity = light.intensity * emitter.activity *
+                                    Flicker(light.flickerRate, light.flickerDepth, emitter.age, entity.Index());
+            if (intensity <= 0.0f || light.range <= 0.0f) {
+                return;
+            }
+            // Its own name, apart from a light the entity may have of its own.
+            view.lights.push_back(
+                {.type = renderer::LightType::Point,
+                 .position = glm::vec3(transform.matrix * glm::vec4(light.offset, 1.0f)),
+                 .color = light.color *
+                          (light.temperature > 0.0f ? renderer::ColorTemperature(light.temperature) : glm::vec3(1.0f)) *
+                          intensity,
+                 .range = light.range,
+                 .radius = light.radius,
+                 .id = SceneIdOf(entity) | (std::uint64_t{1} << 63U)});
+        });
 }
 
 std::uint32_t BurstsBetween(const ParticleBurst& burst, float from, float to) {

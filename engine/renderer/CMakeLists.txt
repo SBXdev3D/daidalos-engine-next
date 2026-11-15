@@ -67,7 +67,7 @@ dai_add_module(NAME renderer
 
 dai_add_shaders(TARGET daidalos_renderer
     SOURCES shaders/GBuffer.slang
-        shaders/Output.slang shaders/ParticleDraw.slang shaders/Ui.slang shaders/RayDebug.slang
+        shaders/Output.slang shaders/ParticleDraw.slang shaders/ParticleDistortion.slang shaders/Ui.slang shaders/RayDebug.slang
         shaders/GBufferDebug.slang shaders/Composite.slang shaders/Glass.slang
     COMPUTE shaders/PathTracer.slang shaders/Skinning.slang shaders/TemporalResolve.slang shaders/ParticleEmit.slang shaders/ParticleSubEmit.slang shaders/ParticleSimulate.slang
         shaders/ParticleFinish.slang shaders/ParticleSort.slang shaders/DenoiseTemporal.slang shaders/DenoiseSpatial.slang

@@ -99,6 +99,7 @@ void Scene::Extract(renderer::SceneView& view) {
     view.particleSpawns = std::move(m_bursts);
     m_bursts.clear();
     EmitParticles(m_world, m_frameDelta, view.particleSpawns);
+    ExtractEmitterLights(m_world, view);
 
     SyncSoundEmitters(m_world, m_sounds);
     if (view.camera.has_value()) {

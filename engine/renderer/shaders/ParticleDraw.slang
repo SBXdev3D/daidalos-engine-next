@@ -20,6 +20,9 @@ struct VertexOutput {
     [[vk::location(3)]] nointerpolation uint effect : EFFECT;
     [[vk::location(4)]] nointerpolation float3 light : LIGHT;
     [[vk::location(5)]] nointerpolation float blend : BLEND; // Of the next frame.
+    // Towards the particle's light, in the frame of its image: right, up, and out of it towards the camera.
+    [[vk::location(6)]] nointerpolation float3 lightInImage : LIGHTINIMAGE;
+    [[vk::location(7)]] float2 corner : CORNER; // From -1 to 1 across the quad.
 };
 
 // The frames of the flipbook a particle is between, and how far it is from the first to the second. At a
@@ -97,6 +100,12 @@ VertexOutput VSMain(uint vertexId : SV_VulkanVertexID, uint instance : SV_Vulkan
         up = cross(particle.axis, side) * halfSize;
     }
     const float3 world = particle.position + right * along.x + up * along.y;
+    // The image's axes in the world: turned with the particle when its quad is.
+    const bool turns = effect.orientation == kOrientCamera || effect.orientation == kOrientPlane ||
+                       (effect.orientation == kOrientVelocity && speed <= 1.0e-4);
+    const float3 imageX = normalize(turns ? right * c + up * s : right);
+    const float3 imageY = normalize(turns ? up * c - right * s : up);
+    const float3 imageZ = normalize(cross(imageX, imageY));
 
     VertexOutput output;
     output.clipPosition = mul(frame.viewProjection, float4(world, 1.0));
@@ -111,6 +120,9 @@ VertexOutput VSMain(uint vertexId : SV_VulkanVertexID, uint instance : SV_Vulkan
     output.worldPosition = world;
     output.effect = particle.effect;
     output.light = particle.light;
+    const float3 toLight = particle.lightDirection;
+    output.lightInImage = float3(dot(toLight, imageX), dot(toLight, imageY), dot(toLight, imageZ));
+    output.corner = corner;
     return output;
 }
 
@@ -118,13 +130,23 @@ struct ParticleOutput {
     float4 color : SV_Target0;
     // Its coverage, blended over the others' like the color: the reactive mask of temporal antialiasing.
     float4 reactive : SV_Target1;
+    // How far the frame behind it is bent, as a fraction of the frame's height (ADR-0053): heat haze adds
+    // to it, and what covers the haze hides it, with the same blending as the color.
+    float4 distortion : SV_Target2;
 };
 
 ParticleOutput Output(float4 color, float coverage) {
     ParticleOutput output;
     output.color = color;
     output.reactive = float4(coverage, 0.0, 0.0, coverage);
+    output.distortion = float4(0.0, 0.0, 0.0, color.a);
     return output;
+}
+
+// A sample of a six-way light map at the particle's two frames of the flipbook.
+float3 SampleBoth(uint texture, VertexOutput input) {
+    return lerp(g_textures[texture].Sample(g_samplers[kSamplerLinearClamp], input.uv.xy),
+                g_textures[texture].Sample(g_samplers[kSamplerLinearClamp], input.uv.zw), input.blend).rgb;
 }
 
 ParticleOutput PSMain(VertexOutput input) {
@@ -143,21 +165,43 @@ ParticleOutput PSMain(VertexOutput input) {
         discard;
     }
 
+    if (effect.distortion > 0.0) {
+        // Heat haze: it bends the frame behind it with ripples that rise, and draws nothing.
+        const float time = frame.time;
+        const float2 p = input.corner * 1.5 + float2(0.0, -time * 1.2);
+        const float2 ripple = float2(sin(p.y * 7.3 + sin(p.x * 5.1 + time * 2.3)), cos(p.x * 6.7 + sin(p.y * 4.3 - time * 1.9)));
+        ParticleOutput output = Output(float4(0.0, 0.0, 0.0, 0.0), alpha);
+        output.distortion = float4(ripple * effect.distortion * alpha, 0.0, 0.0);
+        return output;
+    }
+
     float3 color = input.color.rgb * texel.rgb;
     if ((effect.flags & kEffectLit) != 0) {
         // Smoke takes the light around it, from every side: the frame's lights, as the simulation found them
         // at the particle (ADR-0044), and the indirect light of the surfaces behind it, averaged over a few
         // pixels around, which also smooths its noise (ADR-0040).
-        float3 light = input.light;
+        float3 direct = input.light;
+        float3 indirect = float3(0.0, 0.0, 0.0);
         const int2 pixel = int2(input.clipPosition.xy);
         if (frame.indirectTexture != kNoTexture) {
             const int2 last = int2(1.0 / frame.screenTexel) - 1;
             for (int tap = 0; tap < 4; ++tap) {
                 const int2 offset = int2((tap & 1) != 0 ? 6 : -6, (tap & 2) != 0 ? 6 : -6);
-                light += g_textures[frame.indirectTexture].Load(int3(clamp(pixel + offset, int2(0, 0), last), 0)).rgb * 0.25;
+                indirect += g_textures[frame.indirectTexture].Load(int3(clamp(pixel + offset, int2(0, 0), last), 0)).rgb * 0.25;
             }
         }
-        color *= light;
+        if (effect.lightPositive != kNoTexture && effect.lightNegative != kNoTexture) {
+            // Six-way light maps (ADR-0053): how much of a light from each side of the image reaches the eye,
+            // weighed by the squares of the light's direction, so that they add up to one for any direction.
+            // The indirect light, from everywhere, takes their average.
+            const float3 positive = SampleBoth(effect.lightPositive, input);
+            const float3 negative = SampleBoth(effect.lightNegative, input);
+            const float3 towards = saturate(input.lightInImage);
+            const float3 away = saturate(-input.lightInImage);
+            direct *= dot(towards * towards, positive) + dot(away * away, negative);
+            indirect *= dot(positive + negative, float3(1.0, 1.0, 1.0)) / 6.0;
+        }
+        color *= direct + indirect;
     }
 
     // Seen through the fog in front of it (ADR-0051).

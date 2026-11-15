@@ -244,6 +244,18 @@ core::Result<ParticleEffectFile> AssetLibrary::ReadParticleEffect(const std::str
                                std::format("'{}': its texture: {}", identity, texture.error().message));
     }
     parsed->desc.texture = *texture;
+    if (!parsed->lightPositive.empty()) {
+        // Light maps are amounts of light, not colors: read as they are.
+        for (auto [path, handle] : {std::pair{&parsed->lightPositive, &parsed->desc.lightPositive},
+                                    std::pair{&parsed->lightNegative, &parsed->desc.lightNegative}}) {
+            core::Result<rhi::TextureHandle> map = LoadTexture(directory + *path, resources::TextureUse::Data);
+            if (!map) {
+                return core::MakeError(map.error().code, kModule,
+                                       std::format("'{}': its light map: {}", identity, map.error().message));
+            }
+            *handle = *map;
+        }
+    }
     // The effects it spawns, loaded first; an effect that leads back to itself would never end.
     m_effectsReading.push_back(identity);
     struct Done {

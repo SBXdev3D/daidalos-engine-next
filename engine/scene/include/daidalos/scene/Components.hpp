@@ -138,6 +138,24 @@ struct ParticleBurst {
     std::uint32_t repeats = 0;
 };
 
+/// The light an emitter gives off (ADR-0053): a fire lights its room. One point light per emitter, a sphere of
+/// radius, as bright as the emitter is active: full while it emits, fading over fade seconds once it stops,
+/// and flickering flickerRate times a second by up to flickerDepth of itself.
+struct EmitterLight {
+    /// Linear color, multiplied by the temperature's (kelvin, 0 for none).
+    glm::vec3 color{1.0f};
+    float temperature = 0.0f;
+    /// Candela.
+    float intensity = 10.0f;
+    float range = 5.0f;
+    float radius = 0.1f;
+    /// Where the light is, in the emitter's frame: a flame's light is above its base.
+    glm::vec3 offset{0.0f};
+    float fade = 0.5f;
+    float flickerRate = 0.0f;
+    float flickerDepth = 0.0f;
+};
+
 /// How an emitter emits (ADR-0053): an effect file gives its emitters these, which each can change.
 struct ParticleEmission {
     /// Particles per second.
@@ -145,6 +163,8 @@ struct ParticleEmission {
     /// Particles per meter the emitter travels, spread along the way: trails.
     float ratePerMeter = 0.0f;
     std::vector<ParticleBurst> bursts;
+    /// The light it gives off, if any.
+    std::optional<EmitterLight> light;
 };
 
 /// ECS component: emits particles of an effect at the entity's WorldTransform, at a steady rate, as it
@@ -160,6 +180,8 @@ struct ParticleEmitter {
     float age = 0.0f;
     /// Where it was last frame, once it has emitted.
     std::optional<glm::vec3> lastPosition;
+    /// From 1 while it emits to 0 once it has stopped for a while: how bright its light is.
+    float activity = 0.0f;
 };
 
 /// ECS component: the entity's LocalTransform moves a kinematic body of the scene's physics. The entity

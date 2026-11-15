@@ -32,6 +32,13 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
 /// (ADR-0053). Spawns carry the emitter's velocity. Run it after ecs::PropagateTransforms.
 void EmitParticles(ecs::World& world, float delta, std::vector<renderer::ParticleSpawn>& spawns);
 
+/// Adds the lights of the emitters whose effect gives off light (EmitterLight), as bright as they are active.
+/// Run it after EmitParticles, which keeps their activity.
+void ExtractEmitterLights(ecs::World& world, renderer::SceneView& view);
+
+/// A light's flicker at a time: 1, down to 1 - depth, rate times a second, as a seed makes it.
+[[nodiscard]] float Flicker(float rate, float depth, float time, std::uint32_t seed);
+
 /// How many times a burst fires between from and to seconds of its emitter's life, from included, to not.
 [[nodiscard]] std::uint32_t BurstsBetween(const ParticleBurst& burst, float from, float to);
 

@@ -411,7 +411,13 @@ private:
     std::vector<LightRange> m_previousRanges;
     /// Where each analytic light of the last frame prepared was, by its identity key: position and direction,
     /// to tell the lights that moved.
-    std::unordered_map<std::uint64_t, std::pair<glm::vec3, glm::vec3>> m_previousPlaces;
+    /// Where a light was last frame, and how bright, to tell whether it moved.
+    struct LightPlace {
+        glm::vec3 position{0.0f};
+        glm::vec3 direction{0.0f};
+        float brightness = 0.0f;
+    };
+    std::unordered_map<std::uint64_t, LightPlace> m_previousPlaces;
     std::uint32_t m_lightCount = 0;
     std::uint32_t m_mappedLightCount = 0;
     /// Counts the frames prepared with a camera, which the readback of emission waits on.

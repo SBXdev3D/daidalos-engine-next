@@ -14,11 +14,19 @@
 //
 // metallic-roughness packs grayscale maps the way glTF reads them: roughness in green, metalness in blue.
 // Without a metalness map, blue is full, so that the material's metallicFactor alone decides.
+//
+//     texture-tool flipbook fire|smoke|explosion <out> [--frames N] [--size N] [--grid N] [--seed N]
+//                  [--preview 1]
+//
+// simulates and renders a flipbook (ADR-0053) and writes <out>.ktx2, its color and coverage, and
+// <out>_lp.ktx2 and <out>_ln.ktx2, its six-way light maps, then prints the grid an effect file gives them.
+// With --preview 1, it also writes the three as PNG files, to look at.
 
 #include <daidalos/core/Result.hpp>
 #include <daidalos/resources/ImageData.hpp>
 
 #include <ktx.h>
+#include <stb_image_write.h>
 
 #include <algorithm>
 #include <array>
@@ -33,8 +41,12 @@
 #include <numbers>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
+
+#include "Flipbook.hpp"
 
 using namespace daidalos;
 using resources::ImageData;
@@ -44,7 +56,9 @@ namespace {
 
 constexpr std::string_view kUsage =
     "usage: texture-tool [--compare] color|normal|data <input> <file.ktx2>\n"
-    "       texture-tool [--compare] metallic-roughness <roughness> [<metallic>] <file.ktx2>\n";
+    "       texture-tool [--compare] metallic-roughness <roughness> [<metallic>] <file.ktx2>\n"
+    "       texture-tool flipbook fire|smoke|explosion <out> [--frames N] [--size N] [--grid N] [--seed N]\n"
+    "                    [--preview 1]\n";
 
 // glTF metallic-roughness texture: red is unused, green is roughness, blue is metalness.
 core::Result<ImageData> PackMetallicRoughness(const ImageData& roughness, const ImageData* metallic) {
@@ -157,10 +171,86 @@ core::Result<void> Write(const std::filesystem::path& path, std::span<const std:
     return {};
 }
 
+// texture-tool flipbook: the arguments after the mode.
+int MakeFlipbookFiles(std::span<char* const> arguments) {
+    if (arguments.size() < 2 || arguments.size() % 2 != 0) {
+        std::fputs(kUsage.data(), stderr);
+        return 2;
+    }
+    texturetool::FlipbookSettings settings;
+    bool preview = false;
+    const std::string_view kind = arguments[0];
+    if (kind == "fire") {
+        settings.kind = texturetool::FlipbookKind::Fire;
+    } else if (kind == "smoke") {
+        settings.kind = texturetool::FlipbookKind::Smoke;
+    } else if (kind == "explosion") {
+        settings.kind = texturetool::FlipbookKind::Explosion;
+    } else {
+        std::fputs(kUsage.data(), stderr);
+        return 2;
+    }
+    const std::string output = arguments[1];
+    for (std::size_t i = 2; i + 1 < arguments.size(); i += 2) {
+        const std::string_view option = arguments[i];
+        const auto value = static_cast<std::uint32_t>(std::stoul(arguments[i + 1]));
+        if (option == "--frames") {
+            settings.frames = value;
+        } else if (option == "--size") {
+            settings.size = value;
+        } else if (option == "--grid") {
+            settings.grid = value;
+        } else if (option == "--seed") {
+            settings.seed = value;
+        } else if (option == "--preview") {
+            preview = value != 0;
+        } else {
+            std::fputs(kUsage.data(), stderr);
+            return 2;
+        }
+    }
+    const auto start = std::chrono::steady_clock::now();
+    const core::Result<texturetool::Flipbook> flipbook = texturetool::MakeFlipbook(settings);
+    if (!flipbook) {
+        std::fputs(std::format("{}\n", core::Format(flipbook.error())).c_str(), stderr);
+        return 1;
+    }
+    for (const auto& [suffix, image, use] : {std::tuple{".ktx2", &flipbook->color, TextureUse::Color},
+                                             std::tuple{"_lp.ktx2", &flipbook->lightPositive, TextureUse::Data},
+                                             std::tuple{"_ln.ktx2", &flipbook->lightNegative, TextureUse::Data}}) {
+        const std::filesystem::path path = output + suffix;
+        const core::Result<void> written =
+            resources::EncodeKtx2(resources::GenerateMips(*image), use)
+                .and_then([&path](const std::vector<std::byte>& bytes) { return Write(path, bytes); });
+        if (!written) {
+            std::fputs(std::format("{}\n", core::Format(written.error())).c_str(), stderr);
+            return 1;
+        }
+        if (preview) {
+            const std::string png = output + std::string(suffix).replace(std::string(suffix).find(".ktx2"), 5, ".png");
+            const auto width = static_cast<int>(image->width);
+            if (stbi_write_png(png.c_str(), width, static_cast<int>(image->height), 4, image->pixels.data(),
+                               width * 4) == 0) {
+                std::fputs(std::format("Cannot write '{}'\n", png).c_str(), stderr);
+                return 1;
+            }
+        }
+    }
+    const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - start;
+    std::fputs(std::format("{}: {} frames, \"columns\": {}, \"rows\": {}, in {:.1f} s\n", output, settings.frames,
+                           flipbook->columns, flipbook->rows, elapsed.count())
+                   .c_str(),
+               stdout);
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     std::span<char* const> arguments(argv, static_cast<std::size_t>(argc));
+    if (argc > 1 && std::string_view(arguments[1]) == "flipbook") {
+        return MakeFlipbookFiles(arguments.subspan(2));
+    }
     const bool comparing = argc > 1 && std::string_view(arguments[1]) == "--compare";
     if (comparing) {
         arguments = arguments.subspan(1);

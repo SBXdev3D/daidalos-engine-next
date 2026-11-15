@@ -1,0 +1,19 @@
+{
+    "comment": "Hot air rising over a fire or a hot pipe, which bends what is seen through it.",
+    "texture": "../particles.png",
+    "columns": 4,
+    "cell": 0,
+    "color": [[0, [1, 1, 1, 1]], [1, [1, 1, 1, 0]]],
+    "fadeIn": 0.2,
+    "distortion": 0.006,
+    "lifetime": [1, 1.5],
+    "size": 0.6,
+    "sizeOverLife": [[0, 1], [1, 1.6]],
+    "spawnRadius": 0.1,
+    "speed": [0.4, 0.6],
+    "lit": false,
+    "softness": 0.2,
+    "emitter": {
+        "rate": 6
+    }
+}

@@ -458,6 +458,55 @@ TEST(EmitParticles, EnabledAgainItStartsOver) {
     EXPECT_EQ(Emitted(world, 0.1f), 3U);
 }
 
+TEST(ExtractEmitterLights, AnEmitterLightsAsItEmitsAndFadesAfter) {
+    ecs::World world;
+    const ecs::Entity fire = AddAt(world, {1.0f, 0.0f, 0.0f});
+    scene::ParticleEmission emission{.rate = 10.0f};
+    emission.light = scene::EmitterLight{.color = {1.0f, 0.5f, 0.25f},
+                                         .intensity = 20.0f,
+                                         .range = 6.0f,
+                                         .radius = 0.2f,
+                                         .offset = {0.0f, 0.5f, 0.0f},
+                                         .fade = 1.0f};
+    world.Add<scene::ParticleEmitter>(fire, renderer::ParticleEffectHandle(1, 1), emission);
+    const auto lights = [&](float delta) {
+        std::vector<renderer::ParticleSpawn> spawns;
+        renderer::SceneView view;
+        ecs::PropagateTransforms(world);
+        scene::EmitParticles(world, delta, spawns);
+        scene::ExtractEmitterLights(world, view);
+        return view.lights;
+    };
+    std::vector<renderer::Light> lit = lights(0.1f);
+    ASSERT_EQ(lit.size(), 1U);
+    EXPECT_EQ(lit[0].type, renderer::LightType::Point);
+    EXPECT_EQ(lit[0].position, glm::vec3(1.0f, 0.5f, 0.0f)) << "at its offset";
+    EXPECT_NEAR(glm::distance(lit[0].color, glm::vec3(20.0f, 10.0f, 5.0f)), 0.0f, 1e-4f);
+    EXPECT_FLOAT_EQ(lit[0].range, 6.0f);
+    EXPECT_FLOAT_EQ(lit[0].radius, 0.2f);
+    EXPECT_NE(lit[0].id, 0U);
+
+    world.Get<scene::ParticleEmitter>(fire).enabled = false;
+    lit = lights(1.0f);
+    ASSERT_EQ(lit.size(), 1U);
+    EXPECT_NEAR(lit[0].color.r, 20.0f / std::exp(1.0f), 1e-3f) << "fading over a second";
+    EXPECT_TRUE(lights(20.0f).empty()) << "out";
+}
+
+TEST(Flicker, StaysBetweenOneAndOneLessItsDepth) {
+    float lowest = 1.0f;
+    float highest = 0.0f;
+    for (int step = 0; step < 1000; ++step) {
+        const float value = scene::Flicker(8.0f, 0.4f, static_cast<float>(step) * 0.01f, 7);
+        lowest = std::min(lowest, value);
+        highest = std::max(highest, value);
+    }
+    EXPECT_GE(lowest, 0.6f - 1e-5f);
+    EXPECT_LE(highest, 1.0f + 1e-5f);
+    EXPECT_LT(lowest, 0.75f) << "it does flicker";
+    EXPECT_FLOAT_EQ(scene::Flicker(0.0f, 0.4f, 1.0f, 7), 1.0f) << "no rate, no flicker";
+}
+
 TEST(BurstsBetween, CountsTheFiringsInAHalfOpenSpan) {
     const scene::ParticleBurst once{.time = 1.0f};
     EXPECT_EQ(scene::BurstsBetween(once, 0.0f, 1.0f), 0U) << "the end is not included";
