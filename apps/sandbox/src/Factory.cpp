@@ -27,6 +27,7 @@
 #include <map>
 #include <optional>
 #include <random>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -267,6 +268,11 @@ std::string EffectPath(const std::string& directory, std::string_view name) {
     return std::format("{}Effects/{}.effect.json", directory.empty() ? "" : directory + "/", name);
 }
 
+/// Where the level's ribbon files are (ADR-0053).
+std::string RibbonPath(const std::string& directory, std::string_view name) {
+    return std::format("{}Effects/{}.ribbon.json", directory.empty() ? "" : directory + "/", name);
+}
+
 ParticleEffects LoadParticleEffects(scene::Scene& scene, const std::string& directory) {
     const auto load = [&](std::string_view name) {
         core::Result<scene::ParticleEffectAsset> effect =
@@ -280,7 +286,8 @@ ParticleEffects LoadParticleEffects(scene::Scene& scene, const std::string& dire
     return {.blood = load("blood"),
             .sparks = load("sparks"),
             .gunSmoke = load("gun_smoke"),
-            .muzzleFlash = load("muzzle_flash")};
+            .muzzleFlash = load("muzzle_flash"),
+            .casings = load("shell_casings")};
 }
 
 /// Steam around a leak, which blows along -Z as its smoke does (ADR-0051): a box of fog that starts at the
@@ -330,6 +337,30 @@ void AddParticleEmitter(scene::Scene& scene, ecs::Entity entity, const NodeDescr
     if (name == "smoke_leak") {
         AddSteam(scene.World(), entity);
     }
+}
+
+/// A level ribbon, by the name of its file, to the node its target names, if any.
+void AddRibbonEmitter(scene::Scene& scene, ecs::Entity entity, const NodeDescription& node,
+                      const std::string& directory, std::span<const std::pair<ecs::Entity, std::string>> nodes) {
+    const auto found = node.attributes.find("effect");
+    const std::string_view name = found == node.attributes.end() ? std::string_view{} : found->second;
+    core::Result<std::shared_ptr<const scene::RibbonEffect>> effect =
+        scene.Assets().LoadRibbonEffect(RibbonPath(directory, name));
+    if (!effect) {
+        DAI_LOG_WARNING("sandbox", "Ribbon without its effect: {}", core::Format(effect.error()));
+        return;
+    }
+    scene::RibbonEmitter ribbon{.effect = *effect};
+    if (const auto target = node.attributes.find("target"); target != node.attributes.end()) {
+        const auto named =
+            std::ranges::find(nodes, target->second, [](const auto& pair) -> std::string_view { return pair.second; });
+        if (named != nodes.end()) {
+            ribbon.target = named->first;
+        } else {
+            DAI_LOG_WARNING("sandbox", "Ribbon '{}': no node '{}' to reach", name, target->second);
+        }
+    }
+    scene.World().Add<scene::RibbonEmitter>(entity, std::move(ribbon));
 }
 
 void AddAlarmLights(ecs::World& world, ecs::Entity alarm, const NodeDescription& node) {
@@ -922,6 +953,8 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
             DAI_TRY(LoadSky(scene, directory, sky->second));
         } else if (node.kind == "particles") {
             AddParticleEmitter(scene, entity, node, directory);
+        } else if (node.kind == "ribbon") {
+            AddRibbonEmitter(scene, entity, node, directory, nodes);
         } else if (node.kind == "fog") {
             AddFog(world, entity, node);
         } else if (node.kind == "fan") {
@@ -966,6 +999,77 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
     Teleport(scene, playerEntity, eye);
     scene.SetActiveCamera(playerEntity);
     return playerEntity;
+}
+
+/// A wisp of the showcase, which circles its center.
+struct Circling {
+    glm::vec3 center{0.0f};
+    float radius = 1.0f;
+    /// Radians per second.
+    float speed = 1.0f;
+    float angle = 0.0f;
+};
+
+void AddEffectShowcase(scene::Scene& scene, std::string_view levelPath, const glm::vec3& eye, float yaw) {
+    ecs::World& world = scene.World();
+    const std::string directory = std::filesystem::path(levelPath).parent_path().generic_string();
+    // Yaw 0 looks along -Z, and turns left as it grows.
+    const glm::vec3 forward(-std::sin(yaw), 0.0f, -std::cos(yaw));
+    const glm::vec3 right(std::cos(yaw), 0.0f, -std::sin(yaw));
+    const glm::vec3 floor = eye - math::kUp * kEyeHeight;
+    const auto place = [&](const glm::vec3& position, const glm::quat& rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f)) {
+        const ecs::Entity entity = world.Create();
+        ecs::LocalTransform transform;
+        transform.translation = position;
+        transform.rotation = rotation;
+        world.Add<ecs::LocalTransform>(entity, transform);
+        return entity;
+    };
+    const auto ribbon = [&](std::string_view name, ecs::Entity entity, ecs::Entity target = {}) {
+        core::Result<std::shared_ptr<const scene::RibbonEffect>> effect =
+            scene.Assets().LoadRibbonEffect(RibbonPath(directory, name));
+        if (!effect) {
+            DAI_LOG_WARNING("sandbox", "Showcase: {}", core::Format(effect.error()));
+            return;
+        }
+        world.Add<scene::RibbonEmitter>(entity, scene::RibbonEmitter{.effect = *effect, .target = target});
+    };
+    const auto particles = [&](std::string_view name, ecs::Entity entity) {
+        core::Result<scene::ParticleEffectAsset> effect =
+            scene.Assets().LoadParticleEffect(EffectPath(directory, name));
+        if (!effect) {
+            DAI_LOG_WARNING("sandbox", "Showcase: {}", core::Format(effect.error()));
+            return;
+        }
+        world.Add<scene::ParticleEmitter>(entity, effect->effect, effect->emission);
+    };
+    // An arc between two points at hand's height, on the left.
+    const glm::vec3 arcStart = floor + forward * 3.0f - right * 1.2f + math::kUp * 1.2f;
+    ribbon("arc", place(arcStart), place(arcStart + right * 0.8f + math::kUp * 0.1f));
+    // A laser across the view, low.
+    ribbon("laser", place(floor + forward * 2.5f - right * 3.0f + math::kUp * 0.6f,
+                          glm::quat(math::kUp, glm::normalize(right + forward * 0.15f))));
+    // Lightning, from high up to the floor, ahead on the right.
+    const glm::vec3 boltEnd = floor + forward * 6.0f + right * 2.0f;
+    ribbon("lightning", place(boltEnd + math::kUp * 4.0f), place(boltEnd));
+    // Glass that breaks again and again, papers in the air, ahead.
+    particles("glass_shards", place(floor + forward * 4.0f + right * 1.0f + math::kUp * 1.5f,
+                                    glm::quat(math::kUp, glm::normalize(-forward + math::kUp))));
+    particles("papers", place(floor + forward * 4.0f + math::kUp * 2.5f));
+    // A wisp that circles in front.
+    const ecs::Entity wisp = place(floor + forward * 4.0f + math::kUp * 1.6f);
+    ribbon("wisp", wisp);
+    world.Add<Circling>(wisp,
+                        Circling{.center = floor + forward * 4.0f + math::kUp * 1.6f, .radius = 1.0f, .speed = 1.6f});
+    scene.FrameSystems().Add("Showcase", [](ecs::World& systemWorld, core::Seconds delta) {
+        systemWorld.Each<Circling, ecs::LocalTransform>(
+            [&](ecs::Entity /*entity*/, Circling& circling, ecs::LocalTransform& transform) {
+                circling.angle += circling.speed * static_cast<float>(delta.count());
+                transform.translation = circling.center + glm::vec3(std::cos(circling.angle) * circling.radius,
+                                                                    0.3f * std::sin(circling.angle * 2.3f),
+                                                                    std::sin(circling.angle) * circling.radius);
+            });
+    });
 }
 
 void AddSystems(scene::Scene& scene, const input::InputState& input, const input::ActionMap& actions,

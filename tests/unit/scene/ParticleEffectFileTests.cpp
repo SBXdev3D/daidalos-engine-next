@@ -156,6 +156,13 @@ TEST(ParseParticleEffect, TextureIsRequired) {
     EXPECT_NE(ErrorOf(R"({"columns": 2})").find("texture"), std::string::npos);
 }
 
+TEST(ParseParticleEffect, AMeshEffectNeedsNoTexture) {
+    const core::Result<ParticleEffectFile> parsed = ParseParticleEffect(R"({"mesh": "Meshes/casing.glb"})");
+    ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
+    EXPECT_EQ(parsed->mesh, "Meshes/casing.glb");
+    EXPECT_TRUE(parsed->texture.empty());
+}
+
 TEST(ParseParticleEffect, FlipbookMustFitInTheGrid) {
     EXPECT_NE(ErrorOf(R"({"texture": "a.png", "columns": 4, "rows": 2, "cell": 6, "frames": 3})").find("frames"),
               std::string::npos);
@@ -170,4 +177,83 @@ TEST(ParseParticleEffect, LifetimeMustBePositive) {
 TEST(ParseParticleEffect, NotJsonOrNotAnObjectIsAnError) {
     EXPECT_FALSE(ErrorOf(R"({"texture": )").empty());
     EXPECT_FALSE(ErrorOf(R"(["texture"])").empty());
+}
+
+namespace {
+
+std::string RibbonErrorOf(std::string_view json) {
+    const core::Result<scene::RibbonEffectFile> parsed = scene::ParseRibbonEffect(json);
+    EXPECT_FALSE(parsed.has_value());
+    if (parsed.has_value()) {
+        return {};
+    }
+    EXPECT_EQ(parsed.error().code, core::ErrorCode::ParseError);
+    return parsed.error().message;
+}
+
+} // namespace
+
+TEST(ParseRibbonEffect, ReadsEveryKey) {
+    const core::Result<scene::RibbonEffectFile> parsed = scene::ParseRibbonEffect(R"({
+        "comment": "An arc.",
+        "texture": "glow.png",
+        "additive": false,
+        "softness": 0.2,
+        "shape": "bolt",
+        "color": [[0, [1, 2, 3, 0.5]], [1, [4, 5, 6]]],
+        "width": [[0, 0.1], [1, 0.3]],
+        "length": 2,
+        "tiling": 0.5,
+        "scroll": 3,
+        "generations": 6,
+        "displacement": 0.2,
+        "branches": 0.4,
+        "refresh": 0.1,
+        "flicker": 0.5,
+        "duration": 2,
+        "spacing": 0.1,
+        "light": {"intensity": 30, "range": 4}
+    })");
+    ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
+    const scene::RibbonEffect& effect = parsed->effect;
+    EXPECT_EQ(parsed->texture, "glow.png");
+    EXPECT_FALSE(effect.additive);
+    EXPECT_FLOAT_EQ(effect.softness, 0.2f);
+    EXPECT_EQ(effect.shape, scene::RibbonShape::Bolt);
+    ASSERT_EQ(effect.color.size(), 2U);
+    EXPECT_EQ(effect.color[0].color, glm::vec4(1.0f, 2.0f, 3.0f, 0.5f));
+    EXPECT_EQ(effect.color[1].color, glm::vec4(4.0f, 5.0f, 6.0f, 1.0f));
+    ASSERT_EQ(effect.width.size(), 2U);
+    EXPECT_FLOAT_EQ(effect.width[1].value, 0.3f);
+    EXPECT_FLOAT_EQ(effect.length, 2.0f);
+    EXPECT_FLOAT_EQ(effect.tiling, 0.5f);
+    EXPECT_FLOAT_EQ(effect.scroll, 3.0f);
+    EXPECT_EQ(effect.generations, 6U);
+    EXPECT_FLOAT_EQ(effect.displacement, 0.2f);
+    EXPECT_FLOAT_EQ(effect.branches, 0.4f);
+    EXPECT_FLOAT_EQ(effect.refresh, 0.1f);
+    EXPECT_FLOAT_EQ(effect.flicker, 0.5f);
+    EXPECT_FLOAT_EQ(effect.duration, 2.0f);
+    EXPECT_FLOAT_EQ(effect.spacing, 0.1f);
+    ASSERT_TRUE(effect.light.has_value());
+    EXPECT_FLOAT_EQ(effect.light->intensity, 30.0f);
+}
+
+TEST(ParseRibbonEffect, AnEmptyFileIsAWhiteLine) {
+    const core::Result<scene::RibbonEffectFile> parsed = scene::ParseRibbonEffect("{}");
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_TRUE(parsed->texture.empty());
+    EXPECT_EQ(parsed->effect.shape, scene::RibbonShape::Line);
+    EXPECT_FALSE(parsed->effect.light.has_value());
+}
+
+TEST(ParseRibbonEffect, ErrorsNameTheirKeyAndSayRibbon) {
+    const std::string unknown = RibbonErrorOf(R"({"rate": 3})");
+    EXPECT_NE(unknown.find("rate"), std::string::npos);
+    EXPECT_NE(unknown.find("Ribbon"), std::string::npos);
+    EXPECT_NE(RibbonErrorOf(R"({"shape": "spiral"})").find("shape"), std::string::npos);
+    EXPECT_NE(RibbonErrorOf(R"({"tiling": 0})").find("tiling"), std::string::npos);
+    EXPECT_NE(RibbonErrorOf(R"({"shape": "bolt", "generations": 11})").find("generations"), std::string::npos);
+    EXPECT_NE(RibbonErrorOf(R"({"shape": "trail", "duration": 0})").find("duration"), std::string::npos);
+    EXPECT_NE(RibbonErrorOf(R"({"light": {"brightness": 2}})").find("light.brightness"), std::string::npos);
 }

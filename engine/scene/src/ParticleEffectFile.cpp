@@ -300,6 +300,9 @@ core::Result<void> Read(ParticleEffectFile& file, std::string_view key, Element 
     } else if (key == "texture") {
         DAI_TRY_ASSIGN(std::string_view texture, Text(value, key));
         file.texture = texture;
+    } else if (key == "mesh") {
+        DAI_TRY_ASSIGN(std::string_view mesh, Text(value, key));
+        file.mesh = mesh;
     } else if (key == "columns") {
         DAI_TRY_ASSIGN(desc.columns, Count(value, key));
     } else if (key == "rows") {
@@ -402,7 +405,107 @@ core::Result<void> Read(ParticleEffectFile& file, std::string_view key, Element 
     return {};
 }
 
+core::Result<RibbonShape> RibbonShapeOf(Element value, std::string_view key) {
+    DAI_TRY_ASSIGN(std::string_view name, Text(value, key));
+    if (name == "line") {
+        return RibbonShape::Line;
+    }
+    if (name == "bolt") {
+        return RibbonShape::Bolt;
+    }
+    if (name == "trail") {
+        return RibbonShape::Trail;
+    }
+    return Invalid(key, "must be \"line\", \"bolt\" or \"trail\"");
+}
+
+// Reads one key of a ribbon's object into the file.
+core::Result<void> ReadRibbon(RibbonEffectFile& file, std::string_view key, Element value) {
+    RibbonEffect& effect = file.effect;
+    if (key == "comment") {
+        DAI_TRY(Text(value, key));
+    } else if (key == "texture") {
+        DAI_TRY_ASSIGN(std::string_view texture, Text(value, key));
+        file.texture = texture;
+    } else if (key == "additive") {
+        DAI_TRY_ASSIGN(effect.additive, Boolean(value, key));
+    } else if (key == "softness") {
+        DAI_TRY_ASSIGN(effect.softness, Number(value, key));
+    } else if (key == "shape") {
+        DAI_TRY_ASSIGN(effect.shape, RibbonShapeOf(value, key));
+    } else if (key == "color") {
+        DAI_TRY_ASSIGN(effect.color, Gradient(value, key));
+    } else if (key == "width") {
+        DAI_TRY_ASSIGN(effect.width, Curve(value, key));
+    } else if (key == "length") {
+        DAI_TRY_ASSIGN(effect.length, Number(value, key));
+    } else if (key == "tiling") {
+        DAI_TRY_ASSIGN(effect.tiling, Number(value, key));
+    } else if (key == "scroll") {
+        DAI_TRY_ASSIGN(effect.scroll, Number(value, key));
+    } else if (key == "generations") {
+        DAI_TRY_ASSIGN(effect.generations, Count(value, key));
+    } else if (key == "displacement") {
+        DAI_TRY_ASSIGN(effect.displacement, Number(value, key));
+    } else if (key == "branches") {
+        DAI_TRY_ASSIGN(effect.branches, Number(value, key));
+    } else if (key == "refresh") {
+        DAI_TRY_ASSIGN(effect.refresh, Number(value, key));
+    } else if (key == "flicker") {
+        DAI_TRY_ASSIGN(effect.flicker, Number(value, key));
+    } else if (key == "duration") {
+        DAI_TRY_ASSIGN(effect.duration, Number(value, key));
+    } else if (key == "spacing") {
+        DAI_TRY_ASSIGN(effect.spacing, Number(value, key));
+    } else if (key == "light") {
+        DAI_TRY_ASSIGN(effect.light, Light(value));
+    } else {
+        return Invalid(key, "is not a key of a ribbon");
+    }
+    return {};
+}
+
+// The same error, about a ribbon.
+tl::unexpected<core::Error> AboutRibbon(core::Error error) {
+    constexpr std::string_view kPrefix = "Particle effect:";
+    if (error.message.starts_with(kPrefix)) {
+        error.message = "Ribbon:" + error.message.substr(kPrefix.size());
+    }
+    return tl::unexpected(std::move(error));
+}
+
 } // namespace
+
+core::Result<RibbonEffectFile> ParseRibbonEffect(std::string_view json) {
+    simdjson::dom::parser parser;
+    const simdjson::padded_string padded(json);
+    Element root;
+    if (const simdjson::error_code error = parser.parse(padded).get(root); error != simdjson::SUCCESS) {
+        return core::MakeError(core::ErrorCode::ParseError, kModule,
+                               std::format("Ribbon: not JSON ({})", simdjson::error_message(error)));
+    }
+    simdjson::dom::object object;
+    if (root.get_object().get(object) != simdjson::SUCCESS) {
+        return core::MakeError(core::ErrorCode::ParseError, kModule, "Ribbon: the file must be an object");
+    }
+    RibbonEffectFile file;
+    for (const auto [key, value] : object) {
+        if (core::Result<void> read = ReadRibbon(file, key, value); !read) {
+            return AboutRibbon(std::move(read.error()));
+        }
+    }
+    const RibbonEffect& effect = file.effect;
+    if (effect.tiling <= 0.0f) {
+        return AboutRibbon(Invalid("tiling", "must be more than 0").value());
+    }
+    if (effect.shape == RibbonShape::Bolt && (effect.generations == 0 || effect.generations > 10)) {
+        return AboutRibbon(Invalid("generations", "must be from 1 to 10").value());
+    }
+    if (effect.shape == RibbonShape::Trail && effect.duration <= 0.0f) {
+        return AboutRibbon(Invalid("duration", "must be more than 0").value());
+    }
+    return file;
+}
 
 core::Result<ParticleEffectFile> ParseParticleEffect(std::string_view json) {
     simdjson::dom::parser parser;
@@ -421,8 +524,8 @@ core::Result<ParticleEffectFile> ParseParticleEffect(std::string_view json) {
         DAI_TRY(Read(file, key, value));
     }
     const renderer::ParticleEffectDesc& desc = file.desc;
-    if (file.texture.empty()) {
-        return Invalid("texture", "is required");
+    if (file.texture.empty() && file.mesh.empty()) {
+        return Invalid("texture", "is required, unless the effect draws a mesh");
     }
     const std::uint32_t rows = desc.rows == 0 ? desc.columns : desc.rows;
     if (desc.columns == 0) {

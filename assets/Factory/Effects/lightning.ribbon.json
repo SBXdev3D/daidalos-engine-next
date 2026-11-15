@@ -1,0 +1,14 @@
+{
+    "comment": "A bolt of lightning: deeply split and branched, redrawn a few times while it lasts, with a white flash.",
+    "texture": "ribbon_glow.png",
+    "shape": "bolt",
+    "generations": 7,
+    "displacement": 0.18,
+    "branches": 0.3,
+    "refresh": 0.12,
+    "flicker": 0.4,
+    "color": [[0, [12, 12, 16, 1]], [1, [10, 10, 14, 1]]],
+    "width": [[0, 0.12], [1, 0.06]],
+    "length": 10,
+    "light": { "color": [0.8, 0.85, 1], "intensity": 800, "range": 30, "radius": 0.5, "fade": 0.15 }
+}

@@ -26,6 +26,8 @@ struct ParticleEffectTag;
 using ParticleEffectHandle = core::Handle<ParticleEffectTag>;
 struct MaterialTag;
 using MaterialHandle = core::Handle<MaterialTag>;
+struct MeshTag;
+using MeshHandle = core::Handle<MeshTag>;
 
 /// What a particle does where it meets a surface, which the frame's acceleration structure holds (ADR-0053).
 enum class ParticleCollision : std::uint32_t {
@@ -176,6 +178,13 @@ struct ParticleEffectDesc {
     /// A distortion effect draws nothing: it bends the frame behind it, as heat haze, by up to this fraction
     /// of the frame's height, where its texture's opacity is full.
     float distortion = 0.0f;
+    /// A mesh effect draws each particle as this mesh, of this material, instead of a quad (ADR-0053):
+    /// casings, shards, papers. Its particles are opaque surfaces of the G-buffer, lit as any other, and
+    /// scaled by their size; their color, texture, flipbook, light and distortion do not apply. In flight they
+    /// tumble about an axis of their own; at rest, their +Y follows the surface they lie on, their lowest
+    /// vertex on it.
+    MeshHandle mesh;
+    MaterialHandle material;
     /// Radians per second, either way.
     float rotationSpeed = 0.0f;
     /// Meters over which a particle fades into a surface behind it, so that it does not cut through it.
@@ -197,6 +206,30 @@ struct ParticleSpawn {
     /// Same as position when it did not move.
     std::optional<glm::vec3> previousPosition;
     glm::vec3 velocity{0.0f};
+};
+
+/// A point of a ribbon (ADR-0053).
+struct RibbonPoint {
+    glm::vec3 position{0.0f};
+    /// Meters across, facing the camera.
+    float width = 0.1f;
+    /// Linear color and opacity; above 1 glows.
+    glm::vec4 color{1.0f};
+    /// Where the point is along the texture, which repeats along the ribbon.
+    float u = 0.0f;
+};
+
+/// A strip through points, turned to face the camera: a beam, an arc, a bolt of lightning, a trail (ADR-0053).
+/// The CPU builds it each frame; it is drawn with the particles, sorted with them by each of its segments, and
+/// veiled by the fog. It glows: no light falls on it.
+struct Ribbon {
+    /// Repeats along the ribbon (u), and spans it across (v from 0 to 1).
+    rhi::TextureHandle texture;
+    /// Adds light instead of covering what is behind.
+    bool additive = true;
+    /// Meters over which it fades into a surface behind it.
+    float softness = 0.05f;
+    std::vector<RibbonPoint> points;
 };
 
 } // namespace daidalos::renderer

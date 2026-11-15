@@ -100,6 +100,7 @@ void Scene::Extract(renderer::SceneView& view) {
     m_bursts.clear();
     EmitParticles(m_world, m_frameDelta, view.particleSpawns);
     ExtractEmitterLights(m_world, view);
+    ExtractRibbons(m_world, m_frameDelta, view);
 
     SyncSoundEmitters(m_world, m_sounds);
     if (view.camera.has_value()) {

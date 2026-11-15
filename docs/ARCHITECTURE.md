@@ -1,6 +1,6 @@
 # Architecture
 
-How the engine is built today, through Phase 9.21: real lights and emissive surfaces with soft ray-traced shadows, sampled by ReSTIR DI over a G-buffer, indirect light from a bounce lit by the lights and a radiance cache, ray-traced reflections and glass, their denoiser, temporal antialiasing that upscales from a resolution that moves to hold the frame rate, the image formed by an adapting eye, bloom and AgX for SDR and HDR10 displays, a sky, PBR materials, normal maps and particles on the GPU, whose effects are files. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
+How the engine is built today, through Phase 9.22: real lights and emissive surfaces with soft ray-traced shadows, sampled by ReSTIR DI over a G-buffer, indirect light from a bounce lit by the lights and a radiance cache, ray-traced reflections and glass, their denoiser, temporal antialiasing that upscales from a resolution that moves to hold the frame rate, the image formed by an adapting eye, bloom and AgX for SDR and HDR10 displays, a sky, PBR materials, normal maps and particles on the GPU, whose effects are files, with ribbons and mesh particles. [OVERVIEW.md](../OVERVIEW.md) holds the vision and the roadmap, and [the ADRs](adr/README.md) hold the reasons for each decision. This page describes what the code does now, and it changes in the same pull request as the code.
 
 ## Modules
 
@@ -84,22 +84,22 @@ sequenceDiagram
     end
     A->>G: OnUpdate
     A->>S: Frame systems, then animators
-    A->>S: Extract: transforms, SceneView with current and previous matrices, particle spawns, sounds and listener
+    A->>S: Extract: transforms, SceneView with current and previous matrices, particle spawns, ribbons, sounds and listener
     A->>G: OnRender
     A->>R: Render(SceneView, overlay)
     R->>R: Reload changed shaders
     R->>D: BeginFrame: send the pending uploads, read last timestamps
     R->>D: Skinning, with the previous joints too, then the frame's acceleration structures
     R->>D: Emissive lights: new emissive meshes averaged once, the frame's emissive triangles placed (compute)
-    R->>D: G-buffer, jittered, at the render resolution in the targets' corner: depth, normals, motion vectors, base color, emission
+    R->>D: Particles: emit, simulate, sort with the ribbons' segments (compute)
+    R->>D: G-buffer, jittered, at the render resolution in the targets' corner: depth, normals, motion vectors, base color, emission; mesh particles too
     R->>D: Radiance cache: update, resolve; indirect light: one ray per pixel, its hit lit by the lights (compute)
     R->>D: Reflections: one ray per pixel along its specular lobe (compute)
-    R->>D: Particles: emit, simulate, sort (compute)
     R->>D: Direct lighting: ReSTIR DI, then one shadow ray per pixel, plus indirect light and reflections (compute)
     R->>D: Volumetric fog: each froxel lit by one light and one shadow ray, then added up from the camera (compute)
     R->>D: Denoiser: the light averaged over frames, then over neighbours (compute)
     R->>D: Composite: the light put back together, the sky, seen through the fog, into the HDR target
-    R->>D: Particles drawn back to front, one indirect draw, and their coverage as a reactive mask
+    R->>D: Particles and ribbons drawn back to front, one indirect draw, and their coverage as a reactive mask
     R->>D: Glass, if any: the frame copied, then glass drawn over it, reading the copy and tracing rays
     R->>D: Temporal resolve: the frame upscaled to the output and blended with the reprojected history (compute)
     R->>D: Exposure histogram and bloom (compute); interface and overlay into their layer
@@ -236,7 +236,7 @@ Each frame, the renderer and its passes add their passes to a `RenderGraph`, in 
 
 ```mermaid
 flowchart LR
-    SK["Skinning"] --> AS["Acceleration<br/>structures"] --> EL["Emissive<br/>lights"] --> PP["G-buffer<br/>render resolution"] --> GI["Radiance cache<br/>update, resolve"] --> IL["Indirect light<br/>one ray per pixel"] --> SI["Simulation<br/>emit, simulate,<br/>finish, sort"] --> ME["Direct lighting<br/>candidates, temporal,<br/>spatial, shading"] --> DN["Denoiser<br/>temporal, 5 spatial"] --> CO["Composite"] --> PA["Particles"] --> TR["Temporal resolve<br/>upscaled to the output<br/>(or FSR 3.1)"] --> EX["Exposure"] --> BL["Bloom<br/>6 down, 5 up"] --> UI["Interface"] --> OV["Overlay"] --> OU["Output"]
+    SK["Skinning"] --> AS["Acceleration<br/>structures"] --> EL["Emissive<br/>lights"] --> SI["Simulation<br/>emit, simulate,<br/>finish, sort"] --> PP["G-buffer<br/>render resolution,<br/>mesh particles"] --> GI["Radiance cache<br/>update, resolve"] --> IL["Indirect light<br/>one ray per pixel"] --> ME["Direct lighting<br/>candidates, temporal,<br/>spatial, shading"] --> DN["Denoiser<br/>temporal, 5 spatial"] --> CO["Composite"] --> PA["Particles"] --> TR["Temporal resolve<br/>upscaled to the output<br/>(or FSR 3.1)"] --> EX["Exposure"] --> BL["Bloom<br/>6 down, 5 up"] --> UI["Interface"] --> OV["Overlay"] --> OU["Output"]
 ```
 
 Barriers come from the RHI: each texture and buffer remembers its last write and the reads since, and `CommandList::Use` decides from that whether the next use must wait (`rhi::NextAccess`). The GPU tests run with synchronization validation, which reports any use that no barrier orders.
@@ -294,15 +294,21 @@ Particles live on the GPU, in one pool of 65,536 (ADR-0025, ADR-0053). The CPU o
 flowchart LR
     F["Effect files<br/>.effect.json"] -->|"AssetLibrary"| R["Effect table and<br/>curves on the GPU"]
     E["ParticleEmitter entities,<br/>Scene::SpawnParticles"] -->|"Extract"| V["SceneView::particleSpawns"]
+    RE["RibbonEmitter entities<br/>.ribbon.json: line,<br/>bolt, trail"] -->|"Extract"| RV["SceneView::ribbons<br/>points"]
     V --> EM["Emit<br/>last frame's sub-spawns,<br/>then the CPU's, in the<br/>effect's shape"]
     R --> EM
     EM --> SI["Simulate<br/>gravity, air, turbulence,<br/>attractors, rays against<br/>the structure, light"]
-    SI --> FI["Finish<br/>draw arguments"]
+    SI --> ML["Lists of mesh<br/>particles, per effect"]
+    ML --> GB["G-buffer<br/>an indexed indirect<br/>draw per mesh effect"]
+    SI --> FI["Finish<br/>draw arguments,<br/>ribbon segments' keys"]
+    RV --> FI
     FI --> SO["Bitonic sort<br/>back to front"]
-    SO --> D["Indirect draw<br/>turned, flipbook,<br/>soft, premultiplied"]
+    SO --> D["Indirect draw<br/>quads and segments,<br/>soft, premultiplied"]
 ```
 
 An effect is a JSON file (`.effect.json`, `scene::ParseParticleEffect`): its texture, relative to the file, a flipbook of cells of its grid with frames blended, color and opacity on a gradient over life, size, emission and speed on curves, how its quads turn (facing the camera, stretched along their velocity, turning around an axis, or lying in a plane), where particles appear (a box and sphere, a cylinder, a cone that opens out, a line), how they move, and how its emitters emit. Angles are in degrees there, and unknown keys are errors that name them. `AssetLibrary::LoadParticleEffect` loads a file once with its texture, and in development builds the scene reads changed files again twice a second, updating the effects in place and their emitters' emission. The renderer bakes each effect's curves into 256 samples in a buffer, which the passes read by life. Particles move in the air: gravity, then drag towards the air's velocity, the level's wind (`Atmosphere::wind`) and boxes of wind (`scene::WindVolume`) with gusts, then curl-noise turbulence and attractors (`scene::ParticleAttractor`), which can be kept to one effect. Colliding effects trace their motion of the frame against the frame's acceleration structure, glass included, and bounce, stick or die where they hit; a particle too slow to leave a surface slides, then rests. Impacts can spawn another effect the next frame, as can deaths: the simulation appends requests to one of two lists that swap each frame. Effects that report hits write them to the frame slot's buffer, which the CPU reads when the slot comes round again, with the count of particles alive: `Renderer::ParticleHits` gives each hit's effect and the material it hit, for decals and sounds. An effect can give its emitters a light (`EmitterLight`), which the scene adds to the frame's lights as bright as the emitter is active, flickering; a light whose brightness changes counts as moved for the denoiser. Lit particles scatter their light by a Henyey-Greenstein phase function, and flipbooks with six-way light maps are shaded with the direction of each particle's light. Distortion effects draw nothing but an offset into a third target, and a pass bends the frame by it before glass copies it. `texture-tool flipbook` makes fire, smoke and explosion flipbooks, with their six-way maps, from a small simulation it renders on the CPU. The sandbox's effects are in `assets/Factory/Effects/`, and the level's glTF nodes `particles;effect=<file>` name theirs. Effects can also be created from a `ParticleEffectDesc` in code, as tests do; `AssetLibrary::CreateParticleEffect` owns them with the level's other assets. Particles hide behind meshes and fade into them, lit ones take the light the simulation keeps for each of them: each particle keeps the light it chose, as ReSTIR does for pixels, tested for shadows, and additive ones glow in the same draw as the smoke.
+
+Mesh effects (`"mesh"` in the file, a glTF model whose first part they draw) are opaque: the simulation runs before the G-buffer, puts their particles in a list per effect, of up to 4,096, and keeps them out of the quads' draw; the G-buffer draws each list with one indexed indirect draw and its own pixel shader, so the deferred lighting lights them as any surface. They tumble in flight, and at rest lie on their lowest vertex with their +Y along the surface's normal. Ribbons are built on the CPU each frame from `scene::RibbonEmitter` entities and their `.ribbon.json` files: a line to a target entity, a bolt split by midpoint displacement with branches, redrawn every few hundredths of a second, or a trail of where the emitter has been, with a color and a width along it and a texture that repeats and scrolls. The finish pass gives each segment a key in the slots past the alive particles, so segments and particles sort together, and the particles' draw builds either. Ribbons glow, and can give off a light as emitters do. The sandbox's weapons throw casings; `sandbox.showcase` puts an arc, a laser, lightning, breaking glass, papers in a draft and a wisp in front of the start.
 
 ## Tests
 
@@ -320,7 +326,9 @@ A tag `vX.Y.Z` runs the Release workflow (ADR-0038): it builds the `*-shipping` 
 - Only the factory's upgraded textures are KTX2 (ADR-0046); the rest is PNG, decoded to RGBA8 at load.
 - Height maps are not used: the factory's wait in `assets/Factory/Source/` for Phase 11.
 - A particle at rest stays where it rested, even if the surface it rests on moves away.
-- Particles cast no shadow, and their indirect light is that of the surfaces behind them; only flipbooks with six-way maps are shaded by the side their light comes from.
+- Particles cast no shadow, and their indirect light is that of the surfaces behind them; only flipbooks with six-way maps are shaded by the side their light comes from. Mesh particles cast no shadow either and show in no reflection: they are not in the acceleration structure.
+- A mesh particle turns to lie flat at once when it comes to rest, and sinks halfway into a surface while it slides on it. Each mesh effect draws up to 4,096 particles, and 32 mesh effects at most draw.
+- Ribbons are lit by nothing, and when the pool is full, their segments beyond it are not drawn.
 - What the cache holds lags a few frames behind a moving light, and starts over after a cut while the cache fills: light that bounced more than once, since the first bounce is lit at once.
 - Indirect light, the cache and the bounce, takes 1.5 ms at 1080p on an RTX 3090 in the factory (ADR-0045).
 - The factory is lit only where its lamps are: the route has 13 of them since ADR-0040, its glowing door lights light their doorways (ADR-0044), and the underground stays dark until the flashlight is found.

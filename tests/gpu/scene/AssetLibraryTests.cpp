@@ -14,6 +14,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -116,7 +117,58 @@ TEST_F(AssetLibraryTest, EveryFactoryEffectFileLoads) {
         EXPECT_TRUE(effect.has_value()) << name << ": " << core::Format(effect.error());
         ++count;
     }
-    EXPECT_GE(count, 11U);
+    EXPECT_GE(count, 14U);
+}
+
+TEST_F(AssetLibraryTest, EveryFactoryRibbonFileLoads) {
+    AssetLibrary library(*m_renderer, DAI_PROJECT_ASSET_DIR);
+    std::size_t count = 0;
+    for (const auto& entry :
+         std::filesystem::directory_iterator(std::filesystem::path(DAI_PROJECT_ASSET_DIR) / "Factory" / "Effects")) {
+        const std::string name = entry.path().filename().string();
+        if (!name.ends_with(".ribbon.json")) {
+            continue;
+        }
+        const core::Result<std::shared_ptr<const scene::RibbonEffect>> ribbon =
+            library.LoadRibbonEffect("Factory/Effects/" + name);
+        EXPECT_TRUE(ribbon.has_value()) << name << ": " << core::Format(ribbon.error());
+        ++count;
+    }
+    EXPECT_GE(count, 4U);
+}
+
+TEST_F(AssetLibraryTest, AMeshEffectDrawsItsModelsFirstPart) {
+    AssetLibrary library(*m_renderer, DAI_PROJECT_ASSET_DIR);
+    const core::Result<scene::ParticleEffectAsset> casings =
+        library.LoadParticleEffect("Factory/Effects/shell_casings.effect.json");
+    ASSERT_TRUE(casings.has_value()) << core::Format(casings.error());
+    const core::Result<const scene::Model*> model = library.LoadModel("Factory/Effects/Meshes/casing.glb");
+    ASSERT_TRUE(model.has_value());
+    ASSERT_FALSE((*model)->parts.empty());
+    EXPECT_EQ(library.ModelCount(), 1U) << "the effect loaded it once";
+}
+
+TEST_F(AssetLibraryTest, EditedRibbonFileChangesItsEmittersRibbon) {
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / "daidalos-ribbon-reload";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root);
+    const auto write = [&](float length) {
+        std::ofstream(root / "beam.ribbon.json") << R"({"length": )" << length << "}";
+    };
+    write(2.0f);
+    AssetLibrary library(*m_renderer, root);
+    const core::Result<std::shared_ptr<const scene::RibbonEffect>> ribbon =
+        library.LoadRibbonEffect("beam.ribbon.json");
+    ASSERT_TRUE(ribbon.has_value()) << core::Format(ribbon.error());
+    EXPECT_EQ(library.LoadRibbonEffect("beam.ribbon.json")->get(), ribbon->get()) << "shared";
+    // File times can be coarse: the edit is dated later for sure.
+    write(5.0f);
+    std::filesystem::last_write_time(root / "beam.ribbon.json",
+                                     std::filesystem::last_write_time(root / "beam.ribbon.json") +
+                                         std::chrono::seconds(2));
+    library.ReloadChangedParticleEffects();
+    EXPECT_FLOAT_EQ((*ribbon)->length, 5.0f) << "changed in place";
+    std::filesystem::remove_all(root);
 }
 
 TEST_F(AssetLibraryTest, EditedEffectFileIsReloadedInPlace) {

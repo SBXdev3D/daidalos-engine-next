@@ -1,0 +1,15 @@
+{
+    "comment": "Casings thrown out of a weapon's side, one per shot: brass that tumbles, bounces and rests, and reports its landings for their sound.",
+    "mesh": "Meshes/casing.glb",
+    "collision": "bounce",
+    "bounce": 0.35,
+    "reportHits": true,
+    "lifetime": [10, 12],
+    "size": 1,
+    "spread": 15,
+    "speed": [2.5, 3.5],
+    "gravity": 1,
+    "drag": 0.1,
+    "rotationSpeed": 1440,
+    "emitter": { "rate": 0 }
+}

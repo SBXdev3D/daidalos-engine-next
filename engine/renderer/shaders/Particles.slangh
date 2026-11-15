@@ -99,10 +99,35 @@ struct ParticleEffectData {
     float distortion;      // Bends the frame behind it by up to this fraction of its height.
     uint lightPositive;    // Six-way light maps: lit from its right, top and front, in RGB, or kNoTexture.
     uint lightNegative;    // From its left, bottom and back.
+    uint meshSlot;         // A mesh effect's list of particles to draw (kMaxMeshEffects), or kNoEffect.
+    float meshRest;        // How far above a surface a resting mesh's origin is, per unit of its size.
     float padding0;
-    float padding1;
-    float padding2;
 };
+
+// Mesh effects at once, and the particles each draws (ADR-0053): more are simulated but not drawn.
+static const uint kMaxMeshEffects = 32;
+static const uint kMeshCapacity = 4096;
+
+// A ribbon's point and the ribbon it belongs to, which the CPU builds each frame (ADR-0053).
+struct RibbonPointData {
+    float3 position;
+    float width;
+    float4 color;
+    float3 tangent; // Along the ribbon at the point.
+    float u;
+    uint ribbon;
+    uint padding0;
+    uint padding1;
+    uint padding2;
+};
+struct RibbonData {
+    uint texture;
+    uint flags; // kEffectAdditive.
+    float softness;
+    uint padding;
+};
+// The key of a ribbon's segment in the sort, besides its index in the frame's segments.
+static const uint kRibbonKey = 0x80000000;
 
 struct ParticleSpawn {
     float3 position;
@@ -167,9 +192,14 @@ struct ParticleFrame {
     uint subCounterIn;     // Their counters, in the counters buffer.
     uint subCounterOut;
     uint hitCapacity;
+    uint ribbons;        // Storage indices of the frame's ribbons, their points and segments (the first point of
+    uint ribbonPoints;   // each, joined to the next).
+    uint ribbonSegments;
+    uint ribbonSegmentCount;
+    uint meshLists; // Storage index of the lists of mesh particles, kMeshCapacity per mesh effect.
     uint padding0;
     uint padding1;
-    uint padding2;
+    uint4 meshIndexCounts[kMaxMeshEffects / 4]; // Indices of each mesh effect's mesh; 0 draws nothing.
 };
 
 // Requests a frame can make of the next, and the hits it can report.
@@ -205,11 +235,14 @@ struct ParticlePushConstants {
     uint previousLightCount;
 };
 
+#ifndef DAI_PARTICLES_NO_PUSH
 [[vk::push_constant]] ParticlePushConstants g_particles;
-// Compute passes write the particles; the draw only reads them, which needs no device feature.
+#endif
+// Compute passes write the particles; the draws only read them, which needs no device feature.
 #ifdef DAI_PARTICLES_READ_ONLY
 [[vk::binding(2, 0)]] StructuredBuffer<Particle> g_particleData[];
 [[vk::binding(2, 0)]] StructuredBuffer<uint2> g_particleKeys[];
+[[vk::binding(2, 0)]] StructuredBuffer<uint> g_particleLists[];
 #else
 [[vk::binding(2, 0)]] RWStructuredBuffer<Particle> g_particleData[];
 [[vk::binding(2, 0)]] RWStructuredBuffer<uint> g_particleLists[];
@@ -220,6 +253,9 @@ struct ParticlePushConstants {
 [[vk::binding(2, 0)]] StructuredBuffer<float4> g_particleCurves[];
 [[vk::binding(2, 0)]] StructuredBuffer<ParticleFrame> g_particleFrames[];
 [[vk::binding(2, 0)]] StructuredBuffer<ParticleForce> g_particleForces[];
+[[vk::binding(2, 0)]] StructuredBuffer<RibbonData> g_ribbons[];
+[[vk::binding(2, 0)]] StructuredBuffer<RibbonPointData> g_ribbonPoints[];
+[[vk::binding(2, 0)]] StructuredBuffer<uint> g_ribbonSegments[];
 #ifndef DAI_PARTICLES_READ_ONLY
 [[vk::binding(2, 0)]] RWStructuredBuffer<ParticleSubSpawn> g_particleSubSpawns[];
 [[vk::binding(2, 0)]] RWStructuredBuffer<ParticleHitData> g_particleHits[];
@@ -230,18 +266,29 @@ static const uint kCurveSamples = 256;
 static const uint kCurveColor = 0;
 static const uint kCurveScales = 1;
 
-// An effect's curve at a moment of the life, from 0 to 1, blended between its samples.
-float4 SampleCurve(uint effect, uint curve, float life) {
+// An effect's curve at a moment of the life, from 0 to 1, blended between its samples, from the curves
+// buffer of that storage index.
+float4 SampleCurveIn(uint curves, uint effect, uint curve, float life) {
     const float x = saturate(life) * float(kCurveSamples - 1);
     const uint i = min(uint(x), kCurveSamples - 2);
     const uint base = (effect * 2 + curve) * kCurveSamples + i;
-    return lerp(g_particleCurves[g_particles.curves][base], g_particleCurves[g_particles.curves][base + 1], x - float(i));
+    return lerp(g_particleCurves[curves][base], g_particleCurves[curves][base + 1], x - float(i));
 }
+#ifndef DAI_PARTICLES_NO_PUSH
+float4 SampleCurve(uint effect, uint curve, float life) {
+    return SampleCurveIn(g_particles.curves, effect, curve, life);
+}
+#endif
 
 static const uint kDeadCounter = 0;
 static const uint kAliveCounter = 1;
 static const uint kNextAliveCounter = 2;
-// Then the two lists of sub-spawns' counters, 3 and 4, which swap each frame.
+// Then the two lists of sub-spawns' counters, 3 and 4, which swap each frame; the mesh particles alive, which
+// the quads' draw leaves out; and from kMeshCounters, the particles of each mesh effect.
+static const uint kMeshAliveCounter = 5;
+static const uint kMeshCounters = 8;
+// The draw's arguments: the quads', then five per mesh effect, for an indexed draw.
+static const uint kMeshArguments = 4;
 
 // A small, good hash (PCG), for random numbers on the GPU.
 uint Hash(uint value) {
@@ -253,6 +300,11 @@ uint Hash(uint value) {
 float3 Rotate(float4 q, float3 v) {
     const float3 t = 2.0 * cross(q.xyz, v);
     return v + q.w * t + cross(q.xyz, t);
+}
+
+// The product of two rotations, as quaternions (x, y, z, w): b, then a.
+float4 MultiplyQuaternions(float4 a, float4 b) {
+    return float4(a.w * b.xyz + b.w * a.xyz + cross(a.xyz, b.xyz), a.w * b.w - dot(a.xyz, b.xyz));
 }
 
 // The shortest rotation from +Y to a unit direction, as a quaternion (x, y, z, w).

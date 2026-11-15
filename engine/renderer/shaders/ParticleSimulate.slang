@@ -12,6 +12,8 @@
 // such as a small lamp beside it that power alone rarely draws. One shadow ray tests the light, and what it
 // sends is blended with what the particle held, smooth across its quad and from frame to frame: smoke has
 // no denoiser.
+// Mesh particles (ADR-0053) are not lit here: the G-buffer draws them, from a list per mesh effect, and they
+// sort last, out of the quads' draw.
 
 #include "Particles.slangh"
 #include "RayQueries.slangh"
@@ -234,6 +236,17 @@ void ReportHit(ParticleFrame frame, float3 position, float3 normal, uint effect,
     g_particleHits[frame.hits][slot + 1] = hit;
 }
 
+// A mesh particle that comes to rest lies on the surface: its +Y along the normal, its lowest vertex on it,
+// and it stops turning (ADR-0053).
+void Settle(inout Particle particle, ParticleEffectData effect, float3 normal, float sizeScale) {
+    if (effect.meshSlot == kNoEffect) {
+        return;
+    }
+    particle.axis = normal;
+    particle.position += normal * effect.meshRest * particle.size * sizeScale;
+    particle.rotationSpeed = 0.0;
+}
+
 // Puts a particle back in the dead list.
 void Kill(uint index) {
     uint dead;
@@ -311,6 +324,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             if (effect.collision == kCollisionStick) {
                 particle.velocity = float3(0.0, 0.0, 0.0);
                 particle.state |= kParticleResting;
+                Settle(particle, effect, normal, scales.x);
             } else {
                 // It bounces off, or slides along when the bounce is too weak to leave, and rests once slow.
                 particle.velocity = reflect(particle.velocity, normal) * effect.bounce;
@@ -320,6 +334,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
                     if (length(particle.velocity) < kRestSpeed) {
                         particle.velocity = float3(0.0, 0.0, 0.0);
                         particle.state |= kParticleResting;
+                        Settle(particle, effect, normal, scales.x);
                     }
                 }
             }
@@ -330,7 +345,8 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     particle.rotation += particle.rotationSpeed * step;
     const float depth = dot(particle.position - frame.cameraPosition, frame.cameraForward);
 
-    if ((effect.flags & kEffectLit) != 0) {
+    const bool mesh = effect.meshSlot != kNoEffect;
+    if ((effect.flags & kEffectLit) != 0 && !mesh) {
         const bool first = particle.lightSamples <= 0.0;
         const float radius = particle.size * scales.x * 0.5;
         const float3 view = normalize(frame.cameraPosition - particle.position + 0.0001);
@@ -345,6 +361,17 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     uint slot;
     InterlockedAdd(g_particleLists[g_particles.counters][kNextAliveCounter], 1, slot);
     g_particleLists[g_particles.aliveOut][slot] = index;
+    if (mesh) {
+        // Drawn by its mesh effect, if its list has room; a key of 0 sorts it last, out of the quads.
+        uint drawn;
+        InterlockedAdd(g_particleLists[g_particles.counters][kMeshCounters + effect.meshSlot], 1, drawn);
+        if (drawn < kMeshCapacity) {
+            g_particleLists[air.meshLists][effect.meshSlot * kMeshCapacity + drawn] = index;
+        }
+        InterlockedAdd(g_particleLists[g_particles.counters][kMeshAliveCounter], 1);
+        g_particleKeys[g_particles.keys][slot] = uint2(0, index);
+        return;
+    }
     // Depths are positive, so their bits sort in the same order as the numbers.
     g_particleKeys[g_particles.keys][slot] = uint2(asuint(max(depth, 1.0e-6)), index);
 }

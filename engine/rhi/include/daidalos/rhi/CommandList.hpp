@@ -117,6 +117,9 @@ public:
     /// Draws with the arguments that the GPU wrote at offset in a BufferUsage::Indirect buffer: vertex count,
     /// instance count, first vertex and first instance, as 32-bit integers.
     void DrawIndirect(BufferHandle arguments, std::uint64_t offset = 0);
+    /// Draws the bound index buffer with the arguments that the GPU wrote at offset: index count, instance
+    /// count, first index, vertex offset (signed) and first instance, as 32-bit integers.
+    void DrawIndexedIndirect(BufferHandle arguments, std::uint64_t offset = 0);
 
     /// Runs the bound compute pipeline on groups of threads. Outside any rendering scope.
     void Dispatch(std::uint32_t groupsX, std::uint32_t groupsY = 1, std::uint32_t groupsZ = 1);

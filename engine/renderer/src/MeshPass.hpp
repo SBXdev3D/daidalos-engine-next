@@ -133,6 +133,21 @@ public:
 
     [[nodiscard]] core::Result<MeshHandle> CreateMesh(const resources::MeshData& data, const std::string& name);
     void DestroyMesh(MeshHandle mesh);
+    /// What drawing a mesh by itself needs, as mesh particles do (ADR-0053), or nothing if it is gone.
+    struct Geometry {
+        rhi::BufferHandle vertices;
+        rhi::BufferHandle indices;
+        std::uint32_t indexCount = 0;
+        /// The lowest of its vertices along its Y.
+        float lowest = 0.0f;
+    };
+    [[nodiscard]] std::optional<Geometry> GeometryOf(MeshHandle mesh) const;
+    /// A material's index in the material table and its sides, or the default material's if it is gone.
+    struct MaterialSlot {
+        std::uint32_t index = 0;
+        bool doubleSided = false;
+    };
+    [[nodiscard]] MaterialSlot MaterialOf(MaterialHandle material) const;
 
     [[nodiscard]] core::Result<MaterialHandle> CreateMaterial(const MaterialDesc& desc);
     void DestroyMaterial(MaterialHandle material);
@@ -261,6 +276,8 @@ private:
         std::uint32_t indexCount = 0;
         /// A sphere around the vertices, in the mesh's space: center and radius.
         glm::vec4 bounds{0.0f};
+        /// The lowest vertex's Y.
+        float lowest = 0.0f;
     };
     struct Material {
         bool doubleSided = false;

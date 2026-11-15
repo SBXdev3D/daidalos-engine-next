@@ -197,6 +197,8 @@ struct SceneView {
     std::vector<FogVolume> fogVolumes;
     /// New particles of the frame (ADR-0025).
     std::vector<ParticleSpawn> particleSpawns;
+    /// Ribbons of the frame, built by the CPU (ADR-0053).
+    std::vector<Ribbon> ribbons;
     /// What moves particles besides gravity and the level's wind (ADR-0053).
     std::vector<WindVolume> windVolumes;
     std::vector<ParticleAttractor> particleAttractors;

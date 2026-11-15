@@ -528,7 +528,27 @@ core::Result<MeshHandle> MeshPass::CreateMesh(const resources::MeshData& data, c
     for (const resources::Vertex& vertex : data.vertices) {
         radius = std::max(radius, glm::distance(center, vertex.position));
     }
-    return m_meshes.Insert({vertices, *indices, skin, structure, vertexCount, indexCount, glm::vec4(center, radius)});
+    return m_meshes.Insert(
+        {vertices, *indices, skin, structure, vertexCount, indexCount, glm::vec4(center, radius), low.y});
+}
+
+std::optional<MeshPass::Geometry> MeshPass::GeometryOf(MeshHandle mesh) const {
+    const Mesh* found = m_meshes.TryGet(mesh);
+    if (found == nullptr) {
+        return std::nullopt;
+    }
+    return Geometry{.vertices = found->vertices,
+                    .indices = found->indices,
+                    .indexCount = found->indexCount,
+                    .lowest = found->lowest};
+}
+
+MeshPass::MaterialSlot MeshPass::MaterialOf(MaterialHandle material) const {
+    const Material* found = m_materials.TryGet(material);
+    if (found == nullptr) {
+        return {.index = m_defaultMaterial.Index(), .doubleSided = false};
+    }
+    return {.index = material.Index(), .doubleSided = found->doubleSided};
 }
 
 void MeshPass::DestroyMesh(MeshHandle mesh) {

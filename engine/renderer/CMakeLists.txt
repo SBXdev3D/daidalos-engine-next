@@ -67,7 +67,7 @@ dai_add_module(NAME renderer
 
 dai_add_shaders(TARGET daidalos_renderer
     SOURCES shaders/GBuffer.slang
-        shaders/Output.slang shaders/ParticleDraw.slang shaders/ParticleDistortion.slang shaders/Ui.slang shaders/RayDebug.slang
+        shaders/Output.slang shaders/ParticleDraw.slang shaders/ParticleDistortion.slang shaders/ParticleMesh.slang shaders/Ui.slang shaders/RayDebug.slang
         shaders/GBufferDebug.slang shaders/Composite.slang shaders/Glass.slang
     COMPUTE shaders/PathTracer.slang shaders/Skinning.slang shaders/TemporalResolve.slang shaders/ParticleEmit.slang shaders/ParticleSubEmit.slang shaders/ParticleSimulate.slang
         shaders/ParticleFinish.slang shaders/ParticleSort.slang shaders/DenoiseTemporal.slang shaders/DenoiseSpatial.slang
@@ -76,7 +76,7 @@ dai_add_shaders(TARGET daidalos_renderer
         shaders/RestirSpatialUnbiased.slang shaders/RestirShade.slang
         shaders/EmissiveAverage.slang shaders/EmissiveTriangles.slang shaders/ExposureHistogram.slang shaders/Bloom.slang
         shaders/FogLighting.slang shaders/FogIntegrate.slang
-    INCLUDES shaders/Bsdf.slang shaders/RayQueries.slangh shaders/GlobalIllumination.slangh shaders/MeshCommon.slangh shaders/MeshTypes.slangh shaders/Particles.slangh shaders/ParticleSpawning.slangh
+    INCLUDES shaders/Bsdf.slang shaders/RayQueries.slangh shaders/GlobalIllumination.slangh shaders/MeshCommon.slangh shaders/GBufferSurface.slangh shaders/MeshTypes.slangh shaders/Particles.slangh shaders/ParticleSpawning.slangh
         shaders/Denoiser.slangh shaders/Random.slangh shaders/Lights.slangh shaders/GBuffer.slangh shaders/Restir.slangh shaders/RestirSpatial.slangh shaders/Fog.slangh)
 
 # AMD FSR 3.1's upscaler (ADR-0050): AMD's passes, unchanged, through the engine's callbacks. Its headers

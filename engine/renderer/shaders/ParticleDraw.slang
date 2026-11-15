@@ -7,6 +7,8 @@
 // frame's lights unless they glow, with the light the simulation keeps for each particle (ADR-0044), and fade
 // into the fog. The output is premultiplied: an additive particle has an alpha of 0, so one blend mode draws
 // both kinds.
+// The sorted list also holds the frame's ribbon segments (ADR-0053), each a quad between two of its ribbon's
+// points, turned to the camera around the ribbon; they glow, fade into surfaces and into the fog.
 
 #define DAI_PARTICLES_READ_ONLY
 #include "Particles.slangh"
@@ -23,6 +25,7 @@ struct VertexOutput {
     // Towards the particle's light, in the frame of its image: right, up, and out of it towards the camera.
     [[vk::location(6)]] nointerpolation float3 lightInImage : LIGHTINIMAGE;
     [[vk::location(7)]] float2 corner : CORNER; // From -1 to 1 across the quad.
+    [[vk::location(8)]] nointerpolation uint ribbon : RIBBON; // A ribbon's segment's, if effect is kNoEffect.
 };
 
 // The frames of the flipbook a particle is between, and how far it is from the first to the second. At a
@@ -54,16 +57,47 @@ float2 CellUv(ParticleEffectData effect, uint cell, float2 corner) {
     return (float2(float(cell % columns), float((cell / columns) % rows)) + (corner * float2(0.5, -0.5) + 0.5)) / grid;
 }
 
+// Two triangles: corners from -1 to 1.
+static const float2 kCorners[6] = {float2(-1, -1), float2(1, -1), float2(1, 1),
+                                   float2(-1, -1), float2(1, 1), float2(-1, 1)};
+
+// A segment of a ribbon: from its first point (corner.y -1) to the next (1), across by its width.
+VertexOutput RibbonSegment(uint segment, uint vertexId) {
+    const FrameData frame = g_frames[g_particles.frameBuffer][0];
+    const ParticleFrame particles = g_particleFrames[g_particles.parameters][0];
+    const float2 corner = kCorners[vertexId];
+    const uint first = g_ribbonSegments[particles.ribbonSegments][segment];
+    const RibbonPointData point = g_ribbonPoints[particles.ribbonPoints][corner.y < 0.0 ? first : first + 1];
+    const float3 toCamera = normalize(frame.cameraPosition - point.position + 0.0001);
+    float3 side = cross(point.tangent, toCamera);
+    side = dot(side, side) > 1.0e-8 ? normalize(side) : g_particles.cameraRight;
+    const float3 world = point.position + side * (point.width * 0.5 * corner.x);
+
+    VertexOutput output;
+    output.clipPosition = mul(frame.viewProjection, float4(world, 1.0));
+    output.uv = float4(point.u, corner.x * 0.5 + 0.5, 0.0, 0.0);
+    output.color = point.color;
+    output.worldPosition = world;
+    output.effect = kNoEffect;
+    output.light = float3(0.0, 0.0, 0.0);
+    output.blend = 0.0;
+    output.lightInImage = float3(0.0, 0.0, 0.0);
+    output.corner = corner;
+    output.ribbon = point.ribbon;
+    return output;
+}
+
 VertexOutput VSMain(uint vertexId : SV_VulkanVertexID, uint instance : SV_VulkanInstanceID) {
-    const Particle particle = g_particleData[g_particles.particles][g_particleKeys[g_particles.keys][instance].y];
+    const uint2 key = g_particleKeys[g_particles.keys][instance];
+    if ((key.y & kRibbonKey) != 0) {
+        return RibbonSegment(key.y & ~kRibbonKey, vertexId);
+    }
+    const Particle particle = g_particleData[g_particles.particles][key.y];
     const ParticleEffectData effect = g_particleEffects[g_particles.effects][particle.effect];
     const FrameData frame = g_frames[g_particles.frameBuffer][0];
     const float life = saturate(particle.age / particle.lifetime);
     const float4 scales = SampleCurve(particle.effect, kCurveScales, life);
 
-    // Two triangles: corners from -1 to 1.
-    static const float2 kCorners[6] = {float2(-1, -1), float2(1, -1), float2(1, 1),
-                                       float2(-1, -1), float2(1, 1), float2(-1, 1)};
     const float2 corner = kCorners[vertexId];
     const float halfSize = particle.size * scales.x * 0.5;
     const float c = cos(particle.rotation);
@@ -123,6 +157,7 @@ VertexOutput VSMain(uint vertexId : SV_VulkanVertexID, uint instance : SV_Vulkan
     const float3 toLight = particle.lightDirection;
     output.lightInImage = float3(dot(toLight, imageX), dot(toLight, imageY), dot(toLight, imageZ));
     output.corner = corner;
+    output.ribbon = 0;
     return output;
 }
 
@@ -149,18 +184,47 @@ float3 SampleBoth(uint texture, VertexOutput input) {
                 g_textures[texture].Sample(g_samplers[kSamplerLinearClamp], input.uv.zw), input.blend).rgb;
 }
 
+// Hidden behind what the meshes drew, and fading as it gets close to it.
+float SoftAlpha(FrameData frame, VertexOutput input, float softness, out float depth) {
+    depth = dot(input.worldPosition - frame.cameraPosition, frame.cameraForward);
+    const float sceneDepth =
+        LinearDepth(frame, g_textures[g_particles.depthTexture].Load(int3(int2(input.clipPosition.xy), 0)).r);
+    return saturate((sceneDepth - depth) / max(softness, 0.001));
+}
+
+// What a ribbon gives: its texture, repeated along it, times its color; it glows, through the fog.
+ParticleOutput RibbonPixel(FrameData frame, VertexOutput input) {
+    const ParticleFrame particles = g_particleFrames[g_particles.parameters][0];
+    const RibbonData ribbon = g_ribbons[particles.ribbons][input.ribbon];
+    const float4 texel = ribbon.texture != kNoTexture
+                             ? g_textures[ribbon.texture].Sample(g_samplers[kSamplerLinearRepeat], input.uv.xy)
+                             : float4(1.0, 1.0, 1.0, 1.0);
+    float depth;
+    const float alpha = input.color.a * texel.a * SoftAlpha(frame, input, ribbon.softness, depth);
+    if (alpha <= 0.001) {
+        discard;
+    }
+    const float3 color = input.color.rgb * texel.rgb;
+    const float4 fog =
+        FogAt(frame, input.clipPosition.xy * frame.screenTexel, max(depth, 0.0), uint2(input.clipPosition.xy));
+    if ((ribbon.flags & kEffectAdditive) != 0) {
+        return Output(float4(color * alpha * fog.a, 0.0), alpha);
+    }
+    return Output(float4(ThroughFog(fog, color) * alpha, alpha), alpha);
+}
+
 ParticleOutput PSMain(VertexOutput input) {
     const FrameData frame = g_frames[g_particles.frameBuffer][0];
+    if (input.effect == kNoEffect) {
+        return RibbonPixel(frame, input);
+    }
     const ParticleEffectData effect = g_particleEffects[g_particles.effects][input.effect];
     const float4 texel = lerp(g_textures[effect.texture].Sample(g_samplers[kSamplerLinearClamp], input.uv.xy),
                               g_textures[effect.texture].Sample(g_samplers[kSamplerLinearClamp], input.uv.zw), input.blend);
     float alpha = input.color.a * texel.a;
 
-    // Hidden behind what the meshes drew, and fading as it gets close to it.
-    const float depth = dot(input.worldPosition - frame.cameraPosition, frame.cameraForward);
-    const float sceneDepth =
-        LinearDepth(frame, g_textures[g_particles.depthTexture].Load(int3(int2(input.clipPosition.xy), 0)).r);
-    alpha *= saturate((sceneDepth - depth) / max(effect.softness, 0.001));
+    float depth;
+    alpha *= SoftAlpha(frame, input, effect.softness, depth);
     if (alpha <= 0.001) {
         discard;
     }

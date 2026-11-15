@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 #include <daidalos/renderer/Material.hpp>
+#include <daidalos/renderer/Primitives.hpp>
 #include <daidalos/resources/ImageData.hpp>
 
 #include <glm/ext/matrix_transform.hpp>
@@ -13,6 +14,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -177,86 +179,95 @@ protected:
                                    // Pi lux: a white matte surface facing it reflects 1 nit (ADR-0043).
                                    .color = glm::vec3(glm::pi<float>())});
         }
-        ASSERT_TRUE(
-            Device()
-                .Submit([&](rhi::CommandList& commands) {
-                    // Every light casts shadows by rays: the frame's structure comes first.
-                    const core::Result<std::uint32_t> structure = m_scene->Reserve(0, view.draws.size());
-                    ASSERT_TRUE(structure.has_value());
-                    EXPECT_TRUE(m_pass
-                                    ->Prepare(view, {.extent = m_renderExtent,
-                                                     .targetExtent = kExtent,
-                                                     .accelerationStructure = *structure,
-                                                     .jitter = jitter,
-                                                     .frameIndex = m_frameIndex++})
-                                    .has_value());
-                    renderer::RenderGraph graph;
-                    m_pass->AddSkinning(graph);
-                    rhi::AccelerationStructureHandle traced;
-                    if (view.camera.has_value()) {
-                        ASSERT_TRUE(m_scene->Prepare(m_pass->TracedDraws()).has_value());
-                        m_scene->AddBuild(graph);
-                        traced = m_scene->Structure();
-                        m_pass->AddEmissiveLights(graph);
-                    }
-                    const rhi::BufferUse skinned{m_pass->SkinnedVertices(), rhi::Access::VertexInputRead};
-                    graph.AddPass(
-                        {.name = "G-buffer",
-                         .rendering =
-                             MeshPass::GBufferRendering(m_shading, m_normals, m_motion, m_depth, m_renderExtent),
-                         .buffers = {skinned, {m_pass->PreviousSkinnedPositions(), rhi::Access::VertexShaderRead}}},
-                        [&](rhi::CommandList& list) { m_pass->RecordGBuffer(list); });
-                    if (view.camera.has_value()) {
-                        m_lighting->AddTo(graph,
-                                          {.extent = m_renderExtent,
-                                           .frameBuffer = m_pass->FrameDataIndex(),
-                                           .instanceBuffer = m_pass->InstanceDataIndex(),
-                                           .materialBuffer = m_pass->MaterialDataIndex(),
-                                           .structure = traced,
-                                           .skinnedVertices = m_pass->SkinnedVertices(),
-                                           .emissiveTriangles = m_pass->EmissiveTriangles(),
-                                           .depth = m_depth,
-                                           .normals = m_normals,
-                                           .motion = m_motion,
-                                           .baseColor = m_shading.baseColor,
-                                           .emission = m_shading.emission,
-                                           .diffuse = m_shading.diffuse,
-                                           .specular = m_shading.specular,
-                                           .lightMap = m_pass->LightMapIndex(),
-                                           .previousLightCount = m_pass->PreviousLightCount(),
-                                           .frameIndex = m_frameIndex},
-                                          {});
-                    }
-                    if (denoiser != nullptr && view.camera.has_value()) {
-                        denoiser->AddTo(graph, {.extent = m_renderExtent,
-                                                .frameBuffer = m_pass->FrameDataIndex(),
-                                                .diffuse = m_shading.diffuse,
-                                                .specular = m_shading.specular,
-                                                .depth = m_depth,
-                                                .normals = m_normals,
-                                                .motion = m_motion});
-                    }
-                    const bool denoised = denoiser != nullptr && view.camera.has_value();
-                    if (view.camera.has_value()) {
-                        m_pass->AddComposite(graph, m_color,
-                                             {.shading = &m_shading,
-                                              .diffuse = denoised ? denoiser->Diffuse() : m_shading.diffuse,
-                                              .specular = denoised ? denoiser->Specular() : m_shading.specular,
-                                              .depth = m_depth});
-                    } else {
-                        // Nothing to put together: the frame is the background.
-                        graph.AddPass(
-                            {.name = "Clear",
-                             .rendering = rhi::RenderingDesc{.colorTarget = m_color, .clearColor = kBackground}},
-                            [](rhi::CommandList& /*list*/) {});
-                    }
-                    graph.Execute(commands);
-                    commands.Transition(m_color, rhi::TextureState::TransferSrc);
-                    commands.CopyTextureToBuffer(m_color, m_readback);
-                    commands.Transition(m_motion, rhi::TextureState::TransferSrc);
-                    commands.CopyTextureToBuffer(m_motion, m_motionReadback);
-                })
-                .has_value());
+        ASSERT_TRUE(Device()
+                        .Submit([&](rhi::CommandList& commands) {
+                            // Every light casts shadows by rays: the frame's structure comes first.
+                            const core::Result<std::uint32_t> structure = m_scene->Reserve(0, view.draws.size());
+                            ASSERT_TRUE(structure.has_value());
+                            EXPECT_TRUE(m_pass
+                                            ->Prepare(view, {.extent = m_renderExtent,
+                                                             .targetExtent = kExtent,
+                                                             .accelerationStructure = *structure,
+                                                             .jitter = jitter,
+                                                             .frameIndex = m_frameIndex++})
+                                            .has_value());
+                            renderer::RenderGraph graph;
+                            m_pass->AddSkinning(graph);
+                            rhi::AccelerationStructureHandle traced;
+                            if (view.camera.has_value()) {
+                                ASSERT_TRUE(m_scene->Prepare(m_pass->TracedDraws()).has_value());
+                                m_scene->AddBuild(graph);
+                                traced = m_scene->Structure();
+                                m_pass->AddEmissiveLights(graph);
+                            }
+                            if (m_beforeGBuffer) {
+                                m_beforeGBuffer(graph);
+                            }
+                            const rhi::BufferUse skinned{m_pass->SkinnedVertices(), rhi::Access::VertexInputRead};
+                            std::vector<rhi::BufferUse> buffers{
+                                skinned, {m_pass->PreviousSkinnedPositions(), rhi::Access::VertexShaderRead}};
+                            buffers.insert(buffers.end(), m_gbufferBuffers.begin(), m_gbufferBuffers.end());
+                            graph.AddPass({.name = "G-buffer",
+                                           .rendering = MeshPass::GBufferRendering(m_shading, m_normals, m_motion,
+                                                                                   m_depth, m_renderExtent),
+                                           .buffers = std::move(buffers)},
+                                          [&](rhi::CommandList& list) {
+                                              m_pass->RecordGBuffer(list);
+                                              if (m_inGBuffer) {
+                                                  m_inGBuffer(list);
+                                              }
+                                          });
+                            if (view.camera.has_value()) {
+                                m_lighting->AddTo(graph,
+                                                  {.extent = m_renderExtent,
+                                                   .frameBuffer = m_pass->FrameDataIndex(),
+                                                   .instanceBuffer = m_pass->InstanceDataIndex(),
+                                                   .materialBuffer = m_pass->MaterialDataIndex(),
+                                                   .structure = traced,
+                                                   .skinnedVertices = m_pass->SkinnedVertices(),
+                                                   .emissiveTriangles = m_pass->EmissiveTriangles(),
+                                                   .depth = m_depth,
+                                                   .normals = m_normals,
+                                                   .motion = m_motion,
+                                                   .baseColor = m_shading.baseColor,
+                                                   .emission = m_shading.emission,
+                                                   .diffuse = m_shading.diffuse,
+                                                   .specular = m_shading.specular,
+                                                   .lightMap = m_pass->LightMapIndex(),
+                                                   .previousLightCount = m_pass->PreviousLightCount(),
+                                                   .frameIndex = m_frameIndex},
+                                                  {});
+                            }
+                            if (denoiser != nullptr && view.camera.has_value()) {
+                                denoiser->AddTo(graph, {.extent = m_renderExtent,
+                                                        .frameBuffer = m_pass->FrameDataIndex(),
+                                                        .diffuse = m_shading.diffuse,
+                                                        .specular = m_shading.specular,
+                                                        .depth = m_depth,
+                                                        .normals = m_normals,
+                                                        .motion = m_motion});
+                            }
+                            const bool denoised = denoiser != nullptr && view.camera.has_value();
+                            if (view.camera.has_value()) {
+                                m_pass->AddComposite(graph, m_color,
+                                                     {.shading = &m_shading,
+                                                      .diffuse = denoised ? denoiser->Diffuse() : m_shading.diffuse,
+                                                      .specular = denoised ? denoiser->Specular() : m_shading.specular,
+                                                      .depth = m_depth});
+                            } else {
+                                // Nothing to put together: the frame is the background.
+                                graph.AddPass({.name = "Clear",
+                                               .rendering = rhi::RenderingDesc{.colorTarget = m_color,
+                                                                               .clearColor = kBackground}},
+                                              [](rhi::CommandList& /*list*/) {});
+                            }
+                            graph.Execute(commands);
+                            commands.Transition(m_color, rhi::TextureState::TransferSrc);
+                            commands.CopyTextureToBuffer(m_color, m_readback);
+                            commands.Transition(m_motion, rhi::TextureState::TransferSrc);
+                            commands.CopyTextureToBuffer(m_motion, m_motionReadback);
+                        })
+                        .has_value());
     }
 
     // The motion vector of a pixel, counted from the top-left corner: where its surface was in the previous
@@ -292,6 +303,10 @@ protected:
     rhi::TextureHandle m_motion;
     rhi::BufferHandle m_readback;
     rhi::BufferHandle m_motionReadback;
+    /// What a test adds before the G-buffer, and draws in it, with the buffers it reads there.
+    std::function<void(renderer::RenderGraph&)> m_beforeGBuffer;
+    std::function<void(rhi::CommandList&)> m_inGBuffer;
+    std::vector<rhi::BufferUse> m_gbufferBuffers;
 };
 
 } // namespace
@@ -676,7 +691,8 @@ protected:
         if (IsSkipped() || HasFatalFailure()) {
             return;
         }
-        core::Result<renderer::ParticlePass> particles = renderer::ParticlePass::Create(Device(), kColorFormat);
+        core::Result<renderer::ParticlePass> particles =
+            renderer::ParticlePass::Create(Device(), kColorFormat, kDepthFormat);
         ASSERT_TRUE(particles.has_value()) << core::Format(particles.error());
         m_particles.emplace(std::move(*particles));
         resources::ImageData image;
@@ -734,7 +750,7 @@ protected:
                 .softness = 0.001f};
     }
     renderer::ParticleEffectHandle Effect(const renderer::ParticleEffectDesc& desc) {
-        core::Result<renderer::ParticleEffectHandle> effect = m_particles->CreateEffect(desc);
+        core::Result<renderer::ParticleEffectHandle> effect = m_particles->CreateEffect(desc, *m_pass);
         EXPECT_TRUE(effect.has_value());
         return effect.value_or(renderer::ParticleEffectHandle{});
     }
@@ -805,7 +821,8 @@ protected:
                                                              .skinnedVertices = m_pass->SkinnedVertices(),
                                                              .emissiveTriangles = m_pass->EmissiveTriangles(),
                                                              .lightMap = m_pass->LightMapIndex(),
-                                                             .previousLightCount = m_pass->PreviousLightCount()})
+                                                             .previousLightCount = m_pass->PreviousLightCount()},
+                                                            *m_pass)
                                             .has_value());
                             m_particles->AddDraw(graph, m_pass->FrameDataIndex(), m_depth, m_color, m_reactive,
                                                  m_distortion, glm::vec3(1, 0, 0), glm::vec3(0, 1, 0));
@@ -814,6 +831,49 @@ protected:
                                                            m_distortion);
                             }
 
+                            graph.Execute(commands);
+                            commands.Transition(m_color, rhi::TextureState::TransferSrc);
+                            commands.CopyTextureToBuffer(m_color, m_readback);
+                        })
+                        .has_value());
+    }
+
+    // Renders the view with the particles simulated before its G-buffer, which draws mesh particles
+    // (ADR-0053); then, if quads, the particle pass over the frame.
+    void RenderWithMeshParticles(const SceneView& view, std::span<const renderer::ParticleSpawn> spawns, float step,
+                                 bool quads = false) {
+        SceneView particles = view;
+        particles.particleSpawns.assign(spawns.begin(), spawns.end());
+        particles.timeStep = step;
+        m_beforeGBuffer = [&](renderer::RenderGraph& graph) {
+            EXPECT_TRUE(m_particles
+                            ->AddSimulation(graph, particles, m_pass->FrameDataIndex(),
+                                            {.structure = m_scene->Structure(),
+                                             .instanceBuffer = m_pass->InstanceDataIndex(),
+                                             .materialBuffer = m_pass->MaterialDataIndex(),
+                                             .skinnedVertices = m_pass->SkinnedVertices(),
+                                             .emissiveTriangles = m_pass->EmissiveTriangles(),
+                                             .lightMap = m_pass->LightMapIndex(),
+                                             .previousLightCount = m_pass->PreviousLightCount()},
+                                            *m_pass)
+                            .has_value());
+        };
+        m_inGBuffer = [&](rhi::CommandList& list) {
+            m_particles->RecordMeshes(list, m_pass->FrameDataIndex(), *m_pass);
+        };
+        m_gbufferBuffers = m_particles->MeshBuffers();
+        Render(view);
+        m_beforeGBuffer = {};
+        m_inGBuffer = {};
+        m_gbufferBuffers.clear();
+        if (!quads) {
+            return;
+        }
+        ASSERT_TRUE(Device()
+                        .Submit([&](rhi::CommandList& commands) {
+                            renderer::RenderGraph graph;
+                            m_particles->AddDraw(graph, m_pass->FrameDataIndex(), m_depth, m_color, m_reactive,
+                                                 m_distortion, glm::vec3(1, 0, 0), glm::vec3(0, 1, 0));
                             graph.Execute(commands);
                             commands.Transition(m_color, rhi::TextureState::TransferSrc);
                             commands.CopyTextureToBuffer(m_color, m_readback);
@@ -1062,11 +1122,85 @@ TEST_F(ParticleTest, UpdatedEffectChangesTheParticlesAlive) {
     const renderer::ParticleSpawn spawn{.effect = effect, .count = 1};
     RenderWithParticles({TestCamera()}, std::span(&spawn, 1), kPastFadeIn);
     ASSERT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0));
-    EXPECT_TRUE(m_particles->UpdateEffect(effect, Square(m_white, {1.0f, 0.0f, 0.0f})));
+    EXPECT_TRUE(m_particles->UpdateEffect(effect, Square(m_white, {1.0f, 0.0f, 0.0f}), *m_pass));
     RenderWithParticles({TestCamera()}, {}, 0.1f);
     EXPECT_EQ(Pixel(32, 32), glm::ivec3(255, 0, 0));
     m_particles->DestroyEffect(effect);
-    EXPECT_FALSE(m_particles->UpdateEffect(effect, Square(m_white, {1.0f, 0.0f, 0.0f})));
+    EXPECT_FALSE(m_particles->UpdateEffect(effect, Square(m_white, {1.0f, 0.0f, 0.0f}), *m_pass));
+}
+
+namespace {
+
+// A mesh effect: particles that are a green cube a meter across, which stay where they appear.
+renderer::ParticleEffectDesc Cubes(MeshHandle cube, MaterialHandle green) {
+    return {.lifetime = {10.0f, 10.0f}, .size = {1.0f, 1.0f}, .mesh = cube, .material = green};
+}
+
+// A ribbon of one color across the view, at a depth, a meter wide.
+renderer::Ribbon Band(const glm::vec4& color, float z) {
+    return {.additive = false,
+            .softness = 0.001f,
+            .points = {{.position = {-3.0f, 0.0f, z}, .width = 1.0f, .color = color, .u = 0.0f},
+                       {.position = {3.0f, 0.0f, z}, .width = 1.0f, .color = color, .u = 1.0f}}};
+}
+
+} // namespace
+
+TEST_F(ParticleTest, MeshParticleIsASurfaceOfTheGBuffer) {
+    const MeshHandle cube = Mesh(renderer::MakeCube());
+    const renderer::ParticleSpawn spawn{.effect = Effect(Cubes(cube, Material({0.0f, 1.0f, 0.0f}))), .count = 1};
+    RenderWithMeshParticles({TestCamera()}, std::span(&spawn, 1), 0.1f);
+    const glm::ivec3 center = Pixel(32, 32);
+    EXPECT_GT(center.g, 100) << "lit like any surface";
+    EXPECT_LT(center.r, 20);
+    EXPECT_LT(center.b, 20);
+    EXPECT_EQ(Pixel(2, 2), Pixel(2, 62)) << "nothing around it";
+}
+
+TEST_F(ParticleTest, MeshParticlesAreNotDrawnAsQuads) {
+    const MeshHandle cube = Mesh(renderer::MakeCube());
+    const renderer::ParticleSpawn spawn{.effect = Effect(Cubes(cube, Material({0.0f, 1.0f, 0.0f}))), .count = 1};
+    RenderWithMeshParticles({TestCamera()}, std::span(&spawn, 1), 0.1f);
+    const glm::ivec3 lit = Pixel(32, 32);
+    RenderWithMeshParticles({TestCamera()}, {}, 0.1f, true);
+    EXPECT_EQ(Pixel(32, 32), lit);
+}
+
+TEST_F(ParticleTest, MeshParticleScalesWithItsSize) {
+    const MeshHandle cube = Mesh(renderer::MakeCube());
+    renderer::ParticleEffectDesc desc = Cubes(cube, Material({0.0f, 1.0f, 0.0f}));
+    desc.size = {3.0f, 3.0f};
+    const renderer::ParticleSpawn spawn{.effect = Effect(desc), .count = 1};
+    RenderWithMeshParticles({TestCamera()}, std::span(&spawn, 1), 0.1f);
+    // 1.2 m from the middle: inside a cube of 3 m, not of 1 m. The cube's front is nearer the camera.
+    EXPECT_GT(Pixel(static_cast<std::uint32_t>(32.0f + 1.2f * kPixelsPerMeter), 32).g, 100);
+}
+
+TEST_F(ParticleTest, RibbonIsDrawnAlongItsPoints) {
+    SceneView view{TestCamera()};
+    view.ribbons.push_back(Band({0.0f, 1.0f, 0.0f, 1.0f}, 0.0f));
+    RenderWithParticles(view, {}, 0.1f);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 255, 0));
+    EXPECT_EQ(Pixel(4, 32), glm::ivec3(0, 255, 0)) << "along it";
+    EXPECT_NE(Pixel(32, static_cast<std::uint32_t>(32.0f + 1.0f * kPixelsPerMeter)), glm::ivec3(0, 255, 0))
+        << "half a meter either side, no more";
+}
+
+TEST_F(ParticleTest, RibbonsSortWithParticles) {
+    const renderer::ParticleSpawn nearParticle{
+        .effect = Effect({1.0f, 0.0f, 0.0f}), .position = {0.0f, 0.0f, 1.0f}, .count = 1};
+    SceneView behind{TestCamera()};
+    behind.ribbons.push_back(Band({0.0f, 0.0f, 1.0f, 1.0f}, -1.0f));
+    RenderWithParticles(behind, std::span(&nearParticle, 1), kPastFadeIn);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(255, 0, 0)) << "the particle in front of the ribbon";
+
+    RenderWithParticles({TestCamera()}, {}, 1000.0f);
+    const renderer::ParticleSpawn farParticle{
+        .effect = Effect({1.0f, 0.0f, 0.0f}), .position = {0.0f, 0.0f, -1.0f}, .count = 1};
+    SceneView front{TestCamera()};
+    front.ribbons.push_back(Band({0.0f, 0.0f, 1.0f, 1.0f}, 1.0f));
+    RenderWithParticles(front, std::span(&farParticle, 1), kPastFadeIn);
+    EXPECT_EQ(Pixel(32, 32), glm::ivec3(0, 0, 255)) << "the ribbon in front of the particle";
 }
 
 namespace {

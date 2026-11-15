@@ -1,0 +1,16 @@
+{
+    "comment": "A pane breaking: dark shards burst out, tumble, and lie where they land.",
+    "mesh": "Meshes/shard.glb",
+    "collision": "bounce",
+    "bounce": 0.2,
+    "lifetime": [6, 8],
+    "size": [0.6, 1.5],
+    "shape": "box",
+    "spawnBox": [0.3, 0.3, 0.02],
+    "spread": 60,
+    "speed": [0.5, 2.5],
+    "gravity": 1,
+    "drag": 0.2,
+    "rotationSpeed": 720,
+    "emitter": { "rate": 0, "bursts": [{ "time": 0, "count": 40, "interval": 5 }] }
+}

@@ -86,6 +86,10 @@ public:
             app.CVars()
                 .Register<std::string>("sandbox.start", "", "Where to start: 'x y z yaw pitch', in meters and degrees")
                 .Get();
+        m_showcase = app.CVars()
+                         .Register<bool>("sandbox.showcase", false,
+                                         "Put the effects of mesh particles and ribbons in front of the start")
+                         .Get();
         m_menuAtStart =
             app.CVars()
                 .Register<bool>("sandbox.menu", true, "Show the main menu at the start; false plays at once")
@@ -375,6 +379,17 @@ private:
         }
         sandbox::AddSystems(target, app.Input(), m_actions, m_settings);
         ApplyStart(target);
+        if (m_showcase) {
+            // In front of where the player starts; entities are created after the search.
+            std::optional<std::pair<glm::vec3, float>> start;
+            target.World().Each<sandbox::Player, ecs::LocalTransform>(
+                [&](ecs::Entity /*entity*/, const sandbox::Player& player, const ecs::LocalTransform& transform) {
+                    start.emplace(transform.translation, player.yaw);
+                });
+            if (start) {
+                sandbox::AddEffectShowcase(target, m_levelPath, start->first, start->second);
+            }
+        }
         return {};
     }
 
@@ -572,6 +587,8 @@ private:
     bool m_calibrated = false;
     bool m_settingsChanged = false;
     bool m_menuAtStart = true;
+    /// sandbox.showcase: the effects of mesh particles and ribbons in front of the start.
+    bool m_showcase = false;
     bool m_resumePending = false;
     /// Seconds of play in this level, and since it ended, by death or victory.
     float m_playSeconds = 0.0f;

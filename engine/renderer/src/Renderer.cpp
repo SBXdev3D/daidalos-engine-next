@@ -22,6 +22,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <utility>
@@ -424,7 +425,7 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     DAI_TRY_ASSIGN(GlobalIllumination globalIllumination, GlobalIllumination::Create(impl->device));
     impl->globalIllumination.emplace(std::move(globalIllumination));
     impl->indirectLight = config.indirectLight;
-    DAI_TRY_ASSIGN(ParticlePass particlePass, ParticlePass::Create(impl->device, kHdrFormat));
+    DAI_TRY_ASSIGN(ParticlePass particlePass, ParticlePass::Create(impl->device, kHdrFormat, kDepthFormat));
     impl->particlePass.emplace(std::move(particlePass));
     DAI_TRY_ASSIGN(TemporalResolvePass temporalResolve, TemporalResolvePass::Create(impl->device));
     impl->temporalResolve.emplace(std::move(temporalResolve));
@@ -485,11 +486,11 @@ void Renderer::DestroyMaterial(MaterialHandle material) {
 }
 
 core::Result<ParticleEffectHandle> Renderer::CreateParticleEffect(const ParticleEffectDesc& desc) {
-    return m_impl->particlePass->CreateEffect(desc);
+    return m_impl->particlePass->CreateEffect(desc, *m_impl->meshPass);
 }
 
 bool Renderer::UpdateParticleEffect(ParticleEffectHandle effect, const ParticleEffectDesc& desc) {
-    return m_impl->particlePass->UpdateEffect(effect, desc);
+    return m_impl->particlePass->UpdateEffect(effect, desc, *m_impl->meshPass);
 }
 
 void Renderer::DestroyParticleEffect(ParticleEffectHandle effect) {
@@ -739,12 +740,35 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         impl.rayTracing->AddBuild(graph);
         impl.meshPass->AddEmissiveLights(graph);
     }
+    // Particles move before the G-buffer, which draws mesh particles (ADR-0053).
+    if (status && hasFrame) {
+        status = impl.particlePass->AddSimulation(graph, view, impl.meshPass->FrameDataIndex(),
+                                                  {.structure = impl.rayTracing->Structure(),
+                                                   .instanceBuffer = impl.meshPass->InstanceDataIndex(),
+                                                   .materialBuffer = impl.meshPass->MaterialDataIndex(),
+                                                   .skinnedVertices = impl.meshPass->SkinnedVertices(),
+                                                   .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
+                                                   .lightMap = impl.meshPass->LightMapIndex(),
+                                                   .previousLightCount = impl.meshPass->PreviousLightCount()},
+                                                  *impl.meshPass);
+    }
     if (status) {
+        const bool meshParticles = hasFrame && impl.particlePass->HasMeshes();
+        std::vector<rhi::BufferUse> buffers{skinnedVertices,
+                                            {impl.meshPass->PreviousSkinnedPositions(), rhi::Access::VertexShaderRead}};
+        if (meshParticles) {
+            std::ranges::copy(impl.particlePass->MeshBuffers(), std::back_inserter(buffers));
+        }
         graph.AddPass(
             {.name = "G-buffer",
              .rendering = MeshPass::GBufferRendering(impl.shading, impl.normals, impl.motion, impl.depth, renderExtent),
-             .buffers = {skinnedVertices, {impl.meshPass->PreviousSkinnedPositions(), rhi::Access::VertexShaderRead}}},
-            [&impl](rhi::CommandList& commands) { impl.meshPass->RecordGBuffer(commands); });
+             .buffers = std::move(buffers)},
+            [&impl, meshParticles](rhi::CommandList& commands) {
+                impl.meshPass->RecordGBuffer(commands);
+                if (meshParticles) {
+                    impl.particlePass->RecordMeshes(commands, impl.meshPass->FrameDataIndex(), *impl.meshPass);
+                }
+            });
     }
     // Indirect light: the cache forgets the last scene after a cut, and whatever it held while it was off.
     const bool illuminate = status && hasFrame && indirectLight;
@@ -774,16 +798,6 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                                  : GlobalIllumination::Mode::Indirect);
     }
     impl.illuminated = illuminate;
-    if (hasFrame) {
-        status = impl.particlePass->AddSimulation(graph, view, impl.meshPass->FrameDataIndex(),
-                                                  {.structure = impl.rayTracing->Structure(),
-                                                   .instanceBuffer = impl.meshPass->InstanceDataIndex(),
-                                                   .materialBuffer = impl.meshPass->MaterialDataIndex(),
-                                                   .skinnedVertices = impl.meshPass->SkinnedVertices(),
-                                                   .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
-                                                   .lightMap = impl.meshPass->LightMapIndex(),
-                                                   .previousLightCount = impl.meshPass->PreviousLightCount()});
-    }
     // The light of the frame's lights, and the indirect light, at each pixel of the G-buffer (ADR-0044). A
     // frame that does not follow the last one lit reuses nothing from it.
     const bool lightsView = impl.debugView == DebugView::Lights;

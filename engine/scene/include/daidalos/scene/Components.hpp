@@ -13,6 +13,8 @@
 #include <glm/trigonometric.hpp>
 
 #include <cstdint>
+#include <deque>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -181,6 +183,76 @@ struct ParticleEmitter {
     /// Where it was last frame, once it has emitted.
     std::optional<glm::vec3> lastPosition;
     /// From 1 while it emits to 0 once it has stopped for a while: how bright its light is.
+    float activity = 0.0f;
+};
+
+/// The shape of a ribbon (ADR-0053).
+enum class RibbonShape : std::uint8_t {
+    /// Straight from the emitter to its target: a beam, a laser.
+    Line,
+    /// The line split again and again at its middle, each middle pushed aside, with branches; a new shape
+    /// every refresh seconds: an electric arc, lightning.
+    Bolt,
+    /// Where the emitter has been over the last duration seconds: a trail, a wisp.
+    Trail,
+};
+
+/// What a ribbon looks like and how it is built, as a ribbon file gives it (`.ribbon.json`, ADR-0053).
+/// Distances are meters, times seconds.
+struct RibbonEffect {
+    /// Repeats along the ribbon and spans it across; null for plain color.
+    rhi::TextureHandle texture;
+    bool additive = true;
+    /// Meters over which it fades into a surface behind it.
+    float softness = 0.05f;
+    RibbonShape shape = RibbonShape::Line;
+    /// Linear color and opacity, and width, along the ribbon: from its start (0) to its end (1). A trail
+    /// starts at the emitter, with its newest point.
+    std::vector<renderer::ParticleColorKey> color{{0.0f, glm::vec4(1.0f)}};
+    std::vector<renderer::ParticleCurveKey> width{{0.0f, 0.05f}};
+    /// A line or bolt without a target goes this far along the emitter's +Y.
+    float length = 1.0f;
+    /// Meters of ribbon per repeat of the texture, and repeats per second it moves along, towards the end.
+    float tiling = 1.0f;
+    float scroll = 0.0f;
+    /// Bolt: times the line is split, how far a middle is pushed aside at the first split (a fraction of
+    /// the length, halved at each split after), the chance that a middle starts a branch, the seconds between
+    /// new shapes, and how much dimmer a new shape can be.
+    std::uint32_t generations = 5;
+    float displacement = 0.15f;
+    float branches = 0.0f;
+    float refresh = 0.05f;
+    float flicker = 0.0f;
+    /// Trail: how long its points last, and how far apart they are kept.
+    float duration = 0.5f;
+    float spacing = 0.05f;
+    /// The light it gives off while enabled (EmitterLight), at its middle, or a trail's newest point.
+    std::optional<EmitterLight> light;
+};
+
+/// ECS component: a ribbon at the entity's WorldTransform, built each frame (ADR-0053). Disabling it hides
+/// it, and fades its light.
+struct RibbonEmitter {
+    std::shared_ptr<const RibbonEffect> effect;
+    /// Where a line or bolt ends, if alive: the entity's world position.
+    ecs::Entity target;
+    bool enabled = true;
+
+    /// Seconds since it started: the texture's scroll, the light's flicker.
+    float age = 0.0f;
+    /// A bolt's shape, as lines across the frame of its line (along it from 0 to 1, aside in fractions of
+    /// its length): the bolt first, then its branches. Kept between refreshes.
+    std::vector<std::vector<glm::vec3>> bolt;
+    float sinceShape = std::numeric_limits<float>::infinity();
+    float brightness = 1.0f;
+    std::uint32_t shapes = 0;
+    /// A trail's points, newest first, with the age at which each was left.
+    struct TrailPoint {
+        glm::vec3 position{0.0f};
+        float age = 0.0f;
+    };
+    std::deque<TrailPoint> trail;
+    /// From 1 while enabled to 0 once it has been disabled a while: how bright its light is.
     float activity = 0.0f;
 };
 
