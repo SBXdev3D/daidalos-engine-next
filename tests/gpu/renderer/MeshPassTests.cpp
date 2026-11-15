@@ -694,6 +694,20 @@ protected:
                                     .name = "Reactive"});
         ASSERT_TRUE(reactive.has_value());
         m_reactive = *reactive;
+        const core::Result<rhi::TextureHandle> distortion =
+            Device().CreateTexture({.extent = kExtent,
+                                    .format = renderer::ParticlePass::kDistortionFormat,
+                                    .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
+                                    .name = "Distortion"});
+        ASSERT_TRUE(distortion.has_value());
+        m_distortion = *distortion;
+        const core::Result<rhi::TextureHandle> background =
+            Device().CreateTexture({.extent = kExtent,
+                                    .format = kColorFormat,
+                                    .usage = rhi::TextureUsage::TransferDst | rhi::TextureUsage::Sampled,
+                                    .name = "Background"});
+        ASSERT_TRUE(background.has_value());
+        m_background = *background;
     }
 
     void TearDown() override {
@@ -704,6 +718,8 @@ protected:
             }
             Device().DestroyTexture(m_white);
             Device().DestroyTexture(m_reactive);
+            Device().DestroyTexture(m_distortion);
+            Device().DestroyTexture(m_background);
         }
         MeshPassTest::TearDown();
     }
@@ -730,6 +746,25 @@ protected:
         RenderWithParticles({TestCamera()}, {}, 1000.0f);
         const renderer::ParticleSpawn spawn{.effect = Effect(desc), .count = 1};
         RenderWithParticles({TestCamera()}, std::span(&spawn, 1), step);
+    }
+
+    // A texture of one color.
+    rhi::TextureHandle Solid(std::uint8_t red, std::uint8_t green, std::uint8_t blue) {
+        resources::ImageData image;
+        image.width = 1;
+        image.height = 1;
+        image.format = resources::PixelFormat::Rgba8Unorm;
+        image.pixels = {std::byte{red}, std::byte{green}, std::byte{blue}, std::byte{255}};
+        core::Result<rhi::TextureHandle> texture = renderer::CreateTexture(Device(), image, "Solid");
+        EXPECT_TRUE(texture.has_value());
+        m_textures.push_back(texture.value_or(rhi::TextureHandle{}));
+        return m_textures.back();
+    }
+
+    // The brightness of the pixel at the center: the green of a lit white particle.
+    int LitCenter(const renderer::ParticleEffectDesc& desc) {
+        RenderOne(desc, kPastFadeIn);
+        return Pixel(32, 32).g;
     }
 
     // A flipbook of two frames side by side, red then blue, each two pixels wide so that filtering at a
@@ -773,7 +808,11 @@ protected:
                                                              .previousLightCount = m_pass->PreviousLightCount()})
                                             .has_value());
                             m_particles->AddDraw(graph, m_pass->FrameDataIndex(), m_depth, m_color, m_reactive,
-                                                 glm::vec3(1, 0, 0), glm::vec3(0, 1, 0));
+                                                 m_distortion, glm::vec3(1, 0, 0), glm::vec3(0, 1, 0));
+                            if (m_particles->HasDistortion()) {
+                                m_particles->AddDistortion(graph, m_pass->FrameDataIndex(), m_color, m_background,
+                                                           m_distortion);
+                            }
 
                             graph.Execute(commands);
                             commands.Transition(m_color, rhi::TextureState::TransferSrc);
@@ -792,6 +831,8 @@ protected:
     rhi::TextureHandle m_white;
     std::vector<rhi::TextureHandle> m_textures;
     rhi::TextureHandle m_reactive;
+    rhi::TextureHandle m_distortion;
+    rhi::TextureHandle m_background;
 };
 
 } // namespace
@@ -1195,6 +1236,66 @@ TEST_F(ParticleTest, AttractorsPullTheirEffectOnly) {
             EXPECT_EQ(Pixel(start, 32), glm::ivec3(0, 255, 0)) << "another effect";
         }
     }
+}
+
+TEST_F(ParticleTest, SmokeScattersLightOnwardsByItsAnisotropy) {
+    // The test's light shines from behind the camera, along its view: the smoke sends it back towards the
+    // camera, which a smoke that scatters forwards does less, and one that scatters backwards more.
+    renderer::ParticleEffectDesc desc = Square(m_white, glm::vec3(0.1f));
+    desc.lit = true;
+    const int even = LitCenter(desc);
+    ASSERT_GT(even, 10);
+    ASSERT_LT(even, 160) << "not saturated, so that it can grow";
+    desc.anisotropy = 0.6f;
+    EXPECT_LT(LitCenter(desc), even * 2 / 3) << "forwards";
+    desc.anisotropy = -0.6f;
+    EXPECT_GT(LitCenter(desc), even * 3 / 2) << "backwards";
+}
+
+TEST_F(ParticleTest, SixWayLightMapsShadeByTheLightsSide) {
+    // The light comes from the camera's side, the front of the image: the front map lights it.
+    renderer::ParticleEffectDesc desc = Square(m_white, glm::vec3(0.1f));
+    desc.lit = true;
+    desc.lightPositive = Solid(0, 0, 255);
+    desc.lightNegative = Solid(0, 0, 0);
+    const int front = LitCenter(desc);
+    desc.lightPositive = Solid(0, 0, 0);
+    desc.lightNegative = Solid(0, 0, 255);
+    const int back = LitCenter(desc);
+    EXPECT_GT(front, 10);
+    EXPECT_LE(back, 1) << "lit only from behind";
+}
+
+TEST_F(ParticleTest, DistortionBendsTheFrameBehindItOnly) {
+    // A wall red on the left and green on the right: heat haze over the seam mixes them up there.
+    const SceneView view{
+        TestCamera(),
+        {{Mesh(MakeQuad(-3.0f, 0.0f, -3.0f, 3.0f, -1.0f)), glm::mat4(1.0f), Material({1.0f, 0.0f, 0.0f})},
+         {Mesh(MakeQuad(0.0f, 3.0f, -3.0f, 3.0f, -1.0f)), glm::mat4(1.0f), Material({0.0f, 1.0f, 0.0f})}}};
+    RenderWithParticles(view, {}, 1000.0f);
+    std::vector<glm::ivec3> before;
+    for (std::uint32_t y = 0; y < kExtent.height; ++y) {
+        for (std::uint32_t x = 0; x < kExtent.width; ++x) {
+            before.push_back(Pixel(x, y));
+        }
+    }
+    renderer::ParticleEffectDesc desc = Square(m_white, glm::vec3(1.0f));
+    desc.distortion = 0.08f;
+    const renderer::ParticleSpawn spawn{.effect = Effect(desc), .count = 1};
+    RenderWithParticles(view, std::span(&spawn, 1), kPastFadeIn);
+    std::uint32_t changedInside = 0;
+    std::uint32_t changedOutside = 0;
+    for (std::uint32_t y = 0; y < kExtent.height; ++y) {
+        for (std::uint32_t x = 0; x < kExtent.width; ++x) {
+            const bool inside = std::abs(static_cast<int>(x) - 32) <= 9 && std::abs(static_cast<int>(y) - 32) <= 9;
+            // The lit wall's own noise moves pixels a little from frame to frame; red and green swapped, a lot.
+            const glm::ivec3 difference = glm::abs(Pixel(x, y) - before[std::size_t{y} * kExtent.width + x]);
+            const bool changed = std::max({difference.r, difference.g, difference.b}) > 64;
+            (inside ? changedInside : changedOutside) += changed ? 1U : 0U;
+        }
+    }
+    EXPECT_GT(changedInside, 4U) << "around the seam, behind the haze";
+    EXPECT_EQ(changedOutside, 0U) << "beyond the particle, whose square reaches 8 pixels at most";
 }
 
 TEST_F(MeshPassTest, DestroyedMeshIsSkipped) {

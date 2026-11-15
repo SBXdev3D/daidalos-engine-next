@@ -1,0 +1,34 @@
+{
+    "comment": "Flames from a burner or a barrel, and the flickering light they give off.",
+    "texture": "fire.ktx2",
+    "columns": 8,
+    "rows": 8,
+    "frames": 64,
+    "frameRate": 30,
+    "loop": true,
+    "randomStartFrame": true,
+    "color": [[0, [1, 1, 1, 1]], [0.7, [1, 1, 1, 1]], [1, [1, 1, 1, 0]]],
+    "fadeIn": 0.15,
+    "emissionOverLife": 6,
+    "additive": true,
+    "lit": false,
+    "lifetime": [0.6, 0.9],
+    "size": [0.6, 0.8],
+    "sizeOverLife": [[0, 0.8], [1, 1.1]],
+    "orientation": "axis",
+    "spawnRadius": 0.08,
+    "speed": [0.1, 0.2],
+    "softness": 0.1,
+    "emitter": {
+        "rate": 12
+    },
+    "light": {
+        "temperature": 1900,
+        "intensity": 60,
+        "range": 6,
+        "radius": 0.2,
+        "offset": [0, 0.4, 0],
+        "flickerRate": 7,
+        "flickerDepth": 0.35
+    }
+}

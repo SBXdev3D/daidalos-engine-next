@@ -163,6 +163,19 @@ struct ParticleEffectDesc {
     /// Meters per second squared of swirling air, curl noise whose eddies are turbulenceScale meters across.
     float turbulence = 0.0f;
     float turbulenceScale = 1.0f;
+
+    /// Lit particles scatter the light they take as smoke does (ADR-0053), by the Henyey-Greenstein phase
+    /// function: from -1, back towards the light, through 0, the same everywhere, to 1, on forwards, which
+    /// makes smoke glow between the camera and a light.
+    float anisotropy = 0.0f;
+    /// Six-way light maps of a lit flipbook, laid out as its texture (texture-tool flipbook): how much of a
+    /// light from its right, top and front reaches the eye, in RGB, then from its left, bottom and back. The
+    /// particle is shaded with the direction of its light. Both or neither.
+    rhi::TextureHandle lightPositive;
+    rhi::TextureHandle lightNegative;
+    /// A distortion effect draws nothing: it bends the frame behind it, as heat haze, by up to this fraction
+    /// of the frame's height, where its texture's opacity is full.
+    float distortion = 0.0f;
     /// Radians per second, either way.
     float rotationSpeed = 0.0f;
     /// Meters over which a particle fades into a surface behind it, so that it does not cut through it.

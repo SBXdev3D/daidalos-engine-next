@@ -265,6 +265,8 @@ constexpr std::uint64_t kInitialFogVolumeCapacity = 8;
 /// moved: the histories that its light fills must follow it at once.
 constexpr float kMovedDistance = 0.001f;
 constexpr float kMovedCosine = 0.99999f;
+/// Or whose brightness changed by more than this fraction.
+constexpr float kMovedBrightness = 0.01f;
 /// Grows an array of a frame slot to hold count elements, doubling, and never to zero. The CPU writes it,
 /// unless it is in GPU memory.
 core::Result<void> Reserve(rhi::Device& device, rhi::BufferHandle& buffer, std::uint64_t& capacity, std::uint64_t count,
@@ -733,7 +735,7 @@ core::Result<MeshPass::FrameLights> MeshPass::PrepareLights(FrameSlot& slot, con
     std::vector<LightRange> ranges;
     // Lights that moved since the last frame, whose light the histories must follow at once.
     std::vector<bool> moved;
-    std::unordered_map<std::uint64_t, std::pair<glm::vec3, glm::vec3>> places;
+    std::unordered_map<std::uint64_t, LightPlace> places;
     for (std::uint32_t index = 0; index < lightCount; ++index) {
         const Light& light = view.lights[index];
         lights[index] = ToGpu(light, exposure);
@@ -744,10 +746,14 @@ core::Result<MeshPass::FrameLights> MeshPass::PrepareLights(FrameSlot& slot, con
         const std::uint64_t key = IdentityKey(light.id, index);
         ranges.push_back({key, index, 1});
         const auto previous = m_previousPlaces.find(key);
+        // A light that changed its brightness, as a flickering flame, moved too (ADR-0053).
+        const float brightness = glm::dot(light.color, glm::vec3(0.2126f, 0.7152f, 0.0722f));
         moved.push_back(previous != m_previousPlaces.end() &&
-                        (glm::distance(previous->second.first, light.position) > kMovedDistance ||
-                         glm::dot(previous->second.second, light.direction) < kMovedCosine));
-        places.emplace(key, std::make_pair(light.position, light.direction));
+                        (glm::distance(previous->second.position, light.position) > kMovedDistance ||
+                         glm::dot(previous->second.direction, light.direction) < kMovedCosine ||
+                         std::abs(previous->second.brightness - brightness) >
+                             kMovedBrightness * std::max(previous->second.brightness, brightness)));
+        places.emplace(key, LightPlace{light.position, light.direction, brightness});
     }
     m_previousPlaces = std::move(places);
 

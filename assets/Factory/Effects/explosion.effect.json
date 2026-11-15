@@ -1,0 +1,27 @@
+{
+    "comment": "A fireball that swells, burns out into smoke, and flashes light around it, once per burst.",
+    "texture": "explosion.ktx2",
+    "columns": 8,
+    "rows": 8,
+    "frames": 64,
+    "loop": false,
+    "color": [[0, [1, 1, 1, 1]], [0.8, [1, 1, 1, 1]], [1, [1, 1, 1, 0]]],
+    "fadeIn": 0.02,
+    "emissionOverLife": [[0, 8], [0.4, 2], [1, 0.3]],
+    "lit": false,
+    "lifetime": [1.6, 1.6],
+    "size": [3, 3],
+    "orientation": "camera",
+    "softness": 0.5,
+    "emitter": {
+        "rate": 0,
+        "bursts": [{"time": 0, "count": 1}]
+    },
+    "light": {
+        "temperature": 2200,
+        "intensity": 400,
+        "range": 12,
+        "radius": 0.5,
+        "fade": 0.4
+    }
+}

@@ -117,6 +117,7 @@ struct Renderer::Impl {
         device.DestroyPipeline(gbufferDebug);
         device.DestroyTexture(motion);
         device.DestroyTexture(reactive);
+        device.DestroyTexture(distortion);
         device.DestroyTexture(depth);
         device.DestroyTexture(normals);
         device.DestroyTexture(hdr);
@@ -234,6 +235,8 @@ struct Renderer::Impl {
     rhi::TextureHandle motion;
     /// The particles' coverage, where temporal antialiasing trusts its history less.
     rhi::TextureHandle reactive;
+    /// How far distortion particles bend the frame (ADR-0053).
+    rhi::TextureHandle distortion;
     rhi::Extent targetExtent;
     bool vsync;
     /// Stops added to the scene's exposure (ADR-0043).
@@ -265,6 +268,7 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
     device.DestroyTexture(normals);
     device.DestroyTexture(motion);
     device.DestroyTexture(reactive);
+    device.DestroyTexture(distortion);
     device.DestroyTexture(hdr);
     device.DestroyTexture(background);
     device.DestroyTexture(interfaceLayer);
@@ -273,6 +277,7 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
     normals = {};
     motion = {};
     reactive = {};
+    distortion = {};
     hdr = {};
     background = {};
     interfaceLayer = {};
@@ -285,6 +290,11 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
                                                    .format = ParticlePass::kReactiveFormat,
                                                    .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
                                                    .name = "Reactive"}));
+    DAI_TRY_ASSIGN(distortion,
+                   device.CreateTexture({.extent = extent,
+                                         .format = ParticlePass::kDistortionFormat,
+                                         .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
+                                         .name = "Distortion"}));
     DAI_TRY_ASSIGN(motion, device.CreateTexture({.extent = extent,
                                                  .format = MeshPass::kMotionFormat,
                                                  .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
@@ -854,7 +864,13 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     if (status && hasFrame) {
         const glm::mat4 cameraWorld = glm::inverse(view.camera->view);
         impl.particlePass->AddDraw(graph, impl.meshPass->FrameDataIndex(), impl.depth, impl.hdr, impl.reactive,
-                                   glm::vec3(cameraWorld[0]), glm::vec3(cameraWorld[1]), renderExtent, fogTexture);
+                                   impl.distortion, glm::vec3(cameraWorld[0]), glm::vec3(cameraWorld[1]), renderExtent,
+                                   fogTexture);
+        // Heat haze bends the frame before glass copies it, so that glass shows it too (ADR-0053).
+        if (impl.particlePass->HasDistortion()) {
+            impl.particlePass->AddDistortion(graph, impl.meshPass->FrameDataIndex(), impl.hdr, impl.background,
+                                             impl.distortion, renderExtent);
+        }
     }
     // Glass, over everything else, which it reads from a copy of the frame (ADR-0042).
     if (status && hasFrame && impl.meshPass->HasGlass()) {

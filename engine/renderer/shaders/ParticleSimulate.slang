@@ -52,8 +52,19 @@ void Merge(inout Reservoir combined, Reservoir added, float target, float share,
     Stream(combined, added.light, added.u, share * target * added.weight, target, pick);
 }
 
-// The particle's reservoir after this frame, and the light it sends.
-float3 LightSmoke(FrameData frame, Receiver receiver, inout uint4 stored, bool first, uint seed) {
+// How much of the light a puff scatters towards the camera, relative to a puff that scatters it the same
+// way everywhere (ADR-0053): the Henyey-Greenstein phase function, times 4 pi. light travels from the light,
+// view goes to the camera; anisotropy above 0 sends it on forwards, so smoke glows lit from behind.
+float PhaseScale(float anisotropy, float3 light, float3 view) {
+    const float g = clamp(anisotropy, -0.95, 0.95);
+    const float denominator = 1.0 + g * g - 2.0 * g * dot(light, view);
+    return (1.0 - g * g) / (denominator * sqrt(denominator));
+}
+
+// The particle's reservoir after this frame, and the light it sends towards view, scattered with the
+// anisotropy; direction is set towards the light it kept, if any.
+float3 LightSmoke(FrameData frame, Receiver receiver, inout uint4 stored, bool first, uint seed, float3 view,
+                  float anisotropy, inout float3 direction) {
     uint random = Pcg(seed);
     Reservoir history = Unpack(stored);
     history.count = first ? 0.0 : min(history.count, kMaxHistory);
@@ -86,7 +97,9 @@ float3 LightSmoke(FrameData frame, Receiver receiver, inout uint4 stored, bool f
     if (combined.light != kNoLight) {
         const LightContact contact = ContactLight(frame, combined.light, combined.u, receiver);
         if (Unoccluded(frame, receiver, contact, g_particles.instanceBuffer, g_particles.materialBuffer)) {
-            light = contact.illuminance * Reflected(receiver, LightTerms(receiver, contact)) * combined.weight;
+            light = contact.illuminance * Reflected(receiver, LightTerms(receiver, contact)) * combined.weight *
+                    PhaseScale(anisotropy, -contact.toLight, view);
+            direction = contact.toLight;
         } else {
             // Hidden: the next frame does not keep it.
             combined.light = kNoLight;
@@ -320,8 +333,10 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     if ((effect.flags & kEffectLit) != 0) {
         const bool first = particle.lightSamples <= 0.0;
         const float radius = particle.size * scales.x * 0.5;
+        const float3 view = normalize(frame.cameraPosition - particle.position + 0.0001);
         const float3 sampled = LightSmoke(frame, SmokeReceiver(frame, particle.position, radius), particle.reservoir,
-                                          first, index * 9781u + g_particles.seed * 26699u);
+                                          first, index * 9781u + g_particles.seed * 26699u, view, effect.anisotropy,
+                                          particle.lightDirection);
         particle.light = first ? sampled : lerp(particle.light, sampled, kLightBlend);
         particle.lightSamples = min(particle.lightSamples + 1.0, 1.0 / kLightBlend);
     }

@@ -28,10 +28,8 @@ struct Particle {
     uint4 reservoir;    // The light it keeps choosing (Lights.slangh, Pack).
     float3 axis;        // The effect's axis, turned like the emitter was (ADR-0053).
     float startFrame;   // Its first frame of the flipbook.
-    uint state;         // kParticleResting once it has come to rest on a surface.
-    float padding0;
-    float padding1;
-    float padding2;
+    float3 lightDirection; // Towards the light it chose, for six-way light maps; 0 until it has one.
+    uint state;            // kParticleResting once it has come to rest on a surface.
 };
 
 static const uint kParticleResting = 1;
@@ -97,6 +95,10 @@ struct ParticleEffectData {
     uint hitCount;
     float turbulence;      // Meters per second squared of curl noise.
     float turbulenceScale; // Meters across its swirls.
+    float anisotropy;      // Of the light it scatters (Henyey-Greenstein), from -1 back to 1 forwards.
+    float distortion;      // Bends the frame behind it by up to this fraction of its height.
+    uint lightPositive;    // Six-way light maps: lit from its right, top and front, in RGB, or kNoTexture.
+    uint lightNegative;    // From its left, bottom and back.
     float padding0;
     float padding1;
     float padding2;

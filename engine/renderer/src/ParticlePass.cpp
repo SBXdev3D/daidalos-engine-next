@@ -10,6 +10,8 @@
 #include <glm/geometric.hpp>
 #include <glm/matrix.hpp>
 #include <glm/vec4.hpp>
+#include <shaders/ParticleDistortion.ps.spv.h>
+#include <shaders/ParticleDistortion.vs.spv.h>
 #include <shaders/ParticleDraw.ps.spv.h>
 #include <shaders/ParticleDraw.vs.spv.h>
 #include <shaders/ParticleEmit.cs.spv.h>
@@ -46,8 +48,8 @@ struct GpuParticle {
     std::array<std::uint32_t, 4> reservoir;
     glm::vec3 axis;
     float startFrame;
+    glm::vec3 lightDirection;
     std::uint32_t state;
-    std::array<float, 3> padding;
 };
 static_assert(sizeof(GpuParticle) == 112);
 
@@ -93,9 +95,23 @@ struct GpuEffect {
     std::uint32_t hitCount;
     float turbulence;
     float turbulenceScale;
+    float anisotropy;
+    float distortion;
+    std::uint32_t lightPositive;
+    std::uint32_t lightNegative;
     std::array<float, 3> padding;
 };
-static_assert(sizeof(GpuEffect) == 176);
+static_assert(sizeof(GpuEffect) == 192);
+
+// No texture, as the shaders' kNoTexture.
+constexpr std::uint32_t kNoTexture = 0xFFFFFFFF;
+
+struct DistortionPushConstants {
+    std::uint32_t frameBuffer;
+    std::uint32_t background;
+    std::uint32_t distortion;
+    std::uint32_t padding;
+};
 
 // No effect, as the shaders' kNoEffect.
 constexpr std::uint32_t kNoEffect = 0xFFFFFFFF;
@@ -211,7 +227,7 @@ glm::vec3 Normalized(const glm::vec3& direction) {
 }
 
 GpuEffect ToGpu(const ParticleEffectDesc& desc, std::uint32_t texture, std::uint32_t deathEffect,
-                std::uint32_t hitEffect) {
+                std::uint32_t hitEffect, std::uint32_t lightPositive, std::uint32_t lightNegative) {
     const std::uint32_t flags = (desc.lit ? kEffectLit : 0U) | (desc.reportHits ? kEffectReportsHits : 0U) |
                                 (desc.additive ? kEffectAdditive : 0U) | (desc.loop ? kEffectLoop : 0U) |
                                 (desc.randomStartFrame ? kEffectRandomStart : 0U);
@@ -250,6 +266,10 @@ GpuEffect ToGpu(const ParticleEffectDesc& desc, std::uint32_t texture, std::uint
             .hitCount = desc.onHit.count,
             .turbulence = desc.turbulence,
             .turbulenceScale = desc.turbulenceScale,
+            .anisotropy = desc.anisotropy,
+            .distortion = desc.distortion,
+            .lightPositive = lightPositive,
+            .lightNegative = lightNegative,
             .padding = {}};
 }
 // The sort's groups, as in ParticleSort.slang: each sorts kSortLocal keys in its own memory.
@@ -264,17 +284,18 @@ ParticlePass::ParticlePass(ParticlePass&& other) noexcept
     : m_device(other.m_device), m_subEmit(std::exchange(other.m_subEmit, {})), m_emit(std::exchange(other.m_emit, {})),
       m_simulate(std::exchange(other.m_simulate, {})), m_finish(std::exchange(other.m_finish, {})),
       m_sort(std::exchange(other.m_sort, {})), m_draw(std::exchange(other.m_draw, {})),
-      m_particles(std::exchange(other.m_particles, {})), m_dead(std::exchange(other.m_dead, {})),
-      m_alive(std::exchange(other.m_alive, {})), m_subSpawns(std::exchange(other.m_subSpawns, {})),
-      m_keys(std::exchange(other.m_keys, {})), m_counters(std::exchange(other.m_counters, {})),
-      m_arguments(std::exchange(other.m_arguments, {})), m_current(other.m_current),
-      m_effects(std::exchange(other.m_effects, {})), m_effectTable(std::exchange(other.m_effectTable, {})),
-      m_curveTable(std::exchange(other.m_curveTable, {})), m_effectCapacity(std::exchange(other.m_effectCapacity, 0)),
-      m_frameSlots(std::exchange(other.m_frameSlots, {})), m_nextFrameSlot(other.m_nextFrameSlot),
-      m_frame(other.m_frame), m_hits(std::move(other.m_hits)), m_aliveCount(other.m_aliveCount) {}
+      m_distort(std::exchange(other.m_distort, {})), m_particles(std::exchange(other.m_particles, {})),
+      m_dead(std::exchange(other.m_dead, {})), m_alive(std::exchange(other.m_alive, {})),
+      m_subSpawns(std::exchange(other.m_subSpawns, {})), m_keys(std::exchange(other.m_keys, {})),
+      m_counters(std::exchange(other.m_counters, {})), m_arguments(std::exchange(other.m_arguments, {})),
+      m_current(other.m_current), m_effects(std::exchange(other.m_effects, {})),
+      m_effectTable(std::exchange(other.m_effectTable, {})), m_curveTable(std::exchange(other.m_curveTable, {})),
+      m_effectCapacity(std::exchange(other.m_effectCapacity, 0)), m_frameSlots(std::exchange(other.m_frameSlots, {})),
+      m_nextFrameSlot(other.m_nextFrameSlot), m_frame(other.m_frame), m_hits(std::move(other.m_hits)),
+      m_aliveCount(other.m_aliveCount), m_distorting(std::move(other.m_distorting)) {}
 
 ParticlePass::~ParticlePass() {
-    for (const rhi::PipelineHandle pipeline : {m_subEmit, m_emit, m_simulate, m_finish, m_sort, m_draw}) {
+    for (const rhi::PipelineHandle pipeline : {m_subEmit, m_emit, m_simulate, m_finish, m_sort, m_draw, m_distort}) {
         m_device->DestroyPipeline(pipeline);
     }
     for (const rhi::BufferHandle buffer : {m_particles, m_dead, m_alive[0], m_alive[1], m_subSpawns[0], m_subSpawns[1],
@@ -309,11 +330,18 @@ core::Result<void> ParticlePass::CreateResources(rhi::Format colorFormat) {
                                .vertexShader = rhi::ToSpirv(kParticleDrawVsSpirv),
                                .fragmentShader = rhi::ToSpirv(kParticleDrawPsSpirv),
                                .colorFormat = colorFormat,
-                               .moreColorFormats = {kReactiveFormat},
+                               .moreColorFormats = {kReactiveFormat, kDistortionFormat},
                                .cull = rhi::CullMode::None,
                                .blend = rhi::BlendMode::Premultiplied,
                                .name = "Particles",
                            }));
+    DAI_TRY_ASSIGN(m_distort, m_device->CreatePipeline({
+                                  .vertexShader = rhi::ToSpirv(kParticleDistortionVsSpirv),
+                                  .fragmentShader = rhi::ToSpirv(kParticleDistortionPsSpirv),
+                                  .colorFormat = colorFormat,
+                                  .cull = rhi::CullMode::None,
+                                  .name = "Particle distortion",
+                              }));
 
     const auto buffer = [this](std::uint64_t size, rhi::BufferUsage usage, const char* name,
                                rhi::BufferHandle& handle) -> core::Result<void> {
@@ -415,15 +443,25 @@ void ParticlePass::WriteEffect(std::uint32_t index, const ParticleEffectDesc& de
     const auto index_of = [this](ParticleEffectHandle effect) {
         return m_effects.TryGet(effect) != nullptr ? effect.Index() : kNoEffect;
     };
+    const bool sixWay = desc.lightPositive && desc.lightNegative;
     const GpuEffect data =
-        ToGpu(desc, m_device->BindlessIndex(desc.texture), index_of(desc.onDeath.effect), index_of(desc.onHit.effect));
+        ToGpu(desc, m_device->BindlessIndex(desc.texture), index_of(desc.onDeath.effect), index_of(desc.onHit.effect),
+              sixWay ? m_device->BindlessIndex(desc.lightPositive) : kNoTexture,
+              sixWay ? m_device->BindlessIndex(desc.lightNegative) : kNoTexture);
+    if (desc.distortion > 0.0f) {
+        m_distorting.insert(index);
+    } else {
+        m_distorting.erase(index);
+    }
     std::memcpy(m_device->Mapped(m_effectTable).data() + std::size_t{index} * sizeof(GpuEffect), &data, sizeof(data));
     const std::vector<glm::vec4> curves = BakeParticleCurves(desc);
     std::memcpy(m_device->Mapped(m_curveTable).data() + index * kCurveBytes, curves.data(), kCurveBytes);
 }
 
 void ParticlePass::DestroyEffect(ParticleEffectHandle effect) {
-    m_effects.Remove(effect);
+    if (m_effects.Remove(effect)) {
+        m_distorting.erase(effect.Index());
+    }
 }
 
 void ParticlePass::ReadHits(const FrameSlot& slot) {
@@ -641,8 +679,9 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, const SceneVi
 }
 
 void ParticlePass::AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::TextureHandle depth,
-                           rhi::TextureHandle target, rhi::TextureHandle reactive, const glm::vec3& cameraRight,
-                           const glm::vec3& cameraUp, std::optional<rhi::Extent> area, rhi::TextureHandle fog) {
+                           rhi::TextureHandle target, rhi::TextureHandle reactive, rhi::TextureHandle distortion,
+                           const glm::vec3& cameraRight, const glm::vec3& cameraUp, std::optional<rhi::Extent> area,
+                           rhi::TextureHandle fog) {
     ParticlePushConstants push{};
     push.particles = m_device->StorageIndex(m_particles);
     push.keys = m_device->StorageIndex(m_keys);
@@ -654,19 +693,43 @@ void ParticlePass::AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::T
     push.cameraRight = cameraRight;
     push.cameraUp = cameraUp;
     // Over the meshes, back to front; they read the depth to fade into surfaces.
+    graph.AddPass({.name = "Particles",
+                   .rendering = rhi::RenderingDesc{.colorTarget = target,
+                                                   .moreColorTargets = {{reactive, glm::vec4(0.0f)},
+                                                                        {distortion, glm::vec4(0.0f)}},
+                                                   .area = area},
+                   .textures = {{depth, rhi::Access::FragmentShaderRead}, {fog, rhi::Access::FragmentShaderRead}},
+                   .buffers = {{m_particles, rhi::Access::VertexShaderRead},
+                               {m_keys, rhi::Access::VertexShaderRead},
+                               {m_arguments, rhi::Access::IndirectRead}}},
+                  [this, push](rhi::CommandList& commands) {
+                      DAI_PROFILE_SCOPE("renderer::ParticlePass::Draw");
+                      commands.BindPipeline(m_draw);
+                      commands.Push(push);
+                      commands.DrawIndirect(m_arguments);
+                  });
+}
+
+void ParticlePass::AddDistortion(RenderGraph& graph, std::uint32_t frameBuffer, rhi::TextureHandle target,
+                                 rhi::TextureHandle background, rhi::TextureHandle distortion,
+                                 std::optional<rhi::Extent> area) {
+    graph.AddPass({.name = "Particle distortion copy",
+                   .group = "Particles",
+                   .textures = {{target, rhi::Access::TransferRead}, {background, rhi::Access::TransferWrite, true}}},
+                  [target, background](rhi::CommandList& commands) { commands.CopyTexture(target, background); });
+    const DistortionPushConstants push{.frameBuffer = frameBuffer,
+                                       .background = m_device->BindlessIndex(background),
+                                       .distortion = m_device->BindlessIndex(distortion),
+                                       .padding = 0};
     graph.AddPass(
-        {.name = "Particles",
-         .rendering =
-             rhi::RenderingDesc{.colorTarget = target, .moreColorTargets = {{reactive, glm::vec4(0.0f)}}, .area = area},
-         .textures = {{depth, rhi::Access::FragmentShaderRead}, {fog, rhi::Access::FragmentShaderRead}},
-         .buffers = {{m_particles, rhi::Access::VertexShaderRead},
-                     {m_keys, rhi::Access::VertexShaderRead},
-                     {m_arguments, rhi::Access::IndirectRead}}},
+        {.name = "Particle distortion",
+         .group = "Particles",
+         .rendering = rhi::RenderingDesc{.colorTarget = target, .area = area},
+         .textures = {{background, rhi::Access::FragmentShaderRead}, {distortion, rhi::Access::FragmentShaderRead}}},
         [this, push](rhi::CommandList& commands) {
-            DAI_PROFILE_SCOPE("renderer::ParticlePass::Draw");
-            commands.BindPipeline(m_draw);
+            commands.BindPipeline(m_distort);
             commands.Push(push);
-            commands.DrawIndirect(m_arguments);
+            commands.Draw(3);
         });
 }
 

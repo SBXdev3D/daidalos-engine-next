@@ -109,12 +109,14 @@ TEST_F(AssetLibraryTest, EveryFactoryEffectFileLoads) {
     for (const auto& entry :
          std::filesystem::directory_iterator(std::filesystem::path(DAI_PROJECT_ASSET_DIR) / "Factory" / "Effects")) {
         const std::string name = entry.path().filename().string();
+        if (!name.ends_with(".effect.json")) {
+            continue; // The effects' images.
+        }
         const core::Result<scene::ParticleEffectAsset> effect = library.LoadParticleEffect("Factory/Effects/" + name);
         EXPECT_TRUE(effect.has_value()) << name << ": " << core::Format(effect.error());
         ++count;
     }
-    EXPECT_GE(count, 7U);
-    EXPECT_EQ(library.TextureCount(), 1U) << "they share the factory's atlas";
+    EXPECT_GE(count, 11U);
 }
 
 TEST_F(AssetLibraryTest, EditedEffectFileIsReloadedInPlace) {

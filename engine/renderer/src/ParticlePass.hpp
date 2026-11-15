@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <unordered_set>
 #include <vector>
 
 namespace daidalos::renderer {
@@ -85,13 +86,25 @@ public:
     /// What the particles leave in their second target, the reactive mask of temporal antialiasing
     /// (ADR-0037): how much they cover each pixel, where the history is not to be trusted.
     static constexpr rhi::Format kReactiveFormat = rhi::Format::R8Unorm;
+    /// And in their third, how far distortion effects bend the frame behind them (ADR-0053).
+    static constexpr rhi::Format kDistortionFormat = rhi::Format::Rg16Float;
 
-    /// Adds the pass that draws the particles over target, as "Particles", and their coverage into
-    /// reactive, which it clears, in the top-left corner of this area. They read depth themselves, to fade
-    /// softly where they meet surfaces, and the frame's fog (FrameTargets::fog), if any, which veils them.
+    /// Adds the pass that draws the particles over target, as "Particles", their coverage into reactive and
+    /// their distortion into distortion, which it clears, in the top-left corner of this area. They read
+    /// depth themselves, to fade softly where they meet surfaces, and the frame's fog (FrameTargets::fog), if
+    /// any, which veils them.
     void AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::TextureHandle depth, rhi::TextureHandle target,
-                 rhi::TextureHandle reactive, const glm::vec3& cameraRight, const glm::vec3& cameraUp,
-                 std::optional<rhi::Extent> area = std::nullopt, rhi::TextureHandle fog = {});
+                 rhi::TextureHandle reactive, rhi::TextureHandle distortion, const glm::vec3& cameraRight,
+                 const glm::vec3& cameraUp, std::optional<rhi::Extent> area = std::nullopt,
+                 rhi::TextureHandle fog = {});
+
+    /// Whether an effect bends the frame: only then is the distortion pass worth adding.
+    [[nodiscard]] bool HasDistortion() const { return !m_distorting.empty(); }
+    /// Adds the passes that copy target into background and draw it back bent by distortion, as "Particle
+    /// distortion", in the top-left corner of this area.
+    void AddDistortion(RenderGraph& graph, std::uint32_t frameBuffer, rhi::TextureHandle target,
+                       rhi::TextureHandle background, rhi::TextureHandle distortion,
+                       std::optional<rhi::Extent> area = std::nullopt);
 
     [[nodiscard]] std::size_t EffectCount() const { return m_effects.Size(); }
 
@@ -124,6 +137,7 @@ private:
     rhi::PipelineHandle m_finish;
     rhi::PipelineHandle m_sort;
     rhi::PipelineHandle m_draw;
+    rhi::PipelineHandle m_distort;
     rhi::BufferHandle m_particles;
     rhi::BufferHandle m_dead;
     std::array<rhi::BufferHandle, 2> m_alive;
@@ -143,6 +157,8 @@ private:
     std::uint32_t m_frame = 0;
     std::vector<Hit> m_hits;
     std::uint32_t m_aliveCount = 0;
+    /// The indices of the effects that bend the frame.
+    std::unordered_set<std::uint32_t> m_distorting;
 };
 
 } // namespace daidalos::renderer

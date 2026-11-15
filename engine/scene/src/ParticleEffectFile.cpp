@@ -232,6 +232,39 @@ core::Result<ParticleBurst> Burst(Element value) {
     return burst;
 }
 
+core::Result<EmitterLight> Light(Element value) {
+    simdjson::dom::object object;
+    if (value.get_object().get(object) != simdjson::SUCCESS) {
+        return Invalid("light", "must be an object");
+    }
+    EmitterLight light;
+    for (const auto [name, field] : object) {
+        const std::string key = std::format("light.{}", name);
+        if (name == "color") {
+            DAI_TRY_ASSIGN(light.color, Vector(field, key));
+        } else if (name == "temperature") {
+            DAI_TRY_ASSIGN(light.temperature, Number(field, key));
+        } else if (name == "intensity") {
+            DAI_TRY_ASSIGN(light.intensity, Number(field, key));
+        } else if (name == "range") {
+            DAI_TRY_ASSIGN(light.range, Number(field, key));
+        } else if (name == "radius") {
+            DAI_TRY_ASSIGN(light.radius, Number(field, key));
+        } else if (name == "offset") {
+            DAI_TRY_ASSIGN(light.offset, Vector(field, key));
+        } else if (name == "fade") {
+            DAI_TRY_ASSIGN(light.fade, Number(field, key));
+        } else if (name == "flickerRate") {
+            DAI_TRY_ASSIGN(light.flickerRate, Number(field, key));
+        } else if (name == "flickerDepth") {
+            DAI_TRY_ASSIGN(light.flickerDepth, Number(field, key));
+        } else {
+            return Invalid(key, "is not a key of a light");
+        }
+    }
+    return light;
+}
+
 core::Result<ParticleEmission> Emission(Element value) {
     simdjson::dom::object object;
     if (value.get_object().get(object) != simdjson::SUCCESS) {
@@ -305,6 +338,19 @@ core::Result<void> Read(ParticleEffectFile& file, std::string_view key, Element 
         DAI_TRY(SubEmitter(value, key, file.deathEffect, desc.onDeath.count));
     } else if (key == "onHit") {
         DAI_TRY(SubEmitter(value, key, file.hitEffect, desc.onHit.count));
+    } else if (key == "anisotropy") {
+        DAI_TRY_ASSIGN(desc.anisotropy, Number(value, key));
+    } else if (key == "distortion") {
+        DAI_TRY_ASSIGN(desc.distortion, Number(value, key));
+    } else if (key == "lightMaps") {
+        simdjson::dom::array maps;
+        if (value.get_array().get(maps) != simdjson::SUCCESS || maps.size() != 2) {
+            return Invalid(key, "must be the two six-way light maps, positive then negative");
+        }
+        DAI_TRY_ASSIGN(std::string_view positive, Text(maps.at(0).value_unsafe(), key));
+        DAI_TRY_ASSIGN(std::string_view negative, Text(maps.at(1).value_unsafe(), key));
+        file.lightPositive = positive;
+        file.lightNegative = negative;
     } else if (key == "turbulence") {
         DAI_TRY_ASSIGN(desc.turbulence, Number(value, key));
     } else if (key == "turbulenceScale") {
@@ -344,7 +390,12 @@ core::Result<void> Read(ParticleEffectFile& file, std::string_view key, Element 
     } else if (key == "softness") {
         DAI_TRY_ASSIGN(desc.softness, Number(value, key));
     } else if (key == "emitter") {
-        DAI_TRY_ASSIGN(file.emission, Emission(value));
+        DAI_TRY_ASSIGN(ParticleEmission emission, Emission(value));
+        file.emission.rate = emission.rate;
+        file.emission.ratePerMeter = emission.ratePerMeter;
+        file.emission.bursts = std::move(emission.bursts);
+    } else if (key == "light") {
+        DAI_TRY_ASSIGN(file.emission.light, Light(value));
     } else {
         return Invalid(key, "is not a key of a particle effect");
     }

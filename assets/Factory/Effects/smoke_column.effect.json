@@ -1,0 +1,25 @@
+{
+    "comment": "A column of thick smoke, lit as a medium by its six-way light maps.",
+    "texture": "smoke.ktx2",
+    "columns": 8,
+    "rows": 8,
+    "frames": 64,
+    "frameRate": 20,
+    "loop": true,
+    "randomStartFrame": true,
+    "lightMaps": ["smoke_lp.ktx2", "smoke_ln.ktx2"],
+    "anisotropy": 0.4,
+    "color": [[0, [0.6, 0.6, 0.6, 0.7]], [1, [0.6, 0.6, 0.6, 0]]],
+    "lifetime": [3, 4],
+    "size": [1, 1.4],
+    "sizeOverLife": [[0, 1], [1, 2.5]],
+    "spawnRadius": 0.2,
+    "speed": [0.3, 0.5],
+    "drag": 0.5,
+    "turbulence": 0.5,
+    "rotationSpeed": 10,
+    "softness": 0.5,
+    "emitter": {
+        "rate": 4
+    }
+}

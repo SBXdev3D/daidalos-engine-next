@@ -23,6 +23,9 @@ struct ParticleEffectFile {
     /// The effect files of onDeath and onHit, or empty.
     std::string deathEffect;
     std::string hitEffect;
+    /// The six-way light maps, or empty.
+    std::string lightPositive;
+    std::string lightNegative;
     ParticleEmission emission;
 };
 
@@ -39,6 +42,9 @@ struct ParticleEffectFile {
 ///   one's directory, and "count";
 /// - "emitter" gives ParticleEmission: "rate", "ratePerMeter", and "bursts", a list of objects with
 ///   "time", "count", "interval" and "repeats";
+/// - "lightMaps" is the paths of the two six-way light maps, positive then negative;
+/// - "light" gives EmitterLight: "color", "temperature", "intensity", "range", "radius", "offset", "fade",
+///   "flickerRate" and "flickerDepth";
 /// - "comment" is free text.
 /// Anything else, a value of the wrong kind, or a flipbook that does not fit in the grid is a ParseError that
 /// names the key, so that a typo does not go unnoticed.

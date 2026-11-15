@@ -40,7 +40,9 @@ TEST(ParseParticleEffect, ReadsEveryKey) {
         "speedOverLife": [[0.5, 0.5]],
         "additive": true, "lit": false, "collision": "stick", "bounce": 0.6, "reportHits": true,
         "onDeath": {"effect": "smoke.effect.json", "count": 2}, "onHit": {"effect": "../splash.effect.json", "count": 5},
-        "turbulence": 1.5, "turbulenceScale": 0.25,
+        "turbulence": 1.5, "turbulenceScale": 0.25, "anisotropy": 0.5, "distortion": 0.01,
+        "light": {"color": [1, 0.5, 0.2], "temperature": 1800, "intensity": 40, "range": 6, "radius": 0.3,
+                  "offset": [0, 0.4, 0], "fade": 0.2, "flickerRate": 9, "flickerDepth": 0.3},
         "lifetime": [1, 2], "size": 0.5,
         "orientation": "velocity", "axis": [1, 0, 0], "stretch": 0.05,
         "shape": "cone", "spawnBox": [1, 2, 3], "spawnRadius": 0.25, "direction": [0, 0, -1], "spread": 90,
@@ -76,6 +78,19 @@ TEST(ParseParticleEffect, ReadsEveryKey) {
     EXPECT_EQ(desc.onHit.count, 5U);
     EXPECT_FLOAT_EQ(desc.turbulence, 1.5f);
     EXPECT_FLOAT_EQ(desc.turbulenceScale, 0.25f);
+    EXPECT_FLOAT_EQ(desc.anisotropy, 0.5f);
+    EXPECT_FLOAT_EQ(desc.distortion, 0.01f);
+    ASSERT_TRUE(parsed->emission.light.has_value());
+    const scene::EmitterLight& light = *parsed->emission.light;
+    EXPECT_EQ(light.color, glm::vec3(1.0f, 0.5f, 0.2f));
+    EXPECT_FLOAT_EQ(light.temperature, 1800.0f);
+    EXPECT_FLOAT_EQ(light.intensity, 40.0f);
+    EXPECT_FLOAT_EQ(light.range, 6.0f);
+    EXPECT_FLOAT_EQ(light.radius, 0.3f);
+    EXPECT_EQ(light.offset, glm::vec3(0.0f, 0.4f, 0.0f));
+    EXPECT_FLOAT_EQ(light.fade, 0.2f);
+    EXPECT_FLOAT_EQ(light.flickerRate, 9.0f);
+    EXPECT_FLOAT_EQ(light.flickerDepth, 0.3f);
     EXPECT_FLOAT_EQ(desc.bounce, 0.6f);
     EXPECT_EQ(desc.lifetime, glm::vec2(1.0f, 2.0f));
     EXPECT_EQ(desc.size, glm::vec2(0.5f)) << "a number is picked between itself and itself";
@@ -131,6 +146,8 @@ TEST(ParseParticleEffect, ValuesOfTheWrongKindAreErrorsThatNameTheirKey) {
     EXPECT_NE(ErrorOf(R"({"texture": "a.png", "onDeath": {"effect": "a.json", "cuont": 2}})").find("onDeath.cuont"),
               std::string::npos);
     EXPECT_NE(ErrorOf(R"({"texture": "a.png", "turbulenceScale": 0})").find("turbulenceScale"), std::string::npos);
+    EXPECT_NE(ErrorOf(R"({"texture": "a.png", "light": {"intensty": 3}})").find("light.intensty"), std::string::npos);
+    EXPECT_NE(ErrorOf(R"({"texture": "a.png", "lightMaps": ["a.png"]})").find("lightMaps"), std::string::npos);
     EXPECT_NE(ErrorOf(R"({"texture": "a.png", "sizeOverLife": [[2, 1]]})").find("sizeOverLife"), std::string::npos);
     EXPECT_NE(ErrorOf(R"({"texture": "a.png", "color": [[0, 1]]})").find("color"), std::string::npos);
 }
