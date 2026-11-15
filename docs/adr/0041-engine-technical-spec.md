@@ -1,6 +1,6 @@
 # ADR-0041: The engine technical spec
 
-- **Status:** Accepted, amended by ADR-0044 (ReSTIR DI and ReSTIR GI are two steps, 9.12 and 9.13; the steps after them move up by one) and ADR-0048 (step 9.14 is split into image formation and upscaling; the engine's own upscaler first, FSR only if it measures better) and ADR-0049 (FSR 3.1 becomes step 9.16, the steps after it move up by one)
+- **Status:** Accepted, amended by ADR-0044 (ReSTIR DI and ReSTIR GI are two steps, 9.12 and 9.13; the steps after them move up by one) and ADR-0048 (step 9.14 is split into image formation and upscaling; the engine's own upscaler first, FSR only if it measures better) and ADR-0049 (FSR 3.1 becomes step 9.16, the steps after it move up by one) and ADR-0052 (the presets are the settings the engine has, chosen at the first launch by measuring the GPU)
 - **Date:** 2026-11-12
 
 ## Context

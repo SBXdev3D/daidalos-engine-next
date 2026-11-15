@@ -14,6 +14,7 @@
 #include <format>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -236,7 +237,12 @@ MenuChoice DrawOptions(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud
     }
     if (ui.Choice("Resolution", row(), scaleIndex, kScaleNames)) {
         Change(app, "renderer.dynamic_resolution", scaleIndex == 0 ? "true" : "false", changed);
-        Change(app, "renderer.render_scale", std::format("{:.2f}", kScales[scaleIndex]), changed);
+        if (scaleIndex == 0) {
+            // Dynamic resolution moves within what the quality preset allows.
+            app.ResetSetting("renderer.render_scale");
+        } else {
+            Change(app, "renderer.render_scale", std::format("{:.2f}", kScales[scaleIndex]), changed);
+        }
     }
     // The frame rate dynamic resolution holds; the nearest listed one is shown for a value set elsewhere.
     constexpr std::array<std::int64_t, 7> kFrameRates{30, 60, 90, 120, 144, 165, 240};
@@ -252,7 +258,19 @@ MenuChoice DrawOptions(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud
     if (ui.Choice("Target frame rate", row(), frameRateIndex, kFrameRateNames)) {
         Change(app, "renderer.target_fps", std::to_string(kFrameRates[frameRateIndex]), changed);
     }
-    toggle("Indirect light", "renderer.indirect_light");
+    // The quality preset (ADR-0052); Custom when a setting it decides was set apart from it.
+    constexpr std::array<std::string_view, 5> kQualityNames{"Low", "Medium", "High", "Ultra", "Custom"};
+    const bool custom = app.QualityIsCustom();
+    std::size_t qualityIndex = custom ? 4 : static_cast<std::size_t>(app.CurrentQuality());
+    if (ui.Choice("Quality", row(), qualityIndex,
+                  std::span<const std::string_view>(kQualityNames).first(custom ? 5 : 4)) &&
+        qualityIndex < app::kQualities.size()) {
+        if (core::Result<void> chosen = app.ChooseQuality(app::kQualities[qualityIndex]); chosen) {
+            changed = true;
+        } else {
+            DAI_LOG_WARNING("sandbox", "Cannot change the quality: {}", core::Format(chosen.error()));
+        }
+    }
     // Stops of exposure compensation (ADR-0043): one more is twice as bright.
     slider(
         "Brightness", "renderer.exposure_compensation", -1.0f, 1.0f, 0.1f,

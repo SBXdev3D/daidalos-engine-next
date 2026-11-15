@@ -124,8 +124,9 @@ struct Renderer::Impl {
         device.DestroyTexture(interfaceLayer);
     }
 
-    /// The output pass's pipeline for a swapchain format, created the first time the format is seen: once,
-    /// and again when HDR is turned on or off.
+    /// The output pass's pipeline for a swapchain format. Every format a swapchain can take is created at
+    /// startup, so that turning HDR on or off, or moving the window to another display, creates none in
+    /// play (ADR-0052); a format seen only later is created then.
     core::Result<rhi::PipelineHandle> OutputPipeline(rhi::Format format) {
         for (const auto& [known, pipeline] : outputPipelines) {
             if (known == format) {
@@ -343,6 +344,9 @@ void Renderer::Impl::ReloadShaders() {
     }
 
     DAI_PROFILE_SCOPE("renderer::ReloadShaders");
+    // Reloading shaders is a developer's choice, not a hitch in play (ADR-0052).
+    const bool locked = device.PipelineCreationLocked();
+    device.LockPipelineCreation(false);
     const std::filesystem::path source = std::filesystem::path(DAI_SHADER_SOURCE_DIR) / "GBuffer.slang";
     core::Result<void> reloaded = CompileShader(DAI_SLANGC_PATH, source, ShaderStage::Vertex)
                                       .and_then([&](std::vector<std::uint32_t> vertexShader) {
@@ -351,6 +355,7 @@ void Renderer::Impl::ReloadShaders() {
                                                   return meshPass->ReplaceShaders(vertexShader, fragmentShader);
                                               });
                                       });
+    device.LockPipelineCreation(locked);
     if (reloaded) {
         shaderError.clear();
         DAI_LOG_INFO(kModule, "Shaders reloaded");
@@ -370,6 +375,7 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     deviceConfig.instanceExtensions = std::move(extensions);
     deviceConfig.presentation = true;
     deviceConfig.anisotropy = config.anisotropy;
+    deviceConfig.pipelineCacheFile = config.pipelineCacheFile;
     DAI_TRY_ASSIGN(rhi::Device device, rhi::Device::Create(deviceConfig));
 
     const platform::Extent size = window.PixelSize();
@@ -382,7 +388,10 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     impl->exposureCompensation = config.exposureCompensation;
     impl->image = config.image;
     impl->resolution = config.resolution;
-    DAI_TRY(impl->OutputPipeline(impl->swapchain.ColorFormat()));
+    for (const rhi::Format format : {impl->swapchain.ColorFormat(), rhi::Format::Bgra8Srgb, rhi::Format::Rgba8Srgb,
+                                     rhi::Format::A2b10g10r10Unorm}) {
+        DAI_TRY(impl->OutputPipeline(format));
+    }
     DAI_TRY_ASSIGN(impl->gbufferDebug, impl->device.CreatePipeline({
                                            .vertexShader = rhi::ToSpirv(kGBufferDebugVsSpirv),
                                            .fragmentShader = rhi::ToSpirv(kGBufferDebugPsSpirv),
@@ -422,7 +431,8 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     DAI_TRY_ASSIGN(VolumetricFog volumetricFog, VolumetricFog::Create(impl->device));
     impl->volumetricFog.emplace(std::move(volumetricFog));
     impl->fog = config.volumetricFog;
-    impl->fogGrid.slices = config.fogSlices;
+    impl->fogGrid.slices = std::clamp(config.fogSlices, 16U, 256U);
+    impl->fogGrid.tileSize = std::clamp(config.fogTile, 8U, 32U);
     impl->restir.spatial = config.restirSpatial;
     impl->restir.unbiased = config.restirUnbiased;
     impl->SetIndirect(config.indirect);
@@ -534,9 +544,10 @@ void Renderer::SetPathTracer(std::uint32_t bounces, std::uint32_t samples) {
     m_impl->pathSettings.maxSamples = samples;
 }
 
-void Renderer::SetVolumetricFog(bool enabled, std::uint32_t slices) {
+void Renderer::SetVolumetricFog(bool enabled, std::uint32_t slices, std::uint32_t tile) {
     m_impl->fog = enabled;
     m_impl->fogGrid.slices = std::clamp(slices, 16U, 256U);
+    m_impl->fogGrid.tileSize = std::clamp(tile, 8U, 32U);
 }
 
 void Renderer::SetNormalStrength(float strength) {

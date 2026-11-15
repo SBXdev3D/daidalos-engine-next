@@ -11,6 +11,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -36,6 +37,9 @@ struct DeviceConfig {
     bool presentation = false;
     /// Anisotropic filtering of the linear samplers, from 1 (off) to 16, clamped to what the device allows.
     float anisotropy = 16.0f;
+    /// Where the pipeline cache is kept between runs (ADR-0052): read at creation, unless another GPU or
+    /// driver wrote it, and written when the device is destroyed. Empty for none.
+    std::filesystem::path pipelineCacheFile;
 };
 
 struct DeviceInfo {
@@ -43,6 +47,11 @@ struct DeviceInfo {
     bool validationEnabled = false;
     /// The anisotropy the linear samplers use: 1 when it is off or unsupported.
     float anisotropy = 1.0f;
+    /// Whether the driver reports the memory in use and the budget (VK_EXT_memory_budget); without it,
+    /// MemoryStats counts the engine's own allocations against most of the video memory.
+    bool memoryBudget = false;
+    /// Whether DeviceConfig::pipelineCacheFile held a cache this device could use.
+    bool pipelineCacheLoaded = false;
 };
 
 /// One frame being recorded.
@@ -155,6 +164,16 @@ public:
     /// Fails with DeviceError if the driver rejects the SPIR-V.
     [[nodiscard]] core::Result<PipelineHandle> CreateComputePipeline(const ComputePipelineDesc& desc);
     void DestroyPipeline(PipelineHandle pipeline);
+    /// Once a level has loaded, no pipeline should be created: creating one stalls the frame (ADR-0052).
+    /// While locked, a pipeline is still created, but logged as an error and counted.
+    void LockPipelineCreation(bool locked);
+    [[nodiscard]] bool PipelineCreationLocked() const;
+    /// Pipelines created while creation was locked.
+    [[nodiscard]] std::uint64_t LatePipelineCount() const;
+    /// Seconds spent creating pipelines since the device was created.
+    [[nodiscard]] double PipelineCreationSeconds() const;
+    /// Writes the pipeline cache to DeviceConfig::pipelineCacheFile, which destroying the device also does.
+    [[nodiscard]] core::Result<void> SavePipelineCache();
 
     /// Waits for a free frame slot, acquires the next swapchain image if there is a swapchain, and
     /// starts recording. Returns nothing when this frame cannot be drawn (zero-sized window, swapchain

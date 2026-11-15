@@ -217,6 +217,60 @@ TEST_F(RendererTest, ShowsEachDebugView) {
     EXPECT_EQ(target->Device().ValidationErrorCount(), 0U);
 }
 
+TEST_F(RendererTest, CreatesNoPipelineOnceItHasDrawnAFrame) {
+    // Every setting a player or a quality preset can change, and every debug view, after the first frame:
+    // none may create a pipeline, which would stall a frame in play (ADR-0052).
+    std::optional<renderer::Renderer> target = CreateRenderer();
+    if (!target.has_value()) {
+        GTEST_SKIP();
+    }
+    const core::Result<renderer::MeshHandle> mesh = target->CreateMesh(renderer::MakeCube(), "Cube");
+    ASSERT_TRUE(mesh.has_value());
+    renderer::SceneView view = TestView(*mesh);
+    view.fogVolumes.push_back({.world = glm::mat4(1.0f), .density = 0.5f, .falloffHeight = 0.2f});
+    RenderFrames(*target, view, 2);
+    rhi::Device& device = target->Device();
+    EXPECT_GT(device.PipelineCreationSeconds(), 0.0);
+    device.LockPipelineCreation(true);
+
+    using renderer::DebugView;
+    for (const DebugView debugView : {DebugView::Rays, DebugView::Path, DebugView::Motion, DebugView::Normals,
+                                      DebugView::Indirect, DebugView::RadianceCache, DebugView::Reflections,
+                                      DebugView::Lights, DebugView::Bloom, DebugView::Fog, DebugView::Off}) {
+        target->SetDebugView(debugView);
+        RenderFrames(*target, view, 2);
+    }
+    for (const renderer::Upscaler upscaler : {renderer::Upscaler::Fsr3, renderer::Upscaler::Engine}) {
+        for (const float scale : {0.5f, 0.67f, 1.0f}) {
+            target->SetResolution({.scale = scale, .dynamic = false, .upscaler = upscaler});
+            RenderFrames(*target, view, 2);
+        }
+    }
+    target->SetResolution({.scale = 1.0f, .dynamic = true, .minScale = 0.5f});
+    target->SetAntialiasing(renderer::Antialiasing::Off);
+    RenderFrames(*target, view, 2);
+    target->SetAntialiasing(renderer::Antialiasing::Taa);
+    for (const bool hdr : {true, false}) {
+        target->SetImage({.autoExposure = !hdr,
+                          .bloom = hdr ? 0.0f : 0.04f,
+                          .toneMapper = hdr ? renderer::ToneMapper::Neutral : renderer::ToneMapper::AgX,
+                          .hdr = hdr});
+        RenderFrames(*target, view, 2);
+    }
+    for (const bool on : {false, true}) {
+        target->SetIndirectLight(on);
+        target->SetDenoiser(on);
+        target->SetReflections(on);
+        target->SetReflectionRoughness(on ? 0.9f : 0.3f);
+        target->SetRestir(on, !on);
+        target->SetVolumetricFog(on, on ? 128 : 32, on ? 8 : 32);
+        target->SetIndirectLightConfig({.bounces = on ? 3U : 0U, .rays = on ? 4U : 1U});
+        RenderFrames(*target, view, 2);
+    }
+    EXPECT_EQ(device.LatePipelineCount(), 0U);
+    EXPECT_EQ(device.ValidationErrorCount(), 0U);
+}
+
 TEST_F(RendererTest, AdaptsTheEyeWithinTheLevelsRange) {
     std::optional<renderer::Renderer> target = CreateRenderer();
     if (!target.has_value()) {

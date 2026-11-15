@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <filesystem>
 #include <functional>
 #include <optional>
 #include <string>
@@ -124,6 +125,11 @@ struct Device::Impl {
     core::Result<void> CreateAllocator();
     core::Result<void> CreateFrameResources();
     core::Result<void> CreateGlobalDescriptors();
+    /// Starts from the cache in the file, if this GPU and driver wrote it.
+    core::Result<void> CreatePipelineCache(const std::filesystem::path& file);
+    core::Result<void> SavePipelineCache() const;
+    /// Counts a pipeline that took this long to create, and reports it if creation is locked.
+    void NotePipeline(const std::string& name, double seconds);
 
     void SetName(VkObjectType type, std::uint64_t object, const std::string& name) const;
     /// Destroys a structure the GPU no longer uses.
@@ -193,6 +199,11 @@ struct Device::Impl {
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     VkDescriptorSet globalSet = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    VkPipelineCache pipelineCache = VK_NULL_HANDLE;
+    std::filesystem::path pipelineCacheFile;
+    bool pipelinesLocked = false;
+    std::uint64_t latePipelines = 0;
+    double pipelineSeconds = 0.0;
     std::array<VkSampler, kSamplerCount> samplers{};
     std::vector<std::uint32_t> freeBindlessIndices;
     std::vector<std::uint32_t> freeStorageIndices;

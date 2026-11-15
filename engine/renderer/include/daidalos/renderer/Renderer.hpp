@@ -13,6 +13,7 @@
 #include <daidalos/rhi/Device.hpp>
 #include <daidalos/ui/Canvas.hpp>
 
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <span>
@@ -120,6 +121,8 @@ struct RendererConfig {
     ResolutionConfig resolution;
     /// Anisotropic filtering of textures, from 1 (off) to 16.
     float anisotropy = 16.0f;
+    /// Where the pipeline cache is kept between runs (rhi::DeviceConfig::pipelineCacheFile); empty for none.
+    std::filesystem::path pipelineCacheFile;
     /// Multiplies the tilt of every normal map: 0 flattens them, 1 keeps them as authored.
     float normalStrength = 1.0f;
     /// Light that bounces off surfaces (ADR-0040). Off leaves direct light only: what no light reaches is black.
@@ -137,6 +140,8 @@ struct RendererConfig {
     bool volumetricFog = true;
     /// Froxels of the fog in depth, from the near plane to the far plane, from 16 to 256.
     std::uint32_t fogSlices = 64;
+    /// Pixels of the output across a froxel, from 8 to 32: finer fog for its cost (ADR-0052).
+    std::uint32_t fogTile = 16;
     /// ReSTIR DI (ADR-0044): pixels reuse the lights their neighbours chose, as well as their own past.
     bool restirSpatial = true;
     /// ReSTIR DI tests every sample it reuses for visibility, for comparisons with the path tracer: twice the
@@ -231,8 +236,8 @@ public:
     void SetDenoiser(bool enabled);
     void SetReflections(bool enabled);
     void SetReflectionRoughness(float roughness);
-    /// See RendererConfig::volumetricFog and fogSlices.
-    void SetVolumetricFog(bool enabled, std::uint32_t slices);
+    /// See RendererConfig::volumetricFog, fogSlices and fogTile.
+    void SetVolumetricFog(bool enabled, std::uint32_t slices, std::uint32_t tile);
     /// See RendererConfig::restirSpatial and restirUnbiased.
     void SetRestir(bool spatial, bool unbiased);
     void SetIndirectLightConfig(const IndirectLightConfig& config);

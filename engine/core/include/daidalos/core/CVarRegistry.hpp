@@ -55,6 +55,8 @@ struct CVarEntry {
     std::string description;
     CVarValue value;
     CVarValue defaultValue;
+    /// Whether a config file, the command line or a Set gave it its value, rather than its default.
+    bool set = false;
 };
 
 /// Typed, read-only view of a registered variable. It stays valid as long as its registry.
@@ -62,6 +64,9 @@ template <CVarType T>
 class CVar {
 public:
     [[nodiscard]] const T& Get() const { return std::get<T>(m_entry->value); }
+    /// Whether something set it, rather than its default: a setting that a quality preset decides
+    /// follows the preset until it is set.
+    [[nodiscard]] bool IsSet() const noexcept { return m_entry->set; }
     [[nodiscard]] const std::string& Name() const noexcept { return m_entry->name; }
 
 private:
@@ -95,6 +100,10 @@ public:
     /// Sets a variable from text, parsed according to its type. A value for an unknown name is kept
     /// until that name is registered.
     Result<void> Set(std::string_view name, std::string_view text);
+
+    /// Puts a variable back to its default, as if nothing had set it, and forgets a value kept for it
+    /// before it was registered.
+    void Reset(std::string_view name);
 
     /// Applies config text, as read by ParseConfigLines. Stops at the first invalid line, after applying
     /// none of them if the text itself is invalid.
