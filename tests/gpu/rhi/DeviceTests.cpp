@@ -221,6 +221,27 @@ TEST_F(GpuTest, TextureDataSurvivesARoundTripThroughGpuMemory) {
     Device().DestroyBuffer(*readback);
 }
 
+TEST_F(GpuTest, A3DTextureIsSampledAndStoredThroughTheBindlessArrays) {
+    const core::Result<rhi::TextureHandle> volume =
+        Device().CreateTexture({.extent = {8, 4},
+                                .format = rhi::Format::Rgba16Float,
+                                .usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::Storage,
+                                .depth = 16,
+                                .name = "Volume"});
+    ASSERT_TRUE(volume.has_value()) << core::Format(volume.error());
+    const core::Result<rhi::TextureHandle> flat =
+        Device().CreateTexture({.extent = {8, 4},
+                                .format = rhi::Format::Rgba16Float,
+                                .usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::Storage,
+                                .name = "Flat"});
+    ASSERT_TRUE(flat.has_value());
+    // Both kinds share the arrays' slots: shaders alias them as 2D and 3D.
+    EXPECT_NE(Device().BindlessIndex(*volume), Device().BindlessIndex(*flat));
+    EXPECT_NE(Device().StorageImageIndex(*volume), Device().StorageImageIndex(*flat));
+    Device().DestroyTexture(*volume);
+    Device().DestroyTexture(*flat);
+}
+
 TEST(TextureSizes, MipExtentsHalveAndStopAtOne) {
     EXPECT_EQ(rhi::MipExtent({8, 3}, 0), (rhi::Extent{8, 3}));
     EXPECT_EQ(rhi::MipExtent({8, 3}, 1), (rhi::Extent{4, 1}));

@@ -85,6 +85,23 @@ struct Light {
     bool enabled = true;
 };
 
+/// ECS component: a box of fog at the entity's WorldTransform (ADR-0051), added to the atmosphere's: the
+/// cube from -0.5 to 0.5, scaled by the transform to the box's size. See renderer::FogVolume.
+struct FogVolume {
+    /// Fraction of the light lost per meter, at the heart of the box.
+    float density = 0.1f;
+    /// Of the light lost, the fraction scattered rather than absorbed, per color.
+    glm::vec3 albedo{0.9f};
+    /// The fog thins to nothing towards the faces, over this fraction of the box's half-size.
+    float edge = 0.3f;
+    /// How much the density varies, from 0 to 1, with a noise that changes every 1 / noiseFrequency meters
+    /// and moves at noiseVelocity, in meters per second: steam rises, dust drifts.
+    float noise = 0.0f;
+    float noiseFrequency = 1.0f;
+    glm::vec3 noiseVelocity{0.0f};
+    bool enabled = true;
+};
+
 /// ECS component: emits particles of an effect at the entity's WorldTransform, at a steady rate. The
 /// effect's directions are in the entity's frame (ADR-0025).
 struct ParticleEmitter {

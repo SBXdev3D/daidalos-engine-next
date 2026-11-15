@@ -20,8 +20,8 @@ struct FrameData {
     float4x4 viewProjection;
     float4x4 inverseViewProjection;
     float3 cameraPosition;
-    float fogDensity;
-    float3 fogColor;
+    float fogDensity;     // The level's fog (ADR-0051): light lost per meter, within the view distance.
+    float3 fogAlbedo;     // Of the light lost, the fraction that scatters, per color.
     uint lightCount;      // Analytic lights, in lightBuffer; the emissive triangles come after them (ADR-0044).
     uint lightBuffer;
     uint skyTexture;      // Index in g_cubeTextures, or kNoTexture for no sky.
@@ -60,7 +60,12 @@ struct FrameData {
     uint2 renderSize;
     uint2 previousRenderSize;
     uint2 targetSize;
-    uint2 framePadding;
+    float fogAnisotropy;  // Of every fog's phase function (Henyey-Greenstein).
+    float time;           // Seconds, by which the noise of fog volumes moves.
+    uint fogVolumeBuffer; // The boxes of fog (Fog.slangh), and how many.
+    uint fogVolumeCount;
+    uint fogTexture;      // The fog in front of each point of the view (VolumetricFog), or kNoTexture.
+    uint fogPadding;
 };
 
 // From texture coordinates of the frame, over the corner it draws into, to those of its targets, for

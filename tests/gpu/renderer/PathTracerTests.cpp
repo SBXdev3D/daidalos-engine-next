@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -39,6 +40,7 @@
 #include "RayTracingScene.hpp"
 #include "RenderGraph.hpp"
 #include "TemporalResolvePass.hpp"
+#include "VolumetricFog.hpp"
 
 using namespace daidalos;
 using gpu_tests::GpuTest;
@@ -67,7 +69,7 @@ renderer::CameraView LookAt(const glm::vec3& eye, const glm::vec3& target, float
 // Light only from the frame's lights: no fog. Exposed as a dim interior, for which the Cornell box and the
 // mirror room are lit (ADR-0043).
 renderer::Atmosphere Dark() {
-    return {.fogColor = glm::vec3(0.0f), .fogDensity = 0.0f, .ev100 = 3.0f};
+    return {.ev100 = 3.0f};
 }
 
 class PathTracerTest : public GpuTest {
@@ -183,6 +185,8 @@ protected:
         float renderScale = 1.0f;
         /// With resolve: AMD FSR 3.1 upscales the frames instead of the engine's resolve (ADR-0050).
         bool fsr = false;
+        /// Volumetric fog in a grid of this size (ADR-0051); none without.
+        std::optional<renderer::FroxelGrid> fog;
     };
 
     // What the G-buffer and the lighting draw of the view, in linear HDR. The view is drawn frames times, each with the
@@ -241,6 +245,13 @@ protected:
             lighting.emplace(std::move(*made));
         }
         EXPECT_TRUE(lighting.has_value());
+        std::optional<renderer::VolumetricFog> fog;
+        if (options.fog.has_value()) {
+            core::Result<renderer::VolumetricFog> made = renderer::VolumetricFog::Create(Device());
+            EXPECT_TRUE(made.has_value() && made->Resize(extent, *options.fog).has_value());
+            fog.emplace(std::move(*made));
+        }
+        const rhi::TextureHandle fogTexture = fog.has_value() ? fog->Output() : rhi::TextureHandle{};
         std::optional<renderer::Denoiser> denoiser;
         if (denoise) {
             core::Result<renderer::Denoiser> made = renderer::Denoiser::Create(Device());
@@ -275,6 +286,7 @@ protected:
                                      .background = background,
                                      .depth = depth,
                                      .exposure = renderer::ExposureScale(animated.atmosphere.ev100),
+                                     .fog = fogTexture,
                                      .sharpReflections =
                                          reflections ? renderer::GlobalIllumination::kSharpRoughness : 0.0f})
                                 .has_value());
@@ -320,6 +332,14 @@ protected:
                                          .previousLightCount = m_pass->PreviousLightCount(),
                                          .frameIndex = frame},
                                         options.restir);
+                        if (fog.has_value()) {
+                            fog->AddTo(graph, {.frameBuffer = m_pass->FrameDataIndex(),
+                                               .instanceBuffer = m_pass->InstanceDataIndex(),
+                                               .materialBuffer = m_pass->MaterialDataIndex(),
+                                               .structure = m_scene->Structure(),
+                                               .emissiveTriangles = m_pass->EmissiveTriangles(),
+                                               .frameIndex = frame});
+                        }
                         if (denoiser.has_value()) {
                             denoiser->AddTo(
                                 graph,
@@ -337,7 +357,8 @@ protected:
                             {.shading = &*shading,
                              .diffuse = denoiser.has_value() ? denoiser->Diffuse() : shading->diffuse,
                              .specular = denoiser.has_value() ? denoiser->Specular() : shading->specular,
-                             .depth = depth});
+                             .depth = depth,
+                             .fog = fogTexture});
                         if (m_pass->HasGlass()) {
                             graph.AddPass({.name = "Behind glass",
                                            .textures = {{color, rhi::Access::TransferRead},
@@ -347,7 +368,8 @@ protected:
                                            .rendering = rhi::RenderingDesc{.colorTarget = color, .area = renderExtent},
                                            .textures = {{color, rhi::Access::ColorTarget},
                                                         {background, rhi::Access::FragmentShaderRead},
-                                                        {depth, rhi::Access::FragmentShaderRead}},
+                                                        {depth, rhi::Access::FragmentShaderRead},
+                                                        {fogTexture, rhi::Access::FragmentShaderRead}},
                                            .buffers = {{m_pass->EmissiveTriangles(), rhi::Access::FragmentShaderRead}},
                                            .structures = {{m_scene->Structure(), rhi::Access::RayQueryRead}}},
                                           [&](rhi::CommandList& list) { m_pass->RecordGlass(list); });
@@ -399,6 +421,7 @@ protected:
         fsr.reset();
         Device().DestroyTexture(reactive);
         denoiser.reset();
+        fog.reset();
         lighting.reset();
         m_pass->DestroyShadingTargets(*shading);
         Device().DestroyTexture(color);
@@ -1358,7 +1381,7 @@ SceneView CorridorView(const renderer::DarkCorridor& corridor, renderer::MeshHan
                        const glm::vec3& target) {
     SceneView view;
     view.camera = LookAt(corridor.eye, target, corridor.verticalFov);
-    view.atmosphere = {.fogColor = glm::vec3(0.0f), .fogDensity = 0.0f, .ev100 = corridor.ev100};
+    view.atmosphere = {.ev100 = corridor.ev100};
     view.lights.push_back(renderer::Flashlight(corridor.eye, target));
     for (const renderer::CornellPart& part : corridor.parts) {
         view.draws.push_back({.mesh = cube, .world = part.world, .material = material(part.material)});
@@ -1913,4 +1936,141 @@ TEST_F(UpscalingTest, DISABLED_CompareWithFsr) {
                     engine.still / native.still, engine.pan / native.pan, fsr.still / native.still,
                     fsr.pan / native.pan);
     }
+}
+
+namespace {
+
+// Writes an image for a person to look at, as a binary PPM tonemapped by x / (1 + x), into the directory the
+// environment variable DAI_TEST_IMAGES names; nothing without it.
+void SaveForInspection(const char* name, const Image& image, rhi::Extent extent) {
+#ifdef _WIN32
+    char* value = nullptr;
+    std::size_t length = 0;
+    if (_dupenv_s(&value, &length, "DAI_TEST_IMAGES") != 0 || value == nullptr) {
+        return;
+    }
+    const std::string directory(value);
+    std::free(value);
+#else
+    const char* value = std::getenv("DAI_TEST_IMAGES");
+    if (value == nullptr) {
+        return;
+    }
+    const std::string directory(value);
+#endif
+    std::ofstream file(std::filesystem::path(directory) / (std::string(name) + ".ppm"), std::ios::binary);
+    file << "P6\n" << extent.width << ' ' << extent.height << "\n255\n";
+    for (const glm::vec4& pixel : image) {
+        for (int channel = 0; channel < 3; ++channel) {
+            const float linear = std::max(pixel[channel], 0.0f);
+            const float mapped = std::pow(linear / (1.0f + linear), 1.0f / 2.2f);
+            file.put(static_cast<char>(static_cast<unsigned char>(std::clamp(mapped, 0.0f, 1.0f) * 255.0f + 0.5f)));
+        }
+    }
+}
+
+// The Cornell box in fog, lit by a narrow spot, with a dense box of fog on the floor (ADR-0051).
+SceneView FoggyCornellBox(const std::function<renderer::MaterialHandle(const MaterialDesc&)>& material,
+                          renderer::MeshHandle cube) {
+    const renderer::CornellBox box = renderer::MakeCornellBox();
+    SceneView view;
+    view.camera = LookAt(box.eye, box.target, box.verticalFov);
+    view.atmosphere = Dark();
+    view.atmosphere.fog = {.density = 0.12f, .albedo = glm::vec3(0.9f), .anisotropy = 0.4f};
+    renderer::Light spot = box.light;
+    spot.position = {-1.0f, 5.0f, 1.0f};
+    spot.direction = glm::normalize(glm::vec3(0.6f, -1.0f, -0.3f));
+    spot.color = glm::vec3(1500.0f);
+    spot.innerAngle = glm::radians(12.0f);
+    spot.outerAngle = glm::radians(18.0f);
+    view.lights.push_back(spot);
+    for (const renderer::CornellPart& part : box.parts) {
+        view.draws.push_back({.mesh = cube, .world = part.world, .material = material(part.material)});
+    }
+    view.fogVolumes.push_back(
+        {.world = glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.6f, 0.6f, 0.4f)), glm::vec3(2.4f, 1.2f, 2.4f)),
+         .density = 0.8f,
+         .albedo = glm::vec3(0.8f, 0.85f, 0.9f),
+         .edge = 0.4f});
+    return view;
+}
+
+} // namespace
+
+TEST_F(PathTracerTest, VolumetricFogMatchesThePathTracer) {
+    // Single scattering in the fog and direct light on the surfaces, in both: one bounce of the path tracer,
+    // whose paths scatter where delta tracking says, against the froxels, averaged over frames after their
+    // history has settled. The path tracer's shadow rays lose what the box of fog takes; the froxels' only
+    // what the level's fog takes (ADR-0051).
+    const SceneView view = FoggyCornellBox([this](const MaterialDesc& desc) { return Material(desc); }, m_cube);
+    SceneView clear = view;
+    clear.atmosphere.fog.density = 0.0f;
+    clear.fogVolumes.clear();
+    constexpr rhi::Extent kExtent{128, 128};
+    const Image traced = Trace(view, kExtent, {.maxBounces = 1, .seed = 3}, 1024);
+    // The froxels span as much of the view as the game's at 1440p, 16 pixels of 2560: here, about one pixel.
+    // A coarser grid is measured too, 8 times wider and half as deep.
+    const renderer::FroxelGrid grid{.tileSize = 1, .slices = 64};
+    const Image fogged = Rasterize(view, kExtent, {.frames = 32, .warmup = 32, .fog = grid});
+    const Image unfogged = Rasterize(clear, kExtent, {.frames = 32, .warmup = 4});
+    const Image coarse = Rasterize(
+        view, kExtent, {.frames = 32, .warmup = 32, .fog = renderer::FroxelGrid{.tileSize = 8, .slices = 32}});
+    SaveForInspection("fog-traced", traced, kExtent);
+    SaveForInspection("fog-froxels", fogged, kExtent);
+    SaveForInspection("fog-coarse", coarse, kExtent);
+    SaveForInspection("fog-none", unfogged, kExtent);
+
+    const float foggedFlip = Flip(traced, fogged, kExtent);
+    const float unfoggedFlip = Flip(traced, unfogged, kExtent);
+    const float coarseFlip = Flip(traced, coarse, kExtent);
+    RecordProperty("flip", std::to_string(foggedFlip));
+    RecordProperty("flipWithoutFog", std::to_string(unfoggedFlip));
+    RecordProperty("flipCoarse", std::to_string(coarseFlip));
+    double tracedTotal = 0.0;
+    double foggedTotal = 0.0;
+    for (std::size_t index = 0; index < traced.size(); ++index) {
+        tracedTotal += Luminance(traced[index]);
+        foggedTotal += Luminance(fogged[index]);
+    }
+    RecordProperty("brightness", std::to_string(foggedTotal / tracedTotal));
+    std::printf("FLIP %.4f fog, %.4f coarse, %.4f without; brightness %.4f\n", foggedFlip, coarseFlip, unfoggedFlip,
+                foggedTotal / tracedTotal);
+    // Measured on an RTX 3090: FLIP 0.090 with the game's grid, 0.32 with the coarse one, 0.165 without fog;
+    // brightness 0.99. A grid as coarse as the light's cone blurs it into a glow around the lamp.
+    EXPECT_LT(foggedFlip, 0.12f);
+    EXPECT_LT(foggedFlip, 0.7f * unfoggedFlip);
+    EXPECT_NEAR(foggedTotal / tracedTotal, 1.0, 0.05);
+}
+
+TEST_F(PathTracerTest, FogAmongAThousandLightsMatchesThePathTracer) {
+    // The room of a thousand lamps and a glowing panel, in fog (ADR-0051): each froxel draws its light among
+    // candidates drawn by power over every light. Direct light only in both: one scattering, or one surface.
+    // The walls are black, so that only the fog is compared, not the noise of their own light.
+    SceneView view = RoomOfLights(m_cube, [this](const MaterialDesc& desc) {
+        MaterialDesc black = desc;
+        black.baseColorFactor = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+        return Material(black);
+    });
+    view.atmosphere.fog = {.density = 0.15f, .albedo = glm::vec3(0.9f), .anisotropy = 0.3f};
+    constexpr rhi::Extent kExtent{96, 96};
+    const Image traced = Trace(view, kExtent, {.maxBounces = 2, .seed = 5, .directOnly = true}, 1024);
+    const renderer::FroxelGrid grid{.tileSize = 1, .slices = 64};
+    const Image averaged = Rasterize(view, kExtent, {.frames = 32, .warmup = 32, .fog = grid});
+    const Image oneFrame = Rasterize(view, kExtent, {.warmup = 32, .fog = grid});
+    double total = 0.0;
+    double reference = 0.0;
+    for (std::size_t index = 0; index < traced.size(); ++index) {
+        total += Luminance(averaged[index]);
+        reference += Luminance(traced[index]);
+    }
+    const float averagedFlip = Flip(traced, averaged, kExtent);
+    const float oneFrameFlip = Flip(traced, oneFrame, kExtent);
+    RecordProperty("flip", std::to_string(averagedFlip));
+    RecordProperty("flipOneFrame", std::to_string(oneFrameFlip));
+    RecordProperty("brightness", std::to_string(total / reference));
+    // Measured on an RTX 3090: FLIP 0.083 averaged, 0.103 one frame; brightness 1.00. Reusing the lights
+    // froxels kept last frame, as ReSTIR does, measured worse: 0.094 to 0.114, and 2% too dark.
+    EXPECT_LT(averagedFlip, 0.11f);
+    EXPECT_LT(oneFrameFlip, 0.13f);
+    EXPECT_NEAR(total / reference, 1.0, 0.05);
 }

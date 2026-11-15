@@ -48,6 +48,22 @@ void ExtractLights(ecs::World& world, renderer::SceneView& view) {
         });
 }
 
+void ExtractFogVolumes(ecs::World& world, renderer::SceneView& view) {
+    world.Each<ecs::WorldTransform, FogVolume>(
+        [&](ecs::Entity /*entity*/, const ecs::WorldTransform& transform, const FogVolume& volume) {
+            if (!volume.enabled || volume.density <= 0.0f) {
+                return;
+            }
+            view.fogVolumes.push_back({.world = transform.matrix,
+                                       .density = volume.density,
+                                       .albedo = volume.albedo,
+                                       .edge = volume.edge,
+                                       .noise = volume.noise,
+                                       .noiseFrequency = volume.noiseFrequency,
+                                       .noiseVelocity = volume.noiseVelocity});
+        });
+}
+
 /// The matrices of the entities drawn this frame, kept once the extraction is done: an entity can be
 /// read several times in one extraction, as a joint of two skins, and must give the same previous matrix.
 class DrawnTransforms {
@@ -86,6 +102,7 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
     view.jointMatrices.clear();
     view.previousJointMatrices.clear();
     view.lights.clear();
+    view.fogVolumes.clear();
     DrawnTransforms drawn(world);
 
     bool chosen = false;
@@ -137,6 +154,7 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
         });
     drawn.Keep();
     ExtractLights(world, view);
+    ExtractFogVolumes(world, view);
 }
 
 void EmitParticles(ecs::World& world, float delta, std::vector<renderer::ParticleSpawn>& spawns) {

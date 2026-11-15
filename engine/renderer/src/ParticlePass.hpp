@@ -65,10 +65,10 @@ public:
 
     /// Adds the pass that draws the particles over target, as "Particles", and their coverage into
     /// reactive, which it clears, in the top-left corner of this area. They read depth themselves, to fade
-    /// softly where they meet surfaces.
+    /// softly where they meet surfaces, and the frame's fog (FrameTargets::fog), if any, which veils them.
     void AddDraw(RenderGraph& graph, std::uint32_t frameBuffer, rhi::TextureHandle depth, rhi::TextureHandle target,
                  rhi::TextureHandle reactive, const glm::vec3& cameraRight, const glm::vec3& cameraUp,
-                 std::optional<rhi::Extent> area = std::nullopt);
+                 std::optional<rhi::Extent> area = std::nullopt, rhi::TextureHandle fog = {});
 
     [[nodiscard]] std::size_t EffectCount() const { return m_effects.Size(); }
 

@@ -53,9 +53,11 @@ struct FrameTargets {
     /// What luminance in nits is multiplied by before tonemapping (ADR-0043): lights, emission and the sky
     /// reach the GPU multiplied by it, so that its targets hold values near those of the screen.
     float exposure = 1.0f;
-    /// Multiplies the fog's color, which is given as it looks at the atmosphere's ev100, into the GPU's
-    /// exposure (ADR-0048).
-    float fogScale = 1.0f;
+    /// The fog in front of each point of the view (VolumetricFog::Output), which the composite, glass and
+    /// particles read (ADR-0051). Null for no fog.
+    rhi::TextureHandle fog;
+    /// Seconds, by which the noise of fog volumes moves.
+    float time = 0.0f;
     /// Smoother surfaces trace sharp reflections, which show emissive lights (ADR-0044): with reflections,
     /// the smaller of GlobalIllumination::kSharpRoughness and the roughness above which no reflection is
     /// traced; 0 without.
@@ -82,6 +84,10 @@ struct CompositeInputs {
     rhi::TextureHandle diffuse;
     rhi::TextureHandle specular;
     rhi::TextureHandle depth;
+    /// FrameTargets::fog, which the composite reads, or null.
+    rhi::TextureHandle fog;
+    /// The fog alone, over black: its debug view.
+    bool fogOnly = false;
 };
 
 /// The perspective a frame is drawn with, reverse-Z, as the upscalers that reconstruct depth need it.
@@ -312,6 +318,9 @@ private:
         std::uint64_t emissiveDrawCapacity = 0;
         rhi::BufferHandle emissiveTriangles;
         std::uint64_t emissiveTriangleCapacity = 0;
+        /// The boxes of fog (ADR-0051).
+        rhi::BufferHandle fogVolumes;
+        std::uint64_t fogVolumeCapacity = 0;
     };
 
     MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);

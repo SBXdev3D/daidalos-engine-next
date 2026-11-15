@@ -59,14 +59,41 @@ struct DrawItem {
     SceneId id = 0;
 };
 
-/// Distance fog and the sky: surfaces fade into the fog color, and where nothing is drawn, the sky shows,
-/// or the fog color without one. The sky also lights the scene, through the rays of indirect light that
-/// leave it (ADR-0040): no light comes from nowhere.
+/// The fog that fills the level (ADR-0051): a participating medium, the same everywhere within the view
+/// distance of the camera. Light scatters in it, lit by the frame's lights, and is lost through it: what no
+/// light reaches stays dark. One medium holds for every fog, the volumes' included, whose phase it sets.
+struct Fog {
+    /// Fraction of the light lost per meter, by absorption and scattering (the extinction coefficient); 0
+    /// for clear air.
+    float density = 0.0f;
+    /// Of the light lost, the fraction that scatters rather than is absorbed, per color: its albedo.
+    glm::vec3 albedo{0.9f};
+    /// How the light scatters, from -1 back towards where it came from to 1 straight on, 0 the same in every
+    /// direction (Henyey and Greenstein 1941), for every fog: dust and steam send most of it forwards.
+    float anisotropy = 0.3f;
+};
+
+/// A box of fog, added to the level's (ADR-0051): dust in a room, steam from a pipe. The box is the cube
+/// from -0.5 to 0.5 in world's space: its scale is the box's size.
+struct FogVolume {
+    glm::mat4 world{1.0f};
+    /// As Fog::density, at the heart of the box.
+    float density = 0.0f;
+    glm::vec3 albedo{0.9f};
+    /// The fog thins to nothing towards the faces, over this fraction of the box's half-size: 0 ends sharply
+    /// at the faces, 1 thins from the center.
+    float edge = 0.3f;
+    /// How much the density varies, from 0 (even) to 1 (from none to twice as dense), with a noise that
+    /// moves at noiseVelocity, in meters per second, and changes every 1 / noiseFrequency meters.
+    float noise = 0.0f;
+    float noiseFrequency = 1.0f;
+    glm::vec3 noiseVelocity{0.0f};
+};
+
+/// The level's fog and sky. The sky shows where nothing is drawn, and lights the scene through the rays of
+/// indirect light that leave it (ADR-0040): no light comes from nowhere.
 struct Atmosphere {
-    /// What the fog looks like on screen, linear, at ev100: it is light, and follows the eye's exposure.
-    glm::vec3 fogColor{0.02f, 0.02f, 0.03f};
-    /// Fraction of the light lost per meter; 0 for clear air.
-    float fogDensity = 0.0f;
+    Fog fog;
     /// A cube texture (rhi::TextureDesc::cube) seen where nothing is drawn, and the light that rays which
     /// leave the scene find (ADR-0036). Null for none.
     rhi::TextureHandle sky;
@@ -129,6 +156,8 @@ struct SceneView {
     std::vector<glm::mat4> previousJointMatrices;
     Atmosphere atmosphere;
     std::vector<Light> lights;
+    /// Boxes of fog, added to the atmosphere's (ADR-0051).
+    std::vector<FogVolume> fogVolumes;
     /// New particles of the frame (ADR-0025).
     std::vector<ParticleSpawn> particleSpawns;
     /// Seconds since the previous frame, by which particles move.

@@ -55,8 +55,10 @@ struct CompositePushConstants {
     std::uint32_t specular;
     std::uint32_t shading;
     std::uint32_t depth;
-    std::uint32_t padding;
+    std::uint32_t flags;
 };
+// Matches the flags in shaders/Composite.slang.
+constexpr std::uint32_t kFogOnly = 1;
 
 struct SkinningPushConstants {
     std::uint32_t source;
@@ -107,7 +109,7 @@ struct FrameData {
     glm::mat4 inverseViewProjection;
     glm::vec3 cameraPosition;
     float fogDensity;
-    glm::vec3 fogColor;
+    glm::vec3 fogAlbedo;
     std::uint32_t lightCount;
     std::uint32_t lightBuffer;
     std::uint32_t skyTexture;
@@ -138,9 +140,27 @@ struct FrameData {
     glm::uvec2 renderSize;
     glm::uvec2 previousRenderSize;
     glm::uvec2 targetSize;
-    glm::uvec2 padding;
+    float fogAnisotropy;
+    float time;
+    std::uint32_t fogVolumeBuffer;
+    std::uint32_t fogVolumeCount;
+    std::uint32_t fogTexture;
+    std::uint32_t fogPadding;
 };
-static_assert(sizeof(FrameData) == 432);
+static_assert(sizeof(FrameData) == 448);
+
+/// A box of fog (ADR-0051). Matches its twin in shaders/Fog.slangh.
+struct FogVolumeData {
+    glm::mat4 worldToBox;
+    glm::vec3 albedo;
+    float density;
+    glm::vec3 noiseVelocity;
+    float noiseFrequency;
+    float noise;
+    float edge;
+    glm::vec2 padding;
+};
+static_assert(sizeof(FogVolumeData) == 112);
 
 struct LightData {
     glm::vec3 position;
@@ -238,6 +258,7 @@ constexpr std::uint32_t kInitialMaterialCapacity = 64;
 constexpr std::uint64_t kInitialInstanceCapacity = 256;
 constexpr std::uint64_t kInitialJointCapacity = 256;
 constexpr std::uint64_t kInitialLightCapacity = 64;
+constexpr std::uint64_t kInitialFogVolumeCapacity = 8;
 /// Grows an array of a frame slot to hold count elements, doubling, and never to zero. The CPU writes it,
 /// unless it is in GPU memory.
 core::Result<void> Reserve(rhi::Device& device, rhi::BufferHandle& buffer, std::uint64_t& capacity, std::uint64_t count,
@@ -320,6 +341,7 @@ MeshPass::~MeshPass() {
         m_device->DestroyBuffer(slot.lightMap);
         m_device->DestroyBuffer(slot.emissiveDraws);
         m_device->DestroyBuffer(slot.emissiveTriangles);
+        m_device->DestroyBuffer(slot.fogVolumes);
     }
 }
 
@@ -611,6 +633,8 @@ core::Result<void> MeshPass::PrepareFrameSlot(FrameSlot& slot, const SceneView& 
                     sizeof(glm::mat4), "Joints"));
     DAI_TRY(reserve(slot.lights, slot.lightCapacity, view.lights.size(), kInitialLightCapacity, sizeof(LightData),
                     "Lights"));
+    DAI_TRY(reserve(slot.fogVolumes, slot.fogVolumeCapacity, view.fogVolumes.size(), kInitialFogVolumeCapacity,
+                    sizeof(FogVolumeData), "Fog volumes"));
     return {};
 }
 
@@ -813,8 +837,8 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     FrameData frame{jittered,
                     glm::inverse(jittered),
                     cameraPosition,
-                    view.atmosphere.fogDensity,
-                    view.atmosphere.fogColor * targets.fogScale,
+                    std::max(view.atmosphere.fog.density, 0.0f),
+                    glm::clamp(view.atmosphere.fog.albedo, glm::vec3(0.0f), glm::vec3(1.0f)),
                     static_cast<std::uint32_t>(view.lights.size()),
                     m_device->StorageIndex(slot.lights),
                     view.atmosphere.sky ? m_device->BindlessIndex(view.atmosphere.sky) : kNoTexture,
@@ -846,7 +870,26 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                     {targets.extent.width, targets.extent.height},
                     {previousExtent.width, previousExtent.height},
                     {targetExtent.width, targetExtent.height},
-                    {0, 0}};
+                    std::clamp(view.atmosphere.fog.anisotropy, -0.95f, 0.95f),
+                    targets.time,
+                    m_device->StorageIndex(slot.fogVolumes),
+                    static_cast<std::uint32_t>(view.fogVolumes.size()),
+                    targets.fog ? m_device->BindlessIndex(targets.fog) : kNoTexture,
+                    0};
+    if (!view.fogVolumes.empty()) {
+        auto* volumes = reinterpret_cast<FogVolumeData*>(m_device->Mapped(slot.fogVolumes).data());
+        for (std::size_t index = 0; index < view.fogVolumes.size(); ++index) {
+            const FogVolume& volume = view.fogVolumes[index];
+            volumes[index] = {.worldToBox = glm::inverse(volume.world),
+                              .albedo = glm::clamp(volume.albedo, glm::vec3(0.0f), glm::vec3(1.0f)),
+                              .density = std::max(volume.density, 0.0f),
+                              .noiseVelocity = volume.noiseVelocity,
+                              .noiseFrequency = volume.noiseFrequency,
+                              .noise = std::clamp(volume.noise, 0.0f, 1.0f),
+                              .edge = std::clamp(volume.edge, 0.0f, 1.0f),
+                              .padding = glm::vec2(0.0f)};
+        }
+    }
 
     if (!view.jointMatrices.empty()) {
         // Without previous joints, they stood still.
@@ -1156,7 +1199,7 @@ void MeshPass::AddComposite(RenderGraph& graph, rhi::TextureHandle target, const
                                       index(inputs.specular),
                                       index(shading.specular),
                                       index(inputs.depth),
-                                      0};
+                                      inputs.fogOnly ? kFogOnly : 0U};
     graph.AddPass({.name = "Composite",
                    .rendering = rhi::RenderingDesc{.colorTarget = target, .area = m_renderExtent},
                    .textures = {{target, rhi::Access::ColorTarget, true},
@@ -1165,7 +1208,8 @@ void MeshPass::AddComposite(RenderGraph& graph, rhi::TextureHandle target, const
                                 {shading.specular, rhi::Access::FragmentShaderRead},
                                 {inputs.diffuse, rhi::Access::FragmentShaderRead},
                                 {inputs.specular, rhi::Access::FragmentShaderRead},
-                                {inputs.depth, rhi::Access::FragmentShaderRead}}},
+                                {inputs.depth, rhi::Access::FragmentShaderRead},
+                                {inputs.fog, rhi::Access::FragmentShaderRead}}},
                   [this, push](rhi::CommandList& commands) {
                       commands.BindPipeline(m_pipelines.composite);
                       commands.Push(push);

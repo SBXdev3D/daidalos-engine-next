@@ -203,9 +203,9 @@ TEST_F(RendererTest, ShowsEachDebugView) {
     ASSERT_TRUE(mesh.has_value());
     const renderer::SceneView view = TestView(*mesh);
     using renderer::DebugView;
-    for (const DebugView debugView :
-         {DebugView::Rays, DebugView::Path, DebugView::Motion, DebugView::Normals, DebugView::Indirect,
-          DebugView::RadianceCache, DebugView::Reflections, DebugView::Lights, DebugView::Bloom, DebugView::Off}) {
+    for (const DebugView debugView : {DebugView::Rays, DebugView::Path, DebugView::Motion, DebugView::Normals,
+                                      DebugView::Indirect, DebugView::RadianceCache, DebugView::Reflections,
+                                      DebugView::Lights, DebugView::Bloom, DebugView::Fog, DebugView::Off}) {
         target->SetDebugView(debugView);
         RenderFrames(*target, view, 3);
     }
@@ -227,7 +227,6 @@ TEST_F(RendererTest, AdaptsTheEyeWithinTheLevelsRange) {
     // A cube that fills the view, a meter away, in black air.
     renderer::SceneView view = TestView(*mesh);
     view.draws[0].world = glm::scale(glm::mat4(1.0f), glm::vec3(4.0f));
-    view.atmosphere.fogColor = glm::vec3(0.0f);
     view.atmosphere.ev100 = 4.0f;
     view.atmosphere.autoExposure = true;
     view.atmosphere.ev100Min = 1.0f;

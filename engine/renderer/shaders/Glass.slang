@@ -165,8 +165,9 @@ float4 PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target
         through = volume.r >= 0.0 ? volume : behind;
     }
     // The fog between the camera and the glass veils its reflection; what is behind the glass is fogged
-    // already, as the frame drew it.
-    const float visibility = exp(-frame.fogDensity * cameraDistance);
-    const float3 surface = reflected * lerp(frame.fogColor, reflection, visibility);
+    // already, as the frame drew it (ADR-0051).
+    const float4 fog = FogAt(frame, float2(pixel) * frame.screenTexel + frame.screenTexel * 0.5,
+                             dot(input.worldPosition - frame.cameraPosition, frame.cameraForward), uint2(pixel));
+    const float3 surface = reflected * ThroughFog(fog, reflection);
     return float4(surface + (1.0 - reflected) * material.transmission * baseColor.rgb * through, 1.0);
 }

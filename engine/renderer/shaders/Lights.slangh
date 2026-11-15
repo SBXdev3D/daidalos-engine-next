@@ -17,6 +17,7 @@
 // Include after MeshTypes.slangh and RayQueries.slangh.
 
 #include "Random.slangh"
+#include "Fog.slangh"
 import Bsdf;
 
 // Matches AliasEntry in renderer/src/LightSampling.hpp.
@@ -150,7 +151,9 @@ LightContact ContactLight(FrameData frame, uint index, float2 u, float3 position
         contact.radius = light.radius;
         // Attenuation never goes nearer than the light's sphere, nor than the receiver allows.
         light.radius = max(light.radius, nearest);
-        contact.illuminance = light.color * Attenuation(light, distanceToLight, contact.toLight);
+        // The level's fog takes its share on the way (ADR-0051).
+        contact.illuminance = light.color * Attenuation(light, distanceToLight, contact.toLight) *
+                              LevelFogTransmittance(frame, position, light.position);
         // Nothing this close to a light shadows it (ADR-0035).
         contact.gap = min(kShadowNearPlane, light.range * 0.5);
         contact.soft = contact.radius > 0.0;
@@ -177,8 +180,9 @@ LightContact ContactLight(FrameData frame, uint index, float2 u, float3 position
     if (cosine <= 0.0) {
         return contact;
     }
-    contact.illuminance =
-        triangle.emission * frame.exposure * (cosine * 0.5 * doubleArea / max(distance2, nearest * nearest));
+    contact.illuminance = triangle.emission * frame.exposure *
+                          (cosine * 0.5 * doubleArea / max(distance2, nearest * nearest) *
+                           LevelFogTransmittance(frame, position, point));
     contact.target = point;
     contact.gap = 1e-3 * (1.0 + distanceToLight);
     contact.valid = any(contact.illuminance > 0.0);

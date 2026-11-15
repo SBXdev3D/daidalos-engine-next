@@ -171,8 +171,6 @@ protected:
     // color, as a white ambient light showed it before global illumination (ADR-0040).
     void Render(const SceneView& scene, glm::vec2 jitter = glm::vec2(0.0f), renderer::Denoiser* denoiser = nullptr) {
         SceneView view = scene;
-        // Where nothing is drawn, the fog's color shows: the tests' background.
-        view.atmosphere.fogColor = glm::vec3(kBackground);
         if (view.camera.has_value() && view.lights.empty()) {
             view.lights.push_back({.type = renderer::LightType::Directional,
                                    .direction = -glm::vec3(glm::inverse(view.camera->view)[2]),

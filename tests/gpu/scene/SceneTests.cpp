@@ -118,7 +118,7 @@ TEST_F(ApplicationScene, SystemsRunAndTheCurrentSceneIsDrawn) {
         scene->World().Add<ecs::LocalTransform>(camera);
         scene->World().Add<scene::Camera>(camera);
         scene->SetActiveCamera(camera);
-        scene->SetAtmosphere({{0.1f, 0.2f, 0.3f}, 0.1f});
+        scene->SetAtmosphere({.fog = {.density = 0.1f, .albedo = {0.1f, 0.2f, 0.3f}}});
         app.SetScene(std::move(scene));
         return {};
     };

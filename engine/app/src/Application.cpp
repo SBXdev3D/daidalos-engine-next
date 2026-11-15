@@ -43,6 +43,10 @@ float ReflectionRoughness(const core::CVar<double>& roughness) {
     return static_cast<float>(std::clamp(roughness.Get(), 0.0, 1.0));
 }
 
+std::uint32_t FogSlices(const core::CVar<std::int64_t>& slices) {
+    return static_cast<std::uint32_t>(std::clamp<std::int64_t>(slices.Get(), 16, 256));
+}
+
 float ViewDistanceMeters(const core::CVar<double>& meters) {
     return static_cast<float>(std::max(meters.Get(), 1.0));
 }
@@ -77,12 +81,15 @@ renderer::DebugView DebugViewMode(const core::CVar<std::string>& cvar) {
     if (name == "bloom") {
         return renderer::DebugView::Bloom;
     }
+    if (name == "fog") {
+        return renderer::DebugView::Fog;
+    }
     static std::string warned;
     if (name != "off" && name != warned) {
         warned = name;
         DAI_LOG_WARNING(kModule,
                         "Unknown debug view '{}': use off, rays, path, motion, normals, indirect, radiance_cache, "
-                        "reflections, lights or bloom",
+                        "reflections, lights, bloom or fog",
                         name);
     }
 
@@ -313,6 +320,10 @@ core::Result<void> Application::LoadConfiguration() {
         m_reflectionRoughness = m_cvars.Register<double>(
             "renderer.reflection_roughness", 0.6,
             "Surfaces rougher than this, from 0 to 1, trace no reflection: the indirect light stands in for it");
+        m_volumetricFog = m_cvars.Register<bool>("renderer.volumetric_fog", true,
+                                                 "Fog lit by the lights, with light shafts; off, the air is clear");
+        m_fogSlices = m_cvars.Register<std::int64_t>(
+            "renderer.fog_slices", 64, "Slices of the volumetric fog in depth, from 16 to 256: finer, for their cost");
         m_restirSpatial =
             m_cvars.Register<bool>("renderer.restir_spatial", true,
                                    "Pixels reuse the lights their neighbours chose; off, only their own past");
@@ -509,6 +520,8 @@ core::Result<void> Application::CreateRenderer() {
              .denoiser = m_denoiser->Get(),
              .reflections = m_reflections->Get(),
              .reflectionRoughness = ReflectionRoughness(*m_reflectionRoughness),
+             .volumetricFog = m_volumetricFog->Get(),
+             .fogSlices = FogSlices(*m_fogSlices),
              .restirSpatial = m_restirSpatial->Get(),
              .restirUnbiased = m_restirUnbiased->Get(),
              .indirect = IndirectLight(),
@@ -594,6 +607,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_renderer->SetDenoiser(m_denoiser->Get());
     m_renderer->SetReflections(m_reflections->Get());
     m_renderer->SetReflectionRoughness(ReflectionRoughness(*m_reflectionRoughness));
+    m_renderer->SetVolumetricFog(m_volumetricFog->Get(), FogSlices(*m_fogSlices));
     m_renderer->SetRestir(m_restirSpatial->Get(), m_restirUnbiased->Get());
     m_renderer->SetIndirectLightConfig(IndirectLight());
     m_renderer->SetFieldOfView(FieldOfViewRadians(*m_fieldOfView));

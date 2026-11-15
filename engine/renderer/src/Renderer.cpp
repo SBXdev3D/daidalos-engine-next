@@ -41,6 +41,7 @@
 #include "ShaderCompiler.hpp"
 #include "TemporalResolvePass.hpp"
 #include "UiPass.hpp"
+#include "VolumetricFog.hpp"
 
 namespace daidalos::renderer {
 
@@ -95,6 +96,7 @@ struct Renderer::Impl {
             DAI_LOG_ERROR(kModule, "Shutting down with a failed device: {}", core::Format(idle.error()));
         }
         pathTracer.reset();
+        volumetricFog.reset();
         exposureMeter.reset();
         bloom.reset();
         temporalResolve.reset();
@@ -177,6 +179,13 @@ struct Renderer::Impl {
     bool rangeWarned = false;
     std::optional<Denoiser> denoiser;
     std::optional<DirectLighting> directLighting;
+    /// Volumetric fog (ADR-0051), its froxel grid, and whether the last frame had it: its history follows.
+    std::optional<VolumetricFog> volumetricFog;
+    bool fog = true;
+    FroxelGrid fogGrid;
+    bool fogged = false;
+    /// Seconds the views drawn have moved on by, which the noise of fog volumes follows.
+    double time = 0.0;
     DirectLightingSettings restir;
     GlobalIlluminationSettings indirect;
     /// The last frame was lit: its reservoirs can be reused.
@@ -410,6 +419,10 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     impl->denoiser.emplace(std::move(denoiser));
     DAI_TRY_ASSIGN(DirectLighting directLighting, DirectLighting::Create(impl->device));
     impl->directLighting.emplace(std::move(directLighting));
+    DAI_TRY_ASSIGN(VolumetricFog volumetricFog, VolumetricFog::Create(impl->device));
+    impl->volumetricFog.emplace(std::move(volumetricFog));
+    impl->fog = config.volumetricFog;
+    impl->fogGrid.slices = config.fogSlices;
     impl->restir.spatial = config.restirSpatial;
     impl->restir.unbiased = config.restirUnbiased;
     impl->SetIndirect(config.indirect);
@@ -519,6 +532,11 @@ void Renderer::SetDebugView(DebugView view) {
 void Renderer::SetPathTracer(std::uint32_t bounces, std::uint32_t samples) {
     m_impl->pathSettings.maxBounces = bounces;
     m_impl->pathSettings.maxSamples = samples;
+}
+
+void Renderer::SetVolumetricFog(bool enabled, std::uint32_t slices) {
+    m_impl->fog = enabled;
+    m_impl->fogGrid.slices = std::clamp(slices, 16U, 256U);
 }
 
 void Renderer::SetNormalStrength(float strength) {
@@ -641,6 +659,14 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     const bool reflect = indirectLight && (impl.reflections || reflectionView) && !cacheView;
     const rhi::TextureHandle reflections = reflect ? impl.globalIllumination->Reflections() : rhi::TextureHandle{};
     const std::uint32_t frameIndex = impl.frameIndex++;
+    impl.time += view.timeStep;
+    // Volumetric fog (ADR-0051), in the lit scene and its own debug view; the grid follows the output's size.
+    const bool fogView = impl.debugView == DebugView::Fog;
+    const bool fog = (impl.fog || fogView) && (impl.debugView == DebugView::Off || fogView);
+    if (status && fog) {
+        status = impl.volumetricFog->Resize(frame.extent, impl.fogGrid);
+    }
+    const rhi::TextureHandle fogTexture = fog ? impl.volumetricFog->Output() : rhi::TextureHandle{};
     const glm::vec2 jitter = taa ? Jitter(impl.frameNumber, JitterPositions(renderScale)) : glm::vec2(0.0f);
     if (status) {
         status = impl.rayTracing->Reserve(frame.slot, view.draws.size()).and_then([&](std::uint32_t structure) {
@@ -657,7 +683,8 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                        .background = impl.background,
                        .depth = impl.depth,
                        .exposure = preExposure,
-                       .fogScale = std::exp2(atmosphere.ev100 - gpuEv100),
+                       .fog = fogTexture,
+                       .time = static_cast<float>(impl.time),
                        .sharpReflections =
                            reflect ? std::min(GlobalIllumination::kSharpRoughness, impl.reflectionRoughness) : 0.0f});
         });
@@ -753,6 +780,22 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                    settings);
     }
     impl.lit = light;
+    // The fog in front of each point of the view, before anything reads it. A frame that does not follow the
+    // last one fogged starts its history over.
+    const bool fogs = status && hasFrame && fog;
+    if (fogs) {
+        if (!impl.fogged || view.cut) {
+            impl.volumetricFog->Reset();
+        }
+        impl.volumetricFog->AddTo(graph, {.frameBuffer = impl.meshPass->FrameDataIndex(),
+                                          .instanceBuffer = impl.meshPass->InstanceDataIndex(),
+                                          .materialBuffer = impl.meshPass->MaterialDataIndex(),
+                                          .structure = impl.rayTracing->Structure(),
+                                          .skinnedVertices = impl.meshPass->SkinnedVertices(),
+                                          .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
+                                          .frameIndex = frameIndex});
+    }
+    impl.fogged = fogs;
     // The lights' light, denoised, then put back together with the rest (ADR-0039). A frame that does not
     // follow the last one denoised starts the history over.
     const bool denoise = status && hasFrame && impl.denoise;
@@ -775,12 +818,14 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                     {.shading = &impl.shading,
                                      .diffuse = denoise ? impl.denoiser->Diffuse() : impl.shading.diffuse,
                                      .specular = denoise ? impl.denoiser->Specular() : impl.shading.specular,
-                                     .depth = impl.depth});
+                                     .depth = impl.depth,
+                                     .fog = fogTexture,
+                                     .fogOnly = fogView});
     }
     if (status && hasFrame) {
         const glm::mat4 cameraWorld = glm::inverse(view.camera->view);
         impl.particlePass->AddDraw(graph, impl.meshPass->FrameDataIndex(), impl.depth, impl.hdr, impl.reactive,
-                                   glm::vec3(cameraWorld[0]), glm::vec3(cameraWorld[1]), renderExtent);
+                                   glm::vec3(cameraWorld[0]), glm::vec3(cameraWorld[1]), renderExtent, fogTexture);
     }
     // Glass, over everything else, which it reads from a copy of the frame (ADR-0042).
     if (status && hasFrame && impl.meshPass->HasGlass()) {
@@ -794,7 +839,8 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                        .rendering = rhi::RenderingDesc{.colorTarget = impl.hdr, .area = renderExtent},
                        .textures = {{impl.hdr, rhi::Access::ColorTarget},
                                     {impl.background, rhi::Access::FragmentShaderRead},
-                                    {impl.depth, rhi::Access::FragmentShaderRead}},
+                                    {impl.depth, rhi::Access::FragmentShaderRead},
+                                    {fogTexture, rhi::Access::FragmentShaderRead}},
                        .buffers = {skinnedVertices,
                                    {skinnedVertices.buffer, rhi::Access::FragmentShaderRead},
                                    {impl.meshPass->EmissiveTriangles(), rhi::Access::FragmentShaderRead}},
@@ -884,13 +930,10 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     impl.pathShown = path;
 
     if (status && !hasFrame) {
-        // Nothing to draw: the fog's color.
+        // Nothing to draw: black.
         graph.AddPass(
             {.name = "Clear",
-             .rendering =
-                 rhi::RenderingDesc{.colorTarget = impl.hdr,
-                                    .clearColor = glm::vec4(
-                                        view.atmosphere.fogColor * std::exp2(view.atmosphere.ev100 - gpuEv100), 1.0f)}},
+             .rendering = rhi::RenderingDesc{.colorTarget = impl.hdr, .clearColor = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f)}},
             [](rhi::CommandList& /*commands*/) {});
     }
     // The interface goes after the antialiasing, which would blur text, and under the overlay, in a layer

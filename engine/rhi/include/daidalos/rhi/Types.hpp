@@ -104,7 +104,8 @@ enum class TextureUsage : std::uint32_t {
     TransferSrc = 1U << 3U,
     TransferDst = 1U << 4U,
     /// Read and written by compute shaders through the storage image array, with Device::StorageImageIndex.
-    /// Rgba32Float or Rgba16Float only: shaders declare the format of the array they access it through.
+    /// Rgba32Float, Rgba16Float, Rgba8Unorm, Rg16Float, R8Unorm, R16Float, R32Float or R32Uint: shaders
+    /// declare the format of the array they access it through.
     Storage = 1U << 5U,
 };
 
@@ -140,6 +141,10 @@ struct TextureDesc {
     /// Six square faces, sampled by direction: +X, -X, +Y, -Y, +Z, -Z, in that order, each with its mip
     /// levels. Shaders find a sampled cube in g_cubeTextures, by BindlessIndex.
     bool cube = false;
+    /// Above 1, a 3D texture of this many slices, with one mip level, only sampled and stored: shaders find
+    /// it as a Texture3D aliasing g_textures (binding 0), by BindlessIndex, and as a RWTexture3D aliasing the
+    /// storage images (binding 4), by StorageImageIndex. Never uploaded or copied.
+    std::uint32_t depth = 1;
     std::string name;
 };
 
