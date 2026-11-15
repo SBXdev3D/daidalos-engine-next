@@ -55,7 +55,8 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     // could not have found: the new sample takes its whole share, and a light that comes on shows at once.
     const float currentTarget = TargetAt(frame, receiver, current.light, current.u, false);
     const bool fresh =
-        current.light != kNoLight && g_lightMaps[g_restir.lightMap][g_restir.previousLightCount + current.light] != 0;
+        current.light != kNoLight &&
+        (g_lightMaps[g_restir.lightMap][g_restir.previousLightCount + current.light] & kLightNew) != 0;
     Stream(combined, current.light, current.u, (fresh ? 1.0 : current.count / total) * currentTarget * current.weight,
            currentTarget, Random(random));
     const float historyTarget = TargetAt(frame, receiver, history.light, history.u, unbiased);

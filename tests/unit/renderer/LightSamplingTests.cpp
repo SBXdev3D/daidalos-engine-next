@@ -142,3 +142,14 @@ TEST(IdentityKey, LightsWithoutAnIdAreNamedByTheirPosition) {
 }
 
 } // namespace
+
+TEST(FogSourceWeight, KeepsThePowerOfLightsNearTheCameraAndLowersFarOnes) {
+    // A flashlight at the camera keeps its whole power; a lamp kFogReach away keeps half, and much less
+    // farther: the fog that shows most is near the camera (ADR-0051).
+    EXPECT_FLOAT_EQ(daidalos::renderer::FogSourceWeight(300.0f, 0.0f), 300.0f);
+    EXPECT_FLOAT_EQ(daidalos::renderer::FogSourceWeight(300.0f, daidalos::renderer::kFogReach), 150.0f);
+    EXPECT_LT(daidalos::renderer::FogSourceWeight(300.0f, 10.0f * daidalos::renderer::kFogReach), 3.0f);
+    EXPECT_GT(daidalos::renderer::FogSourceWeight(300.0f, 10.0f * daidalos::renderer::kFogReach), 0.0f)
+        << "Far lights can still be drawn";
+    EXPECT_EQ(daidalos::renderer::FogSourceWeight(-1.0f, 0.0f), 0.0f);
+}

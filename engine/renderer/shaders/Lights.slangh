@@ -53,7 +53,10 @@ struct EmissiveTriangle {
 [[vk::binding(2, 0)]] StructuredBuffer<EmissiveDraw> g_emissiveDraws[];
 [[vk::binding(2, 0)]] StructuredBuffer<EmissiveTriangle> g_emissiveTriangles[];
 // For each of the last frame's lights, its index in this frame's, or kNoLight; then, for each of this frame's,
-// 1 if the last frame did not have it (MeshPass::LightMapIndex).
+// its flags: kLightNew if the last frame did not have it, kLightMoved if it moved since (MeshPass::LightMapIndex).
+// Match LightSampling.hpp.
+static const uint kLightNew = 1;
+static const uint kLightMoved = 2;
 [[vk::binding(2, 0)]] StructuredBuffer<uint> g_lightMaps[];
 
 static const uint kNoLight = 0xFFFFFFFF;
@@ -77,15 +80,44 @@ struct LightChoice {
     float probability;
 };
 
-LightChoice ChooseLight(FrameData frame, float4 u) {
+// From an alias table of the frame's sources: the frame's, by power, or the fog's.
+LightChoice ChooseLight(FrameData frame, uint table, float4 u) {
     LightChoice choice;
     choice.index = kNoLight;
     choice.probability = 0.0;
     if (frame.sourceCount == 0) {
         return choice;
     }
-    const uint source = SampleAlias(frame.aliasBuffer, frame.sourceCount, u.x, u.y);
-    choice.probability = g_aliasTables[frame.aliasBuffer][source].probability;
+    const uint source = SampleAlias(table, frame.sourceCount, u.x, u.y);
+    choice.probability = g_aliasTables[table][source].probability;
+    if (source < frame.lightCount) {
+        choice.index = source;
+        return choice;
+    }
+    const EmissiveDraw draw = g_emissiveDraws[frame.emissiveDrawBuffer][source - frame.lightCount];
+    const uint triangle = SampleAlias(draw.aliasTable, draw.triangleCount, u.z, u.w);
+    choice.probability *= g_aliasTables[draw.aliasTable][triangle].probability;
+    choice.index = frame.lightCount + draw.firstTriangle + triangle;
+    return choice;
+}
+
+LightChoice ChooseLight(FrameData frame, float4 u) {
+    return ChooseLight(frame, frame.aliasBuffer, u);
+}
+
+// From either of two alias tables of the frame's sources, with even odds (defensive sampling): its
+// probability is the average of both, so that a light that one table rarely draws keeps at least half the
+// other's chance. pick chooses the table.
+LightChoice ChooseLight(FrameData frame, uint first, uint second, float pick, float4 u) {
+    LightChoice choice;
+    choice.index = kNoLight;
+    choice.probability = 0.0;
+    if (frame.sourceCount == 0) {
+        return choice;
+    }
+    const uint source = SampleAlias(pick < 0.5 ? first : second, frame.sourceCount, u.x, u.y);
+    choice.probability =
+        0.5 * (g_aliasTables[first][source].probability + g_aliasTables[second][source].probability);
     if (source < frame.lightCount) {
         choice.index = source;
         return choice;

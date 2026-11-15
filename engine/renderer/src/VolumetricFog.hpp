@@ -27,6 +27,9 @@ struct VolumetricFogInputs {
     rhi::BufferHandle emissiveTriangles;
     /// Counts the frames: the points drawn in each froxel change with it.
     std::uint32_t frameIndex = 0;
+    /// The light map (MeshPass::LightMapIndex): froxels lit by a light that moved keep less of their history.
+    std::uint32_t lightMap = 0;
+    std::uint32_t previousLightCount = 0;
 };
 
 /// The size of the froxel grid.

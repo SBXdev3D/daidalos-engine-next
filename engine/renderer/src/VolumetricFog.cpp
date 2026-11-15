@@ -32,6 +32,8 @@ struct FogPushConstants {
     std::uint32_t slices;
     std::uint32_t seed;
     float historyWeight;
+    std::uint32_t lightMap;
+    std::uint32_t previousLightCount;
     std::uint32_t padding;
 };
 static_assert(sizeof(FogPushConstants) <= rhi::kMaxPushConstantSize);
@@ -124,6 +126,8 @@ void VolumetricFog::AddTo(RenderGraph& graph, const VolumetricFogInputs& inputs)
                                 m_slices,
                                 inputs.frameIndex,
                                 kHistoryWeight,
+                                inputs.lightMap,
+                                inputs.previousLightCount,
                                 0};
     PassDesc lighting{.name = "Fog lighting",
                       .group = "Volumetric fog",

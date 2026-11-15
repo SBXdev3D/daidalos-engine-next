@@ -793,7 +793,9 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                           .structure = impl.rayTracing->Structure(),
                                           .skinnedVertices = impl.meshPass->SkinnedVertices(),
                                           .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
-                                          .frameIndex = frameIndex});
+                                          .frameIndex = frameIndex,
+                                          .lightMap = impl.meshPass->LightMapIndex(),
+                                          .previousLightCount = impl.meshPass->PreviousLightCount()});
     }
     impl.fogged = fogs;
     // The lights' light, denoised, then put back together with the rest (ADR-0039). A frame that does not

@@ -65,7 +65,7 @@ struct FrameData {
     uint fogVolumeBuffer; // The boxes of fog (Fog.slangh), and how many.
     uint fogVolumeCount;
     uint fogTexture;      // The fog in front of each point of the view (VolumetricFog), or kNoTexture.
-    uint fogPadding;
+    uint fogAliasBuffer;  // The fog's alias table of the sources, by power near the camera (ADR-0051).
 };
 
 // From texture coordinates of the frame, over the corner it draws into, to those of its targets, for

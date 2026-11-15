@@ -338,7 +338,9 @@ protected:
                                                .materialBuffer = m_pass->MaterialDataIndex(),
                                                .structure = m_scene->Structure(),
                                                .emissiveTriangles = m_pass->EmissiveTriangles(),
-                                               .frameIndex = frame});
+                                               .frameIndex = frame,
+                                               .lightMap = m_pass->LightMapIndex(),
+                                               .previousLightCount = m_pass->PreviousLightCount()});
                         }
                         if (denoiser.has_value()) {
                             denoiser->AddTo(
@@ -2068,8 +2070,10 @@ TEST_F(PathTracerTest, FogAmongAThousandLightsMatchesThePathTracer) {
     RecordProperty("flip", std::to_string(averagedFlip));
     RecordProperty("flipOneFrame", std::to_string(oneFrameFlip));
     RecordProperty("brightness", std::to_string(total / reference));
-    // Measured on an RTX 3090: FLIP 0.083 averaged, 0.103 one frame; brightness 1.00. Reusing the lights
-    // froxels kept last frame, as ReSTIR does, measured worse: 0.094 to 0.114, and 2% too dark.
+    std::printf("FLIP %.4f averaged, %.4f one frame; brightness %.4f\n", averagedFlip, oneFrameFlip, total / reference);
+    // Measured on an RTX 3090: FLIP 0.088 averaged, 0.098 one frame; brightness 0.98 to 1.00 from run to run.
+    // Lights drawn by power alone: 0.083 to 0.089, 0.101 to 0.103. Reusing the lights froxels kept last
+    // frame, as ReSTIR does, measured worse: 0.094 to 0.114, and 2% too dark.
     EXPECT_LT(averagedFlip, 0.11f);
     EXPECT_LT(oneFrameFlip, 0.13f);
     EXPECT_NEAR(total / reference, 1.0, 0.05);

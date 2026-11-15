@@ -17,6 +17,8 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "LightSampling.hpp"
@@ -233,7 +235,8 @@ public:
     [[nodiscard]] std::uint32_t FrameDataIndex() const;
     /// Where each light of the frame prepared before this one is in this one's list (ADR-0044): the storage
     /// index of a uint per light, kGone for a light that is gone, and the number of lights it maps. Then a
-    /// uint per light of the prepared frame: 1 for a light the frame before did not have.
+    /// uint per light of the prepared frame, of flags: kLightNew for a light the frame before did not have,
+    /// kLightMoved for one that moved since, whose light the histories must follow at once.
     [[nodiscard]] std::uint32_t LightMapIndex() const;
     [[nodiscard]] std::uint32_t PreviousLightCount() const { return m_mappedLightCount; }
 
@@ -306,9 +309,12 @@ private:
         std::uint64_t jointCapacity = 0;
         rhi::BufferHandle lights;
         std::uint64_t lightCapacity = 0;
-        /// The alias table of the light sources, by power.
+        /// The alias table of the light sources, by power, and the volumetric fog's, by power near the camera
+        /// (FogSourceWeight).
         rhi::BufferHandle sources;
         std::uint64_t sourceCapacity = 0;
+        rhi::BufferHandle fogSources;
+        std::uint64_t fogSourceCapacity = 0;
         /// LightMapIndex's buffer.
         rhi::BufferHandle lightMap;
         std::uint64_t lightMapCapacity = 0;
@@ -347,7 +353,8 @@ private:
         std::uint32_t sourceCount = 0;
         std::uint32_t emissiveTriangleCount = 0;
     };
-    [[nodiscard]] core::Result<FrameLights> PrepareLights(FrameSlot& slot, const SceneView& view, float exposure);
+    [[nodiscard]] core::Result<FrameLights> PrepareLights(FrameSlot& slot, const SceneView& view, float exposure,
+                                                          const glm::vec3& cameraPosition);
     /// The emissive source of a mesh and a material, made on first use, its emission read back if the GPU
     /// has written it. Null if it cannot be made.
     EmissiveSource* FindEmissiveSource(MeshHandle mesh, MaterialHandle material);
@@ -400,6 +407,9 @@ private:
     /// The light sources of the last frame prepared, which name its lights (ADR-0044), and its number of
     /// lights, which the next frame maps; the number of lights the prepared frame's map holds.
     std::vector<LightRange> m_previousRanges;
+    /// Where each analytic light of the last frame prepared was, by its identity key: position and direction,
+    /// to tell the lights that moved.
+    std::unordered_map<std::uint64_t, std::pair<glm::vec3, glm::vec3>> m_previousPlaces;
     std::uint32_t m_lightCount = 0;
     std::uint32_t m_mappedLightCount = 0;
     /// Counts the frames prepared with a camera, which the readback of emission waits on.

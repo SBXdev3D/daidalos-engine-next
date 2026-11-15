@@ -24,6 +24,8 @@ struct FogPushConstants {
     uint slices;
     uint seed;
     float historyWeight;
+    uint lightMap;
+    uint previousLightCount;
     uint padding;
 };
 

@@ -65,7 +65,7 @@ float3 LightSmoke(FrameData frame, Receiver receiver, inout uint4 stored, bool f
     for (uint draw = 0; draw < draws; ++draw) {
         const Reservoir fresh = DrawCandidates(frame, receiver, random);
         const bool isNew = fresh.light != kNoLight &&
-                           g_lightMaps[g_particles.lightMap][g_particles.previousLightCount + fresh.light] != 0;
+                           (g_lightMaps[g_particles.lightMap][g_particles.previousLightCount + fresh.light] & kLightNew) != 0;
         const float target = TargetValue(receiver, ContactLight(frame, fresh.light, fresh.u, receiver));
         Merge(combined, fresh, target, isNew ? 1.0 / float(draws) : 1.0 / total, Random(random));
     }

@@ -37,6 +37,18 @@ static_assert(sizeof(AliasEntry) == 16);
 [[nodiscard]] float LightPower(const Light& light);
 inline constexpr float kDirectionalReach = 10.0f;
 
+/// What the volumetric fog draws a source by (ADR-0051): its power, scaled down with its distance to the
+/// camera beyond kFogReach meters, k^2 / (d^2 + k^2). The fog that shows most is near the camera, and a light
+/// there, such as a flashlight, is a small share of a level's power: drawn by power alone, it is rarely
+/// among a froxel's candidates.
+[[nodiscard]] float FogSourceWeight(float power, float distanceToCamera);
+inline constexpr float kFogReach = 4.0f;
+
+/// The flags each light of a frame has in the second part of the light map (MeshPass::LightMapIndex): the
+/// frame before did not have it, or it moved since.
+inline constexpr std::uint32_t kLightNew = 1;
+inline constexpr std::uint32_t kLightMoved = 2;
+
 /// The luminance of a linear color.
 [[nodiscard]] float Luminance(const glm::vec3& color);
 
