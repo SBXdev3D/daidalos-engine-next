@@ -9,12 +9,14 @@
 #include <daidalos/resources/AssetPath.hpp>
 #include <daidalos/scene/AssetLibrary.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <format>
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <tuple>
 #include <utility>
 
 namespace daidalos::scene {
@@ -242,6 +244,29 @@ core::Result<ParticleEffectFile> AssetLibrary::ReadParticleEffect(const std::str
                                std::format("'{}': its texture: {}", identity, texture.error().message));
     }
     parsed->desc.texture = *texture;
+    // The effects it spawns, loaded first; an effect that leads back to itself would never end.
+    m_effectsReading.push_back(identity);
+    struct Done {
+        std::vector<std::string>& reading;
+        ~Done() { reading.pop_back(); }
+    } done{m_effectsReading};
+    for (auto [path, emitter, name] : {std::tuple{&parsed->deathEffect, &parsed->desc.onDeath, "onDeath"},
+                                       std::tuple{&parsed->hitEffect, &parsed->desc.onHit, "onHit"}}) {
+        if (path->empty()) {
+            continue;
+        }
+        DAI_TRY_ASSIGN(std::string target, resources::NormalizeAssetPath(directory + *path));
+        if (std::find(m_effectsReading.begin(), m_effectsReading.end(), target) != m_effectsReading.end()) {
+            return core::MakeError(core::ErrorCode::InvalidArgument, kModule,
+                                   std::format("'{}': its {} effect '{}' leads back to it", identity, name, target));
+        }
+        core::Result<ParticleEffectAsset> spawned = LoadParticleEffect(target);
+        if (!spawned) {
+            return core::MakeError(spawned.error().code, kModule,
+                                   std::format("'{}': its {} effect: {}", identity, name, spawned.error().message));
+        }
+        emitter->effect = spawned->effect;
+    }
     return parsed;
 }
 

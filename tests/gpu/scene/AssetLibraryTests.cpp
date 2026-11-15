@@ -150,6 +150,28 @@ TEST_F(AssetLibraryTest, EditedEffectFileIsReloadedInPlace) {
     EXPECT_FLOAT_EQ(library.LoadParticleEffect("Effects/puff.effect.json")->emission.rate, 7.0f);
 }
 
+TEST_F(AssetLibraryTest, SubEmittersLoadTheEffectsTheyName) {
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / "daidalos-effect-sub";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root / "Effects");
+    std::filesystem::copy_file(std::filesystem::path(kAssets) / "checker.png", root / "checker.png");
+    std::ofstream(root / "Effects" / "drop.effect.json")
+        << R"({"texture": "../checker.png", "onHit": {"effect": "splash.effect.json", "count": 3}})";
+    std::ofstream(root / "Effects" / "splash.effect.json") << R"({"texture": "../checker.png"})";
+    std::ofstream(root / "Effects" / "loop.effect.json")
+        << R"({"texture": "../checker.png", "onDeath": {"effect": "loop.effect.json", "count": 1}})";
+    AssetLibrary library(*m_renderer, root);
+    const core::Result<scene::ParticleEffectAsset> drop = library.LoadParticleEffect("Effects/drop.effect.json");
+    ASSERT_TRUE(drop.has_value()) << core::Format(drop.error());
+    const core::Result<scene::ParticleEffectAsset> splash = library.LoadParticleEffect("Effects/splash.effect.json");
+    ASSERT_TRUE(splash.has_value());
+    EXPECT_NE(drop->effect, splash->effect) << "the splash was loaded with the drop, and is found again";
+
+    const core::Result<scene::ParticleEffectAsset> loop = library.LoadParticleEffect("Effects/loop.effect.json");
+    ASSERT_FALSE(loop.has_value());
+    EXPECT_NE(loop.error().message.find("leads back"), std::string::npos) << loop.error().message;
+}
+
 TEST_F(AssetLibraryTest, EffectFileWithAMissingTextureNamesBoth) {
     const std::filesystem::path root = std::filesystem::temp_directory_path() / "daidalos-effect-texture";
     std::filesystem::remove_all(root);

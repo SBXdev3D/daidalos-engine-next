@@ -74,6 +74,15 @@ public:
         return *value;
     }
 
+    /// The handle of the live object in a slot, or a null handle if the slot is empty or out of range: for
+    /// indices that left the pool, such as those the GPU reports.
+    [[nodiscard]] HandleType HandleAt(std::uint32_t index) const {
+        if (index >= m_slots.size() || !m_slots[index].value.has_value()) {
+            return {};
+        }
+        return HandleType(index, m_slots[index].generation);
+    }
+
     [[nodiscard]] std::size_t Size() const { return m_size; }
 
     /// Calls function(T&) for every live object. Objects must not be inserted or removed meanwhile.

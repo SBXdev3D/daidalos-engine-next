@@ -4,7 +4,7 @@
     "columns": 4,
     "cell": 0,
     "color": [[0, [0.6, 0.08, 0.08, 0.8]], [1, [0.4, 0.05, 0.05, 0]]],
-    "collides": true,
+    "collision": "bounce",
     "bounce": 0.1,
     "lifetime": [0.3, 0.6],
     "size": [0.04, 0.07],

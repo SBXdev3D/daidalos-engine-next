@@ -558,6 +558,17 @@ void Renderer::SetNormalStrength(float strength) {
     m_impl->meshPass->SetNormalStrength(strength);
 }
 
+std::vector<ParticleHit> Renderer::ParticleHits() const {
+    std::vector<ParticleHit> hits;
+    for (const ParticlePass::Hit& hit : m_impl->particlePass->Hits()) {
+        hits.push_back({.position = hit.position,
+                        .normal = hit.normal,
+                        .effect = hit.effect,
+                        .material = m_impl->meshPass->MaterialAt(hit.material)});
+    }
+    return hits;
+}
+
 std::span<const PassTime> Renderer::GpuTimes() const {
     return m_impl->gpuTimes;
 }
@@ -570,6 +581,8 @@ FrameStats Renderer::Stats() const {
             .triangles = counts.triangles,
             .lights = counts.lights,
             .particleSpawns = impl.particleSpawns,
+            .particleHits = static_cast<std::uint32_t>(impl.particlePass->Hits().size()),
+            .particlesAlive = impl.particlePass->AliveCount(),
             .rayInstances = impl.rayTracing->LastStats().instances,
             .skinnedStructures = impl.rayTracing->LastStats().skinnedStructures,
             .pathSamples = impl.debugView == DebugView::Path ? impl.pathTracer->Samples() : 0,
@@ -752,8 +765,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     }
     impl.illuminated = illuminate;
     if (hasFrame) {
-        status = impl.particlePass->AddSimulation(graph, view.particleSpawns, view.timeStep,
-                                                  impl.meshPass->FrameDataIndex(), impl.depth, impl.normals,
+        status = impl.particlePass->AddSimulation(graph, view, impl.meshPass->FrameDataIndex(),
                                                   {.structure = impl.rayTracing->Structure(),
                                                    .instanceBuffer = impl.meshPass->InstanceDataIndex(),
                                                    .materialBuffer = impl.meshPass->MaterialDataIndex(),

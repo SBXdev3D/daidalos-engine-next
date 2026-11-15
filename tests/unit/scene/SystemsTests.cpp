@@ -237,6 +237,43 @@ TEST(ExtractScene, LightsTakeTheirPlaceAndDirectionFromTheirEntity) {
     EXPECT_EQ(light.radius, 0.1f);
 }
 
+TEST(ExtractScene, WindTurnsWithItsEntityButIsNotScaledByIt) {
+    ecs::World world;
+    const ecs::Entity draft = AddAt(world, {1.0f, 2.0f, 3.0f});
+    ecs::LocalTransform& transform = world.Get<ecs::LocalTransform>(draft);
+    transform.rotation = glm::angleAxis(glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    transform.scale = glm::vec3(4.0f);
+    world.Add<scene::WindVolume>(draft, scene::WindVolume{.velocity = {2.0f, 0.0f, 0.0f}, .gust = 0.5f});
+    world.Add<scene::WindVolume>(AddAt(world, {}), scene::WindVolume{.enabled = false});
+    ecs::PropagateTransforms(world);
+    renderer::SceneView view;
+    scene::ExtractScene(world, view);
+    ASSERT_EQ(view.windVolumes.size(), 1U);
+    // +X turned a quarter around +Y is -Z.
+    EXPECT_NEAR(glm::distance(view.windVolumes[0].velocity, glm::vec3(0.0f, 0.0f, -2.0f)), 0.0f, 1e-5f);
+    EXPECT_FLOAT_EQ(view.windVolumes[0].gust, 0.5f);
+    EXPECT_EQ(glm::vec3(view.windVolumes[0].world[3]), glm::vec3(1.0f, 2.0f, 3.0f));
+}
+
+TEST(ExtractScene, AttractorsTurnAroundTheirEntitysY) {
+    ecs::World world;
+    const ecs::Entity lamp = AddAt(world, {0.0f, 3.0f, 0.0f});
+    world.Get<ecs::LocalTransform>(lamp).rotation = glm::angleAxis(glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    world.Add<scene::ParticleAttractor>(
+        lamp,
+        scene::ParticleAttractor{.effect = renderer::ParticleEffectHandle(2, 1), .strength = 3.0f, .vortex = 1.0f});
+    ecs::PropagateTransforms(world);
+    renderer::SceneView view;
+    scene::ExtractScene(world, view);
+    ASSERT_EQ(view.particleAttractors.size(), 1U);
+    const renderer::ParticleAttractor& attractor = view.particleAttractors[0];
+    EXPECT_EQ(attractor.position, glm::vec3(0.0f, 3.0f, 0.0f));
+    EXPECT_NEAR(glm::distance(attractor.axis, glm::vec3(0.0f, 0.0f, 1.0f)), 0.0f, 1e-5f);
+    EXPECT_EQ(attractor.effect, renderer::ParticleEffectHandle(2, 1));
+    EXPECT_FLOAT_EQ(attractor.strength, 3.0f);
+    EXPECT_FLOAT_EQ(attractor.vortex, 1.0f);
+}
+
 TEST(ExtractScene, FogVolumesAreBoxesAtTheirEntity) {
     ecs::World world;
     const ecs::Entity dust = AddAt(world, {2.0f, 1.0f, -3.0f});

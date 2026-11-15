@@ -107,6 +107,28 @@ struct FogVolume {
     bool enabled = true;
 };
 
+/// ECS component: a box of wind at the entity's WorldTransform (ADR-0053), which carries particles by their
+/// drag: the cube from -0.5 to 0.5, scaled by the transform to the box's size. See renderer::WindVolume.
+struct WindVolume {
+    /// Meters per second, in the entity's frame: a draft blowing along a corridor turns with it.
+    glm::vec3 velocity{0.0f};
+    float gust = 0.0f;
+    float gustFrequency = 0.2f;
+    float edge = 0.3f;
+    bool enabled = true;
+};
+
+/// ECS component: pulls particles towards the entity's position and turns them around its +Y axis
+/// (ADR-0053). See renderer::ParticleAttractor.
+struct ParticleAttractor {
+    /// The only effect it moves, or null for every effect.
+    renderer::ParticleEffectHandle effect;
+    float strength = 1.0f;
+    float vortex = 0.0f;
+    float radius = 0.0f;
+    bool enabled = true;
+};
+
 /// A burst of an emitter (ADR-0053): count particles at time seconds after it starts, then every interval
 /// seconds, repeats times in all (0: for ever). Without an interval, it fires once.
 struct ParticleBurst {

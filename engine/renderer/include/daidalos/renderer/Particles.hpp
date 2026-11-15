@@ -24,6 +24,39 @@ inline constexpr std::uint32_t kMaxParticles = 65536;
 struct ParticleEffectTag;
 /// A kind of particle owned by the Renderer, such as smoke or sparks.
 using ParticleEffectHandle = core::Handle<ParticleEffectTag>;
+struct MaterialTag;
+using MaterialHandle = core::Handle<MaterialTag>;
+
+/// What a particle does where it meets a surface, which the frame's acceleration structure holds (ADR-0053).
+enum class ParticleCollision : std::uint32_t {
+    /// It goes through.
+    None,
+    /// It bounces off, keeping ParticleEffectDesc::bounce of its speed, slides when too slow to leave, and
+    /// rests once slow: casings, shards.
+    Bounce,
+    /// It stays where it hit: drops of blood on a wall.
+    Stick,
+    /// It dies there: rain on a roof.
+    Die,
+};
+
+/// Particles of another effect that the GPU spawns where a particle dies of age or hits a surface
+/// (ADR-0053): a splash where a drop lands, smoke where a spark dies. They appear the next frame, turned so
+/// that their effect's +Y follows the hit's normal, or the dying particle's axis.
+struct ParticleSubEmitter {
+    ParticleEffectHandle effect;
+    std::uint32_t count = 0;
+};
+
+/// A particle's impact on a surface, which the CPU learns of a few frames later (ADR-0053), for decals and
+/// sounds. Slides and rests are not impacts.
+struct ParticleHit {
+    glm::vec3 position{0.0f};
+    glm::vec3 normal{0.0f};
+    ParticleEffectHandle effect;
+    /// The material of the surface hit, or null if it is gone.
+    MaterialHandle material;
+};
 
 /// A value at a moment of a particle's life, from 0 at its birth to 1 at its death. Between keys, values
 /// are blended linearly; before the first and after the last, they hold.
@@ -94,9 +127,13 @@ struct ParticleEffectDesc {
     bool additive = false;
     /// Takes the light of the lamps around it, like smoke. Otherwise its color is its own.
     bool lit = true;
-    /// Bounces off what is drawn, as seen by the camera.
-    bool collides = false;
+    /// Meets the surfaces of the frame's acceleration structure, glass included, along its motion.
+    ParticleCollision collision = ParticleCollision::None;
     float bounce = 0.3f;
+    /// Its impacts are reported to the CPU (Renderer::ParticleHits).
+    bool reportHits = false;
+    ParticleSubEmitter onDeath;
+    ParticleSubEmitter onHit;
     /// Seconds, picked between the two.
     glm::vec2 lifetime{1.0f, 1.0f};
     /// Meters across at birth, picked between the two.
@@ -120,8 +157,12 @@ struct ParticleEffectDesc {
     float inheritVelocity = 0.0f;
     /// Multiplies the Earth's gravity; 0 floats, below 0 rises.
     float gravity = 0.0f;
-    /// Fraction of the speed lost per second.
+    /// Fraction of its speed relative to the air lost per second: still air slows it down, and wind carries
+    /// it along (ADR-0053). 0 is too heavy for the wind.
     float drag = 0.0f;
+    /// Meters per second squared of swirling air, curl noise whose eddies are turbulenceScale meters across.
+    float turbulence = 0.0f;
+    float turbulenceScale = 1.0f;
     /// Radians per second, either way.
     float rotationSpeed = 0.0f;
     /// Meters over which a particle fades into a surface behind it, so that it does not cut through it.

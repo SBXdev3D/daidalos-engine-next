@@ -66,6 +66,36 @@ void ExtractFogVolumes(ecs::World& world, renderer::SceneView& view) {
         });
 }
 
+void ExtractParticleForces(ecs::World& world, renderer::SceneView& view) {
+    world.Each<ecs::WorldTransform, WindVolume>(
+        [&](ecs::Entity /*entity*/, const ecs::WorldTransform& transform, const WindVolume& wind) {
+            if (!wind.enabled) {
+                return;
+            }
+            // The velocity turns with the entity, but its scale, the box's size, does not stretch it.
+            const glm::mat3 axes(glm::normalize(glm::vec3(transform.matrix[0])),
+                                 glm::normalize(glm::vec3(transform.matrix[1])),
+                                 glm::normalize(glm::vec3(transform.matrix[2])));
+            view.windVolumes.push_back({.world = transform.matrix,
+                                        .velocity = axes * wind.velocity,
+                                        .gust = wind.gust,
+                                        .gustFrequency = wind.gustFrequency,
+                                        .edge = wind.edge});
+        });
+    world.Each<ecs::WorldTransform, ParticleAttractor>(
+        [&](ecs::Entity /*entity*/, const ecs::WorldTransform& transform, const ParticleAttractor& attractor) {
+            if (!attractor.enabled) {
+                return;
+            }
+            view.particleAttractors.push_back({.position = glm::vec3(transform.matrix[3]),
+                                               .axis = glm::normalize(glm::vec3(transform.matrix[1])),
+                                               .effect = attractor.effect,
+                                               .strength = attractor.strength,
+                                               .vortex = attractor.vortex,
+                                               .radius = attractor.radius});
+        });
+}
+
 /// The matrices of the entities drawn this frame, kept once the extraction is done: an entity can be
 /// read several times in one extraction, as a joint of two skins, and must give the same previous matrix.
 class DrawnTransforms {
@@ -105,6 +135,8 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
     view.previousJointMatrices.clear();
     view.lights.clear();
     view.fogVolumes.clear();
+    view.windVolumes.clear();
+    view.particleAttractors.clear();
     DrawnTransforms drawn(world);
 
     bool chosen = false;
@@ -157,6 +189,7 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
     drawn.Keep();
     ExtractLights(world, view);
     ExtractFogVolumes(world, view);
+    ExtractParticleForces(world, view);
 }
 
 void EmitParticles(ecs::World& world, float delta, std::vector<renderer::ParticleSpawn>& spawns) {

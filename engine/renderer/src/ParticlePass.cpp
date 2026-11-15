@@ -8,6 +8,7 @@
 #include <daidalos/rhi/Spirv.hpp>
 
 #include <glm/geometric.hpp>
+#include <glm/matrix.hpp>
 #include <glm/vec4.hpp>
 #include <shaders/ParticleDraw.ps.spv.h>
 #include <shaders/ParticleDraw.vs.spv.h>
@@ -15,6 +16,7 @@
 #include <shaders/ParticleFinish.cs.spv.h>
 #include <shaders/ParticleSimulate.cs.spv.h>
 #include <shaders/ParticleSort.cs.spv.h>
+#include <shaders/ParticleSubEmit.cs.spv.h>
 
 #include <algorithm>
 #include <bit>
@@ -44,11 +46,13 @@ struct GpuParticle {
     std::array<std::uint32_t, 4> reservoir;
     glm::vec3 axis;
     float startFrame;
+    std::uint32_t state;
+    std::array<float, 3> padding;
 };
-static_assert(sizeof(GpuParticle) == 96);
+static_assert(sizeof(GpuParticle) == 112);
 
 constexpr std::uint32_t kEffectLit = 1;
-constexpr std::uint32_t kEffectCollides = 2;
+constexpr std::uint32_t kEffectReportsHits = 2;
 constexpr std::uint32_t kEffectAdditive = 4;
 constexpr std::uint32_t kEffectLoop = 8;
 constexpr std::uint32_t kEffectRandomStart = 16;
@@ -82,9 +86,71 @@ struct GpuEffect {
     std::uint32_t rows;
     std::uint32_t frames;
     std::uint32_t flags;
-    std::array<std::uint32_t, 2> padding;
+    std::uint32_t collision;
+    std::uint32_t deathEffect;
+    std::uint32_t deathCount;
+    std::uint32_t hitEffect;
+    std::uint32_t hitCount;
+    float turbulence;
+    float turbulenceScale;
+    std::array<float, 3> padding;
 };
-static_assert(sizeof(GpuEffect) == 144);
+static_assert(sizeof(GpuEffect) == 176);
+
+// No effect, as the shaders' kNoEffect.
+constexpr std::uint32_t kNoEffect = 0xFFFFFFFF;
+
+struct GpuSubSpawn {
+    glm::vec3 position;
+    std::uint32_t effect;
+    glm::vec3 direction;
+    std::uint32_t count;
+    glm::vec3 velocity;
+    std::uint32_t padding;
+};
+static_assert(sizeof(GpuSubSpawn) == 48);
+
+constexpr std::uint32_t kForceWind = 0;
+constexpr std::uint32_t kForceAttractor = 1;
+struct GpuForce {
+    std::array<glm::vec4, 3> toBox;
+    glm::vec3 vector;
+    std::uint32_t kind;
+    glm::vec3 axis;
+    std::uint32_t effect;
+    float strength;
+    float vortex;
+    float radius;
+    float gust;
+    float gustFrequency;
+    float edge;
+    std::array<float, 2> padding;
+};
+static_assert(sizeof(GpuForce) == 112);
+
+struct GpuHit {
+    glm::vec3 position;
+    std::uint32_t effect;
+    glm::vec3 normal;
+    std::uint32_t material;
+};
+static_assert(sizeof(GpuHit) == 32);
+
+struct GpuFrame {
+    glm::vec3 wind;
+    std::uint32_t forceCount;
+    float windGust;
+    float windGustFrequency;
+    std::uint32_t forces;
+    std::uint32_t hits;
+    std::uint32_t subSpawnsIn;
+    std::uint32_t subSpawnsOut;
+    std::uint32_t subCounterIn;
+    std::uint32_t subCounterOut;
+    std::uint32_t hitCapacity;
+    std::array<std::uint32_t, 3> padding;
+};
+static_assert(sizeof(GpuFrame) == 64);
 
 struct GpuSpawn {
     glm::vec3 position;
@@ -113,7 +179,7 @@ struct ParticlePushConstants {
     float timeStep;
     std::uint32_t seed;
     std::uint32_t depthTexture;
-    std::uint32_t normalTexture;
+    std::uint32_t parameters;
     std::uint32_t sortBlock;
     std::uint32_t sortStep;
     std::uint32_t capacity;
@@ -131,6 +197,12 @@ constexpr std::uint32_t kGroupSize = 64;
 constexpr std::uint32_t kGroups = (kMaxParticles + kGroupSize - 1) / kGroupSize;
 constexpr std::uint32_t kInitialEffectCapacity = 16;
 constexpr std::uint64_t kInitialSpawnCapacity = 64;
+constexpr std::uint64_t kInitialForceCapacity = 8;
+// As the shaders' kMaxSubSpawns: what a frame can ask of the next.
+constexpr std::uint32_t kMaxSubSpawns = 4096;
+// The counters: dead, alive, alive after the simulation, and the two lists of sub-spawns.
+constexpr std::uint32_t kCounters = 8;
+constexpr std::uint32_t kSubCounter = 3;
 // Each effect's curves: color, then size, emission and speed (BakeParticleCurves).
 constexpr std::uint64_t kCurveBytes = std::uint64_t{2} * kParticleCurveSamples * sizeof(glm::vec4);
 
@@ -138,8 +210,9 @@ glm::vec3 Normalized(const glm::vec3& direction) {
     return glm::length(direction) > 0.0f ? glm::normalize(direction) : glm::vec3(0.0f, 1.0f, 0.0f);
 }
 
-GpuEffect ToGpu(const ParticleEffectDesc& desc, std::uint32_t texture) {
-    const std::uint32_t flags = (desc.lit ? kEffectLit : 0U) | (desc.collides ? kEffectCollides : 0U) |
+GpuEffect ToGpu(const ParticleEffectDesc& desc, std::uint32_t texture, std::uint32_t deathEffect,
+                std::uint32_t hitEffect) {
+    const std::uint32_t flags = (desc.lit ? kEffectLit : 0U) | (desc.reportHits ? kEffectReportsHits : 0U) |
                                 (desc.additive ? kEffectAdditive : 0U) | (desc.loop ? kEffectLoop : 0U) |
                                 (desc.randomStartFrame ? kEffectRandomStart : 0U);
     return {.spawnBox = desc.spawnBox,
@@ -170,6 +243,13 @@ GpuEffect ToGpu(const ParticleEffectDesc& desc, std::uint32_t texture) {
             .rows = desc.rows == 0 ? desc.columns : desc.rows,
             .frames = std::max(desc.frames, 1U),
             .flags = flags,
+            .collision = static_cast<std::uint32_t>(desc.collision),
+            .deathEffect = deathEffect,
+            .deathCount = desc.onDeath.count,
+            .hitEffect = hitEffect,
+            .hitCount = desc.onHit.count,
+            .turbulence = desc.turbulence,
+            .turbulenceScale = desc.turbulenceScale,
             .padding = {}};
 }
 // The sort's groups, as in ParticleSort.slang: each sorts kSortLocal keys in its own memory.
@@ -181,27 +261,30 @@ static_assert(std::has_single_bit(kMaxParticles) && kMaxParticles >= kSortLocal,
 } // namespace
 
 ParticlePass::ParticlePass(ParticlePass&& other) noexcept
-    : m_device(other.m_device), m_emit(std::exchange(other.m_emit, {})),
+    : m_device(other.m_device), m_subEmit(std::exchange(other.m_subEmit, {})), m_emit(std::exchange(other.m_emit, {})),
       m_simulate(std::exchange(other.m_simulate, {})), m_finish(std::exchange(other.m_finish, {})),
       m_sort(std::exchange(other.m_sort, {})), m_draw(std::exchange(other.m_draw, {})),
       m_particles(std::exchange(other.m_particles, {})), m_dead(std::exchange(other.m_dead, {})),
-      m_alive(std::exchange(other.m_alive, {})), m_keys(std::exchange(other.m_keys, {})),
-      m_counters(std::exchange(other.m_counters, {})), m_arguments(std::exchange(other.m_arguments, {})),
-      m_current(other.m_current), m_effects(std::exchange(other.m_effects, {})),
-      m_effectTable(std::exchange(other.m_effectTable, {})), m_curveTable(std::exchange(other.m_curveTable, {})),
-      m_effectCapacity(std::exchange(other.m_effectCapacity, 0)), m_frameSlots(std::exchange(other.m_frameSlots, {})),
-      m_nextFrameSlot(other.m_nextFrameSlot), m_frame(other.m_frame) {}
+      m_alive(std::exchange(other.m_alive, {})), m_subSpawns(std::exchange(other.m_subSpawns, {})),
+      m_keys(std::exchange(other.m_keys, {})), m_counters(std::exchange(other.m_counters, {})),
+      m_arguments(std::exchange(other.m_arguments, {})), m_current(other.m_current),
+      m_effects(std::exchange(other.m_effects, {})), m_effectTable(std::exchange(other.m_effectTable, {})),
+      m_curveTable(std::exchange(other.m_curveTable, {})), m_effectCapacity(std::exchange(other.m_effectCapacity, 0)),
+      m_frameSlots(std::exchange(other.m_frameSlots, {})), m_nextFrameSlot(other.m_nextFrameSlot),
+      m_frame(other.m_frame), m_hits(std::move(other.m_hits)), m_aliveCount(other.m_aliveCount) {}
 
 ParticlePass::~ParticlePass() {
-    for (const rhi::PipelineHandle pipeline : {m_emit, m_simulate, m_finish, m_sort, m_draw}) {
+    for (const rhi::PipelineHandle pipeline : {m_subEmit, m_emit, m_simulate, m_finish, m_sort, m_draw}) {
         m_device->DestroyPipeline(pipeline);
     }
-    for (const rhi::BufferHandle buffer :
-         {m_particles, m_dead, m_alive[0], m_alive[1], m_keys, m_counters, m_arguments, m_effectTable, m_curveTable}) {
+    for (const rhi::BufferHandle buffer : {m_particles, m_dead, m_alive[0], m_alive[1], m_subSpawns[0], m_subSpawns[1],
+                                           m_keys, m_counters, m_arguments, m_effectTable, m_curveTable}) {
         m_device->DestroyBuffer(buffer);
     }
     for (const FrameSlot& slot : m_frameSlots) {
-        m_device->DestroyBuffer(slot.spawns);
+        for (const rhi::BufferHandle buffer : {slot.spawns, slot.forces, slot.parameters, slot.hits}) {
+            m_device->DestroyBuffer(buffer);
+        }
     }
 }
 
@@ -217,6 +300,7 @@ core::Result<void> ParticlePass::CreateResources(rhi::Format colorFormat) {
         DAI_TRY_ASSIGN(pipeline, m_device->CreateComputePipeline({.shader = shader, .name = name}));
         return {};
     };
+    DAI_TRY(compute(rhi::ToSpirv(kParticleSubEmitCsSpirv), "Particle sub-emission", m_subEmit));
     DAI_TRY(compute(rhi::ToSpirv(kParticleEmitCsSpirv), "Particle emission", m_emit));
     DAI_TRY(compute(rhi::ToSpirv(kParticleSimulateCsSpirv), "Particle simulation", m_simulate));
     DAI_TRY(compute(rhi::ToSpirv(kParticleFinishCsSpirv), "Particle finish", m_finish));
@@ -244,8 +328,22 @@ core::Result<void> ParticlePass::CreateResources(rhi::Format colorFormat) {
     DAI_TRY(buffer(kListSize, rhi::BufferUsage::Storage, "Alive particles", m_alive[1]));
     DAI_TRY(buffer(std::uint64_t{kMaxParticles} * 2 * sizeof(std::uint32_t),
                    rhi::BufferUsage::Storage | rhi::BufferUsage::TransferDst, "Particle sort keys", m_keys));
-    DAI_TRY(buffer(4 * sizeof(std::uint32_t), rhi::BufferUsage::Storage | rhi::BufferUsage::TransferDst,
+    DAI_TRY(buffer(kCounters * sizeof(std::uint32_t), rhi::BufferUsage::Storage | rhi::BufferUsage::TransferDst,
                    "Particle counters", m_counters));
+    for (rhi::BufferHandle& list : m_subSpawns) {
+        DAI_TRY(buffer(std::uint64_t{kMaxSubSpawns} * sizeof(GpuSubSpawn), rhi::BufferUsage::Storage,
+                       "Particle sub-spawns", list));
+    }
+    for (FrameSlot& slot : m_frameSlots) {
+        DAI_TRY_ASSIGN(slot.parameters, m_device->CreateBuffer({.size = sizeof(GpuFrame),
+                                                                .usage = rhi::BufferUsage::Storage,
+                                                                .memory = rhi::MemoryLocation::CpuToGpu,
+                                                                .name = "Particle frame"}));
+        DAI_TRY_ASSIGN(slot.hits, m_device->CreateBuffer({.size = (std::uint64_t{kMaxHits} + 1) * sizeof(GpuHit),
+                                                          .usage = rhi::BufferUsage::Storage,
+                                                          .memory = rhi::MemoryLocation::GpuToCpu,
+                                                          .name = "Particle hits"}));
+    }
     DAI_TRY(buffer(4 * sizeof(std::uint32_t),
                    rhi::BufferUsage::Storage | rhi::BufferUsage::Indirect | rhi::BufferUsage::TransferDst,
                    "Particle draw", m_arguments));
@@ -254,7 +352,7 @@ core::Result<void> ParticlePass::CreateResources(rhi::Format colorFormat) {
     std::vector<std::uint32_t> dead(kMaxParticles);
     std::iota(dead.begin(), dead.end(), 0U);
     DAI_TRY(m_device->UploadBuffer(m_dead, std::as_bytes(std::span(dead))));
-    const std::array<std::uint32_t, 4> counters{kMaxParticles, 0, 0, 0};
+    const std::array<std::uint32_t, kCounters> counters{kMaxParticles, 0, 0, 0, 0, 0, 0, 0};
     DAI_TRY(m_device->UploadBuffer(m_counters, std::as_bytes(std::span(counters))));
     const std::array<std::uint32_t, 4> arguments{6, 0, 0, 0};
     DAI_TRY(m_device->UploadBuffer(m_arguments, std::as_bytes(std::span(arguments))));
@@ -314,7 +412,11 @@ void ParticlePass::WriteEffect(std::uint32_t index, const ParticleEffectDesc& de
     const std::uint32_t rows = desc.rows == 0 ? desc.columns : desc.rows;
     DAI_ASSERT(desc.columns > 0 && desc.cell + std::max(desc.frames, 1U) <= desc.columns * rows,
                "The flipbook must be in the grid");
-    const GpuEffect data = ToGpu(desc, m_device->BindlessIndex(desc.texture));
+    const auto index_of = [this](ParticleEffectHandle effect) {
+        return m_effects.TryGet(effect) != nullptr ? effect.Index() : kNoEffect;
+    };
+    const GpuEffect data =
+        ToGpu(desc, m_device->BindlessIndex(desc.texture), index_of(desc.onDeath.effect), index_of(desc.onHit.effect));
     std::memcpy(m_device->Mapped(m_effectTable).data() + std::size_t{index} * sizeof(GpuEffect), &data, sizeof(data));
     const std::vector<glm::vec4> curves = BakeParticleCurves(desc);
     std::memcpy(m_device->Mapped(m_curveTable).data() + index * kCurveBytes, curves.data(), kCurveBytes);
@@ -324,18 +426,42 @@ void ParticlePass::DestroyEffect(ParticleEffectHandle effect) {
     m_effects.Remove(effect);
 }
 
-core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, std::span<const ParticleSpawn> spawns,
-                                               float timeStep, std::uint32_t frameBuffer, rhi::TextureHandle depth,
-                                               rhi::TextureHandle normals, const Shadows& shadows) {
+void ParticlePass::ReadHits(const FrameSlot& slot) {
+    m_hits.clear();
+    if (!slot.used) {
+        return;
+    }
+    const std::span<const std::byte> bytes = m_device->Mapped(slot.hits);
+    std::array<std::uint32_t, 2> header{};
+    std::memcpy(header.data(), bytes.data(), sizeof(header));
+    std::uint32_t count = header[0];
+    m_aliveCount = header[1];
+    count = std::min(count, kMaxHits);
+    m_hits.reserve(count);
+    for (std::uint32_t i = 0; i < count; ++i) {
+        GpuHit hit{};
+        std::memcpy(&hit, bytes.data() + (std::size_t{i} + 1) * sizeof(GpuHit), sizeof(hit));
+        m_hits.push_back({.position = hit.position,
+                          .normal = hit.normal,
+                          .effect = m_effects.HandleAt(hit.effect),
+                          .material = hit.material});
+    }
+}
+
+core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, const SceneView& view, std::uint32_t frameBuffer,
+                                               const Shadows& shadows) {
     DAI_PROFILE_SCOPE("renderer::ParticlePass::AddSimulation");
     FrameSlot& slot = m_frameSlots[m_nextFrameSlot];
     m_nextFrameSlot = (m_nextFrameSlot + 1) % rhi::kFramesInFlight;
+    // The GPU finished the last frame recorded with this slot: what it hit is read before it is overwritten.
+    ReadHits(slot);
+    slot.used = true;
 
     // The requests of the frame, each with the number of particles before it. Beyond the pool's size,
     // the GPU drops them anyway.
     std::vector<GpuSpawn> requests;
     std::uint32_t emitted = 0;
-    for (const ParticleSpawn& spawn : spawns) {
+    for (const ParticleSpawn& spawn : view.particleSpawns) {
         if (spawn.count == 0 || m_effects.TryGet(spawn.effect) == nullptr || emitted >= kMaxParticles) {
             continue;
         }
@@ -365,7 +491,69 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, std::span<con
         std::memcpy(m_device->Mapped(slot.spawns).data(), requests.data(), requests.size() * sizeof(GpuSpawn));
     }
 
+    // Wind volumes and attractors (ADR-0053).
+    std::vector<GpuForce> forces;
+    for (const WindVolume& wind : view.windVolumes) {
+        const glm::mat4 toBox = glm::transpose(glm::inverse(wind.world));
+        forces.push_back({.toBox = {toBox[0], toBox[1], toBox[2]},
+                          .vector = wind.velocity,
+                          .kind = kForceWind,
+                          .axis = glm::vec3(0.0f),
+                          .effect = kNoEffect,
+                          .strength = 0.0f,
+                          .vortex = 0.0f,
+                          .radius = 0.0f,
+                          .gust = wind.gust,
+                          .gustFrequency = wind.gustFrequency,
+                          .edge = wind.edge,
+                          .padding = {}});
+    }
+    for (const ParticleAttractor& attractor : view.particleAttractors) {
+        const float length = glm::length(attractor.axis);
+        forces.push_back({.toBox = {},
+                          .vector = attractor.position,
+                          .kind = kForceAttractor,
+                          .axis = length > 0.0f ? attractor.axis / length : glm::vec3(0.0f, 1.0f, 0.0f),
+                          .effect = attractor.effect.IsNull() ? kNoEffect : attractor.effect.Index(),
+                          .strength = attractor.strength,
+                          .vortex = attractor.vortex,
+                          .radius = attractor.radius,
+                          .gust = 0.0f,
+                          .gustFrequency = 0.0f,
+                          .edge = 0.0f,
+                          .padding = {}});
+    }
+    if (slot.forceCapacity < std::max<std::size_t>(forces.size(), 1)) {
+        const std::uint64_t capacity =
+            std::max<std::uint64_t>({kInitialForceCapacity, forces.size(), slot.forceCapacity * 2});
+        DAI_TRY_ASSIGN(rhi::BufferHandle created, m_device->CreateBuffer({.size = capacity * sizeof(GpuForce),
+                                                                          .usage = rhi::BufferUsage::Storage,
+                                                                          .memory = rhi::MemoryLocation::CpuToGpu,
+                                                                          .name = "Particle forces"}));
+        m_device->DestroyBuffer(slot.forces);
+        slot.forces = created;
+        slot.forceCapacity = capacity;
+    }
+    if (!forces.empty()) {
+        std::memcpy(m_device->Mapped(slot.forces).data(), forces.data(), forces.size() * sizeof(GpuForce));
+    }
+
+    // The sub-spawns of the last frame are spawned now, from one list, while this frame's go to the other.
     const std::uint32_t next = 1 - m_current;
+    const GpuFrame parameters{.wind = view.atmosphere.wind,
+                              .forceCount = static_cast<std::uint32_t>(forces.size()),
+                              .windGust = view.atmosphere.windGust,
+                              .windGustFrequency = view.atmosphere.windGustFrequency,
+                              .forces = m_device->StorageIndex(slot.forces),
+                              .hits = m_device->StorageIndex(slot.hits),
+                              .subSpawnsIn = m_device->StorageIndex(m_subSpawns[m_current]),
+                              .subSpawnsOut = m_device->StorageIndex(m_subSpawns[next]),
+                              .subCounterIn = kSubCounter + m_current,
+                              .subCounterOut = kSubCounter + next,
+                              .hitCapacity = kMaxHits,
+                              .padding = {}};
+    std::memcpy(m_device->Mapped(slot.parameters).data(), &parameters, sizeof(parameters));
+
     ParticlePushConstants push{};
     push.particles = m_device->StorageIndex(m_particles);
     push.dead = m_device->StorageIndex(m_dead);
@@ -380,24 +568,26 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, std::span<con
     push.spawnCount = static_cast<std::uint32_t>(requests.size());
     push.emitCount = emitted;
     push.frameBuffer = frameBuffer;
-    push.timeStep = std::max(timeStep, 0.0f);
+    push.timeStep = std::max(view.timeStep, 0.0f);
     push.seed = ++m_frame;
-    push.depthTexture = m_device->BindlessIndex(depth);
-    push.normalTexture = m_device->BindlessIndex(normals);
+    push.parameters = m_device->StorageIndex(slot.parameters);
     push.capacity = kMaxParticles;
     push.instanceBuffer = shadows.instanceBuffer;
     push.materialBuffer = shadows.materialBuffer;
     push.lightMap = shadows.lightMap;
     push.previousLightCount = shadows.previousLightCount;
 
-    // Emission, simulation and finish read and write most of the pool's buffers.
+    // Every pass but the sort reads and writes most of the pool's buffers.
     const std::vector<rhi::BufferUse> pool{{m_particles, rhi::Access::ComputeShaderWrite},
                                            {m_dead, rhi::Access::ComputeShaderWrite},
                                            {m_alive[m_current], rhi::Access::ComputeShaderWrite},
                                            {m_alive[next], rhi::Access::ComputeShaderWrite},
+                                           {m_subSpawns[0], rhi::Access::ComputeShaderWrite},
+                                           {m_subSpawns[1], rhi::Access::ComputeShaderWrite},
                                            {m_keys, rhi::Access::ComputeShaderWrite},
                                            {m_counters, rhi::Access::ComputeShaderWrite},
-                                           {m_arguments, rhi::Access::ComputeShaderWrite}};
+                                           {m_arguments, rhi::Access::ComputeShaderWrite},
+                                           {slot.hits, rhi::Access::ComputeShaderWrite}};
     const auto dispatch = [push](rhi::PipelineHandle pipeline, std::uint32_t groups) {
         return [push, pipeline, groups](rhi::CommandList& commands) {
             commands.BindPipeline(pipeline);
@@ -405,17 +595,20 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, std::span<con
             commands.Dispatch(groups);
         };
     };
+    // The CPU does not know how many sub-spawns there are: the dispatch covers as many as can be. It also
+    // empties this frame's hits.
+    graph.AddPass({.name = "Particle sub-emission", .group = "Simulation", .buffers = pool},
+                  dispatch(m_subEmit, kMaxSubSpawns / kGroupSize));
     if (emitted > 0) {
         graph.AddPass({.name = "Particle emission", .group = "Simulation", .buffers = pool},
                       dispatch(m_emit, (emitted + kGroupSize - 1) / kGroupSize));
     }
-    // Particles bounce off the G-buffer's surfaces, and lit ones cast shadow rays.
+    // Particles meet the frame's surfaces, and lit ones cast shadow rays.
     std::vector<rhi::BufferUse> simulated = pool;
     simulated.push_back({shadows.skinnedVertices, rhi::Access::ComputeShaderRead});
     simulated.push_back({shadows.emissiveTriangles, rhi::Access::ComputeShaderRead});
     graph.AddPass({.name = "Particle simulation",
                    .group = "Simulation",
-                   .textures = {{depth, rhi::Access::ComputeShaderRead}, {normals, rhi::Access::ComputeShaderRead}},
                    .buffers = std::move(simulated),
                    .structures = {{shadows.structure, rhi::Access::RayQueryRead}}},
                   dispatch(m_simulate, kGroups));

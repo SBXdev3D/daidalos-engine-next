@@ -18,6 +18,7 @@
 #include <format>
 #include <numeric>
 #include <span>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -179,6 +180,20 @@ void DevTools::AddEngineInspectors() {
         ImGui::DragFloat("Per second", &emitter.emission.rate, 0.1f, 0.0f, 10000.0f);
         ImGui::DragFloat("Per meter", &emitter.emission.ratePerMeter, 0.1f, 0.0f, 10000.0f);
         ImGui::Text("%zu bursts, %.1f s old", emitter.emission.bursts.size(), static_cast<double>(emitter.age));
+    });
+    AddInspector<scene::WindVolume>("Wind volume", [](scene::WindVolume& wind) {
+        ImGui::Checkbox("Enabled", &wind.enabled);
+        ImGui::DragFloat3("Velocity", &wind.velocity.x, 0.05f, -50.0f, 50.0f);
+        ImGui::SliderFloat("Gust", &wind.gust, 0.0f, 1.0f);
+        ImGui::DragFloat("Gusts per second", &wind.gustFrequency, 0.01f, 0.0f, 10.0f);
+        ImGui::SliderFloat("Edge", &wind.edge, 0.0f, 1.0f);
+    });
+    AddInspector<scene::ParticleAttractor>("Particle attractor", [](scene::ParticleAttractor& attractor) {
+        ImGui::Text("Effect %s", attractor.effect.IsNull() ? "all" : std::to_string(attractor.effect.Index()).c_str());
+        ImGui::Checkbox("Enabled", &attractor.enabled);
+        ImGui::DragFloat("Strength", &attractor.strength, 0.05f, -100.0f, 100.0f);
+        ImGui::DragFloat("Vortex", &attractor.vortex, 0.05f, -100.0f, 100.0f);
+        ImGui::DragFloat("Radius", &attractor.radius, 0.05f, 0.0f, 100.0f);
     });
     AddInspector<scene::KinematicBody>("Kinematic body",
                                        [](scene::KinematicBody& body) { ImGui::Text("Body %u", body.id.value); });
@@ -396,10 +411,11 @@ void DevTools::DrawStats() {
     }
     if (ImGui::CollapsingHeader("Frame", ImGuiTreeNodeFlags_DefaultOpen)) {
         const renderer::FrameStats stats = renderer.Stats();
+        TextLine(std::format("Particles: {} alive, {} spawns, {} hits read back", stats.particlesAlive,
+                             stats.particleSpawns, stats.particleHits));
         TextLine(
             std::format("Draws: {} drawn of {}, {} triangles", stats.drawnDraws, stats.draws, Count(stats.triangles)));
         TextLine(std::format("Lights: {}, emissive triangles included; one shadow ray per pixel", stats.lights));
-        TextLine(std::format("Particle spawns: {}", stats.particleSpawns));
         // ADR-0049: the size the scene is rendered at, before temporal antialiasing upscales it.
         TextLine(std::format("Rendered at {} x {}, {:.0f}% of the window", stats.renderWidth, stats.renderHeight,
                              stats.renderScale * 100.0f));
