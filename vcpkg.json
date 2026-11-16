@@ -6,7 +6,13 @@
     "fastgltf",
     "glm",
     "gtest",
-    "imgui",
+    {
+      "name": "imgui",
+      "features": [
+        "docking-experimental"
+      ]
+    },
+    "imguizmo",
     "joltphysics",
     {
       "name": "ktx",

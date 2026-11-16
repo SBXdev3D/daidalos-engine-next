@@ -172,6 +172,38 @@ TEST_F(RendererTest, RendersBelowTheOutputsResolution) {
     EXPECT_EQ(target->Device().ValidationErrorCount(), 0U);
 }
 
+TEST_F(RendererTest, RendersIntoTheViewsRectangle) {
+    std::optional<renderer::Renderer> target = CreateRenderer();
+    if (!target.has_value()) {
+        GTEST_SKIP();
+    }
+    const core::Result<renderer::MeshHandle> mesh = target->CreateMesh(renderer::MakeCube(), "Cube");
+    ASSERT_TRUE(mesh.has_value());
+    renderer::SceneView view = TestView(*mesh);
+    const platform::Extent size = m_window->PixelSize();
+    target->SetResolution({.scale = 1.0f, .dynamic = false});
+
+    // An editor's viewport between its panels (ADR-0055): the scene renders at its size.
+    view.viewport =
+        renderer::ViewRect{.x = size.width / 5, .y = 20, .width = size.width / 2, .height = size.height / 2};
+    RenderFrames(*target, view, 3);
+    EXPECT_EQ(target->Stats().renderWidth, size.width / 2);
+    EXPECT_EQ(target->Stats().renderHeight, size.height / 2);
+
+    // Dragging a splitter resizes it every frame; a rectangle past the window's edge is cut to it.
+    for (const std::uint32_t width : {size.width / 3, size.width / 2 + 7, size.width}) {
+        view.viewport->width = width;
+        RenderFrames(*target, view, 1);
+    }
+    EXPECT_EQ(target->Stats().renderWidth, size.width - size.width / 5);
+
+    // Too small to draw in: the whole window.
+    view.viewport = renderer::ViewRect{.x = 0, .y = 0, .width = 4, .height = 4};
+    RenderFrames(*target, view, 2);
+    EXPECT_EQ(target->Stats().renderWidth, size.width);
+    EXPECT_EQ(target->Device().ValidationErrorCount(), 0U);
+}
+
 TEST_F(RendererTest, UpscalesWithFsr) {
     std::optional<renderer::Renderer> target = CreateRenderer();
     if (!target.has_value()) {

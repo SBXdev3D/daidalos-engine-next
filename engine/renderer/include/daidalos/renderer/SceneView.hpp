@@ -185,6 +185,15 @@ struct Light {
 
 /// What the renderer draws in one frame. It holds copies, so that rendering never touches the ECS
 /// (OVERVIEW §10.12).
+/// A rectangle of the window, in pixels from its top-left corner.
+struct ViewRect {
+    std::uint32_t x = 0;
+    std::uint32_t y = 0;
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    [[nodiscard]] bool operator==(const ViewRect&) const = default;
+};
+
 struct SceneView {
     /// Nothing is drawn without a camera.
     std::optional<CameraView> camera;
@@ -210,6 +219,10 @@ struct SceneView {
     /// The view does not follow from the previous one, after a teleport or a change of scene: nothing
     /// is reprojected from earlier frames (ADR-0037).
     bool cut = false;
+    /// Where in the window the scene is drawn, such as an editor's viewport between its panels (ADR-0055): the
+    /// scene renders at that size, and the rest of the window is black under the interface. Without one, or
+    /// if it is smaller than 8 pixels across, the whole window.
+    std::optional<ViewRect> viewport;
 };
 
 } // namespace daidalos::renderer
