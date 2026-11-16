@@ -1,2 +1,5 @@
 add_subdirectory(sandbox)
+if(DAI_ENABLE_DEV_TOOLS)
+    add_subdirectory(editor)
+endif()
 add_subdirectory(texture-tool)

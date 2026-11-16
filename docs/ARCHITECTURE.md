@@ -134,6 +134,8 @@ flowchart LR
     World -->|scene::Tags| Game["sandbox::BuildLevel"]
 ```
 
+The level editor, `apps/editor` (ADR-0055), edits the same `scene::Level` and shows it through the same `LevelInstance`, with no game code. Its interface is the debug overlay's Dear ImGui, docked, with ImGuizmo's gizmos; the renderer draws the scene into the dockspace's central node (`SceneView::viewport`), whose size the scene's targets take while the interface layer fills the window. A click picks on the CPU, against the triangles models keep for physics, or the marker of an entity without a mesh. An edit of a transform moves the entity; any other edit makes it again.
+
 ## Animation
 
 Joints are entities, so animation only writes transforms, and everything else is the usual path (ADR-0020).

@@ -10,8 +10,7 @@
         "kind": "teleporter"
       },
       "id": 2,
-      "name": "Teleporter 0",
-      "transform": {}
+      "name": "Teleporter 0"
     },
     {
       "game": {
@@ -23,11 +22,7 @@
       "model": "Props/card_reader.gltf",
       "name": "Card reader 6",
       "transform": {
-        "translation": [
-          -24.15,
-          1.05,
-          -39.9
-        ]
+        "translation": [-24.15, 1.05, -39.9]
       }
     },
     {
@@ -37,43 +32,21 @@
       "id": 4,
       "name": "Player 12",
       "transform": {
-        "translation": [
-          0.0,
-          1.4,
-          0.0
-        ]
+        "translation": [0, 1.4, 0]
       }
     },
     {
       "fog": {
-        "albedo": [
-          0.85,
-          0.8,
-          0.7
-        ],
-        "density": 0.1,
-        "edge": 0.3,
+        "albedo": [0.85, 0.8, 0.7],
         "noise": 0.7,
         "noise_frequency": 0.8,
-        "noise_velocity": [
-          0.08,
-          0.03,
-          0.0
-        ]
+        "noise_velocity": [0.08, 0.03, 0]
       },
       "id": 5,
       "name": "Dust of the start room",
       "transform": {
-        "scale": [
-          6.0,
-          3.0,
-          8.0
-        ],
-        "translation": [
-          0.0,
-          1.4,
-          -3.5
-        ]
+        "scale": [6, 3, 8],
+        "translation": [0, 1.4, -3.5]
       }
     },
     {
@@ -83,44 +56,24 @@
         "effect": "Effects/smoke_leak.effect.json"
       },
       "transform": {
-        "translation": [
-          38.5,
-          4.2,
-          -26.25
-        ]
+        "translation": [38.5, 4.2, -26.25]
       }
     },
     {
       "fog": {
-        "albedo": [
-          0.95,
-          0.95,
-          0.95
-        ],
+        "albedo": [0.95, 0.95, 0.95],
         "density": 0.8,
         "edge": 0.8,
         "noise": 0.8,
         "noise_frequency": 1.5,
-        "noise_velocity": [
-          0.0,
-          0.1,
-          -0.5
-        ]
+        "noise_velocity": [0, 0.1, -0.5]
       },
       "id": 7,
       "name": "Steam",
       "parent": 6,
       "transform": {
-        "scale": [
-          1.6,
-          1.6,
-          4.0
-        ],
-        "translation": [
-          0.0,
-          0.1,
-          -1.8
-        ]
+        "scale": [1.6, 1.6, 4],
+        "translation": [0, 0.1, -1.8]
       }
     },
     {
@@ -132,71 +85,41 @@
       "model": "Props/alarm.gltf",
       "name": "Alarm 14",
       "transform": {
-        "translation": [
-          10.5,
-          8.4,
-          -47.25
-        ]
+        "translation": [10.5, 8.4, -47.25]
       }
     },
     {
       "id": 9,
       "light": {
-        "color": [
-          1.0,
-          0.0,
-          0.0
-        ],
-        "inner_angle": 16.0,
-        "intensity": 965.0,
-        "outer_angle": 20.0,
-        "range": 28.0,
+        "color": [1, 0, 0],
+        "inner_angle": 16,
+        "intensity": 965,
+        "outer_angle": 20,
+        "range": 28,
         "type": "spot"
       },
       "name": "Alarm 14 beam 1",
       "parent": 8,
       "transform": {
-        "rotation": [
-          -0.21644,
-          0.0,
-          0.0,
-          0.9763
-        ],
-        "translation": [
-          0.0,
-          -0.7,
-          0.0
-        ]
+        "rotation": [-0.21643916, 0, 0, 0.9762962],
+        "translation": [0, -0.7, 0]
       }
     },
     {
       "id": 10,
       "light": {
-        "color": [
-          1.0,
-          0.0,
-          0.0
-        ],
-        "inner_angle": 16.0,
-        "intensity": 965.0,
-        "outer_angle": 20.0,
-        "range": 28.0,
+        "color": [1, 0, 0],
+        "inner_angle": 16,
+        "intensity": 965,
+        "outer_angle": 20,
+        "range": 28,
         "type": "spot"
       },
       "name": "Alarm 14 beam 2",
       "parent": 8,
       "transform": {
-        "rotation": [
-          0.0,
-          0.9763,
-          0.21644,
-          0.0
-        ],
-        "translation": [
-          0.0,
-          -0.7,
-          0.0
-        ]
+        "rotation": [0, 0.9762962, 0.21643916, 0],
+        "translation": [0, -0.7, 0]
       }
     },
     {
@@ -208,71 +131,41 @@
       "model": "Props/alarm_2.gltf",
       "name": "Alarm 15",
       "transform": {
-        "translation": [
-          -10.5,
-          8.4,
-          -47.25
-        ]
+        "translation": [-10.5, 8.4, -47.25]
       }
     },
     {
       "id": 12,
       "light": {
-        "color": [
-          1.0,
-          0.0,
-          0.0
-        ],
-        "inner_angle": 16.0,
-        "intensity": 965.0,
-        "outer_angle": 20.0,
-        "range": 28.0,
+        "color": [1, 0, 0],
+        "inner_angle": 16,
+        "intensity": 965,
+        "outer_angle": 20,
+        "range": 28,
         "type": "spot"
       },
       "name": "Alarm 15 beam 1",
       "parent": 11,
       "transform": {
-        "rotation": [
-          -0.21644,
-          0.0,
-          0.0,
-          0.9763
-        ],
-        "translation": [
-          0.0,
-          -0.7,
-          0.0
-        ]
+        "rotation": [-0.21643916, 0, 0, 0.9762962],
+        "translation": [0, -0.7, 0]
       }
     },
     {
       "id": 13,
       "light": {
-        "color": [
-          1.0,
-          0.0,
-          0.0
-        ],
-        "inner_angle": 16.0,
-        "intensity": 965.0,
-        "outer_angle": 20.0,
-        "range": 28.0,
+        "color": [1, 0, 0],
+        "inner_angle": 16,
+        "intensity": 965,
+        "outer_angle": 20,
+        "range": 28,
         "type": "spot"
       },
       "name": "Alarm 15 beam 2",
       "parent": 11,
       "transform": {
-        "rotation": [
-          0.0,
-          0.9763,
-          0.21644,
-          0.0
-        ],
-        "translation": [
-          0.0,
-          -0.7,
-          0.0
-        ]
+        "rotation": [0, 0.9762962, 0.21643916, 0],
+        "translation": [0, -0.7, 0]
       }
     },
     {
@@ -283,11 +176,7 @@
       "model": "Props/flashlight.gltf",
       "name": "Flashlight 16",
       "transform": {
-        "translation": [
-          17.5,
-          0.0,
-          -38.5
-        ]
+        "translation": [17.5, 0, -38.5]
       }
     },
     {
@@ -298,11 +187,7 @@
       "model": "Props/health.gltf",
       "name": "Health 17",
       "transform": {
-        "translation": [
-          49.0,
-          2.8,
-          -35.0
-        ]
+        "translation": [49, 2.8, -35]
       }
     },
     {
@@ -313,11 +198,7 @@
       "model": "Props/handgun_ammo.gltf",
       "name": "Handgun ammo 18",
       "transform": {
-        "translation": [
-          38.5,
-          2.8,
-          -49.0
-        ]
+        "translation": [38.5, 2.8, -49]
       }
     },
     {
@@ -328,11 +209,7 @@
       "model": "Props/handgun_ammo_2.gltf",
       "name": "Handgun ammo 19",
       "transform": {
-        "translation": [
-          36.75,
-          2.8,
-          -49.0
-        ]
+        "translation": [36.75, 2.8, -49]
       }
     },
     {
@@ -343,11 +220,7 @@
       "model": "Props/armor.gltf",
       "name": "Armor 20",
       "transform": {
-        "translation": [
-          -15.75,
-          0.0,
-          -50.75
-        ]
+        "translation": [-15.75, 0, -50.75]
       }
     },
     {
@@ -358,11 +231,7 @@
       "model": "Props/shotgun_ammo.gltf",
       "name": "Shotgun ammo 21",
       "transform": {
-        "translation": [
-          -14.0,
-          0.0,
-          -21.0
-        ]
+        "translation": [-14, 0, -21]
       }
     },
     {
@@ -373,11 +242,7 @@
       "model": "Props/security_camera.gltf",
       "name": "Security camera 22",
       "transform": {
-        "translation": [
-          27.3,
-          5.6,
-          -29.75
-        ]
+        "translation": [27.3, 5.6, -29.75]
       }
     },
     {
@@ -390,11 +255,7 @@
       "model": "zombie.gltf",
       "name": "Zombie 24",
       "transform": {
-        "translation": [
-          36.75,
-          -12.25,
-          -38.5
-        ]
+        "translation": [36.75, -12.25, -38.5]
       }
     },
     {
@@ -406,11 +267,7 @@
       "model": "zombie.gltf",
       "name": "Zombie 25",
       "transform": {
-        "translation": [
-          45.5,
-          3.5,
-          -78.75
-        ]
+        "translation": [45.5, 3.5, -78.75]
       }
     },
     {
@@ -422,11 +279,7 @@
       "model": "Props/card.gltf",
       "name": "Card 26",
       "transform": {
-        "translation": [
-          50.05,
-          2.8,
-          -81.2
-        ]
+        "translation": [50.05, 2.8, -81.2]
       }
     },
     {
@@ -434,11 +287,7 @@
       "model": "Props/lamp.gltf",
       "name": "Lamp 27",
       "transform": {
-        "translation": [
-          0.0,
-          2.8,
-          -5.25
-        ]
+        "translation": [0, 2.8, -5.25]
       }
     },
     {
@@ -447,23 +296,14 @@
         "inner_angle": 22.5001,
         "intensity": 434.5,
         "outer_angle": 45.0001,
-        "range": 7.0,
+        "range": 7,
         "type": "spot"
       },
       "name": "Lamp 27 light",
       "parent": 24,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -471,11 +311,7 @@
       "model": "Props/lamp.gltf",
       "name": "Lamp 28",
       "transform": {
-        "translation": [
-          31.5,
-          5.6,
-          -57.75
-        ]
+        "translation": [31.5, 5.6, -57.75]
       }
     },
     {
@@ -484,23 +320,14 @@
         "inner_angle": 12.5002,
         "intensity": 289.6,
         "outer_angle": 24.9999,
-        "range": 7.0,
+        "range": 7,
         "type": "spot"
       },
       "name": "Lamp 28 light",
       "parent": 26,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -508,11 +335,7 @@
       "model": "Props/lamp_2.gltf",
       "name": "Lamp 29",
       "transform": {
-        "translation": [
-          46.2,
-          5.6,
-          -59.5
-        ]
+        "translation": [46.2, 5.6, -59.5]
       }
     },
     {
@@ -521,23 +344,14 @@
         "inner_angle": 17.4998,
         "intensity": 289.6,
         "outer_angle": 35.0003,
-        "range": 7.0,
+        "range": 7,
         "type": "spot"
       },
       "name": "Lamp 29 light",
       "parent": 28,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -545,41 +359,24 @@
       "model": "Props/lamp_3.gltf",
       "name": "Lamp 30",
       "transform": {
-        "translation": [
-          46.2,
-          5.6,
-          -67.2
-        ]
+        "translation": [46.2, 5.6, -67.2]
       }
     },
     {
       "id": 31,
       "light": {
-        "color": [
-          1.0,
-          0.6667,
-          0.6667
-        ],
+        "color": [1, 0.6667, 0.6667],
         "inner_angle": 17.4998,
         "intensity": 434.5,
         "outer_angle": 35.0003,
-        "range": 7.0,
+        "range": 7,
         "type": "spot"
       },
       "name": "Lamp 30 light",
       "parent": 30,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -587,11 +384,7 @@
       "model": "Props/lamp_4.gltf",
       "name": "Lamp 31",
       "transform": {
-        "translation": [
-          45.5,
-          5.6,
-          -79.45
-        ]
+        "translation": [45.5, 5.6, -79.45]
       }
     },
     {
@@ -603,11 +396,7 @@
       "id": 33,
       "name": "Area trigger 32",
       "transform": {
-        "translation": [
-          45.5,
-          2.8,
-          -80.5
-        ]
+        "translation": [45.5, 2.8, -80.5]
       }
     },
     {
@@ -618,17 +407,8 @@
       "model": "fan.gltf",
       "name": "Fan 37",
       "transform": {
-        "rotation": [
-          0.0,
-          0.0,
-          0.70711,
-          0.70711
-        ],
-        "translation": [
-          -42.7,
-          -7.0,
-          -42.0
-        ]
+        "rotation": [0, 0, 0.70710677, 0.70710677],
+        "translation": [-42.7, -7, -42]
       }
     },
     {
@@ -639,17 +419,8 @@
       "model": "fan.gltf",
       "name": "Fan 38",
       "transform": {
-        "rotation": [
-          0.0,
-          0.0,
-          0.70711,
-          0.70711
-        ],
-        "translation": [
-          -42.7,
-          -7.0,
-          -52.5
-        ]
+        "rotation": [0, 0, 0.70710677, 0.70710677],
+        "translation": [-42.7, -7, -52.5]
       }
     },
     {
@@ -662,11 +433,7 @@
       "model": "zombie.gltf",
       "name": "Zombie 43",
       "transform": {
-        "translation": [
-          -36.75,
-          -7.7,
-          -47.25
-        ]
+        "translation": [-36.75, -7.7, -47.25]
       }
     },
     {
@@ -674,11 +441,7 @@
       "model": "Props/lamp_5.gltf",
       "name": "Lamp 44",
       "transform": {
-        "translation": [
-          -35.0,
-          5.6,
-          -70.0
-        ]
+        "translation": [-35, 5.6, -70]
       }
     },
     {
@@ -687,23 +450,14 @@
         "inner_angle": 12.5002,
         "intensity": 289.6,
         "outer_angle": 24.9999,
-        "range": 7.0,
+        "range": 7,
         "type": "spot"
       },
       "name": "Lamp 44 light",
       "parent": 37,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -716,17 +470,8 @@
       "model": "zombie.gltf",
       "name": "Zombie 45",
       "transform": {
-        "rotation": [
-          0.0,
-          -0.70711,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          -21.0,
-          3.5,
-          -77.0
-        ]
+        "rotation": [0, -0.70710677, 0, 0.70710677],
+        "translation": [-21, 3.5, -77]
       }
     },
     {
@@ -734,11 +479,7 @@
       "model": "Props/lamp_6.gltf",
       "name": "Lamp 46",
       "transform": {
-        "translation": [
-          -28.0,
-          5.6,
-          -77.0
-        ]
+        "translation": [-28, 5.6, -77]
       }
     },
     {
@@ -747,23 +488,14 @@
         "inner_angle": 12.5002,
         "intensity": 289.6,
         "outer_angle": 24.9999,
-        "range": 7.0,
+        "range": 7,
         "type": "spot"
       },
       "name": "Lamp 46 light",
       "parent": 40,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -771,11 +503,7 @@
       "model": "Props/lamp_7.gltf",
       "name": "Lamp 47",
       "transform": {
-        "translation": [
-          -21.0,
-          5.6,
-          -84.0
-        ]
+        "translation": [-21, 5.6, -84]
       }
     },
     {
@@ -784,23 +512,14 @@
         "inner_angle": 12.5002,
         "intensity": 289.6,
         "outer_angle": 24.9999,
-        "range": 7.0,
+        "range": 7,
         "type": "spot"
       },
       "name": "Lamp 47 light",
       "parent": 42,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -811,11 +530,7 @@
       "model": "shotgun.gltf",
       "name": "Shotgun 49",
       "transform": {
-        "translation": [
-          -15.75,
-          0.0,
-          -21.0
-        ]
+        "translation": [-15.75, 0, -21]
       }
     },
     {
@@ -823,41 +538,24 @@
       "model": "Props/lamp.gltf",
       "name": "Lamp 51",
       "transform": {
-        "translation": [
-          0.0,
-          5.6,
-          -17.0
-        ]
+        "translation": [0, 5.6, -17]
       }
     },
     {
       "id": 47,
       "light": {
-        "color": [
-          1.0,
-          0.92,
-          0.8
-        ],
+        "color": [1, 0.92, 0.8],
         "inner_angle": 13.5,
         "intensity": 781.7,
         "outer_angle": 45.0001,
-        "range": 12.0,
+        "range": 12,
         "type": "spot"
       },
       "name": "Lamp 51 light",
       "parent": 46,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -865,41 +563,24 @@
       "model": "Props/lamp.gltf",
       "name": "Lamp 52",
       "transform": {
-        "translation": [
-          -10.0,
-          8.4,
-          -24.0
-        ]
+        "translation": [-10, 8.4, -24]
       }
     },
     {
       "id": 49,
       "light": {
-        "color": [
-          1.0,
-          0.92,
-          0.8
-        ],
+        "color": [1, 0.92, 0.8],
         "inner_angle": 13.5,
         "intensity": 1389.7,
         "outer_angle": 45.0001,
-        "range": 16.0,
+        "range": 16,
         "type": "spot"
       },
       "name": "Lamp 52 light",
       "parent": 48,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -907,41 +588,24 @@
       "model": "Props/lamp.gltf",
       "name": "Lamp 53",
       "transform": {
-        "translation": [
-          8.0,
-          8.4,
-          -24.0
-        ]
+        "translation": [8, 8.4, -24]
       }
     },
     {
       "id": 51,
       "light": {
-        "color": [
-          1.0,
-          0.92,
-          0.8
-        ],
+        "color": [1, 0.92, 0.8],
         "inner_angle": 13.5,
         "intensity": 1389.7,
         "outer_angle": 45.0001,
-        "range": 16.0,
+        "range": 16,
         "type": "spot"
       },
       "name": "Lamp 53 light",
       "parent": 50,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -949,41 +613,24 @@
       "model": "Props/lamp.gltf",
       "name": "Lamp 54",
       "transform": {
-        "translation": [
-          0.0,
-          5.6,
-          -56.0
-        ]
+        "translation": [0, 5.6, -56]
       }
     },
     {
       "id": 53,
       "light": {
-        "color": [
-          1.0,
-          0.92,
-          0.8
-        ],
+        "color": [1, 0.92, 0.8],
         "inner_angle": 13.5,
         "intensity": 781.7,
         "outer_angle": 45.0001,
-        "range": 12.0,
+        "range": 12,
         "type": "spot"
       },
       "name": "Lamp 54 light",
       "parent": 52,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -991,41 +638,24 @@
       "model": "Props/lamp.gltf",
       "name": "Lamp 55",
       "transform": {
-        "translation": [
-          -18.0,
-          5.6,
-          -38.5
-        ]
+        "translation": [-18, 5.6, -38.5]
       }
     },
     {
       "id": 55,
       "light": {
-        "color": [
-          1.0,
-          0.92,
-          0.8
-        ],
+        "color": [1, 0.92, 0.8],
         "inner_angle": 13.5,
         "intensity": 781.7,
         "outer_angle": 45.0001,
-        "range": 12.0,
+        "range": 12,
         "type": "spot"
       },
       "name": "Lamp 55 light",
       "parent": 54,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -1033,41 +663,24 @@
       "model": "Props/lamp.gltf",
       "name": "Lamp 56",
       "transform": {
-        "translation": [
-          18.0,
-          5.6,
-          -38.5
-        ]
+        "translation": [18, 5.6, -38.5]
       }
     },
     {
       "id": 57,
       "light": {
-        "color": [
-          1.0,
-          0.92,
-          0.8
-        ],
+        "color": [1, 0.92, 0.8],
         "inner_angle": 13.5,
         "intensity": 781.7,
         "outer_angle": 45.0001,
-        "range": 12.0,
+        "range": 12,
         "type": "spot"
       },
       "name": "Lamp 56 light",
       "parent": 56,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -1075,41 +688,24 @@
       "model": "Props/lamp.gltf",
       "name": "Lamp 57",
       "transform": {
-        "translation": [
-          32.0,
-          5.6,
-          -38.5
-        ]
+        "translation": [32, 5.6, -38.5]
       }
     },
     {
       "id": 59,
       "light": {
-        "color": [
-          1.0,
-          0.92,
-          0.8
-        ],
+        "color": [1, 0.92, 0.8],
         "inner_angle": 13.5,
         "intensity": 781.7,
         "outer_angle": 45.0001,
-        "range": 12.0,
+        "range": 12,
         "type": "spot"
       },
       "name": "Lamp 57 light",
       "parent": 58,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -1117,41 +713,24 @@
       "model": "Props/lamp.gltf",
       "name": "Lamp 58",
       "transform": {
-        "translation": [
-          44.0,
-          5.6,
-          -40.0
-        ]
+        "translation": [44, 5.6, -40]
       }
     },
     {
       "id": 61,
       "light": {
-        "color": [
-          1.0,
-          0.92,
-          0.8
-        ],
+        "color": [1, 0.92, 0.8],
         "inner_angle": 13.5,
         "intensity": 781.7,
         "outer_angle": 45.0001,
-        "range": 12.0,
+        "range": 12,
         "type": "spot"
       },
       "name": "Lamp 58 light",
       "parent": 60,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -1159,41 +738,24 @@
       "model": "Props/lamp.gltf",
       "name": "Lamp 59",
       "transform": {
-        "translation": [
-          -30.0,
-          2.8,
-          -38.5
-        ]
+        "translation": [-30, 2.8, -38.5]
       }
     },
     {
       "id": 63,
       "light": {
-        "color": [
-          1.0,
-          0.92,
-          0.8
-        ],
+        "color": [1, 0.92, 0.8],
         "inner_angle": 13.5,
         "intensity": 347.4,
         "outer_angle": 45.0001,
-        "range": 8.0,
+        "range": 8,
         "type": "spot"
       },
       "name": "Lamp 59 light",
       "parent": 62,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -1201,41 +763,24 @@
       "model": "Props/lamp.gltf",
       "name": "Lamp 60",
       "transform": {
-        "translation": [
-          -40.0,
-          2.8,
-          -40.0
-        ]
+        "translation": [-40, 2.8, -40]
       }
     },
     {
       "id": 65,
       "light": {
-        "color": [
-          1.0,
-          0.92,
-          0.8
-        ],
+        "color": [1, 0.92, 0.8],
         "inner_angle": 13.5,
         "intensity": 347.4,
         "outer_angle": 45.0001,
-        "range": 8.0,
+        "range": 8,
         "type": "spot"
       },
       "name": "Lamp 60 light",
       "parent": 64,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -1243,41 +788,24 @@
       "model": "Props/lamp.gltf",
       "name": "Lamp 61",
       "transform": {
-        "translation": [
-          0.0,
-          2.8,
-          -66.0
-        ]
+        "translation": [0, 2.8, -66]
       }
     },
     {
       "id": 67,
       "light": {
-        "color": [
-          1.0,
-          0.92,
-          0.8
-        ],
+        "color": [1, 0.92, 0.8],
         "inner_angle": 13.5,
         "intensity": 347.4,
         "outer_angle": 45.0001,
-        "range": 8.0,
+        "range": 8,
         "type": "spot"
       },
       "name": "Lamp 61 light",
       "parent": 66,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -1285,41 +813,24 @@
       "model": "Props/lamp.gltf",
       "name": "Lamp 62",
       "transform": {
-        "translation": [
-          0.0,
-          2.8,
-          -75.0
-        ]
+        "translation": [0, 2.8, -75]
       }
     },
     {
       "id": 69,
       "light": {
-        "color": [
-          1.0,
-          0.92,
-          0.8
-        ],
+        "color": [1, 0.92, 0.8],
         "inner_angle": 13.5,
         "intensity": 347.4,
         "outer_angle": 45.0001,
-        "range": 8.0,
+        "range": 8,
         "type": "spot"
       },
       "name": "Lamp 62 light",
       "parent": 68,
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          0.0,
-          -0.28,
-          0.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [0, -0.28, 0]
       }
     },
     {
@@ -1329,25 +840,13 @@
         "falloff_height": 0.35,
         "noise": 0.6,
         "noise_frequency": 0.4,
-        "noise_velocity": [
-          0.15,
-          0.0,
-          0.05
-        ]
+        "noise_velocity": [0.15, 0, 0.05]
       },
       "id": 70,
       "name": "Fog 83",
       "transform": {
-        "scale": [
-          38.5,
-          0.8,
-          38.5
-        ],
-        "translation": [
-          0.0,
-          0.4,
-          -38.5
-        ]
+        "scale": [38.5, 0.8, 38.5],
+        "translation": [0, 0.4, -38.5]
       }
     },
     {
@@ -1356,26 +855,13 @@
         "edge": 0.2,
         "falloff_height": 0.35,
         "noise": 0.5,
-        "noise_frequency": 1.0,
-        "noise_velocity": [
-          0.0,
-          0.0,
-          0.1
-        ]
+        "noise_velocity": [0, 0, 0.1]
       },
       "id": 71,
       "name": "Fog 84",
       "transform": {
-        "scale": [
-          3.5,
-          0.8,
-          17.0
-        ],
-        "translation": [
-          0.0,
-          0.4,
-          -71.5
-        ]
+        "scale": [3.5, 0.8, 17],
+        "translation": [0, 0.4, -71.5]
       }
     },
     {
@@ -1385,11 +871,7 @@
         "effect": "Effects/fire.effect.json"
       },
       "transform": {
-        "translation": [
-          -0.8,
-          -2.75,
-          -87.0
-        ]
+        "translation": [-0.8, -2.75, -87]
       }
     },
     {
@@ -1399,11 +881,7 @@
         "effect": "Effects/fire.effect.json"
       },
       "transform": {
-        "translation": [
-          1.0,
-          -2.75,
-          -88.2
-        ]
+        "translation": [1, -2.75, -88.2]
       }
     },
     {
@@ -1413,11 +891,7 @@
         "effect": "Effects/fire.effect.json"
       },
       "transform": {
-        "translation": [
-          0.2,
-          -2.75,
-          -86.0
-        ]
+        "translation": [0.2, -2.75, -86]
       }
     },
     {
@@ -1427,11 +901,7 @@
         "effect": "Effects/fire.effect.json"
       },
       "transform": {
-        "translation": [
-          -1.6,
-          -2.75,
-          -88.6
-        ]
+        "translation": [-1.6, -2.75, -88.6]
       }
     },
     {
@@ -1441,11 +911,7 @@
         "effect": "Effects/heat_haze.effect.json"
       },
       "transform": {
-        "translation": [
-          0.0,
-          -1.9,
-          -87.5
-        ]
+        "translation": [0, -1.9, -87.5]
       }
     },
     {
@@ -1455,11 +921,7 @@
         "effect": "Effects/embers.effect.json"
       },
       "transform": {
-        "translation": [
-          0.0,
-          -2.7,
-          -87.5
-        ]
+        "translation": [0, -2.7, -87.5]
       }
     },
     {
@@ -1469,11 +931,7 @@
         "effect": "Effects/smoke_column.effect.json"
       },
       "transform": {
-        "translation": [
-          0.0,
-          -2.2,
-          -87.8
-        ]
+        "translation": [0, -2.2, -87.8]
       }
     },
     {
@@ -1483,11 +941,7 @@
         "effect": "Effects/drip.effect.json"
       },
       "transform": {
-        "translation": [
-          0.35,
-          2.75,
-          -66.4
-        ]
+        "translation": [0.35, 2.75, -66.4]
       }
     },
     {
@@ -1497,11 +951,7 @@
         "effect": "Effects/drip.effect.json"
       },
       "transform": {
-        "translation": [
-          -0.7,
-          2.75,
-          -73.0
-        ]
+        "translation": [-0.7, 2.75, -73]
       }
     },
     {
@@ -1511,11 +961,7 @@
         "effect": "Effects/drip.effect.json"
       },
       "transform": {
-        "translation": [
-          -0.4,
-          2.75,
-          -73.6
-        ]
+        "translation": [-0.4, 2.75, -73.6]
       }
     },
     {
@@ -1525,17 +971,8 @@
         "effect": "Effects/cable_sparks.effect.json"
       },
       "transform": {
-        "rotation": [
-          0.0,
-          0.0,
-          0.70711,
-          0.70711
-        ],
-        "translation": [
-          1.7,
-          2.45,
-          -10.0
-        ]
+        "rotation": [0, 0, 0.70710677, 0.70710677],
+        "translation": [1.7, 2.45, -10]
       }
     },
     {
@@ -1546,11 +983,7 @@
         "target": 84
       },
       "transform": {
-        "translation": [
-          1.7,
-          2.6,
-          -10.0
-        ]
+        "translation": [1.7, 2.6, -10]
       }
     },
     {
@@ -1560,11 +993,7 @@
       "id": 84,
       "name": "Cable arc end 97",
       "transform": {
-        "translation": [
-          1.7,
-          2.1,
-          -10.5
-        ]
+        "translation": [1.7, 2.1, -10.5]
       }
     },
     {
@@ -1574,11 +1003,7 @@
         "effect": "Effects/dust_motes.effect.json"
       },
       "transform": {
-        "translation": [
-          0.0,
-          1.6,
-          -5.0
-        ]
+        "translation": [0, 1.6, -5]
       }
     },
     {
@@ -1588,11 +1013,7 @@
         "effect": "Effects/dust_motes.effect.json"
       },
       "transform": {
-        "translation": [
-          0.0,
-          2.5,
-          -18.0
-        ]
+        "translation": [0, 2.5, -18]
       }
     },
     {
@@ -1602,28 +1023,20 @@
         "effect": "Effects/moths.effect.json"
       },
       "transform": {
-        "translation": [
-          0.0,
-          5.0,
-          -17.0
-        ]
+        "translation": [0, 5, -17]
       }
     },
     {
       "attractor": {
         "effect": "Effects/moths.effect.json",
         "radius": 1.5,
-        "strength": 2.0,
-        "vortex": 4.0
+        "strength": 2,
+        "vortex": 4
       },
       "id": 88,
       "name": "Attractor moths 101",
       "transform": {
-        "translation": [
-          0.0,
-          5.2,
-          -17.0
-        ]
+        "translation": [0, 5.2, -17]
       }
     },
     {
@@ -1633,28 +1046,20 @@
         "effect": "Effects/flies.effect.json"
       },
       "transform": {
-        "translation": [
-          -36.75,
-          -7.6,
-          -55.0
-        ]
+        "translation": [-36.75, -7.6, -55]
       }
     },
     {
       "attractor": {
         "effect": "Effects/flies.effect.json",
-        "radius": 2.0,
-        "strength": 3.0,
-        "vortex": 2.0
+        "radius": 2,
+        "strength": 3,
+        "vortex": 2
       },
       "id": 90,
       "name": "Attractor flies 103",
       "transform": {
-        "translation": [
-          -36.75,
-          -7.7,
-          -55.0
-        ]
+        "translation": [-36.75, -7.7, -55]
       }
     },
     {
@@ -1664,201 +1069,105 @@
         "effect": "Effects/flies.effect.json"
       },
       "transform": {
-        "translation": [
-          45.5,
-          3.6,
-          -82.0
-        ]
+        "translation": [45.5, 3.6, -82]
       }
     },
     {
       "attractor": {
         "effect": "Effects/flies.effect.json",
-        "radius": 2.0,
-        "strength": 3.0,
-        "vortex": 2.0
+        "radius": 2,
+        "strength": 3,
+        "vortex": 2
       },
       "id": 92,
       "name": "Attractor flies 105",
       "transform": {
-        "translation": [
-          45.5,
-          3.5,
-          -82.0
-        ]
+        "translation": [45.5, 3.5, -82]
       }
     },
     {
       "id": 93,
       "name": "Weather rain 106",
       "transform": {
-        "scale": [
-          17.0,
-          11.2,
-          17.5
-        ],
-        "translation": [
-          0.0,
-          4.2,
-          -39.25
-        ]
+        "scale": [17, 11.2, 17.5],
+        "translation": [0, 4.2, -39.25]
       },
       "weather": {
         "effect": "Effects/rain.effect.json",
-        "rate": 30.0,
-        "reach": 18.0
+        "rate": 30,
+        "reach": 18
       }
     },
     {
       "fog": {
-        "albedo": [
-          0.45,
-          0.9,
-          0.4
-        ],
+        "albedo": [0.45, 0.9, 0.4],
         "density": 0.4,
         "edge": 0.15,
         "falloff_height": 0.3,
-        "glow": [
-          0.004,
-          0.03,
-          0.008
-        ],
-        "noise": 1.0,
+        "glow": [0.004, 0.03, 0.008],
+        "noise": 1,
         "noise_frequency": 1.6,
-        "noise_velocity": [
-          0.15,
-          0.0,
-          -0.05
-        ]
+        "noise_velocity": [0.15, 0, -0.05]
       },
       "id": 94,
       "name": "Fog 107",
       "transform": {
-        "scale": [
-          6.5,
-          1.4,
-          24.0
-        ],
-        "translation": [
-          -36.25,
-          -7.7,
-          -49.0
-        ]
+        "scale": [6.5, 1.4, 24],
+        "translation": [-36.25, -7.7, -49]
       }
     },
     {
       "fog": {
-        "albedo": [
-          0.45,
-          0.9,
-          0.4
-        ],
+        "albedo": [0.45, 0.9, 0.4],
         "density": 0.4,
         "edge": 0.2,
         "falloff_height": 0.3,
-        "glow": [
-          0.004,
-          0.03,
-          0.008
-        ],
-        "noise": 1.0,
+        "glow": [0.004, 0.03, 0.008],
+        "noise": 1,
         "noise_frequency": 1.6,
-        "noise_velocity": [
-          0.5,
-          0.0,
-          0.0
-        ]
+        "noise_velocity": [0.5, 0, 0]
       },
       "id": 95,
       "name": "Fog 108",
       "transform": {
-        "scale": [
-          6.5,
-          1.4,
-          3.0
-        ],
-        "translation": [
-          -42.75,
-          -7.7,
-          -42.0
-        ]
+        "scale": [6.5, 1.4, 3],
+        "translation": [-42.75, -7.7, -42]
       }
     },
     {
       "fog": {
-        "albedo": [
-          0.45,
-          0.9,
-          0.4
-        ],
+        "albedo": [0.45, 0.9, 0.4],
         "density": 0.4,
         "edge": 0.2,
         "falloff_height": 0.3,
-        "glow": [
-          0.004,
-          0.03,
-          0.008
-        ],
-        "noise": 1.0,
+        "glow": [0.004, 0.03, 0.008],
+        "noise": 1,
         "noise_frequency": 1.6,
-        "noise_velocity": [
-          0.5,
-          0.0,
-          0.0
-        ]
+        "noise_velocity": [0.5, 0, 0]
       },
       "id": 96,
       "name": "Fog 109",
       "transform": {
-        "scale": [
-          6.5,
-          1.4,
-          3.0
-        ],
-        "translation": [
-          -42.75,
-          -7.7,
-          -52.5
-        ]
+        "scale": [6.5, 1.4, 3],
+        "translation": [-42.75, -7.7, -52.5]
       }
     },
     {
       "fog": {
-        "albedo": [
-          0.45,
-          0.9,
-          0.4
-        ],
+        "albedo": [0.45, 0.9, 0.4],
         "density": 0.25,
         "edge": 0.1,
-        "falloff_height": 4.0,
-        "glow": [
-          0.004,
-          0.03,
-          0.008
-        ],
-        "noise": 1.0,
+        "falloff_height": 4,
+        "glow": [0.004, 0.03, 0.008],
+        "noise": 1,
         "noise_frequency": 0.5,
-        "noise_velocity": [
-          0.0,
-          0.5,
-          0.0
-        ]
+        "noise_velocity": [0, 0.5, 0]
       },
       "id": 97,
       "name": "Fog 110",
       "transform": {
-        "scale": [
-          7.0,
-          13.9,
-          3.5
-        ],
-        "translation": [
-          36.5,
-          -7.05,
-          -38.5
-        ]
+        "scale": [7, 13.9, 3.5],
+        "translation": [36.5, -7.05, -38.5]
       }
     },
     {
@@ -1868,11 +1177,7 @@
         "effect": "Effects/drip.effect.json"
       },
       "transform": {
-        "translation": [
-          -9.2,
-          8.35,
-          -33.0
-        ]
+        "translation": [-9.2, 8.35, -33]
       }
     },
     {
@@ -1882,11 +1187,7 @@
         "effect": "Effects/drip.effect.json"
       },
       "transform": {
-        "translation": [
-          9.2,
-          8.35,
-          -36.5
-        ]
+        "translation": [9.2, 8.35, -36.5]
       }
     },
     {
@@ -1896,11 +1197,7 @@
         "effect": "Effects/drip.effect.json"
       },
       "transform": {
-        "translation": [
-          -9.2,
-          8.35,
-          -44.0
-        ]
+        "translation": [-9.2, 8.35, -44]
       }
     },
     {
@@ -1910,11 +1207,7 @@
         "effect": "Effects/drip.effect.json"
       },
       "transform": {
-        "translation": [
-          9.2,
-          8.35,
-          -46.0
-        ]
+        "translation": [9.2, 8.35, -46]
       }
     },
     {
@@ -1924,11 +1217,7 @@
         "effect": "Effects/drip.effect.json"
       },
       "transform": {
-        "translation": [
-          -3.0,
-          8.35,
-          -29.8
-        ]
+        "translation": [-3, 8.35, -29.8]
       }
     },
     {
@@ -1938,55 +1227,38 @@
         "effect": "Effects/drip.effect.json"
       },
       "transform": {
-        "translation": [
-          4.5,
-          8.35,
-          -48.7
-        ]
+        "translation": [4.5, 8.35, -48.7]
       }
     },
     {
       "id": 104,
       "light": {
         "angular_radius": 2.5,
-        "color": [
-          0.88,
-          1.0,
-          1.26
-        ],
-        "intensity": 24.0,
+        "color": [0.88, 1, 1.26],
+        "intensity": 24,
         "type": "directional"
       },
       "name": "Moon",
       "transform": {
-        "rotation": [
-          -0.18691,
-          -0.16192,
-          -0.03125,
-          0.96844
-        ]
+        "rotation": [-0.18690945, -0.16191952, -0.031249907, 0.96843714]
       }
     }
   ],
   "environment": {
     "exposure": {
       "auto": true,
-      "ev100": 3.0,
+      "ev100": 3,
       "max": 2.5,
       "min": 0.5
     },
     "fog": {
-      "albedo": [
-        0.8,
-        0.82,
-        0.85
-      ],
+      "albedo": [0.8, 0.82, 0.85],
       "anisotropy": 0.1
     },
     "sky": {
       "faces": "Sky/sky1",
       "intensity": 9.6,
-      "yaw": 180.0
+      "yaw": 180
     }
   },
   "format": "daidalos-level",
