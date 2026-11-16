@@ -9,6 +9,7 @@
 #include <daidalos/renderer/DarkCorridor.hpp>
 #include <daidalos/renderer/MirrorRoom.hpp>
 #include <daidalos/renderer/Primitives.hpp>
+#include <daidalos/scene/Level.hpp>
 
 #include <glm/gtc/quaternion.hpp>
 #include <glm/trigonometric.hpp>
@@ -71,8 +72,9 @@ public:
             app.CVars().Register<std::int64_t>("sandbox.frames", 0, "Quit after this many frames; 0 runs until closed");
         m_levelPath =
             app.CVars()
-                .Register<std::string>("sandbox.scene", "Factory/Factory.gltf",
-                                       "Level to load from the assets directory, or cornell for the Cornell box")
+                .Register<std::string>("sandbox.scene", "Factory/Factory.level.json",
+                                       "Level file or glTF model to load from the assets directory, or cornell "
+                                       "for the Cornell box")
                 .Get();
         m_settings.mouseSensitivity = app.MouseSensitivity();
         m_settings.darkness = static_cast<float>(
@@ -197,15 +199,48 @@ private:
             OnLevelLoaded(app, target, core::MakeError(core::ErrorCode::NotFound, "sandbox", "Built in code"));
             return;
         }
-        target.Assets().LoadModelAsync(
-            m_levelPath, app.Workers(),
-            [this, &app, &target](core::Result<const scene::Model*> model) { OnLevelLoaded(app, target, model); });
+        // A level file (ADR-0054), or a bare glTF model as a level of one entity. Its models load on workers,
+        // behind the loading screen; the entities are made once they are all there.
+        const bool bareModel = !m_levelPath.ends_with(".level.json");
+        core::Result<scene::Level> level = bareModel
+                                               ? core::Result<scene::Level>(scene::LevelOfModel(m_levelPath))
+                                               : scene::LoadLevelFile(m_assetRoot / std::filesystem::path(m_levelPath));
+        if (!level) {
+            OnLevelLoaded(app, target, tl::unexpected(level.error()));
+            return;
+        }
+        const std::vector<std::string> models = scene::LevelModels(*level, m_levelPath);
+        if (models.empty()) {
+            OnLevelLoaded(app, target, std::move(level));
+            return;
+        }
+        struct Loading {
+            scene::Level level;
+            std::size_t remaining = 0;
+            std::optional<core::Error> failure;
+        };
+        auto loading = std::make_shared<Loading>(std::move(*level), models.size());
+        for (const std::string& model : models) {
+            target.Assets().LoadModelAsync(
+                model, app.Workers(),
+                [this, &app, &target, loading, bareModel](const core::Result<const scene::Model*>& loaded) {
+                    // A level file's missing model is logged when its entity is made; a bare model is the level.
+                    if (!loaded && bareModel && !loading->failure) {
+                        loading->failure = loaded.error();
+                    }
+                    if (--loading->remaining == 0) {
+                        OnLevelLoaded(app, target,
+                                      loading->failure ? core::Result<scene::Level>(tl::unexpected(*loading->failure))
+                                                       : core::Result<scene::Level>(std::move(loading->level)));
+                    }
+                });
+        }
     }
 
-    void OnLevelLoaded(app::Application& app, scene::Scene& target, const core::Result<const scene::Model*>& model) {
+    void OnLevelLoaded(app::Application& app, scene::Scene& target, const core::Result<scene::Level>& level) {
         m_loading = false;
         m_levelShown = true;
-        if (core::Result<void> built = Build(app, target, model); !built) {
+        if (core::Result<void> built = Build(app, target, level); !built) {
             DAI_LOG_ERROR("sandbox", "{}", core::Format(built.error()));
             m_failure = std::move(built.error());
             app.RequestQuit();
@@ -350,8 +385,7 @@ private:
         return found;
     }
 
-    core::Result<void> Build(app::Application& app, scene::Scene& target,
-                             const core::Result<const scene::Model*>& model) {
+    core::Result<void> Build(app::Application& app, scene::Scene& target, const core::Result<scene::Level>& level) {
         if (m_levelPath == kCornellBox) {
             const renderer::CornellBox box = renderer::MakeCornellBox();
             DAI_TRY(BuildTestRoom(app, target, box.parts, {&box.light, 1}, 2.75f));
@@ -363,19 +397,19 @@ private:
             const renderer::DarkCorridor corridor = renderer::MakeDarkCorridor();
             DAI_TRY(BuildTestRoom(app, target, corridor.parts, {}, 20.0f));
             m_settings.startWithFlashlight = true;
-        } else if (model) {
-            core::Result<ecs::Entity> player = sandbox::BuildLevel(target, **model, m_levelPath);
+        } else if (level) {
+            core::Result<ecs::Entity> player = sandbox::BuildLevel(target, *level, m_levelPath);
             if (!player) {
                 return tl::unexpected(player.error());
             }
-        } else if (model.error().code == core::ErrorCode::NotFound) {
+        } else if (level.error().code == core::ErrorCode::NotFound) {
             // Other levels can be tried with sandbox.scene, so a missing one is not fatal.
-            DAI_LOG_INFO("sandbox", "No level, showing a test floor: {}", core::Format(model.error()));
+            DAI_LOG_INFO("sandbox", "No level, showing a test floor: {}", core::Format(level.error()));
             if (core::Result<void> built = BuildTestFloor(app, target); !built) {
                 return built;
             }
         } else {
-            return tl::unexpected(model.error());
+            return tl::unexpected(level.error());
         }
         sandbox::AddSystems(target, app.Input(), m_actions, m_settings);
         ApplyStart(target);
@@ -431,7 +465,7 @@ private:
                                                glm::vec3(6.0f, 0.0f, 6.0f), glm::vec3(6.0f, 0.0f, -6.0f)};
         const std::array<std::uint32_t, 6> triangles{0, 1, 2, 0, 2, 3};
         DAI_TRY(target.Physics().AddStaticMesh(corners, triangles));
-        DAI_TRY(sandbox::BuildLevel(target, scene::Model{}, ""));
+        DAI_TRY(sandbox::BuildLevel(target, scene::Level{}, ""));
         return {};
     }
 
@@ -473,7 +507,7 @@ private:
                                                glm::vec3(half, 0.0f, 12.0f), glm::vec3(half, 0.0f, -half)};
         const std::array<std::uint32_t, 6> triangles{0, 1, 2, 0, 2, 3};
         DAI_TRY(target.Physics().AddStaticMesh(corners, triangles));
-        DAI_TRY(sandbox::BuildLevel(target, scene::Model{}, ""));
+        DAI_TRY(sandbox::BuildLevel(target, scene::Level{}, ""));
         return {};
     }
 

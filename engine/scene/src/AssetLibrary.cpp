@@ -502,6 +502,7 @@ core::Result<ecs::Entity> Instantiate(ecs::World& world, const Model& model) {
         entities.push_back(entity);
         if (!node.name.empty()) {
             world.Add<NodeName>(entity, node.name);
+            world.Add<Tags>(entity, ParseTags(node.name));
         }
         if (node.light.has_value()) {
             world.Add<Light>(entity, *node.light);

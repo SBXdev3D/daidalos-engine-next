@@ -4,6 +4,7 @@ dai_add_test(NAME daidalos_scene_tests
         AssertCapture.hpp
         EntityTests.cpp
         HierarchyTests.cpp
+        LevelFileTests.cpp
         ParticleEffectFileTests.cpp
         ScheduleTests.cpp
         SystemsTests.cpp

@@ -1,0 +1,139 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "import_legacy_level.py"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0
+  }
+ ],
+ "meshes": [
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 84,
+   "type": "VEC3",
+   "min": [
+    -0.147,
+    -0.27999999999999997,
+    -0.147
+   ],
+   "max": [
+    0.147,
+    3.8857805e-17,
+    0.147
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 84,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 84,
+   "type": "VEC2"
+  }
+ ],
+ "bufferViews": [
+  {
+   "byteLength": 1008,
+   "buffer": 0,
+   "byteOffset": 0
+  },
+  {
+   "byteLength": 1008,
+   "buffer": 0,
+   "byteOffset": 1008
+  },
+  {
+   "byteLength": 672,
+   "buffer": 0,
+   "byteOffset": 2016
+  }
+ ],
+ "materials": [
+  {
+   "name": "spot_white_d.tga",
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0
+    },
+    "metallicFactor": 0.0,
+    "roughnessFactor": 0.374
+   },
+   "emissiveTexture": {
+    "index": 1
+   },
+   "emissiveFactor": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "extensions": {
+    "KHR_materials_emissive_strength": {
+     "emissiveStrength": 100.0
+    }
+   },
+   "extras": {
+    "light": false,
+    "surface": "metal"
+   }
+  }
+ ],
+ "textures": [
+  {
+   "source": 0,
+   "sampler": 0
+  },
+  {
+   "source": 1,
+   "sampler": 0
+  }
+ ],
+ "images": [
+  {
+   "uri": "../spot_white_d.png"
+  },
+  {
+   "uri": "../spot_white_emissive.png"
+  }
+ ],
+ "samplers": [
+  {}
+ ],
+ "buffers": [
+  {
+   "uri": "lamp_3.bin",
+   "byteLength": 2688
+  }
+ ],
+ "extensionsUsed": [
+  "KHR_materials_emissive_strength"
+ ]
+}

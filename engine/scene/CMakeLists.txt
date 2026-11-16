@@ -9,11 +9,14 @@ dai_add_module(NAME scene
         include/daidalos/ecs/World.hpp
         include/daidalos/scene/AssetLibrary.hpp
         include/daidalos/scene/Components.hpp
+        include/daidalos/scene/Level.hpp
         include/daidalos/scene/ParticleEffectFile.hpp
         include/daidalos/scene/Scene.hpp
         include/daidalos/scene/Systems.hpp
         src/Animation.cpp
         src/AssetLibrary.cpp
+        src/Level.cpp
+        src/LevelFile.cpp
         src/ParticleEffectFile.cpp
         src/Scene.cpp
         src/Schedule.cpp

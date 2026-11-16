@@ -1,0 +1,122 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "import_legacy_level.py"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0
+  }
+ ],
+ "meshes": [
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 240,
+   "type": "VEC3",
+   "min": [
+    -0.05739999637007714,
+    0.3550944461487233,
+    -0.1793555527925491
+   ],
+   "max": [
+    0.05180000759428368,
+    0.7138055409770458,
+    0.1793555420357734
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 240,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 240,
+   "type": "VEC2"
+  }
+ ],
+ "bufferViews": [
+  {
+   "byteLength": 2880,
+   "buffer": 0,
+   "byteOffset": 0
+  },
+  {
+   "byteLength": 2880,
+   "buffer": 0,
+   "byteOffset": 2880
+  },
+  {
+   "byteLength": 1920,
+   "buffer": 0,
+   "byteOffset": 5760
+  }
+ ],
+ "materials": [
+  {
+   "name": "health_bonus_d.png",
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0
+    },
+    "metallicFactor": 0.0,
+    "roughnessFactor": 0.374
+   },
+   "normalTexture": {
+    "index": 1
+   }
+  }
+ ],
+ "textures": [
+  {
+   "source": 0,
+   "sampler": 0
+  },
+  {
+   "source": 1,
+   "sampler": 0
+  }
+ ],
+ "images": [
+  {
+   "uri": "../health_bonus_d.png"
+  },
+  {
+   "uri": "../health_bonus_n.png"
+  }
+ ],
+ "samplers": [
+  {}
+ ],
+ "buffers": [
+  {
+   "uri": "health.bin",
+   "byteLength": 7680
+  }
+ ]
+}

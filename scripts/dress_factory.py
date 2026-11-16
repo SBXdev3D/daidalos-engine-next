@@ -9,7 +9,10 @@ made of, for impacts by surface.
 
     python scripts/dress_factory.py [assets/Factory]
 
-It edits Factory.gltf in place, and can be run again: the nodes it adds carry {"dressing": true} in their
+Historical: since ADR-0054 the factory is Factory.level.json, made from the dressed file by gltf_to_level.py, and
+is edited in the level editor. This script no longer applies to the committed files.
+
+It edited Factory.gltf in place, and could be run again: the nodes it adds carry {"dressing": true} in their
 extras, and it removes them before adding them again. Materials get {"surface": ...} in their extras.
 
 The committed level is no longer what scripts/import_legacy_level.py writes: later steps edited it (the

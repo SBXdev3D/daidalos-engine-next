@@ -1,0 +1,122 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "import_legacy_level.py"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0
+  }
+ ],
+ "meshes": [
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 1095,
+   "type": "VEC3",
+   "min": [
+    -0.17167600244283676,
+    0.35000690653123456,
+    -0.11507239341735839
+   ],
+   "max": [
+    0.17832401825580746,
+    0.8028613221658816,
+    0.11507240132195874
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 1095,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 1095,
+   "type": "VEC2"
+  }
+ ],
+ "bufferViews": [
+  {
+   "byteLength": 13140,
+   "buffer": 0,
+   "byteOffset": 0
+  },
+  {
+   "byteLength": 13140,
+   "buffer": 0,
+   "byteOffset": 13140
+  },
+  {
+   "byteLength": 8760,
+   "buffer": 0,
+   "byteOffset": 26280
+  }
+ ],
+ "materials": [
+  {
+   "name": "armor_bonus_d.png",
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0
+    },
+    "metallicFactor": 0.0,
+    "roughnessFactor": 0.374
+   },
+   "normalTexture": {
+    "index": 1
+   }
+  }
+ ],
+ "textures": [
+  {
+   "source": 0,
+   "sampler": 0
+  },
+  {
+   "source": 1,
+   "sampler": 0
+  }
+ ],
+ "images": [
+  {
+   "uri": "../armor_bonus_d.png"
+  },
+  {
+   "uri": "../armor_bonus_n.png"
+  }
+ ],
+ "samplers": [
+  {}
+ ],
+ "buffers": [
+  {
+   "uri": "armor.bin",
+   "byteLength": 35040
+  }
+ ]
+}

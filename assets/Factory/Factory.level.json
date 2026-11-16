@@ -1,0 +1,1994 @@
+{
+  "entities": [
+    {
+      "id": 1,
+      "model": "Factory.gltf",
+      "name": "Factory"
+    },
+    {
+      "game": {
+        "kind": "teleporter"
+      },
+      "id": 2,
+      "name": "Teleporter 0",
+      "transform": {}
+    },
+    {
+      "game": {
+        "color": "red",
+        "id": "-5",
+        "kind": "card_reader"
+      },
+      "id": 3,
+      "model": "Props/card_reader.gltf",
+      "name": "Card reader 6",
+      "transform": {
+        "translation": [
+          -24.15,
+          1.05,
+          -39.9
+        ]
+      }
+    },
+    {
+      "game": {
+        "kind": "player"
+      },
+      "id": 4,
+      "name": "Player 12",
+      "transform": {
+        "translation": [
+          0.0,
+          1.4,
+          0.0
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.85,
+          0.8,
+          0.7
+        ],
+        "density": 0.1,
+        "edge": 0.3,
+        "noise": 0.7,
+        "noise_frequency": 0.8,
+        "noise_velocity": [
+          0.08,
+          0.03,
+          0.0
+        ]
+      },
+      "id": 5,
+      "name": "Dust of the start room",
+      "transform": {
+        "scale": [
+          6.0,
+          3.0,
+          8.0
+        ],
+        "translation": [
+          0.0,
+          1.4,
+          -3.5
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "name": "Particles smoke leak 13",
+      "particles": {
+        "effect": "Effects/smoke_leak.effect.json"
+      },
+      "transform": {
+        "translation": [
+          38.5,
+          4.2,
+          -26.25
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.95,
+          0.95,
+          0.95
+        ],
+        "density": 0.8,
+        "edge": 0.8,
+        "noise": 0.8,
+        "noise_frequency": 1.5,
+        "noise_velocity": [
+          0.0,
+          0.1,
+          -0.5
+        ]
+      },
+      "id": 7,
+      "name": "Steam",
+      "parent": 6,
+      "transform": {
+        "scale": [
+          1.6,
+          1.6,
+          4.0
+        ],
+        "translation": [
+          0.0,
+          0.1,
+          -1.8
+        ]
+      }
+    },
+    {
+      "game": {
+        "kind": "alarm",
+        "rotation_speed": "60.0"
+      },
+      "id": 8,
+      "model": "Props/alarm.gltf",
+      "name": "Alarm 14",
+      "transform": {
+        "translation": [
+          10.5,
+          8.4,
+          -47.25
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "light": {
+        "color": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "inner_angle": 16.0,
+        "intensity": 965.0,
+        "outer_angle": 20.0,
+        "range": 28.0,
+        "type": "spot"
+      },
+      "name": "Alarm 14 beam 1",
+      "parent": 8,
+      "transform": {
+        "rotation": [
+          -0.21644,
+          0.0,
+          0.0,
+          0.9763
+        ],
+        "translation": [
+          0.0,
+          -0.7,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "light": {
+        "color": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "inner_angle": 16.0,
+        "intensity": 965.0,
+        "outer_angle": 20.0,
+        "range": 28.0,
+        "type": "spot"
+      },
+      "name": "Alarm 14 beam 2",
+      "parent": 8,
+      "transform": {
+        "rotation": [
+          0.0,
+          0.9763,
+          0.21644,
+          0.0
+        ],
+        "translation": [
+          0.0,
+          -0.7,
+          0.0
+        ]
+      }
+    },
+    {
+      "game": {
+        "kind": "alarm",
+        "rotation_speed": "-60.0"
+      },
+      "id": 11,
+      "model": "Props/alarm_2.gltf",
+      "name": "Alarm 15",
+      "transform": {
+        "translation": [
+          -10.5,
+          8.4,
+          -47.25
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "light": {
+        "color": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "inner_angle": 16.0,
+        "intensity": 965.0,
+        "outer_angle": 20.0,
+        "range": 28.0,
+        "type": "spot"
+      },
+      "name": "Alarm 15 beam 1",
+      "parent": 11,
+      "transform": {
+        "rotation": [
+          -0.21644,
+          0.0,
+          0.0,
+          0.9763
+        ],
+        "translation": [
+          0.0,
+          -0.7,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 13,
+      "light": {
+        "color": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "inner_angle": 16.0,
+        "intensity": 965.0,
+        "outer_angle": 20.0,
+        "range": 28.0,
+        "type": "spot"
+      },
+      "name": "Alarm 15 beam 2",
+      "parent": 11,
+      "transform": {
+        "rotation": [
+          0.0,
+          0.9763,
+          0.21644,
+          0.0
+        ],
+        "translation": [
+          0.0,
+          -0.7,
+          0.0
+        ]
+      }
+    },
+    {
+      "game": {
+        "kind": "flashlight"
+      },
+      "id": 14,
+      "model": "Props/flashlight.gltf",
+      "name": "Flashlight 16",
+      "transform": {
+        "translation": [
+          17.5,
+          0.0,
+          -38.5
+        ]
+      }
+    },
+    {
+      "game": {
+        "kind": "health"
+      },
+      "id": 15,
+      "model": "Props/health.gltf",
+      "name": "Health 17",
+      "transform": {
+        "translation": [
+          49.0,
+          2.8,
+          -35.0
+        ]
+      }
+    },
+    {
+      "game": {
+        "kind": "handgun_ammo"
+      },
+      "id": 16,
+      "model": "Props/handgun_ammo.gltf",
+      "name": "Handgun ammo 18",
+      "transform": {
+        "translation": [
+          38.5,
+          2.8,
+          -49.0
+        ]
+      }
+    },
+    {
+      "game": {
+        "kind": "handgun_ammo"
+      },
+      "id": 17,
+      "model": "Props/handgun_ammo_2.gltf",
+      "name": "Handgun ammo 19",
+      "transform": {
+        "translation": [
+          36.75,
+          2.8,
+          -49.0
+        ]
+      }
+    },
+    {
+      "game": {
+        "kind": "armor"
+      },
+      "id": 18,
+      "model": "Props/armor.gltf",
+      "name": "Armor 20",
+      "transform": {
+        "translation": [
+          -15.75,
+          0.0,
+          -50.75
+        ]
+      }
+    },
+    {
+      "game": {
+        "kind": "shotgun_ammo"
+      },
+      "id": 19,
+      "model": "Props/shotgun_ammo.gltf",
+      "name": "Shotgun ammo 21",
+      "transform": {
+        "translation": [
+          -14.0,
+          0.0,
+          -21.0
+        ]
+      }
+    },
+    {
+      "game": {
+        "kind": "security_camera"
+      },
+      "id": 20,
+      "model": "Props/security_camera.gltf",
+      "name": "Security camera 22",
+      "transform": {
+        "translation": [
+          27.3,
+          5.6,
+          -29.75
+        ]
+      }
+    },
+    {
+      "game": {
+        "health": "50",
+        "kind": "zombie",
+        "patrol": "-7:0:0|7:0:0"
+      },
+      "id": 21,
+      "model": "zombie.gltf",
+      "name": "Zombie 24",
+      "transform": {
+        "translation": [
+          36.75,
+          -12.25,
+          -38.5
+        ]
+      }
+    },
+    {
+      "game": {
+        "health": "50",
+        "kind": "zombie"
+      },
+      "id": 22,
+      "model": "zombie.gltf",
+      "name": "Zombie 25",
+      "transform": {
+        "translation": [
+          45.5,
+          3.5,
+          -78.75
+        ]
+      }
+    },
+    {
+      "game": {
+        "color": "red",
+        "kind": "card"
+      },
+      "id": 23,
+      "model": "Props/card.gltf",
+      "name": "Card 26",
+      "transform": {
+        "translation": [
+          50.05,
+          2.8,
+          -81.2
+        ]
+      }
+    },
+    {
+      "id": 24,
+      "model": "Props/lamp.gltf",
+      "name": "Lamp 27",
+      "transform": {
+        "translation": [
+          0.0,
+          2.8,
+          -5.25
+        ]
+      }
+    },
+    {
+      "id": 25,
+      "light": {
+        "inner_angle": 22.5001,
+        "intensity": 434.5,
+        "outer_angle": 45.0001,
+        "range": 7.0,
+        "type": "spot"
+      },
+      "name": "Lamp 27 light",
+      "parent": 24,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 26,
+      "model": "Props/lamp.gltf",
+      "name": "Lamp 28",
+      "transform": {
+        "translation": [
+          31.5,
+          5.6,
+          -57.75
+        ]
+      }
+    },
+    {
+      "id": 27,
+      "light": {
+        "inner_angle": 12.5002,
+        "intensity": 289.6,
+        "outer_angle": 24.9999,
+        "range": 7.0,
+        "type": "spot"
+      },
+      "name": "Lamp 28 light",
+      "parent": 26,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 28,
+      "model": "Props/lamp_2.gltf",
+      "name": "Lamp 29",
+      "transform": {
+        "translation": [
+          46.2,
+          5.6,
+          -59.5
+        ]
+      }
+    },
+    {
+      "id": 29,
+      "light": {
+        "inner_angle": 17.4998,
+        "intensity": 289.6,
+        "outer_angle": 35.0003,
+        "range": 7.0,
+        "type": "spot"
+      },
+      "name": "Lamp 29 light",
+      "parent": 28,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 30,
+      "model": "Props/lamp_3.gltf",
+      "name": "Lamp 30",
+      "transform": {
+        "translation": [
+          46.2,
+          5.6,
+          -67.2
+        ]
+      }
+    },
+    {
+      "id": 31,
+      "light": {
+        "color": [
+          1.0,
+          0.6667,
+          0.6667
+        ],
+        "inner_angle": 17.4998,
+        "intensity": 434.5,
+        "outer_angle": 35.0003,
+        "range": 7.0,
+        "type": "spot"
+      },
+      "name": "Lamp 30 light",
+      "parent": 30,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 32,
+      "model": "Props/lamp_4.gltf",
+      "name": "Lamp 31",
+      "transform": {
+        "translation": [
+          45.5,
+          5.6,
+          -79.45
+        ]
+      }
+    },
+    {
+      "game": {
+        "kind": "area_trigger",
+        "radius": "20",
+        "targets": "50"
+      },
+      "id": 33,
+      "name": "Area trigger 32",
+      "transform": {
+        "translation": [
+          45.5,
+          2.8,
+          -80.5
+        ]
+      }
+    },
+    {
+      "game": {
+        "kind": "fan"
+      },
+      "id": 34,
+      "model": "fan.gltf",
+      "name": "Fan 37",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.70711,
+          0.70711
+        ],
+        "translation": [
+          -42.7,
+          -7.0,
+          -42.0
+        ]
+      }
+    },
+    {
+      "game": {
+        "kind": "fan"
+      },
+      "id": 35,
+      "model": "fan.gltf",
+      "name": "Fan 38",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.70711,
+          0.70711
+        ],
+        "translation": [
+          -42.7,
+          -7.0,
+          -52.5
+        ]
+      }
+    },
+    {
+      "game": {
+        "health": "50",
+        "kind": "zombie",
+        "patrol": "0:0:20|0:0:-20"
+      },
+      "id": 36,
+      "model": "zombie.gltf",
+      "name": "Zombie 43",
+      "transform": {
+        "translation": [
+          -36.75,
+          -7.7,
+          -47.25
+        ]
+      }
+    },
+    {
+      "id": 37,
+      "model": "Props/lamp_5.gltf",
+      "name": "Lamp 44",
+      "transform": {
+        "translation": [
+          -35.0,
+          5.6,
+          -70.0
+        ]
+      }
+    },
+    {
+      "id": 38,
+      "light": {
+        "inner_angle": 12.5002,
+        "intensity": 289.6,
+        "outer_angle": 24.9999,
+        "range": 7.0,
+        "type": "spot"
+      },
+      "name": "Lamp 44 light",
+      "parent": 37,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "game": {
+        "health": "50",
+        "kind": "zombie",
+        "patrol": "-40:0:0|0:0:0|0:0:30|0:0:0"
+      },
+      "id": 39,
+      "model": "zombie.gltf",
+      "name": "Zombie 45",
+      "transform": {
+        "rotation": [
+          0.0,
+          -0.70711,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          -21.0,
+          3.5,
+          -77.0
+        ]
+      }
+    },
+    {
+      "id": 40,
+      "model": "Props/lamp_6.gltf",
+      "name": "Lamp 46",
+      "transform": {
+        "translation": [
+          -28.0,
+          5.6,
+          -77.0
+        ]
+      }
+    },
+    {
+      "id": 41,
+      "light": {
+        "inner_angle": 12.5002,
+        "intensity": 289.6,
+        "outer_angle": 24.9999,
+        "range": 7.0,
+        "type": "spot"
+      },
+      "name": "Lamp 46 light",
+      "parent": 40,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 42,
+      "model": "Props/lamp_7.gltf",
+      "name": "Lamp 47",
+      "transform": {
+        "translation": [
+          -21.0,
+          5.6,
+          -84.0
+        ]
+      }
+    },
+    {
+      "id": 43,
+      "light": {
+        "inner_angle": 12.5002,
+        "intensity": 289.6,
+        "outer_angle": 24.9999,
+        "range": 7.0,
+        "type": "spot"
+      },
+      "name": "Lamp 47 light",
+      "parent": 42,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "game": {
+        "kind": "shotgun"
+      },
+      "id": 45,
+      "model": "shotgun.gltf",
+      "name": "Shotgun 49",
+      "transform": {
+        "translation": [
+          -15.75,
+          0.0,
+          -21.0
+        ]
+      }
+    },
+    {
+      "id": 46,
+      "model": "Props/lamp.gltf",
+      "name": "Lamp 51",
+      "transform": {
+        "translation": [
+          0.0,
+          5.6,
+          -17.0
+        ]
+      }
+    },
+    {
+      "id": 47,
+      "light": {
+        "color": [
+          1.0,
+          0.92,
+          0.8
+        ],
+        "inner_angle": 13.5,
+        "intensity": 781.7,
+        "outer_angle": 45.0001,
+        "range": 12.0,
+        "type": "spot"
+      },
+      "name": "Lamp 51 light",
+      "parent": 46,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 48,
+      "model": "Props/lamp.gltf",
+      "name": "Lamp 52",
+      "transform": {
+        "translation": [
+          -10.0,
+          8.4,
+          -24.0
+        ]
+      }
+    },
+    {
+      "id": 49,
+      "light": {
+        "color": [
+          1.0,
+          0.92,
+          0.8
+        ],
+        "inner_angle": 13.5,
+        "intensity": 1389.7,
+        "outer_angle": 45.0001,
+        "range": 16.0,
+        "type": "spot"
+      },
+      "name": "Lamp 52 light",
+      "parent": 48,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 50,
+      "model": "Props/lamp.gltf",
+      "name": "Lamp 53",
+      "transform": {
+        "translation": [
+          8.0,
+          8.4,
+          -24.0
+        ]
+      }
+    },
+    {
+      "id": 51,
+      "light": {
+        "color": [
+          1.0,
+          0.92,
+          0.8
+        ],
+        "inner_angle": 13.5,
+        "intensity": 1389.7,
+        "outer_angle": 45.0001,
+        "range": 16.0,
+        "type": "spot"
+      },
+      "name": "Lamp 53 light",
+      "parent": 50,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 52,
+      "model": "Props/lamp.gltf",
+      "name": "Lamp 54",
+      "transform": {
+        "translation": [
+          0.0,
+          5.6,
+          -56.0
+        ]
+      }
+    },
+    {
+      "id": 53,
+      "light": {
+        "color": [
+          1.0,
+          0.92,
+          0.8
+        ],
+        "inner_angle": 13.5,
+        "intensity": 781.7,
+        "outer_angle": 45.0001,
+        "range": 12.0,
+        "type": "spot"
+      },
+      "name": "Lamp 54 light",
+      "parent": 52,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 54,
+      "model": "Props/lamp.gltf",
+      "name": "Lamp 55",
+      "transform": {
+        "translation": [
+          -18.0,
+          5.6,
+          -38.5
+        ]
+      }
+    },
+    {
+      "id": 55,
+      "light": {
+        "color": [
+          1.0,
+          0.92,
+          0.8
+        ],
+        "inner_angle": 13.5,
+        "intensity": 781.7,
+        "outer_angle": 45.0001,
+        "range": 12.0,
+        "type": "spot"
+      },
+      "name": "Lamp 55 light",
+      "parent": 54,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 56,
+      "model": "Props/lamp.gltf",
+      "name": "Lamp 56",
+      "transform": {
+        "translation": [
+          18.0,
+          5.6,
+          -38.5
+        ]
+      }
+    },
+    {
+      "id": 57,
+      "light": {
+        "color": [
+          1.0,
+          0.92,
+          0.8
+        ],
+        "inner_angle": 13.5,
+        "intensity": 781.7,
+        "outer_angle": 45.0001,
+        "range": 12.0,
+        "type": "spot"
+      },
+      "name": "Lamp 56 light",
+      "parent": 56,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 58,
+      "model": "Props/lamp.gltf",
+      "name": "Lamp 57",
+      "transform": {
+        "translation": [
+          32.0,
+          5.6,
+          -38.5
+        ]
+      }
+    },
+    {
+      "id": 59,
+      "light": {
+        "color": [
+          1.0,
+          0.92,
+          0.8
+        ],
+        "inner_angle": 13.5,
+        "intensity": 781.7,
+        "outer_angle": 45.0001,
+        "range": 12.0,
+        "type": "spot"
+      },
+      "name": "Lamp 57 light",
+      "parent": 58,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 60,
+      "model": "Props/lamp.gltf",
+      "name": "Lamp 58",
+      "transform": {
+        "translation": [
+          44.0,
+          5.6,
+          -40.0
+        ]
+      }
+    },
+    {
+      "id": 61,
+      "light": {
+        "color": [
+          1.0,
+          0.92,
+          0.8
+        ],
+        "inner_angle": 13.5,
+        "intensity": 781.7,
+        "outer_angle": 45.0001,
+        "range": 12.0,
+        "type": "spot"
+      },
+      "name": "Lamp 58 light",
+      "parent": 60,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 62,
+      "model": "Props/lamp.gltf",
+      "name": "Lamp 59",
+      "transform": {
+        "translation": [
+          -30.0,
+          2.8,
+          -38.5
+        ]
+      }
+    },
+    {
+      "id": 63,
+      "light": {
+        "color": [
+          1.0,
+          0.92,
+          0.8
+        ],
+        "inner_angle": 13.5,
+        "intensity": 347.4,
+        "outer_angle": 45.0001,
+        "range": 8.0,
+        "type": "spot"
+      },
+      "name": "Lamp 59 light",
+      "parent": 62,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 64,
+      "model": "Props/lamp.gltf",
+      "name": "Lamp 60",
+      "transform": {
+        "translation": [
+          -40.0,
+          2.8,
+          -40.0
+        ]
+      }
+    },
+    {
+      "id": 65,
+      "light": {
+        "color": [
+          1.0,
+          0.92,
+          0.8
+        ],
+        "inner_angle": 13.5,
+        "intensity": 347.4,
+        "outer_angle": 45.0001,
+        "range": 8.0,
+        "type": "spot"
+      },
+      "name": "Lamp 60 light",
+      "parent": 64,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 66,
+      "model": "Props/lamp.gltf",
+      "name": "Lamp 61",
+      "transform": {
+        "translation": [
+          0.0,
+          2.8,
+          -66.0
+        ]
+      }
+    },
+    {
+      "id": 67,
+      "light": {
+        "color": [
+          1.0,
+          0.92,
+          0.8
+        ],
+        "inner_angle": 13.5,
+        "intensity": 347.4,
+        "outer_angle": 45.0001,
+        "range": 8.0,
+        "type": "spot"
+      },
+      "name": "Lamp 61 light",
+      "parent": 66,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 68,
+      "model": "Props/lamp.gltf",
+      "name": "Lamp 62",
+      "transform": {
+        "translation": [
+          0.0,
+          2.8,
+          -75.0
+        ]
+      }
+    },
+    {
+      "id": 69,
+      "light": {
+        "color": [
+          1.0,
+          0.92,
+          0.8
+        ],
+        "inner_angle": 13.5,
+        "intensity": 347.4,
+        "outer_angle": 45.0001,
+        "range": 8.0,
+        "type": "spot"
+      },
+      "name": "Lamp 62 light",
+      "parent": 68,
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          0.0,
+          -0.28,
+          0.0
+        ]
+      }
+    },
+    {
+      "fog": {
+        "density": 0.12,
+        "edge": 0.15,
+        "falloff_height": 0.35,
+        "noise": 0.6,
+        "noise_frequency": 0.4,
+        "noise_velocity": [
+          0.15,
+          0.0,
+          0.05
+        ]
+      },
+      "id": 70,
+      "name": "Fog 83",
+      "transform": {
+        "scale": [
+          38.5,
+          0.8,
+          38.5
+        ],
+        "translation": [
+          0.0,
+          0.4,
+          -38.5
+        ]
+      }
+    },
+    {
+      "fog": {
+        "density": 0.2,
+        "edge": 0.2,
+        "falloff_height": 0.35,
+        "noise": 0.5,
+        "noise_frequency": 1.0,
+        "noise_velocity": [
+          0.0,
+          0.0,
+          0.1
+        ]
+      },
+      "id": 71,
+      "name": "Fog 84",
+      "transform": {
+        "scale": [
+          3.5,
+          0.8,
+          17.0
+        ],
+        "translation": [
+          0.0,
+          0.4,
+          -71.5
+        ]
+      }
+    },
+    {
+      "id": 72,
+      "name": "Particles fire 85",
+      "particles": {
+        "effect": "Effects/fire.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -0.8,
+          -2.75,
+          -87.0
+        ]
+      }
+    },
+    {
+      "id": 73,
+      "name": "Particles fire 86",
+      "particles": {
+        "effect": "Effects/fire.effect.json"
+      },
+      "transform": {
+        "translation": [
+          1.0,
+          -2.75,
+          -88.2
+        ]
+      }
+    },
+    {
+      "id": 74,
+      "name": "Particles fire 87",
+      "particles": {
+        "effect": "Effects/fire.effect.json"
+      },
+      "transform": {
+        "translation": [
+          0.2,
+          -2.75,
+          -86.0
+        ]
+      }
+    },
+    {
+      "id": 75,
+      "name": "Particles fire 88",
+      "particles": {
+        "effect": "Effects/fire.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -1.6,
+          -2.75,
+          -88.6
+        ]
+      }
+    },
+    {
+      "id": 76,
+      "name": "Particles heat haze 89",
+      "particles": {
+        "effect": "Effects/heat_haze.effect.json"
+      },
+      "transform": {
+        "translation": [
+          0.0,
+          -1.9,
+          -87.5
+        ]
+      }
+    },
+    {
+      "id": 77,
+      "name": "Particles embers 90",
+      "particles": {
+        "effect": "Effects/embers.effect.json"
+      },
+      "transform": {
+        "translation": [
+          0.0,
+          -2.7,
+          -87.5
+        ]
+      }
+    },
+    {
+      "id": 78,
+      "name": "Particles smoke column 91",
+      "particles": {
+        "effect": "Effects/smoke_column.effect.json"
+      },
+      "transform": {
+        "translation": [
+          0.0,
+          -2.2,
+          -87.8
+        ]
+      }
+    },
+    {
+      "id": 79,
+      "name": "Particles drip 92",
+      "particles": {
+        "effect": "Effects/drip.effect.json"
+      },
+      "transform": {
+        "translation": [
+          0.35,
+          2.75,
+          -66.4
+        ]
+      }
+    },
+    {
+      "id": 80,
+      "name": "Particles drip 93",
+      "particles": {
+        "effect": "Effects/drip.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -0.7,
+          2.75,
+          -73.0
+        ]
+      }
+    },
+    {
+      "id": 81,
+      "name": "Particles drip 94",
+      "particles": {
+        "effect": "Effects/drip.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -0.4,
+          2.75,
+          -73.6
+        ]
+      }
+    },
+    {
+      "id": 82,
+      "name": "Particles cable sparks 95",
+      "particles": {
+        "effect": "Effects/cable_sparks.effect.json"
+      },
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.70711,
+          0.70711
+        ],
+        "translation": [
+          1.7,
+          2.45,
+          -10.0
+        ]
+      }
+    },
+    {
+      "id": 83,
+      "name": "Ribbon arc 96",
+      "ribbon": {
+        "effect": "Effects/arc.ribbon.json",
+        "target": 84
+      },
+      "transform": {
+        "translation": [
+          1.7,
+          2.6,
+          -10.0
+        ]
+      }
+    },
+    {
+      "game": {
+        "kind": "cable_arc_end"
+      },
+      "id": 84,
+      "name": "Cable arc end 97",
+      "transform": {
+        "translation": [
+          1.7,
+          2.1,
+          -10.5
+        ]
+      }
+    },
+    {
+      "id": 85,
+      "name": "Particles dust motes 98",
+      "particles": {
+        "effect": "Effects/dust_motes.effect.json"
+      },
+      "transform": {
+        "translation": [
+          0.0,
+          1.6,
+          -5.0
+        ]
+      }
+    },
+    {
+      "id": 86,
+      "name": "Particles dust motes 99",
+      "particles": {
+        "effect": "Effects/dust_motes.effect.json"
+      },
+      "transform": {
+        "translation": [
+          0.0,
+          2.5,
+          -18.0
+        ]
+      }
+    },
+    {
+      "id": 87,
+      "name": "Particles moths 100",
+      "particles": {
+        "effect": "Effects/moths.effect.json"
+      },
+      "transform": {
+        "translation": [
+          0.0,
+          5.0,
+          -17.0
+        ]
+      }
+    },
+    {
+      "attractor": {
+        "effect": "Effects/moths.effect.json",
+        "radius": 1.5,
+        "strength": 2.0,
+        "vortex": 4.0
+      },
+      "id": 88,
+      "name": "Attractor moths 101",
+      "transform": {
+        "translation": [
+          0.0,
+          5.2,
+          -17.0
+        ]
+      }
+    },
+    {
+      "id": 89,
+      "name": "Particles flies 102",
+      "particles": {
+        "effect": "Effects/flies.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -36.75,
+          -7.6,
+          -55.0
+        ]
+      }
+    },
+    {
+      "attractor": {
+        "effect": "Effects/flies.effect.json",
+        "radius": 2.0,
+        "strength": 3.0,
+        "vortex": 2.0
+      },
+      "id": 90,
+      "name": "Attractor flies 103",
+      "transform": {
+        "translation": [
+          -36.75,
+          -7.7,
+          -55.0
+        ]
+      }
+    },
+    {
+      "id": 91,
+      "name": "Particles flies 104",
+      "particles": {
+        "effect": "Effects/flies.effect.json"
+      },
+      "transform": {
+        "translation": [
+          45.5,
+          3.6,
+          -82.0
+        ]
+      }
+    },
+    {
+      "attractor": {
+        "effect": "Effects/flies.effect.json",
+        "radius": 2.0,
+        "strength": 3.0,
+        "vortex": 2.0
+      },
+      "id": 92,
+      "name": "Attractor flies 105",
+      "transform": {
+        "translation": [
+          45.5,
+          3.5,
+          -82.0
+        ]
+      }
+    },
+    {
+      "id": 93,
+      "name": "Weather rain 106",
+      "transform": {
+        "scale": [
+          17.0,
+          11.2,
+          17.5
+        ],
+        "translation": [
+          0.0,
+          4.2,
+          -39.25
+        ]
+      },
+      "weather": {
+        "effect": "Effects/rain.effect.json",
+        "rate": 30.0,
+        "reach": 18.0
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.45,
+          0.9,
+          0.4
+        ],
+        "density": 0.4,
+        "edge": 0.15,
+        "falloff_height": 0.3,
+        "glow": [
+          0.004,
+          0.03,
+          0.008
+        ],
+        "noise": 1.0,
+        "noise_frequency": 1.6,
+        "noise_velocity": [
+          0.15,
+          0.0,
+          -0.05
+        ]
+      },
+      "id": 94,
+      "name": "Fog 107",
+      "transform": {
+        "scale": [
+          6.5,
+          1.4,
+          24.0
+        ],
+        "translation": [
+          -36.25,
+          -7.7,
+          -49.0
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.45,
+          0.9,
+          0.4
+        ],
+        "density": 0.4,
+        "edge": 0.2,
+        "falloff_height": 0.3,
+        "glow": [
+          0.004,
+          0.03,
+          0.008
+        ],
+        "noise": 1.0,
+        "noise_frequency": 1.6,
+        "noise_velocity": [
+          0.5,
+          0.0,
+          0.0
+        ]
+      },
+      "id": 95,
+      "name": "Fog 108",
+      "transform": {
+        "scale": [
+          6.5,
+          1.4,
+          3.0
+        ],
+        "translation": [
+          -42.75,
+          -7.7,
+          -42.0
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.45,
+          0.9,
+          0.4
+        ],
+        "density": 0.4,
+        "edge": 0.2,
+        "falloff_height": 0.3,
+        "glow": [
+          0.004,
+          0.03,
+          0.008
+        ],
+        "noise": 1.0,
+        "noise_frequency": 1.6,
+        "noise_velocity": [
+          0.5,
+          0.0,
+          0.0
+        ]
+      },
+      "id": 96,
+      "name": "Fog 109",
+      "transform": {
+        "scale": [
+          6.5,
+          1.4,
+          3.0
+        ],
+        "translation": [
+          -42.75,
+          -7.7,
+          -52.5
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.45,
+          0.9,
+          0.4
+        ],
+        "density": 0.25,
+        "edge": 0.1,
+        "falloff_height": 4.0,
+        "glow": [
+          0.004,
+          0.03,
+          0.008
+        ],
+        "noise": 1.0,
+        "noise_frequency": 0.5,
+        "noise_velocity": [
+          0.0,
+          0.5,
+          0.0
+        ]
+      },
+      "id": 97,
+      "name": "Fog 110",
+      "transform": {
+        "scale": [
+          7.0,
+          13.9,
+          3.5
+        ],
+        "translation": [
+          36.5,
+          -7.05,
+          -38.5
+        ]
+      }
+    },
+    {
+      "id": 98,
+      "name": "Particles drip 111",
+      "particles": {
+        "effect": "Effects/drip.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -9.2,
+          8.35,
+          -33.0
+        ]
+      }
+    },
+    {
+      "id": 99,
+      "name": "Particles drip 112",
+      "particles": {
+        "effect": "Effects/drip.effect.json"
+      },
+      "transform": {
+        "translation": [
+          9.2,
+          8.35,
+          -36.5
+        ]
+      }
+    },
+    {
+      "id": 100,
+      "name": "Particles drip 113",
+      "particles": {
+        "effect": "Effects/drip.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -9.2,
+          8.35,
+          -44.0
+        ]
+      }
+    },
+    {
+      "id": 101,
+      "name": "Particles drip 114",
+      "particles": {
+        "effect": "Effects/drip.effect.json"
+      },
+      "transform": {
+        "translation": [
+          9.2,
+          8.35,
+          -46.0
+        ]
+      }
+    },
+    {
+      "id": 102,
+      "name": "Particles drip 115",
+      "particles": {
+        "effect": "Effects/drip.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -3.0,
+          8.35,
+          -29.8
+        ]
+      }
+    },
+    {
+      "id": 103,
+      "name": "Particles drip 116",
+      "particles": {
+        "effect": "Effects/drip.effect.json"
+      },
+      "transform": {
+        "translation": [
+          4.5,
+          8.35,
+          -48.7
+        ]
+      }
+    },
+    {
+      "id": 104,
+      "light": {
+        "angular_radius": 2.5,
+        "color": [
+          0.88,
+          1.0,
+          1.26
+        ],
+        "intensity": 24.0,
+        "type": "directional"
+      },
+      "name": "Moon",
+      "transform": {
+        "rotation": [
+          -0.18691,
+          -0.16192,
+          -0.03125,
+          0.96844
+        ]
+      }
+    }
+  ],
+  "environment": {
+    "exposure": {
+      "auto": true,
+      "ev100": 3.0,
+      "max": 2.5,
+      "min": 0.5
+    },
+    "fog": {
+      "albedo": [
+        0.8,
+        0.82,
+        0.85
+      ],
+      "anisotropy": 0.1
+    },
+    "sky": {
+      "faces": "Sky/sky1",
+      "intensity": 9.6,
+      "yaw": 180.0
+    }
+  },
+  "format": "daidalos-level",
+  "version": 1
+}
