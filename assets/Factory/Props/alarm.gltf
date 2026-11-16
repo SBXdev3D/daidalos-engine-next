@@ -1,0 +1,115 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "import_legacy_level.py"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0
+  }
+ ],
+ "meshes": [
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 480,
+   "type": "VEC3",
+   "min": [
+    -0.24499999999999997,
+    -0.2968597555,
+    -0.24499999999999997
+   ],
+   "max": [
+    0.24499999999999997,
+    0.0216402438,
+    0.24499999999999997
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 480,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 480,
+   "type": "VEC2"
+  }
+ ],
+ "bufferViews": [
+  {
+   "byteLength": 5760,
+   "buffer": 0,
+   "byteOffset": 0
+  },
+  {
+   "byteLength": 5760,
+   "buffer": 0,
+   "byteOffset": 5760
+  },
+  {
+   "byteLength": 3840,
+   "buffer": 0,
+   "byteOffset": 11520
+  }
+ ],
+ "materials": [
+  {
+   "name": "alarm_d.tga",
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0
+    },
+    "metallicFactor": 0.0,
+    "roughnessFactor": 0.374
+   },
+   "extras": {
+    "surface": "metal"
+   }
+  }
+ ],
+ "textures": [
+  {
+   "source": 0,
+   "sampler": 0
+  }
+ ],
+ "images": [
+  {
+   "uri": "../alarm_d.png"
+  }
+ ],
+ "samplers": [
+  {}
+ ],
+ "buffers": [
+  {
+   "uri": "alarm.bin",
+   "byteLength": 15360
+  }
+ ]
+}

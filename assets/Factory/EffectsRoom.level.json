@@ -1,0 +1,908 @@
+{
+  "entities": [
+    {
+      "id": 1,
+      "model": "EffectsRoom.gltf",
+      "name": "EffectsRoom"
+    },
+    {
+      "id": 2,
+      "light": {
+        "color": [
+          0.75,
+          0.8,
+          1.0
+        ],
+        "intensity": 0.25,
+        "type": "directional"
+      },
+      "name": "moon",
+      "transform": {
+        "rotation": [
+          -0.4,
+          0.1,
+          0.05,
+          0.91
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "light": {
+        "color": [
+          1.0,
+          0.92,
+          0.8
+        ],
+        "inner_angle": 28.6479,
+        "intensity": 250,
+        "outer_angle": 51.5662,
+        "range": 12,
+        "type": "spot"
+      },
+      "name": "lamp light",
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          -4.0,
+          4.9,
+          -4.0
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "light": {
+        "color": [
+          1.0,
+          0.92,
+          0.8
+        ],
+        "inner_angle": 28.6479,
+        "intensity": 250,
+        "outer_angle": 51.5662,
+        "range": 12,
+        "type": "spot"
+      },
+      "name": "lamp light",
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          4.0,
+          4.9,
+          -4.0
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "light": {
+        "color": [
+          1.0,
+          0.92,
+          0.8
+        ],
+        "inner_angle": 28.6479,
+        "intensity": 250,
+        "outer_angle": 51.5662,
+        "range": 12,
+        "type": "spot"
+      },
+      "name": "lamp light",
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          -4.0,
+          4.9,
+          -12.0
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "light": {
+        "color": [
+          1.0,
+          0.92,
+          0.8
+        ],
+        "inner_angle": 28.6479,
+        "intensity": 250,
+        "outer_angle": 51.5662,
+        "range": 12,
+        "type": "spot"
+      },
+      "name": "lamp light",
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          4.0,
+          4.9,
+          -12.0
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "light": {
+        "color": [
+          1.0,
+          0.92,
+          0.8
+        ],
+        "inner_angle": 28.6479,
+        "intensity": 250,
+        "outer_angle": 51.5662,
+        "range": 12,
+        "type": "spot"
+      },
+      "name": "lamp light",
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          -4.0,
+          4.9,
+          -21.0
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "light": {
+        "color": [
+          1.0,
+          0.92,
+          0.8
+        ],
+        "inner_angle": 28.6479,
+        "intensity": 250,
+        "outer_angle": 51.5662,
+        "range": 12,
+        "type": "spot"
+      },
+      "name": "lamp light",
+      "transform": {
+        "rotation": [
+          -0.70711,
+          0.0,
+          0.0,
+          0.70711
+        ],
+        "translation": [
+          4.0,
+          4.9,
+          -21.0
+        ]
+      }
+    },
+    {
+      "game": {
+        "kind": "player"
+      },
+      "id": 9,
+      "name": "Player 10",
+      "transform": {
+        "translation": [
+          0.0,
+          1.4,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "name": "Particles candle 12",
+      "particles": {
+        "effect": "Effects/candle.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -6.0,
+          0.8,
+          -3.0
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "name": "Particles fire 13",
+      "particles": {
+        "effect": "Effects/fire.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -6.0,
+          0.8,
+          -6.5
+        ]
+      }
+    },
+    {
+      "id": 13,
+      "name": "Particles heat haze 14",
+      "particles": {
+        "effect": "Effects/heat_haze.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -6.0,
+          1.4,
+          -6.5
+        ]
+      }
+    },
+    {
+      "id": 14,
+      "name": "Particles embers 15",
+      "particles": {
+        "effect": "Effects/embers.effect.json",
+        "surface": {
+          "entity": 1,
+          "node": "burning_crate"
+        }
+      },
+      "transform": {
+        "translation": [
+          -6.0,
+          0.0,
+          -6.5
+        ]
+      }
+    },
+    {
+      "id": 15,
+      "name": "Particles smoke column 16",
+      "particles": {
+        "effect": "Effects/smoke_column.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -6.0,
+          0.2,
+          -10.0
+        ]
+      }
+    },
+    {
+      "id": 16,
+      "name": "Particles cigarette smoke 17",
+      "particles": {
+        "effect": "Effects/cigarette_smoke.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -4.5,
+          1.2,
+          -10.0
+        ]
+      }
+    },
+    {
+      "id": 17,
+      "name": "Particles explosion 18",
+      "particles": {
+        "burst": {
+          "count": 1,
+          "interval": 8.0
+        },
+        "effect": "Effects/explosion.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -5.0,
+          1.5,
+          -13.0
+        ]
+      }
+    },
+    {
+      "id": 18,
+      "name": "Particles pipe spray 19",
+      "particles": {
+        "effect": "Effects/pipe_spray.effect.json"
+      },
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          -0.70711,
+          0.70711
+        ],
+        "translation": [
+          -7.8,
+          1.2,
+          -16.0
+        ]
+      }
+    },
+    {
+      "id": 19,
+      "name": "Particles drip 20",
+      "particles": {
+        "effect": "Effects/drip.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -5.0,
+          4.95,
+          -22.5
+        ]
+      }
+    },
+    {
+      "id": 20,
+      "name": "Particles drip 21",
+      "particles": {
+        "effect": "Effects/drip.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -5.6,
+          4.95,
+          -23.0
+        ]
+      }
+    },
+    {
+      "id": 21,
+      "name": "Particles bubbles 22",
+      "particles": {
+        "effect": "Effects/bubbles.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -3.0,
+          0.05,
+          -23.0
+        ]
+      }
+    },
+    {
+      "id": 22,
+      "name": "Particles spores 23",
+      "particles": {
+        "effect": "Effects/spores.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -3.0,
+          0.6,
+          -23.0
+        ]
+      }
+    },
+    {
+      "id": 23,
+      "name": "Particles cable sparks 24",
+      "particles": {
+        "effect": "Effects/cable_sparks.effect.json"
+      },
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.70711,
+          0.70711
+        ],
+        "translation": [
+          7.9,
+          2.6,
+          -3.0
+        ]
+      }
+    },
+    {
+      "id": 24,
+      "name": "Ribbon arc 25",
+      "ribbon": {
+        "effect": "Effects/arc.ribbon.json",
+        "target": 25
+      },
+      "transform": {
+        "translation": [
+          7.9,
+          1.8,
+          -5.0
+        ]
+      }
+    },
+    {
+      "id": 25,
+      "name": "Arc end 26",
+      "transform": {
+        "translation": [
+          7.4,
+          1.0,
+          -5.6
+        ]
+      }
+    },
+    {
+      "id": 26,
+      "name": "Ribbon laser 27",
+      "ribbon": {
+        "effect": "Effects/laser.ribbon.json"
+      },
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          -0.70711,
+          0.70711
+        ],
+        "translation": [
+          -7.9,
+          0.5,
+          -1.0
+        ]
+      }
+    },
+    {
+      "id": 27,
+      "name": "Particles dust motes 28",
+      "particles": {
+        "effect": "Effects/dust_motes.effect.json"
+      },
+      "transform": {
+        "translation": [
+          6.0,
+          1.5,
+          -9.0
+        ]
+      }
+    },
+    {
+      "id": 28,
+      "name": "Particles ceiling dust 29",
+      "particles": {
+        "effect": "Effects/ceiling_dust.effect.json"
+      },
+      "transform": {
+        "translation": [
+          4.5,
+          4.95,
+          -12.0
+        ]
+      }
+    },
+    {
+      "id": 29,
+      "name": "Particles ceiling debris 30",
+      "particles": {
+        "effect": "Effects/ceiling_debris.effect.json"
+      },
+      "transform": {
+        "translation": [
+          4.5,
+          4.95,
+          -12.0
+        ]
+      }
+    },
+    {
+      "id": 30,
+      "name": "Particles papers 31",
+      "particles": {
+        "effect": "Effects/papers.effect.json"
+      },
+      "transform": {
+        "translation": [
+          0.0,
+          3.0,
+          -8.0
+        ]
+      }
+    },
+    {
+      "id": 31,
+      "name": "Wind 32",
+      "transform": {
+        "scale": [
+          6.0,
+          5.0,
+          6.0
+        ],
+        "translation": [
+          0.0,
+          2.5,
+          -8.0
+        ]
+      },
+      "wind": {
+        "edge": 0.3,
+        "gust": 0.6,
+        "gust_frequency": 0.3,
+        "velocity": [
+          1.2,
+          0.0,
+          -0.6
+        ]
+      }
+    },
+    {
+      "id": 32,
+      "name": "Particles breath 33",
+      "particles": {
+        "effect": "Effects/breath.effect.json"
+      },
+      "transform": {
+        "translation": [
+          0.0,
+          1.6,
+          -1.0
+        ]
+      }
+    },
+    {
+      "id": 33,
+      "name": "Particles flies 34",
+      "particles": {
+        "effect": "Effects/flies.effect.json"
+      },
+      "transform": {
+        "translation": [
+          6.0,
+          0.8,
+          -15.3
+        ]
+      }
+    },
+    {
+      "attractor": {
+        "effect": "Effects/flies.effect.json",
+        "radius": 2.0,
+        "strength": 3.0,
+        "vortex": 2.0
+      },
+      "id": 34,
+      "name": "Attractor flies 35",
+      "transform": {
+        "translation": [
+          6.0,
+          0.7,
+          -15.3
+        ]
+      }
+    },
+    {
+      "id": 35,
+      "name": "Particles moths 36",
+      "particles": {
+        "effect": "Effects/moths.effect.json"
+      },
+      "transform": {
+        "translation": [
+          6.0,
+          3.6,
+          -19.0
+        ]
+      }
+    },
+    {
+      "attractor": {
+        "effect": "Effects/moths.effect.json",
+        "radius": 1.5,
+        "strength": 2.0,
+        "vortex": 4.0
+      },
+      "id": 36,
+      "name": "Attractor moths 37",
+      "transform": {
+        "translation": [
+          6.0,
+          4.0,
+          -19.0
+        ]
+      }
+    },
+    {
+      "id": 37,
+      "name": "Particles impact dust 38",
+      "particles": {
+        "burst": {
+          "count": 1,
+          "interval": 2.0
+        },
+        "effect": "Effects/impact_dust.effect.json"
+      },
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.70711,
+          0.70711
+        ],
+        "translation": [
+          7.95,
+          1.5,
+          -21.5
+        ]
+      }
+    },
+    {
+      "id": 38,
+      "name": "Particles impact chips 39",
+      "particles": {
+        "burst": {
+          "count": 6,
+          "interval": 2.0
+        },
+        "effect": "Effects/impact_chips.effect.json"
+      },
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.70711,
+          0.70711
+        ],
+        "translation": [
+          7.95,
+          1.5,
+          -21.5
+        ]
+      }
+    },
+    {
+      "id": 39,
+      "name": "Particles impact splinters 40",
+      "particles": {
+        "burst": {
+          "count": 6,
+          "interval": 2.0
+        },
+        "effect": "Effects/impact_splinters.effect.json"
+      },
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.70711,
+          0.70711
+        ],
+        "translation": [
+          7.95,
+          1.5,
+          -23.0
+        ]
+      }
+    },
+    {
+      "id": 40,
+      "name": "Particles impact glass 41",
+      "particles": {
+        "burst": {
+          "count": 8,
+          "interval": 2.0
+        },
+        "effect": "Effects/impact_glass.effect.json"
+      },
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.70711,
+          0.70711
+        ],
+        "translation": [
+          7.95,
+          1.5,
+          -24.5
+        ]
+      }
+    },
+    {
+      "id": 41,
+      "name": "Particles sparks 42",
+      "particles": {
+        "burst": {
+          "count": 12,
+          "interval": 2.0
+        },
+        "effect": "Effects/sparks.effect.json"
+      },
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.70711,
+          0.70711
+        ],
+        "translation": [
+          7.95,
+          2.5,
+          -21.5
+        ]
+      }
+    },
+    {
+      "id": 42,
+      "name": "Particles blood 43",
+      "particles": {
+        "burst": {
+          "count": 20,
+          "interval": 2.0
+        },
+        "effect": "Effects/blood.effect.json"
+      },
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.70711,
+          0.70711
+        ],
+        "translation": [
+          7.95,
+          2.5,
+          -23.0
+        ]
+      }
+    },
+    {
+      "id": 43,
+      "name": "Particles shell casings 44",
+      "particles": {
+        "burst": {
+          "count": 1,
+          "interval": 0.5
+        },
+        "effect": "Effects/shell_casings.effect.json"
+      },
+      "transform": {
+        "rotation": [
+          0.09137,
+          0.0,
+          -0.45683,
+          0.88485
+        ],
+        "translation": [
+          5.0,
+          1.4,
+          -24.0
+        ]
+      }
+    },
+    {
+      "id": 44,
+      "name": "Particles tracer 45",
+      "particles": {
+        "effect": "Effects/tracer.effect.json"
+      },
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          -0.70711,
+          0.70711
+        ],
+        "translation": [
+          -7.9,
+          1.6,
+          -25.0
+        ]
+      }
+    },
+    {
+      "id": 45,
+      "name": "Weather rain 46",
+      "transform": {
+        "scale": [
+          16.6,
+          7.0,
+          28.0
+        ],
+        "translation": [
+          0.0,
+          9.0,
+          -28.0
+        ]
+      },
+      "weather": {
+        "effect": "Effects/rain.effect.json",
+        "rate": 30.0,
+        "reach": 18.0
+      }
+    },
+    {
+      "id": 46,
+      "name": "Weather snow 47",
+      "transform": {
+        "scale": [
+          3.0,
+          1.0,
+          3.0
+        ],
+        "translation": [
+          4.5,
+          6.0,
+          -6.5
+        ]
+      },
+      "weather": {
+        "effect": "Effects/snow.effect.json",
+        "rate": 40.0,
+        "reach": 15.0
+      }
+    },
+    {
+      "id": 47,
+      "name": "Weather ash 48",
+      "transform": {
+        "scale": [
+          3.0,
+          1.0,
+          3.0
+        ],
+        "translation": [
+          4.5,
+          6.0,
+          -12.5
+        ]
+      },
+      "weather": {
+        "effect": "Effects/ash.effect.json",
+        "rate": 40.0,
+        "reach": 15.0
+      }
+    },
+    {
+      "id": 48,
+      "lightning": {
+        "bolt": "Effects/lightning.ribbon.json",
+        "duration": 0.5,
+        "flash": 400.0,
+        "interval": [
+          5.0,
+          12.0
+        ],
+        "light": 2
+      },
+      "name": "Lightning 49",
+      "transform": {
+        "scale": [
+          80.0,
+          40.0,
+          10.0
+        ],
+        "translation": [
+          0.0,
+          25.0,
+          -90.0
+        ]
+      }
+    }
+  ],
+  "environment": {
+    "sky": {
+      "faces": "Sky/sky1"
+    }
+  },
+  "format": "daidalos-level",
+  "version": 1
+}

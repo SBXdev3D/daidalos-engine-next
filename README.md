@@ -129,7 +129,7 @@ The sandbox adds its own:
 | Cvar | Default | Meaning |
 |---|---|---|
 | `sandbox.frames` | 0 | Quit after this many frames; 0 runs until closed |
-| `sandbox.scene` | `Factory/Factory.gltf` | Level to load from `assets/` |
+| `sandbox.scene` | `Factory/Factory.level.json` | Level file (ADR-0054), or glTF model, to load from `assets/` |
 | `sandbox.darkness` | 1 | Multiplies the darkness; 0 shows the level |
 | `sandbox.ambient` | 0.1 | Light that reaches everywhere in the dark; 0 is pitch black |
 | `sandbox.flashlight` | false | Start with the flashlight on |

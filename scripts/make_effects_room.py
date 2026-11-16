@@ -8,7 +8,8 @@ the list, a courtyard where it rains under a storm, a skylight and a broken roof
     python scripts/make_effects_room.py [assets/Factory]
 
 It writes EffectsRoom.gltf and EffectsRoom.bin next to Factory.gltf, whose textures and effect files it uses;
-`+sandbox.scene Factory/EffectsRoom.gltf` loads it. Its stations are nodes named as the factory's are
+Then `python scripts/gltf_to_level.py assets/Factory/EffectsRoom.gltf` turns its marker nodes into
+EffectsRoom.level.json (ADR-0054), which `+sandbox.scene Factory/EffectsRoom.level.json` loads. Its stations are nodes named as the factory's are
 (`particles;effect=...`, `ribbon;...`, `weather;...`, `lightning;...`, `attractor;...`, `wind;...`), so the room
 also tries what the level editor will write. Meters, Y up; the player starts at the origin looking along -Z.
 """

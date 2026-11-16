@@ -9,6 +9,7 @@
 #include <daidalos/logging/Log.hpp>
 #include <daidalos/math/Axes.hpp>
 #include <daidalos/scene/Components.hpp>
+#include <daidalos/scene/Level.hpp>
 
 #include <glm/common.hpp>
 #include <glm/ext/quaternion_trigonometric.hpp>
@@ -72,45 +73,9 @@ constexpr float kMaxPitch = glm::radians(89.0f);
 constexpr float kStickLookSpeed = 2.5f; // Radians per second.
 constexpr float kMessageTime = 3.0f;    // Seconds.
 
-// The factory is dark, lit by its lamps and the light they bounce (ADR-0040), in a thin haze that the lamps
-// and the moon light (ADR-0051) and that swallows what is far away. It is exposed as a dim interior, at EV100 3
-// (ADR-0043); without its darkness, Settings::darkness 0, this many stops brighter.
-constexpr float kFactoryEv100 = 3.0f;
+// The factory's exposure, fog and sky are its level file's (ADR-0054). Without its darkness, Settings::darkness 0,
+// it is exposed this many stops brighter, without its haze.
 constexpr float kBrightStops = 4.0f;
-// The eye adapts (ADR-0048) from this many stops below the factory's exposure, in its darkest corners, which
-// stay dark, to this many above, under its lamps and in the moonlit room.
-constexpr float kEyeOpensStops = 0.5f;
-constexpr float kEyeClosesStops = 2.5f;
-// The legacy sky's colors, in nits: as bright on screen at EV100 3 as they were before physical units.
-constexpr float kSkyLuminance = 9.6f;
-// The haze: a share of the light lost per meter, mostly scattered, a little more of the blue, and forwards.
-// Thin, as indoor haze is (about 600 m of visibility): enough for the lamps' cones to show, not so much that
-// the flashlight, at the eye and looked along, fills the view with its beam.
-constexpr float kFogDensity = 0.0f;
-constexpr glm::vec3 kFogAlbedo{0.8f, 0.82f, 0.85f};
-constexpr float kFogAnisotropy = 0.1f;
-// The steam of the leak: meters long and across, and its density at the heart.
-constexpr float kSteamLength = 4.0f;
-constexpr float kSteamWidth = 1.6f;
-constexpr float kSteamDensity = 0.8f;
-// The dust of the start room: where its box is from the player's start, its size, and its density.
-constexpr glm::vec3 kDustOffset{0.0f, 0.0f, -3.5f};
-constexpr glm::vec3 kDustSize{6.0f, 3.0f, 8.0f};
-constexpr float kDustDensity = 0.1f;
-// The moon painted on sky1 shines through the level's openings (ADR-0040). Its disk is centered at pixel
-// (343.5, 147) of the 512-pixel front face, the legacy +Z: towards (0.344, 0.424, 1) in the cube, -Z in the
-// engine, 22 degrees above the horizon. That low, it would light only walls that the player sees from
-// behind: the sky is turned half a turn, which puts the moon behind the start and its light on the far
-// wall of the big room ahead. The painted disk and its glow span 5 degrees; behind the clouds the light
-// comes from a little less.
-constexpr std::string_view kMoonSky = "sky1";
-constexpr float kMoonSkyYaw = glm::pi<float>();
-constexpr glm::vec3 kTowardsThePaintedMoon{0.344f, 0.424f, -1.0f};
-// Light units (ADR-0043): each light is as bright as it was before them at a distance that matters, here at
-// EV100 3, and falls off with the square of the distance from there.
-constexpr glm::vec3 kMoonColor{0.88f, 1.0f, 1.26f};
-constexpr float kMoonLux = 24.0f;
-constexpr float kMoonAngularRadius = glm::radians(2.5f);
 constexpr glm::vec3 kFlashlightColor{1.06f, 1.0f, 0.86f};
 constexpr float kFlashlightCandela = 1090.0f;                // As bright as before 4 m away.
 constexpr float kFlashlightRange = 32.0f;                    // Meters.
@@ -124,15 +89,7 @@ constexpr float kFlashlightAimDistance = 8.0f;
 constexpr glm::vec3 kMuzzleFlashColor{1.11f, 1.0f, 0.72f};
 constexpr float kMuzzleFlashCandela = 150.0f; // As bright as before 2 m away.
 constexpr float kMuzzleFlashRange = 7.0f;
-// Each alarm turns two red spots, back to back, 0.7 m under it and 25 degrees below the horizon, as the
-// legacy CAlarmEntity did.
-constexpr glm::vec3 kAlarmColor{1.0f, 0.0f, 0.0f};
-constexpr float kAlarmCandela = 965.0f; // As bright as before 8 m away.
-constexpr float kAlarmRange = 28.0f;
-constexpr float kAlarmAngle = glm::radians(20.0f);
-constexpr float kAlarmTightness = 0.8f; // Fraction of the angle at full light.
-constexpr float kAlarmTilt = glm::radians(25.0f);
-constexpr float kAlarmOffset = 0.7f; // Meters below the alarm.
+// Each alarm turns, with the two red spots its level file hangs under it.
 constexpr float kAlarmSpeed = 70.0f; // Degrees per second, when the level does not say.
 
 // Sounds. Distances are the steps of the original, and a fall is heard from about 0.7 m high.
@@ -199,54 +156,26 @@ struct Door {
     float timeLeft = 0.0f;
 };
 
-/// The name of a node is "kind;key=value;key=value".
-struct NodeDescription {
-    std::string_view kind;
-    std::map<std::string_view, std::string_view> attributes;
-};
-
-NodeDescription Parse(std::string_view name) {
-    NodeDescription description;
-    std::size_t end = name.find(';');
-    description.kind = name.substr(0, end);
-    while (end != std::string_view::npos) {
-        const std::size_t start = end + 1;
-        end = name.find(';', start);
-        const std::string_view field = name.substr(start, end == std::string_view::npos ? end : end - start);
-        const std::size_t equal = field.find('=');
-        if (equal != std::string_view::npos) {
-            description.attributes.emplace(field.substr(0, equal), field.substr(equal + 1));
-        }
-    }
-    return description;
-}
-
 template <class T>
-T Number(const NodeDescription& description, std::string_view key, T fallback) {
-    const auto found = description.attributes.find(key);
-    if (found == description.attributes.end()) {
-        return fallback;
-    }
+T Number(const scene::Tags& tags, std::string_view key, T fallback) {
+    const std::string_view text = tags.Value(key);
     T value = fallback;
-    const std::string_view text = found->second;
-    std::from_chars(text.data(), text.data() + text.size(), value);
+    if (!text.empty()) {
+        std::from_chars(text.data(), text.data() + text.size(), value);
+    }
     return value;
 }
 
-/// A color "r:g:b:a", as the legacy level writes it. Alpha is ignored.
-glm::vec3 Color(const NodeDescription& description, std::string_view key, const glm::vec3& fallback) {
-    const auto found = description.attributes.find(key);
-    if (found == description.attributes.end()) {
-        return fallback;
+/// A value "x,y,z".
+glm::vec3 Vector(const scene::Tags& tags, std::string_view key) {
+    glm::vec3 value{0.0f};
+    const std::string_view text = tags.Value(key);
+    const char* cursor = text.data();
+    const char* const end = cursor + text.size();
+    for (int axis = 0; axis < 3 && cursor < end; ++axis) {
+        cursor = std::from_chars(cursor, end, value[axis]).ptr + 1; // Past the comma.
     }
-    glm::vec3 color = fallback;
-    std::string_view text = found->second;
-    for (glm::length_t channel = 0; channel < 3 && !text.empty(); ++channel) {
-        const std::size_t end = text.find(':');
-        std::from_chars(text.data(), text.data() + text.substr(0, end).size(), color[channel]);
-        text = (end == std::string_view::npos) ? std::string_view{} : text.substr(end + 1);
-    }
-    return color;
+    return value;
 }
 
 /// A child entity that holds a light, placed and turned relative to its parent.
@@ -293,257 +222,6 @@ ParticleEffects LoadParticleEffects(scene::Scene& scene, const std::string& dire
             .impactSplinters = load("impact_splinters"),
             .impactGlass = load("impact_glass"),
             .barrelSmoke = load("barrel_smoke")};
-}
-
-/// Steam around a leak, which blows along -Z as its smoke does (ADR-0051): a box of fog that starts at the
-/// leak and widens away from it, whose noise drifts with the smoke, lit by the lamps around.
-void AddSteam(ecs::World& world, ecs::Entity leak) {
-    const ecs::Entity steam = world.Create();
-    ecs::LocalTransform transform;
-    transform.translation = {0.0f, 0.1f, -kSteamLength * 0.5f + 0.2f};
-    transform.scale = {kSteamWidth, kSteamWidth, kSteamLength};
-    world.Add<ecs::LocalTransform>(steam, transform);
-    world.Add<scene::FogVolume>(steam, scene::FogVolume{.density = kSteamDensity,
-                                                        .albedo = glm::vec3(0.95f),
-                                                        .edge = 0.8f,
-                                                        .noise = 0.8f,
-                                                        .noiseFrequency = 1.5f,
-                                                        .noiseVelocity = {0.0f, 0.1f, -0.5f}});
-    [[maybe_unused]] const core::Result<void> attached = world.SetParent(steam, leak);
-}
-
-/// Dust in the start room (ADR-0051): a box of thin fog around the player's start and the lamp ahead,
-/// whose noise drifts slowly, so that swirls move through the lamp's cone.
-void AddDust(ecs::World& world, const glm::vec3& start) {
-    const ecs::Entity dust = world.Create();
-    ecs::LocalTransform transform;
-    transform.translation = start + kDustOffset;
-    transform.scale = kDustSize;
-    world.Add<ecs::LocalTransform>(dust, transform);
-    world.Add<scene::FogVolume>(dust, scene::FogVolume{.density = kDustDensity,
-                                                       .albedo = {0.85f, 0.8f, 0.7f},
-                                                       .edge = 0.3f,
-                                                       .noise = 0.7f,
-                                                       .noiseFrequency = 0.8f,
-                                                       .noiseVelocity = {0.08f, 0.03f, 0.0f}});
-}
-
-/// The entity of the level node of this name, if any.
-std::optional<ecs::Entity> NodeEntity(std::span<const std::pair<ecs::Entity, std::string>> nodes,
-                                      std::string_view name) {
-    const auto named = std::ranges::find(nodes, name, [](const auto& pair) -> std::string_view { return pair.second; });
-    return named != nodes.end() ? std::optional<ecs::Entity>(named->first) : std::nullopt;
-}
-
-/// The triangles of a model's node, all its parts together, in the node's frame.
-std::shared_ptr<const scene::MeshSurface> SurfaceOf(const scene::Model& model, const scene::Model::Node& node) {
-    std::vector<glm::vec3> positions;
-    std::vector<std::uint32_t> indices;
-    for (const std::uint32_t index : node.parts) {
-        const scene::Model::Part& part = model.parts[index];
-        const auto first = static_cast<std::uint32_t>(positions.size());
-        positions.insert(positions.end(), part.positions.begin(), part.positions.end());
-        for (const std::uint32_t vertex : part.indices) {
-            indices.push_back(first + vertex);
-        }
-    }
-    return scene::MakeMeshSurface(positions, indices);
-}
-
-/// A level emitter, by the name of its effect file, emitting as the file says. With "surface=<node>", it
-/// emits on that node's triangles instead (ADR-0053): what burns, what crumbles; with "burst=<count>:<seconds>",
-/// only bursts of that many, that often.
-void AddParticleEmitter(scene::Scene& scene, ecs::Entity entity, const NodeDescription& node,
-                        const std::string& directory, const scene::Model& model,
-                        std::span<const std::pair<ecs::Entity, std::string>> nodes) {
-    const auto found = node.attributes.find("effect");
-    const std::string_view name = found == node.attributes.end() ? std::string_view{} : found->second;
-    core::Result<scene::ParticleEffectAsset> effect = scene.Assets().LoadParticleEffect(EffectPath(directory, name));
-    if (!effect) {
-        DAI_LOG_WARNING("sandbox", "Particle emitter without its effect: {}", core::Format(effect.error()));
-        return;
-    }
-    scene::ParticleEmitter emitter{.effect = effect->effect, .emission = effect->emission};
-    // "burst=<count>:<interval>" emits only that burst, again and again: impacts and explosions shown on
-    // their own.
-    if (const auto burst = node.attributes.find("burst"); burst != node.attributes.end()) {
-        const std::string_view text = burst->second;
-        const std::size_t colon = text.find(':');
-        scene::ParticleBurst repeated{.count = 1, .interval = 1.0f};
-        std::from_chars(text.data(), text.data() + std::min(colon, text.size()), repeated.count);
-        if (colon != std::string_view::npos) {
-            std::from_chars(text.data() + colon + 1, text.data() + text.size(), repeated.interval);
-        }
-        emitter.emission.rate = 0.0f;
-        emitter.emission.ratePerMeter = 0.0f;
-        emitter.emission.bursts = {repeated};
-    }
-    if (const auto surface = node.attributes.find("surface"); surface != node.attributes.end()) {
-        const auto modelNode = std::ranges::find(model.nodes, surface->second, &scene::Model::Node::name);
-        const std::optional<ecs::Entity> target = NodeEntity(nodes, surface->second);
-        if (modelNode == model.nodes.end() || !target) {
-            DAI_LOG_WARNING("sandbox", "Particle emitter '{}': no node '{}' to emit on", name, surface->second);
-            return;
-        }
-        emitter.surface = SurfaceOf(model, *modelNode);
-        if (emitter.surface == nullptr) {
-            DAI_LOG_WARNING("sandbox", "Particle emitter '{}': node '{}' has no triangles", name, surface->second);
-            return;
-        }
-        // On the node that has the triangles, which moves them.
-        scene.World().Add<scene::ParticleEmitter>(*target, std::move(emitter));
-        return;
-    }
-    scene.World().Add<scene::ParticleEmitter>(entity, std::move(emitter));
-    if (name == "smoke_leak") {
-        AddSteam(scene.World(), entity);
-    }
-}
-
-/// A level ribbon, by the name of its file, to the node its target names, if any.
-void AddRibbonEmitter(scene::Scene& scene, ecs::Entity entity, const NodeDescription& node,
-                      const std::string& directory, std::span<const std::pair<ecs::Entity, std::string>> nodes) {
-    const auto found = node.attributes.find("effect");
-    const std::string_view name = found == node.attributes.end() ? std::string_view{} : found->second;
-    core::Result<std::shared_ptr<const scene::RibbonEffect>> effect =
-        scene.Assets().LoadRibbonEffect(RibbonPath(directory, name));
-    if (!effect) {
-        DAI_LOG_WARNING("sandbox", "Ribbon without its effect: {}", core::Format(effect.error()));
-        return;
-    }
-    scene::RibbonEmitter ribbon{.effect = *effect};
-    if (const auto target = node.attributes.find("target"); target != node.attributes.end()) {
-        const auto named =
-            std::ranges::find(nodes, target->second, [](const auto& pair) -> std::string_view { return pair.second; });
-        if (named != nodes.end()) {
-            ribbon.target = named->first;
-        } else {
-            DAI_LOG_WARNING("sandbox", "Ribbon '{}': no node '{}' to reach", name, target->second);
-        }
-    }
-    scene.World().Add<scene::RibbonEmitter>(entity, std::move(ribbon));
-}
-
-/// A level box where it rains or snows (ADR-0053): "weather;effect=rain;rate=60;reach=15". The node's
-/// transform is the box, the cube from -0.5 to 0.5.
-void AddWeather(scene::Scene& scene, ecs::Entity entity, const NodeDescription& node, const std::string& directory) {
-    const auto found = node.attributes.find("effect");
-    const std::string_view name = found == node.attributes.end() ? std::string_view{} : found->second;
-    core::Result<scene::ParticleEffectAsset> effect = scene.Assets().LoadParticleEffect(EffectPath(directory, name));
-    if (!effect) {
-        DAI_LOG_WARNING("sandbox", "Weather without its effect: {}", core::Format(effect.error()));
-        return;
-    }
-    scene.World().Add<scene::WeatherZone>(entity, scene::WeatherZone{.effect = effect->effect,
-                                                                     .rate = Number(node, "rate", 50.0f),
-                                                                     .reach = Number(node, "reach", 15.0f)});
-}
-
-/// A level storm's lightning (ADR-0053): "lightning;bolt=lightning;light=<node>;flash=30;interval=6:15;
-/// duration=0.5", striking in the node's box, flashing the light of the named node.
-void AddLightning(scene::Scene& scene, ecs::Entity entity, const NodeDescription& node, const std::string& directory,
-                  std::span<const std::pair<ecs::Entity, std::string>> nodes) {
-    scene::Lightning lightning;
-    const auto bolt = node.attributes.find("bolt");
-    core::Result<std::shared_ptr<const scene::RibbonEffect>> ribbon = scene.Assets().LoadRibbonEffect(
-        RibbonPath(directory, bolt == node.attributes.end() ? std::string_view("lightning") : bolt->second));
-    if (ribbon) {
-        lightning.bolt = *ribbon;
-    } else {
-        DAI_LOG_WARNING("sandbox", "Lightning without its bolt: {}", core::Format(ribbon.error()));
-    }
-    if (const auto light = node.attributes.find("light"); light != node.attributes.end()) {
-        if (const std::optional<ecs::Entity> found = NodeEntity(nodes, light->second)) {
-            lightning.light = *found;
-        } else {
-            DAI_LOG_WARNING("sandbox", "Lightning: no node '{}' to flash", light->second);
-        }
-    }
-    lightning.flash = Number(node, "flash", lightning.flash);
-    lightning.duration = Number(node, "duration", lightning.duration);
-    if (const auto interval = node.attributes.find("interval"); interval != node.attributes.end()) {
-        const std::string_view text = interval->second;
-        const std::size_t colon = text.find(':');
-        std::from_chars(text.data(), text.data() + std::min(colon, text.size()), lightning.interval.x);
-        lightning.interval.y = lightning.interval.x;
-        if (colon != std::string_view::npos) {
-            std::from_chars(text.data() + colon + 1, text.data() + text.size(), lightning.interval.y);
-        }
-    }
-    scene.World().Add<scene::Lightning>(entity, std::move(lightning));
-}
-
-glm::vec3 Vector(const NodeDescription& description, std::string_view key);
-
-/// A level point that pulls particles and turns them around its +Y (ADR-0053): "attractor;effect=flies;
-/// strength=2;vortex=3;radius=1.5", moving only that effect's particles if it names one.
-void AddAttractor(scene::Scene& scene, ecs::Entity entity, const NodeDescription& node, const std::string& directory) {
-    scene::ParticleAttractor attractor{.strength = Number(node, "strength", 1.0f),
-                                       .vortex = Number(node, "vortex", 0.0f),
-                                       .radius = Number(node, "radius", 0.0f)};
-    if (const auto found = node.attributes.find("effect"); found != node.attributes.end()) {
-        core::Result<scene::ParticleEffectAsset> effect =
-            scene.Assets().LoadParticleEffect(EffectPath(directory, found->second));
-        if (!effect) {
-            DAI_LOG_WARNING("sandbox", "Attractor without its effect: {}", core::Format(effect.error()));
-            return;
-        }
-        attractor.effect = effect->effect;
-    }
-    scene.World().Add<scene::ParticleAttractor>(entity, attractor);
-}
-
-/// A level box of wind (ADR-0053): "wind;velocity=x,y,z;gust=0.5;gust_frequency=0.3;edge=0.3", its velocity
-/// in the node's frame; the node's transform is the box.
-void AddWind(ecs::World& world, ecs::Entity entity, const NodeDescription& node) {
-    world.Add<scene::WindVolume>(entity, scene::WindVolume{.velocity = Vector(node, "velocity"),
-                                                           .gust = Number(node, "gust", 0.0f),
-                                                           .gustFrequency = Number(node, "gust_frequency", 0.2f),
-                                                           .edge = Number(node, "edge", 0.3f)});
-}
-
-void AddAlarmLights(ecs::World& world, ecs::Entity alarm, const NodeDescription& node) {
-    world.Add<Alarm>(alarm, Number(node, "rotation_speed", kAlarmSpeed));
-    const scene::Light light{.type = renderer::LightType::Spot,
-                             .color = kAlarmColor,
-                             .intensity = kAlarmCandela,
-                             .range = kAlarmRange,
-                             .innerAngle = kAlarmAngle * kAlarmTightness,
-                             .outerAngle = kAlarmAngle};
-    for (const float yaw : {0.0f, glm::pi<float>()}) {
-        AddLight(world, alarm, -math::kUp * kAlarmOffset, math::FromYawPitchRoll(yaw, -kAlarmTilt, 0.0f), light);
-    }
-}
-
-/// A value "x,y,z".
-glm::vec3 Vector(const NodeDescription& description, std::string_view key) {
-    glm::vec3 value{0.0f};
-    const auto found = description.attributes.find(key);
-    if (found == description.attributes.end()) {
-        return value;
-    }
-    const char* cursor = found->second.data();
-    const char* const end = cursor + found->second.size();
-    for (int axis = 0; axis < 3 && cursor < end; ++axis) {
-        cursor = std::from_chars(cursor, end, value[axis]).ptr + 1; // Past the comma.
-    }
-    return value;
-}
-
-/// A box of fog that the level places (ADR-0051): "fog;density=0.1;falloff=0.4;color=r:g:b:a;edge=0.3;
-/// noise=0.5;noise_frequency=1;noise_velocity=x,y,z;glow=r:g:b". The node's transform is the box, the cube
-/// from -0.5 to 0.5 scaled to its size. With a falloff in meters, the fog lies on the ground: it halves every
-/// falloff going up from the box's bottom, which belongs on the floor. A glow, in nits, makes it give off light
-/// of its own: a toxic gas that shows in the dark.
-void AddFog(ecs::World& world, ecs::Entity entity, const NodeDescription& node) {
-    world.Add<scene::FogVolume>(entity, scene::FogVolume{.density = Number(node, "density", 0.1f),
-                                                         .albedo = Color(node, "color", kFogAlbedo),
-                                                         .edge = Number(node, "edge", 0.3f),
-                                                         .falloffHeight = Number(node, "falloff", 0.0f),
-                                                         .noise = Number(node, "noise", 0.0f),
-                                                         .noiseFrequency = Number(node, "noise_frequency", 1.0f),
-                                                         .noiseVelocity = Vector(node, "noise_velocity"),
-                                                         .glow = Color(node, "glow", glm::vec3(0.0f))});
 }
 
 std::optional<PickupKind> PickupOf(std::string_view kind) {
@@ -873,48 +551,27 @@ void UpdateDoors(scene::Scene& scene, ecs::Entity playerEntity, float delta) {
     });
 }
 
-/// The sky that the level's openings show: six faces next to the level, named as the legacy engine named
-/// them, in the order of a cube's faces (ADR-0036). A sky with a moon also lights the level from it.
-core::Result<void> LoadSky(scene::Scene& scene, const std::string& directory, std::string_view name) {
-    const std::string prefix = (directory.empty() ? std::string("Sky/") : directory + "/Sky/") + std::string(name);
-    const std::array<std::string, 6> faces{prefix + "_right.png", prefix + "_left.png",  prefix + "_up.png",
-                                           prefix + "_down.png",  prefix + "_front.png", prefix + "_back.png"};
-    DAI_TRY_ASSIGN(rhi::TextureHandle sky, scene.Assets().LoadCubeTexture(faces));
-    renderer::Atmosphere atmosphere = scene.Atmosphere();
-    atmosphere.sky = sky;
-    atmosphere.skyIntensity = kSkyLuminance;
-    if (name == kMoonSky) {
-        atmosphere.skyYaw = kMoonSkyYaw;
-        // A light from where the moon is painted, turned with the sky, which shines down its local -Z.
-        ecs::World& world = scene.World();
-        const ecs::Entity moon = world.Create();
-        const glm::vec3 towardsTheMoon =
-            glm::angleAxis(kMoonSkyYaw, math::kUp) * glm::normalize(kTowardsThePaintedMoon);
-        ecs::LocalTransform transform;
-        transform.rotation = glm::quatLookAtRH(-towardsTheMoon, math::kUp);
-        world.Add<ecs::LocalTransform>(moon, transform);
-        world.Add<scene::Light>(moon, scene::Light{.type = renderer::LightType::Directional,
-                                                   .color = kMoonColor,
-                                                   .intensity = kMoonLux,
-                                                   .angularRadius = kMoonAngularRadius});
-    }
-    scene.SetAtmosphere(atmosphere);
-    return {};
-}
+/// The level's exposure and haze (ADR-0054), which follow the darkness setting. The sky stays as the level set it.
+struct LevelLook {
+    scene::LevelEnvironment environment;
+};
 
-/// The factory's darkness and fog, which follow the settings. The sky stays as the level set it.
 void ApplyAtmosphere(scene::Scene& scene, const Settings& settings) {
+    scene::LevelEnvironment environment;
+    scene.World().Each<LevelLook>(
+        [&environment](ecs::Entity /*entity*/, const LevelLook& look) { environment = look.environment; });
     const float darkness = std::clamp(settings.darkness, 0.0f, 1.0f);
     // Brightness is seen in stops: halfway is half the stops.
-    const float ev100 = kFactoryEv100 - ((1.0f - darkness) * kBrightStops);
-    scene.SetAtmosphere({.fog = {.density = kFogDensity * darkness, .albedo = kFogAlbedo, .anisotropy = kFogAnisotropy},
-                         .sky = scene.Atmosphere().sky,
-                         .skyIntensity = scene.Atmosphere().skyIntensity,
-                         .skyYaw = scene.Atmosphere().skyYaw,
-                         .ev100 = ev100,
-                         .autoExposure = true,
-                         .ev100Min = ev100 - kEyeOpensStops,
-                         .ev100Max = ev100 + kEyeClosesStops});
+    const float ev100 = environment.ev100 - ((1.0f - darkness) * kBrightStops);
+    renderer::Atmosphere atmosphere = scene.Atmosphere();
+    atmosphere.fog = {.density = environment.fogDensity * darkness,
+                      .albedo = environment.fogAlbedo,
+                      .anisotropy = environment.fogAnisotropy};
+    atmosphere.ev100 = ev100;
+    atmosphere.autoExposure = environment.autoExposure;
+    atmosphere.ev100Min = ev100 - environment.exposureMin;
+    atmosphere.ev100Max = ev100 + environment.exposureMax;
+    scene.SetAtmosphere(atmosphere);
 }
 
 } // namespace
@@ -968,18 +625,6 @@ audio::ClipHandle LoadSound(scene::Scene& scene, std::string_view name, const au
 
 namespace {
 
-/// Puts a model at a level node, as its child.
-core::Result<ecs::Entity> PlaceModel(scene::Scene& scene, ecs::Entity node, const std::string& path) {
-    DAI_TRY_ASSIGN(const scene::Model* model, scene.Assets().LoadModel(path));
-    ecs::World& world = scene.World();
-    core::Result<ecs::Entity> instance = scene::Instantiate(world, *model);
-    if (!instance) {
-        return instance;
-    }
-    DAI_TRY(world.SetParent(*instance, node));
-    return instance;
-}
-
 /// Plays the first clip of a model forever, from a random time, so that no two turn in step.
 void PlayForever(ecs::World& world, ecs::Entity model, std::minstd_rand& random) {
     if (animation::Animator* animator = world.TryGet<animation::Animator>(model)) {
@@ -1002,28 +647,52 @@ void Teleport(scene::Scene& scene, ecs::Entity entity, const glm::vec3& eye) {
     scene.CutView();
 }
 
-core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& model, std::string_view levelPath) {
+core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& level, std::string_view levelPath) {
     ecs::World& world = scene.World();
-    core::Result<ecs::Entity> root = scene::Instantiate(world, model);
-    if (!root) {
-        return root;
-    }
+    scene::LevelInstance instance(scene, levelPath);
+    instance.Build(level);
+    ecs::PropagateTransforms(world);
     physics::PhysicsWorld& physics = scene.Physics();
 
-    // What the game needs from the geometry: the level to walk on, what each of its parts is made of, and
-    // the size of the doors.
+    // What the game needs from the models' geometry: the level to walk on, what each of its parts is made of,
+    // and the size of the doors, from the nodes tagged "level" and "door".
     BodySurfaces surfaces;
-    std::map<std::string_view, const scene::Model::Node*> modelNodes;
-    for (const scene::Model::Node& node : model.nodes) {
-        modelNodes.emplace(node.name, &node);
-        if (node.name != "level") {
-            continue;
-        }
-        for (const std::uint32_t index : node.parts) {
-            const scene::Model::Part& part = model.parts[index];
-            DAI_TRY_ASSIGN(physics::BodyId body, physics.AddStaticMesh(part.positions, part.indices, node.local));
-            if (!part.surface.empty()) {
-                surfaces.surfaces.emplace(body.value, part.surface);
+    struct DoorShape {
+        const scene::Model* model = nullptr;
+        const scene::Model::Node* node = nullptr;
+    };
+    std::map<std::uint64_t, DoorShape> doorShapes;
+    std::vector<std::pair<ecs::Entity, const scene::ModelInstance*>> instances;
+    world.Each<scene::ModelInstance>([&instances](ecs::Entity entity, const scene::ModelInstance& placed) {
+        instances.emplace_back(entity, &placed);
+    });
+    for (const auto& [owner, placed] : instances) {
+        for (const scene::Model::Node& node : placed->model->nodes) {
+            const std::string kind = scene::ParseTags(node.name).kind;
+            if (kind != "level" && kind != "door") {
+                continue;
+            }
+            const ecs::Entity nodeEntity = scene::FindNodeEntity(world, placed->root, node.name);
+            if (nodeEntity.IsNull()) {
+                continue;
+            }
+            if (kind == "door") {
+                doorShapes[nodeEntity.Index()] = {placed->model, &node};
+                continue;
+            }
+            // In world space: the model may be placed anywhere.
+            const glm::mat4& placement = world.Get<ecs::WorldTransform>(nodeEntity).matrix;
+            for (const std::uint32_t index : node.parts) {
+                const scene::Model::Part& part = placed->model->parts[index];
+                std::vector<glm::vec3> positions;
+                positions.reserve(part.positions.size());
+                for (const glm::vec3& position : part.positions) {
+                    positions.push_back(math::TransformPoint(placement, position));
+                }
+                DAI_TRY_ASSIGN(physics::BodyId body, physics.AddStaticMesh(positions, part.indices, math::Transform{}));
+                if (!part.surface.empty()) {
+                    surfaces.surfaces.emplace(body.value, part.surface);
+                }
             }
         }
     }
@@ -1032,6 +701,7 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
     glm::vec3 eye{0.0f, kEyeHeight, 3.0f};
     Player& newPlayer = world.Add<Player>(playerEntity);
     world.Add<scene::Camera>(playerEntity);
+    world.Add<LevelLook>(playerEntity, level.environment);
     // The lights that the player carries follow the camera.
     const glm::vec3 flashlightAim = glm::normalize(math::kForward * kFlashlightAimDistance - kFlashlightHand);
     newPlayer.flashlight = AddLight(world, playerEntity, kFlashlightHand, glm::quatLookAtRH(flashlightAim, math::kUp),
@@ -1053,84 +723,70 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
     body.height = kStandHeight;
     world.Get<Player>(playerEntity).character = physics.AddCharacter(body, eye - math::kUp * kEyeHeight);
     const SoundBank& bank = world.Add<SoundBank>(playerEntity, LoadSounds(scene));
-    // Models that the level places, such as zombies, are found next to it, and so are the weapons.
+    // The weapons and the effects the game spawns are found next to the level.
     const std::string directory = std::filesystem::path(levelPath).parent_path().generic_string();
     const physics::BodyId playerBody = physics.CharacterBody(world.Get<Player>(playerEntity).character);
 
     std::vector<int> lockedDoors;
-    std::vector<std::pair<ecs::Entity, std::string>> nodes;
-    world.Each<scene::NodeName>(
-        [&nodes](ecs::Entity entity, const scene::NodeName& name) { nodes.emplace_back(entity, name.value); });
-    for (const auto& [entity, name] : nodes) {
-        const NodeDescription node = Parse(name);
-        if (node.kind == "card_reader") {
-            lockedDoors.push_back(Number(node, "id", 0));
+    std::vector<std::pair<ecs::Entity, scene::Tags>> tagged;
+    // A model placed by a game object (a zombie, a fan, a pickup) is that object: the tags of its own nodes are
+    // not the level's.
+    std::vector<ecs::Entity> objectModels;
+    world.Each<scene::Tags, scene::ModelInstance>(
+        [&objectModels](ecs::Entity /*entity*/, const scene::Tags& /*tags*/, const scene::ModelInstance& placed) {
+            objectModels.push_back(placed.root);
+        });
+    world.Each<scene::Tags>([&](ecs::Entity entity, const scene::Tags& tags) {
+        const bool inObject = std::ranges::any_of(
+            objectModels, [&](ecs::Entity root) { return entity == root || world.IsDescendantOf(entity, root); });
+        if (!inObject) {
+            tagged.emplace_back(entity, tags);
+        }
+    });
+    for (const auto& [entity, tags] : tagged) {
+        if (tags.kind == "card_reader") {
+            lockedDoors.push_back(Number(tags, "id", 0));
         }
     }
     world.Add<ParticleEffects>(playerEntity, LoadParticleEffects(scene, directory));
-    // After the level's nodes are listed: the weapons have named nodes too, which are not the level's.
+    // After the level's tags are listed: the weapons have tagged nodes too, which are not the level's.
     SetUpCombat(scene, playerEntity, directory);
     std::minstd_rand random{std::random_device{}()};
-    for (const auto& [entity, name] : nodes) {
-        const NodeDescription node = Parse(name);
-        const glm::vec3 position = world.Get<ecs::LocalTransform>(entity).translation;
-        if (const auto file = node.attributes.find("model"); file != node.attributes.end()) {
-            const std::string path =
-                directory.empty() ? std::string(file->second) : directory + "/" + std::string(file->second);
-            DAI_TRY_ASSIGN(ecs::Entity instance, PlaceModel(scene, entity, path));
-            if (node.kind == "zombie") {
-                const auto patrol = node.attributes.find("patrol");
-                AddZombie(scene, entity, instance, patrol == node.attributes.end() ? "" : patrol->second);
-                ++world.Get<Player>(playerEntity).zombieCount;
-            } else if (node.kind == "fan") {
-                PlayForever(world, instance, random);
-            }
-        }
-        if (node.kind == "player") {
-            AddDust(world, position);
+    for (const auto& [entity, tags] : tagged) {
+        const glm::vec3 position = world.Get<ecs::WorldTransform>(entity).matrix[3];
+        const scene::ModelInstance* placed = world.TryGet<scene::ModelInstance>(entity);
+        if (tags.kind == "zombie" && placed != nullptr) {
+            AddZombie(scene, entity, placed->root, tags.Value("patrol"));
+            ++world.Get<Player>(playerEntity).zombieCount;
+        } else if (tags.kind == "fan" && placed != nullptr) {
+            PlayForever(world, placed->root, random);
+            world.Add<LoopedSound>(entity, bank.fan, 0.7f, 1.0f, 20.0f);
+        } else if (tags.kind == "player") {
             eye = position;
             if (const std::optional<physics::RayHit> floor = physics.CastRay(position, -math::kUp, 20.0f, playerBody)) {
                 eye = floor->position + math::kUp * kEyeHeight;
             }
-        } else if (node.kind == "alarm") {
+        } else if (tags.kind == "alarm") {
             world.Add<LoopedSound>(entity, bank.alarm, 0.5f, 1.4f, 35.0f);
-            AddAlarmLights(world, entity, node);
-        } else if (const auto sky = node.attributes.find("name"); node.kind == "sky" && sky != node.attributes.end()) {
-            DAI_TRY(LoadSky(scene, directory, sky->second));
-        } else if (node.kind == "particles") {
-            AddParticleEmitter(scene, entity, node, directory, model, nodes);
-        } else if (node.kind == "attractor") {
-            AddAttractor(scene, entity, node, directory);
-        } else if (node.kind == "wind") {
-            AddWind(world, entity, node);
-        } else if (node.kind == "weather") {
-            AddWeather(scene, entity, node, directory);
-        } else if (node.kind == "lightning") {
-            AddLightning(scene, entity, node, directory, nodes);
-        } else if (node.kind == "ribbon") {
-            AddRibbonEmitter(scene, entity, node, directory, nodes);
-        } else if (node.kind == "fog") {
-            AddFog(world, entity, node);
-        } else if (node.kind == "fan") {
-            world.Add<LoopedSound>(entity, bank.fan, 0.7f, 1.0f, 20.0f);
-        } else if (node.kind == "ladder") {
-            world.Add<Ladder>(entity, Vector(node, "min"), Vector(node, "max"));
-        } else if (const std::optional<PickupKind> pickup = PickupOf(node.kind)) {
+            world.Add<Alarm>(entity, Number(tags, "rotation_speed", kAlarmSpeed));
+        } else if (tags.kind == "ladder") {
+            world.Add<Ladder>(entity, Vector(tags, "min"), Vector(tags, "max"));
+        } else if (const std::optional<PickupKind> pickup = PickupOf(tags.kind)) {
             world.Add<Pickup>(entity, *pickup);
-        } else if (node.kind == "door") {
+        } else if (tags.kind == "door") {
             Door door;
-            door.id = Number(node, "id", 0);
-            door.closedPosition = position;
-            door.radius = Number(node, "radius", 1.0f) < 0.0f ? -1.0f : kDoorRadius;
-            const auto closable = node.attributes.find("closable");
-            door.closable = closable == node.attributes.end() || closable->second != "false";
+            door.id = Number(tags, "id", 0);
+            door.closedPosition = world.Get<ecs::LocalTransform>(entity).translation;
+            door.radius = Number(tags, "radius", 1.0f) < 0.0f ? -1.0f : kDoorRadius;
+            door.closable = tags.Value("closable") != "false";
             door.locked = std::ranges::find(lockedDoors, door.id) != lockedDoors.end();
             world.Add<Door>(entity, door);
 
-            if (const auto found = modelNodes.find(name); found != modelNodes.end()) {
+            if (const auto found = doorShapes.find(entity.Index()); found != doorShapes.end()) {
+                const scene::Model& model = *found->second.model;
                 glm::vec3 low(std::numeric_limits<float>::max());
                 glm::vec3 high(std::numeric_limits<float>::lowest());
-                for (const std::uint32_t index : found->second->parts) {
+                for (const std::uint32_t index : found->second.node->parts) {
                     for (const glm::vec3& vertex : model.parts[index].positions) {
                         low = glm::min(low, vertex);
                         high = glm::max(high, vertex);
@@ -1138,13 +794,13 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Model& mo
                 }
                 if (low.x <= high.x) {
                     math::Transform transform;
-                    transform.translation = position;
+                    transform.translation = door.closedPosition;
                     const glm::vec3 halfExtents = glm::max((high - low) * 0.5f, glm::vec3(0.05f));
                     DAI_TRY_ASSIGN(physics::BodyId box,
                                    physics.AddKinematicBox(halfExtents, (low + high) * 0.5f, transform));
                     world.Add<scene::KinematicBody>(entity, box);
                     // A door is made of what its first part with a surface is made of.
-                    for (const std::uint32_t index : found->second->parts) {
+                    for (const std::uint32_t index : found->second.node->parts) {
                         if (!model.parts[index].surface.empty()) {
                             surfaces.surfaces.emplace(box.value, model.parts[index].surface);
                             break;

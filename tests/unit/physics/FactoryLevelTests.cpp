@@ -26,9 +26,6 @@ protected:
         core::Result<resources::ModelData> model = resources::LoadModelFile(DAI_FACTORY_LEVEL);
         ASSERT_TRUE(model.has_value()) << core::Format(model.error());
         for (const resources::ModelNode& node : model->nodes) {
-            if (node.name == "player") {
-                m_start = node.local.translation;
-            }
             if (node.name != "level") {
                 continue;
             }
@@ -54,7 +51,9 @@ protected:
     }
 
     PhysicsWorld m_physics;
-    glm::vec3 m_start{0.0f};
+    /// The player's start, the entity tagged "player" in Factory.level.json (ADR-0054), which this module does not
+    /// read: physics comes before scenes.
+    glm::vec3 m_start{0.0f, 1.4f, 0.0f};
 };
 
 } // namespace

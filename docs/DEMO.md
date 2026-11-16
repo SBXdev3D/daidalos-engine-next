@@ -35,7 +35,7 @@ flowchart LR
 | 7: Modern rendering | Real lights replacing the fog, the flashlight's shadow, rotating alarms, normal maps, ambient occlusion, particles for smoke, blood and green fog | 7.1 to 7.4 done: lights, alarms, normal maps, shadows, ambient occlusion, particles |
 | 8: GUI | The game's own HUD, crosshair, menus and loading screen | Done: HUD and crosshair in every build; loading screen with the turning gear, main, pause and options menus, death and "factory cleared" screens; developer tools in development builds |
 | 9: Ray-traced rendering | Soft ray-traced shadows, the sky through the openings, moonlight and bounced light, reflections in metal and polished floors, glass over the shaft where a zombie patrols, lamps in real units; then many lights, exposure and volumetric fog: lamps' cones in the haze, dust in the start room, steam at the leak, fog lying on the floor of the big room and the corridor; quality presets; then fire in the furnace area, drips, sparks from a cable, dust motes, flies, casings and impacts by surface | Done: through 9.25, fire in the south room's pit, drips, a shorting cable, dust, moths and flies, rain through the big room's open roof, impacts by surface, the green gas as glowing fog, smoke from the barrel after a shot |
-| 10: Level editor | The factory's lights and sky in a level file, new rooms built without code | |
+| 10: Level editor | The factory's lights and sky in a level file, new rooms built without code | 10.1 done: the factory is a level file |
 | 11: Materials, lights and atmosphere | Wet floors and puddles, decals of blood and grime, a better flashlight, flickering and dying lamps, film grain | |
 | 12: Sound | Doors that muffle sound, reverb that follows the rooms, music that follows the danger | |
 | 13: Gameplay systems | Security camera, opening camera flight, better zombie navigation, scripted scares, saves | |
@@ -64,7 +64,7 @@ The level loads behind the legacy loading screen, then waits behind the main men
 
 In development builds, the key under Escape opens the developer tools: the console (`help` lists its commands, `restart` starts over), statistics, the entities with the player's state, and the loaded resources.
 
-`scripts/import_legacy_level.py` is not part of running the demo. It converts the legacy level again, or brings more legacy content over. It also bakes the animated MilkShape models to glTF files of their own: the zombie, the fans and the handgun, whose clips are the frame ranges the legacy game played. The committed level has since been edited by later steps, so the importer no longer reproduces it; `scripts/dress_factory.py` adds the factory's effects and what its materials are made of.
+`scripts/import_legacy_level.py` is not part of running the demo. It converts the legacy level again, or brings more legacy content over. It also bakes the animated MilkShape models to glTF files of their own: the zombie, the fans and the handgun, whose clips are the frame ranges the legacy game played. The committed level has since been edited by later steps, so the importer no longer reproduces it. Since Phase 10 the level is `Factory/Factory.level.json` (ADR-0054): its lights, fog, effects, sky, exposure, props and the game's objects, around the walls and doors of `Factory.gltf`; `scripts/gltf_to_level.py` made it once from the dressed glTF level.
 
 ## The fight
 

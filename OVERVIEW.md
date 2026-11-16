@@ -1980,13 +1980,13 @@ Completion criteria:
 
 Deliverables:
 
-- A level file: the models it places (glTF, with their transforms), its lights, its sky and atmosphere, the player's start and named entities for the game's code. The game loads it; a bare glTF still loads as today.
+- A level file: the models it places (glTF, with their transforms), its lights, its sky and atmosphere, the player's start and named entities for the game's code. The game loads it; a bare glTF still loads as today (done, 10.1, ADR-0054: `<name>.level.json`, typed components and `game` tags, the factory converted, its props in their own files).
 - An editor executable, in development builds, whose viewport is the game's renderer, ray tracing included.
 - Importing glTF models and sky textures into the assets.
 - Selecting by clicking in the viewport or in a hierarchy panel; move, rotate and scale gizmos; an inspector of the selected entity's components (transform, model, light).
 - Undo and redo of every edit; saving and opening levels.
 - Starting the game on the level being edited.
-- The factory's lights that are added in code today move into its level file.
+- The factory's lights that are added in code today move into its level file (done, 10.1: the moon, the alarms' beams, the dust and the steam, the exposure and the sky; the flashlight and the muzzle flash stay the player's).
 
 Later phases add their own fields to the inspector (light profiles, visibility masks, porosity, triggers). Prefabs, painting tools, material, VFX and sequencer editors wait until content asks for them.
 

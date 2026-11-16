@@ -8,6 +8,7 @@
 #include <daidalos/input/ActionMap.hpp>
 #include <daidalos/physics/PhysicsWorld.hpp>
 #include <daidalos/scene/AssetLibrary.hpp>
+#include <daidalos/scene/Level.hpp>
 #include <daidalos/scene/Scene.hpp>
 
 #include <glm/vec3.hpp>
@@ -147,12 +148,12 @@ struct Settings {
 /// Places the player's eyes, for example from sandbox.start.
 void Teleport(daidalos::scene::Scene& scene, daidalos::ecs::Entity entity, const glm::vec3& eye);
 
-/// Creates the entities of a level: the player, the doors, the ladders and the pickups are found by
-/// the names of the model's nodes, and the "level" node is what the player walks on. Nodes with a
-/// "model" attribute get that model, from the level's directory: zombies and fans. Returns the
-/// player's entity.
+/// Creates the entities of a level file (ADR-0054), then the game's on its tagged entities: the player's
+/// start, the doors, the ladders, the pickups, the alarms, the zombies and the fans. The model nodes tagged
+/// "level" are what the player walks on. levelPath is the level file's path under the asset root, whose
+/// directory holds the weapons and the effects the game spawns. Returns the player's entity.
 [[nodiscard]] daidalos::core::Result<daidalos::ecs::Entity>
-BuildLevel(daidalos::scene::Scene& scene, const daidalos::scene::Model& model, std::string_view levelPath);
+BuildLevel(daidalos::scene::Scene& scene, const daidalos::scene::Level& level, std::string_view levelPath);
 
 /// Puts the effects of mesh particles and ribbons in front of a place (ADR-0053), for sandbox.showcase: an
 /// electric arc, a laser, lightning, breaking glass, papers in the air and a wisp that circles. Their files
