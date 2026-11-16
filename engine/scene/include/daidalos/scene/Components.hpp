@@ -14,11 +14,14 @@
 
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <limits>
+#include <map>
 #include <memory>
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // The components that the engine itself reads. Game components live in the game.
@@ -65,6 +68,24 @@ struct NodeName {
     std::string value;
 };
 
+/// ECS component: what only the game understands about an entity, from a level's "game" object (ADR-0054) or a model
+/// node named "kind;key=value;...". The engine does not read it.
+struct Tags {
+    std::string kind;
+    std::map<std::string, std::string, std::less<>> values;
+
+    /// The value of a key, or empty.
+    [[nodiscard]] std::string_view Value(std::string_view key) const {
+        const auto found = values.find(key);
+        return found == values.end() ? std::string_view{} : std::string_view(found->second);
+    }
+    [[nodiscard]] bool Has(std::string_view key) const { return values.contains(key); }
+    [[nodiscard]] bool operator==(const Tags&) const = default;
+};
+
+/// The tags of a node name "kind;key=value;...": everything before the first ';' is the kind.
+[[nodiscard]] Tags ParseTags(std::string_view name);
+
 /// ECS component: a light at the entity's WorldTransform, in physical units (ADR-0043). Spot and directional
 /// lights shine down the entity's local -Z, like a camera, as in glTF. See renderer::Light.
 struct Light {
@@ -87,6 +108,7 @@ struct Light {
     /// Directional lights: radians from the center of their disk to its edge, which softens the shadows.
     float angularRadius = 0.0f;
     bool enabled = true;
+    [[nodiscard]] bool operator==(const Light&) const = default;
 };
 
 /// ECS component: a box of fog at the entity's WorldTransform (ADR-0051), added to the atmosphere's: the
@@ -110,6 +132,7 @@ struct FogVolume {
     /// Light the fog gives off, per color, as renderer::FogVolume::glow: a toxic gas glowing in the dark.
     glm::vec3 glow{0.0f};
     bool enabled = true;
+    [[nodiscard]] bool operator==(const FogVolume&) const = default;
 };
 
 /// ECS component: a box of wind at the entity's WorldTransform (ADR-0053), which carries particles by their
@@ -121,6 +144,7 @@ struct WindVolume {
     float gustFrequency = 0.2f;
     float edge = 0.3f;
     bool enabled = true;
+    [[nodiscard]] bool operator==(const WindVolume&) const = default;
 };
 
 /// ECS component: pulls particles towards the entity's position and turns them around its +Y axis
