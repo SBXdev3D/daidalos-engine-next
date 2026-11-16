@@ -18,6 +18,8 @@ struct OutputPushConstants {
     float paperWhite; // Nits of the interface's white and of 1 in the image, in HDR10.
     uint hdr10;
     float sharpness; // Of the contrast-adaptive sharpening, from 0 (none) to 1.
+    int sceneX;      // Where the scene starts in the window (ADR-0055): black around it.
+    int sceneY;
 };
 
 static const uint kNone = 0xFFFFFFFF;
@@ -146,26 +148,26 @@ float3 Sharpen(int2 pixel, int2 size, float sharpness) {
 
 float4 PSMain(float4 position : SV_Position) : SV_Target {
     const int2 pixel = int2(position.xy);
-    float3 color;
-    if (g_push.sharpness > 0.0) {
-        uint width;
-        uint height;
-        g_textures[g_push.scene].GetDimensions(width, height);
-        color = Sharpen(pixel, int2(width, height), g_push.sharpness);
-    } else {
-        color = max(g_textures[g_push.scene].Load(int3(pixel, 0)).rgb, 0.0);
+    uint width;
+    uint height;
+    g_textures[g_push.scene].GetDimensions(width, height);
+    const int2 scenePixel = pixel - int2(g_push.sceneX, g_push.sceneY);
+    float3 color = 0.0;
+    if (all(scenePixel >= 0) && all(scenePixel < int2(width, height))) {
+        if (g_push.sharpness > 0.0) {
+            color = Sharpen(scenePixel, int2(width, height), g_push.sharpness);
+        } else {
+            color = max(g_textures[g_push.scene].Load(int3(scenePixel, 0)).rgb, 0.0);
+        }
+        if (g_push.bloom != kNone) {
+            const float2 uv = (float2(scenePixel) + 0.5) / float2(width, height);
+            const float3 bloom = g_textures[g_push.bloom].SampleLevel(g_samplers[kSamplerLinearClamp], uv, 0.0).rgb;
+            color = lerp(color, max(bloom, 0.0), g_push.bloomShare);
+        }
+        color *= g_push.scale;
+        color = g_push.toneMapper == 0 ? AgX(color) : PbrNeutral(color);
+        color = ExpandHighlights(color, g_push.headroom);
     }
-    if (g_push.bloom != kNone) {
-        uint width;
-        uint height;
-        g_textures[g_push.scene].GetDimensions(width, height);
-        const float2 uv = position.xy / float2(width, height);
-        const float3 bloom = g_textures[g_push.bloom].SampleLevel(g_samplers[kSamplerLinearClamp], uv, 0.0).rgb;
-        color = lerp(color, max(bloom, 0.0), g_push.bloomShare);
-    }
-    color *= g_push.scale;
-    color = g_push.toneMapper == 0 ? AgX(color) : PbrNeutral(color);
-    color = ExpandHighlights(color, g_push.headroom);
     if (g_push.layer != kNone) {
         const float4 layer = g_textures[g_push.layer].Load(int3(pixel, 0));
         color = layer.rgb + color * (1.0 - layer.a);

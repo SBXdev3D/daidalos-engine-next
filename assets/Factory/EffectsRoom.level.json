@@ -8,32 +8,19 @@
     {
       "id": 2,
       "light": {
-        "color": [
-          0.75,
-          0.8,
-          1.0
-        ],
+        "color": [0.75, 0.8, 1],
         "intensity": 0.25,
         "type": "directional"
       },
       "name": "moon",
       "transform": {
-        "rotation": [
-          -0.4,
-          0.1,
-          0.05,
-          0.91
-        ]
+        "rotation": [-0.39988002, 0.099970005, 0.049985003, 0.90972704]
       }
     },
     {
       "id": 3,
       "light": {
-        "color": [
-          1.0,
-          0.92,
-          0.8
-        ],
+        "color": [1, 0.92, 0.8],
         "inner_angle": 28.6479,
         "intensity": 250,
         "outer_angle": 51.5662,
@@ -42,27 +29,14 @@
       },
       "name": "lamp light",
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          -4.0,
-          4.9,
-          -4.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [-4, 4.9, -4]
       }
     },
     {
       "id": 4,
       "light": {
-        "color": [
-          1.0,
-          0.92,
-          0.8
-        ],
+        "color": [1, 0.92, 0.8],
         "inner_angle": 28.6479,
         "intensity": 250,
         "outer_angle": 51.5662,
@@ -71,27 +45,14 @@
       },
       "name": "lamp light",
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          4.0,
-          4.9,
-          -4.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [4, 4.9, -4]
       }
     },
     {
       "id": 5,
       "light": {
-        "color": [
-          1.0,
-          0.92,
-          0.8
-        ],
+        "color": [1, 0.92, 0.8],
         "inner_angle": 28.6479,
         "intensity": 250,
         "outer_angle": 51.5662,
@@ -100,27 +61,14 @@
       },
       "name": "lamp light",
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          -4.0,
-          4.9,
-          -12.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [-4, 4.9, -12]
       }
     },
     {
       "id": 6,
       "light": {
-        "color": [
-          1.0,
-          0.92,
-          0.8
-        ],
+        "color": [1, 0.92, 0.8],
         "inner_angle": 28.6479,
         "intensity": 250,
         "outer_angle": 51.5662,
@@ -129,27 +77,14 @@
       },
       "name": "lamp light",
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          4.0,
-          4.9,
-          -12.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [4, 4.9, -12]
       }
     },
     {
       "id": 7,
       "light": {
-        "color": [
-          1.0,
-          0.92,
-          0.8
-        ],
+        "color": [1, 0.92, 0.8],
         "inner_angle": 28.6479,
         "intensity": 250,
         "outer_angle": 51.5662,
@@ -158,27 +93,14 @@
       },
       "name": "lamp light",
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          -4.0,
-          4.9,
-          -21.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [-4, 4.9, -21]
       }
     },
     {
       "id": 8,
       "light": {
-        "color": [
-          1.0,
-          0.92,
-          0.8
-        ],
+        "color": [1, 0.92, 0.8],
         "inner_angle": 28.6479,
         "intensity": 250,
         "outer_angle": 51.5662,
@@ -187,17 +109,8 @@
       },
       "name": "lamp light",
       "transform": {
-        "rotation": [
-          -0.70711,
-          0.0,
-          0.0,
-          0.70711
-        ],
-        "translation": [
-          4.0,
-          4.9,
-          -21.0
-        ]
+        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "translation": [4, 4.9, -21]
       }
     },
     {
@@ -207,11 +120,7 @@
       "id": 9,
       "name": "Player 10",
       "transform": {
-        "translation": [
-          0.0,
-          1.4,
-          0.0
-        ]
+        "translation": [0, 1.4, 0]
       }
     },
     {
@@ -221,11 +130,7 @@
         "effect": "Effects/candle.effect.json"
       },
       "transform": {
-        "translation": [
-          -6.0,
-          0.8,
-          -3.0
-        ]
+        "translation": [-6, 0.8, -3]
       }
     },
     {
@@ -235,11 +140,7 @@
         "effect": "Effects/fire.effect.json"
       },
       "transform": {
-        "translation": [
-          -6.0,
-          0.8,
-          -6.5
-        ]
+        "translation": [-6, 0.8, -6.5]
       }
     },
     {
@@ -249,11 +150,7 @@
         "effect": "Effects/heat_haze.effect.json"
       },
       "transform": {
-        "translation": [
-          -6.0,
-          1.4,
-          -6.5
-        ]
+        "translation": [-6, 1.4, -6.5]
       }
     },
     {
@@ -267,11 +164,7 @@
         }
       },
       "transform": {
-        "translation": [
-          -6.0,
-          0.0,
-          -6.5
-        ]
+        "translation": [-6, 0, -6.5]
       }
     },
     {
@@ -281,11 +174,7 @@
         "effect": "Effects/smoke_column.effect.json"
       },
       "transform": {
-        "translation": [
-          -6.0,
-          0.2,
-          -10.0
-        ]
+        "translation": [-6, 0.2, -10]
       }
     },
     {
@@ -295,11 +184,7 @@
         "effect": "Effects/cigarette_smoke.effect.json"
       },
       "transform": {
-        "translation": [
-          -4.5,
-          1.2,
-          -10.0
-        ]
+        "translation": [-4.5, 1.2, -10]
       }
     },
     {
@@ -308,16 +193,12 @@
       "particles": {
         "burst": {
           "count": 1,
-          "interval": 8.0
+          "interval": 8
         },
         "effect": "Effects/explosion.effect.json"
       },
       "transform": {
-        "translation": [
-          -5.0,
-          1.5,
-          -13.0
-        ]
+        "translation": [-5, 1.5, -13]
       }
     },
     {
@@ -327,17 +208,8 @@
         "effect": "Effects/pipe_spray.effect.json"
       },
       "transform": {
-        "rotation": [
-          0.0,
-          0.0,
-          -0.70711,
-          0.70711
-        ],
-        "translation": [
-          -7.8,
-          1.2,
-          -16.0
-        ]
+        "rotation": [0, 0, -0.70710677, 0.70710677],
+        "translation": [-7.8, 1.2, -16]
       }
     },
     {
@@ -347,11 +219,7 @@
         "effect": "Effects/drip.effect.json"
       },
       "transform": {
-        "translation": [
-          -5.0,
-          4.95,
-          -22.5
-        ]
+        "translation": [-5, 4.95, -22.5]
       }
     },
     {
@@ -361,11 +229,7 @@
         "effect": "Effects/drip.effect.json"
       },
       "transform": {
-        "translation": [
-          -5.6,
-          4.95,
-          -23.0
-        ]
+        "translation": [-5.6, 4.95, -23]
       }
     },
     {
@@ -375,11 +239,7 @@
         "effect": "Effects/bubbles.effect.json"
       },
       "transform": {
-        "translation": [
-          -3.0,
-          0.05,
-          -23.0
-        ]
+        "translation": [-3, 0.05, -23]
       }
     },
     {
@@ -389,11 +249,7 @@
         "effect": "Effects/spores.effect.json"
       },
       "transform": {
-        "translation": [
-          -3.0,
-          0.6,
-          -23.0
-        ]
+        "translation": [-3, 0.6, -23]
       }
     },
     {
@@ -403,17 +259,8 @@
         "effect": "Effects/cable_sparks.effect.json"
       },
       "transform": {
-        "rotation": [
-          0.0,
-          0.0,
-          0.70711,
-          0.70711
-        ],
-        "translation": [
-          7.9,
-          2.6,
-          -3.0
-        ]
+        "rotation": [0, 0, 0.70710677, 0.70710677],
+        "translation": [7.9, 2.6, -3]
       }
     },
     {
@@ -424,22 +271,14 @@
         "target": 25
       },
       "transform": {
-        "translation": [
-          7.9,
-          1.8,
-          -5.0
-        ]
+        "translation": [7.9, 1.8, -5]
       }
     },
     {
       "id": 25,
       "name": "Arc end 26",
       "transform": {
-        "translation": [
-          7.4,
-          1.0,
-          -5.6
-        ]
+        "translation": [7.4, 1, -5.6]
       }
     },
     {
@@ -449,17 +288,8 @@
         "effect": "Effects/laser.ribbon.json"
       },
       "transform": {
-        "rotation": [
-          0.0,
-          0.0,
-          -0.70711,
-          0.70711
-        ],
-        "translation": [
-          -7.9,
-          0.5,
-          -1.0
-        ]
+        "rotation": [0, 0, -0.70710677, 0.70710677],
+        "translation": [-7.9, 0.5, -1]
       }
     },
     {
@@ -469,11 +299,7 @@
         "effect": "Effects/dust_motes.effect.json"
       },
       "transform": {
-        "translation": [
-          6.0,
-          1.5,
-          -9.0
-        ]
+        "translation": [6, 1.5, -9]
       }
     },
     {
@@ -483,11 +309,7 @@
         "effect": "Effects/ceiling_dust.effect.json"
       },
       "transform": {
-        "translation": [
-          4.5,
-          4.95,
-          -12.0
-        ]
+        "translation": [4.5, 4.95, -12]
       }
     },
     {
@@ -497,11 +319,7 @@
         "effect": "Effects/ceiling_debris.effect.json"
       },
       "transform": {
-        "translation": [
-          4.5,
-          4.95,
-          -12.0
-        ]
+        "translation": [4.5, 4.95, -12]
       }
     },
     {
@@ -511,37 +329,20 @@
         "effect": "Effects/papers.effect.json"
       },
       "transform": {
-        "translation": [
-          0.0,
-          3.0,
-          -8.0
-        ]
+        "translation": [0, 3, -8]
       }
     },
     {
       "id": 31,
       "name": "Wind 32",
       "transform": {
-        "scale": [
-          6.0,
-          5.0,
-          6.0
-        ],
-        "translation": [
-          0.0,
-          2.5,
-          -8.0
-        ]
+        "scale": [6, 5, 6],
+        "translation": [0, 2.5, -8]
       },
       "wind": {
-        "edge": 0.3,
         "gust": 0.6,
         "gust_frequency": 0.3,
-        "velocity": [
-          1.2,
-          0.0,
-          -0.6
-        ]
+        "velocity": [1.2, 0, -0.6]
       }
     },
     {
@@ -551,11 +352,7 @@
         "effect": "Effects/breath.effect.json"
       },
       "transform": {
-        "translation": [
-          0.0,
-          1.6,
-          -1.0
-        ]
+        "translation": [0, 1.6, -1]
       }
     },
     {
@@ -565,28 +362,20 @@
         "effect": "Effects/flies.effect.json"
       },
       "transform": {
-        "translation": [
-          6.0,
-          0.8,
-          -15.3
-        ]
+        "translation": [6, 0.8, -15.3]
       }
     },
     {
       "attractor": {
         "effect": "Effects/flies.effect.json",
-        "radius": 2.0,
-        "strength": 3.0,
-        "vortex": 2.0
+        "radius": 2,
+        "strength": 3,
+        "vortex": 2
       },
       "id": 34,
       "name": "Attractor flies 35",
       "transform": {
-        "translation": [
-          6.0,
-          0.7,
-          -15.3
-        ]
+        "translation": [6, 0.7, -15.3]
       }
     },
     {
@@ -596,28 +385,20 @@
         "effect": "Effects/moths.effect.json"
       },
       "transform": {
-        "translation": [
-          6.0,
-          3.6,
-          -19.0
-        ]
+        "translation": [6, 3.6, -19]
       }
     },
     {
       "attractor": {
         "effect": "Effects/moths.effect.json",
         "radius": 1.5,
-        "strength": 2.0,
-        "vortex": 4.0
+        "strength": 2,
+        "vortex": 4
       },
       "id": 36,
       "name": "Attractor moths 37",
       "transform": {
-        "translation": [
-          6.0,
-          4.0,
-          -19.0
-        ]
+        "translation": [6, 4, -19]
       }
     },
     {
@@ -626,22 +407,13 @@
       "particles": {
         "burst": {
           "count": 1,
-          "interval": 2.0
+          "interval": 2
         },
         "effect": "Effects/impact_dust.effect.json"
       },
       "transform": {
-        "rotation": [
-          0.0,
-          0.0,
-          0.70711,
-          0.70711
-        ],
-        "translation": [
-          7.95,
-          1.5,
-          -21.5
-        ]
+        "rotation": [0, 0, 0.70710677, 0.70710677],
+        "translation": [7.95, 1.5, -21.5]
       }
     },
     {
@@ -650,22 +422,13 @@
       "particles": {
         "burst": {
           "count": 6,
-          "interval": 2.0
+          "interval": 2
         },
         "effect": "Effects/impact_chips.effect.json"
       },
       "transform": {
-        "rotation": [
-          0.0,
-          0.0,
-          0.70711,
-          0.70711
-        ],
-        "translation": [
-          7.95,
-          1.5,
-          -21.5
-        ]
+        "rotation": [0, 0, 0.70710677, 0.70710677],
+        "translation": [7.95, 1.5, -21.5]
       }
     },
     {
@@ -674,22 +437,13 @@
       "particles": {
         "burst": {
           "count": 6,
-          "interval": 2.0
+          "interval": 2
         },
         "effect": "Effects/impact_splinters.effect.json"
       },
       "transform": {
-        "rotation": [
-          0.0,
-          0.0,
-          0.70711,
-          0.70711
-        ],
-        "translation": [
-          7.95,
-          1.5,
-          -23.0
-        ]
+        "rotation": [0, 0, 0.70710677, 0.70710677],
+        "translation": [7.95, 1.5, -23]
       }
     },
     {
@@ -698,22 +452,13 @@
       "particles": {
         "burst": {
           "count": 8,
-          "interval": 2.0
+          "interval": 2
         },
         "effect": "Effects/impact_glass.effect.json"
       },
       "transform": {
-        "rotation": [
-          0.0,
-          0.0,
-          0.70711,
-          0.70711
-        ],
-        "translation": [
-          7.95,
-          1.5,
-          -24.5
-        ]
+        "rotation": [0, 0, 0.70710677, 0.70710677],
+        "translation": [7.95, 1.5, -24.5]
       }
     },
     {
@@ -722,22 +467,13 @@
       "particles": {
         "burst": {
           "count": 12,
-          "interval": 2.0
+          "interval": 2
         },
         "effect": "Effects/sparks.effect.json"
       },
       "transform": {
-        "rotation": [
-          0.0,
-          0.0,
-          0.70711,
-          0.70711
-        ],
-        "translation": [
-          7.95,
-          2.5,
-          -21.5
-        ]
+        "rotation": [0, 0, 0.70710677, 0.70710677],
+        "translation": [7.95, 2.5, -21.5]
       }
     },
     {
@@ -746,22 +482,13 @@
       "particles": {
         "burst": {
           "count": 20,
-          "interval": 2.0
+          "interval": 2
         },
         "effect": "Effects/blood.effect.json"
       },
       "transform": {
-        "rotation": [
-          0.0,
-          0.0,
-          0.70711,
-          0.70711
-        ],
-        "translation": [
-          7.95,
-          2.5,
-          -23.0
-        ]
+        "rotation": [0, 0, 0.70710677, 0.70710677],
+        "translation": [7.95, 2.5, -23]
       }
     },
     {
@@ -775,17 +502,8 @@
         "effect": "Effects/shell_casings.effect.json"
       },
       "transform": {
-        "rotation": [
-          0.09137,
-          0.0,
-          -0.45683,
-          0.88485
-        ],
-        "translation": [
-          5.0,
-          1.4,
-          -24.0
-        ]
+        "rotation": [0.09136993, 0, -0.4568296, 0.8848493],
+        "translation": [5, 1.4, -24]
       }
     },
     {
@@ -795,106 +513,59 @@
         "effect": "Effects/tracer.effect.json"
       },
       "transform": {
-        "rotation": [
-          0.0,
-          0.0,
-          -0.70711,
-          0.70711
-        ],
-        "translation": [
-          -7.9,
-          1.6,
-          -25.0
-        ]
+        "rotation": [0, 0, -0.70710677, 0.70710677],
+        "translation": [-7.9, 1.6, -25]
       }
     },
     {
       "id": 45,
       "name": "Weather rain 46",
       "transform": {
-        "scale": [
-          16.6,
-          7.0,
-          28.0
-        ],
-        "translation": [
-          0.0,
-          9.0,
-          -28.0
-        ]
+        "scale": [16.6, 7, 28],
+        "translation": [0, 9, -28]
       },
       "weather": {
         "effect": "Effects/rain.effect.json",
-        "rate": 30.0,
-        "reach": 18.0
+        "rate": 30,
+        "reach": 18
       }
     },
     {
       "id": 46,
       "name": "Weather snow 47",
       "transform": {
-        "scale": [
-          3.0,
-          1.0,
-          3.0
-        ],
-        "translation": [
-          4.5,
-          6.0,
-          -6.5
-        ]
+        "scale": [3, 1, 3],
+        "translation": [4.5, 6, -6.5]
       },
       "weather": {
         "effect": "Effects/snow.effect.json",
-        "rate": 40.0,
-        "reach": 15.0
+        "rate": 40
       }
     },
     {
       "id": 47,
       "name": "Weather ash 48",
       "transform": {
-        "scale": [
-          3.0,
-          1.0,
-          3.0
-        ],
-        "translation": [
-          4.5,
-          6.0,
-          -12.5
-        ]
+        "scale": [3, 1, 3],
+        "translation": [4.5, 6, -12.5]
       },
       "weather": {
         "effect": "Effects/ash.effect.json",
-        "rate": 40.0,
-        "reach": 15.0
+        "rate": 40
       }
     },
     {
       "id": 48,
       "lightning": {
         "bolt": "Effects/lightning.ribbon.json",
-        "duration": 0.5,
-        "flash": 400.0,
-        "interval": [
-          5.0,
-          12.0
-        ],
+        "flash": 400,
+        "interval": [5, 12],
         "light": 2
       },
       "name": "Lightning 49",
       "transform": {
-        "scale": [
-          80.0,
-          40.0,
-          10.0
-        ],
-        "translation": [
-          0.0,
-          25.0,
-          -90.0
-        ]
+        "scale": [80, 40, 10],
+        "translation": [0, 25, -90]
       }
     }
   ],

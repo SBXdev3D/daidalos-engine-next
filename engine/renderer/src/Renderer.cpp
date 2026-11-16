@@ -67,6 +67,9 @@ struct OutputPushConstants {
     float paperWhite;
     std::uint32_t hdr10;
     float sharpness;
+    /// Where the scene starts in the window (SceneView::viewport); black around it.
+    std::int32_t sceneX;
+    std::int32_t sceneY;
 };
 constexpr std::uint32_t kNoTexture = 0xFFFFFFFF;
 /// Stops between a level's darkest and brightest exposure beyond which the GPU's fixed exposure loses
@@ -148,6 +151,8 @@ struct Renderer::Impl {
 
     /// The targets follow the size of the back buffer.
     core::Result<void> ResizeTargets(rhi::Extent extent);
+    /// The interface's layer fills the window, whatever part of it the scene fills (ADR-0055).
+    core::Result<void> ResizeInterface(rhi::Extent extent);
     /// Reads the timestamps of the last finished frame recorded in this slot into gpuTimes, and its whole
     /// GPU time into frameGpuTime.
     void ReadGpuTimes(std::uint32_t slot);
@@ -223,6 +228,7 @@ struct Renderer::Impl {
     ImageConfig image;
     /// The interface and the overlay, premultiplied, at the window's size.
     rhi::TextureHandle interfaceLayer;
+    rhi::Extent interfaceExtent{};
     /// The G-buffer's material and what the lighting writes, which the composite puts together into hdr
     /// (ADR-0039, ADR-0044).
     ShadingTargets shading;
@@ -272,7 +278,6 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
     device.DestroyTexture(distortion);
     device.DestroyTexture(hdr);
     device.DestroyTexture(background);
-    device.DestroyTexture(interfaceLayer);
     meshPass->DestroyShadingTargets(shading);
     depth = {};
     normals = {};
@@ -281,7 +286,6 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
     distortion = {};
     hdr = {};
     background = {};
-    interfaceLayer = {};
     DAI_TRY(temporalResolve->Resize(extent));
     DAI_TRY(bloom->Resize(extent));
     DAI_TRY(denoiser->Resize(extent));
@@ -319,12 +323,22 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
                                          .format = kHdrFormat,
                                          .usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDst,
                                          .name = "Behind glass"}));
+    targetExtent = extent;
+    return {};
+}
+
+core::Result<void> Renderer::Impl::ResizeInterface(rhi::Extent extent) {
+    if (interfaceLayer && interfaceExtent == extent) {
+        return {};
+    }
+    device.DestroyTexture(interfaceLayer);
+    interfaceLayer = {};
     DAI_TRY_ASSIGN(interfaceLayer,
                    device.CreateTexture({.extent = extent,
                                          .format = kInterfaceFormat,
                                          .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled,
                                          .name = "Interface"}));
-    targetExtent = extent;
+    interfaceExtent = extent;
     return {};
 }
 
@@ -668,8 +682,26 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     const float preExposure = ExposureScale(gpuEv100);
     const float displayScale = std::exp2(gpuEv100 - impl.eye.Ev100() + impl.exposureCompensation);
 
+    // The scene fills the window, or the view's rectangle of it (ADR-0055); the interface always fills the
+    // window.
+    rhi::Extent sceneExtent = frame.extent;
+    glm::ivec2 sceneOffset{0};
+    if (view.viewport.has_value()) {
+        const ViewRect& rect = *view.viewport;
+        const std::uint32_t x = std::min(rect.x, frame.extent.width);
+        const std::uint32_t y = std::min(rect.y, frame.extent.height);
+        const rhi::Extent fitted{std::min(rect.width, frame.extent.width - x),
+                                 std::min(rect.height, frame.extent.height - y)};
+        if (fitted.width >= 8 && fitted.height >= 8) {
+            sceneExtent = fitted;
+            sceneOffset = {static_cast<int>(x), static_cast<int>(y)};
+        }
+    }
     // A failure from here on still ends the frame: the acquired image must be presented.
-    core::Result<void> status = impl.ResizeTargets(frame.extent);
+    core::Result<void> status = impl.ResizeTargets(sceneExtent);
+    if (status) {
+        status = impl.ResizeInterface(frame.extent);
+    }
     // Temporal antialiasing jitters the camera; the debug views show their own images unjittered.
     const bool taa = impl.antialiasing == Antialiasing::Taa && impl.debugView == DebugView::Off;
     // The render resolution (ADR-0049). Only temporal antialiasing upscales: without it, and in debug views,
@@ -685,9 +717,9 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
          .maxScale = taa ? resolution.scale : 1.0f,
          .minScale = resolution.minScale,
          .budget = resolution.targetFps > 0.0f ? 0.9 * 1000.0 / resolution.targetFps : 0.0});
-    const rhi::Extent renderExtent = RenderExtent(frame.extent, impl.renderScale);
+    const rhi::Extent renderExtent = RenderExtent(sceneExtent, impl.renderScale);
     impl.renderExtent = renderExtent;
-    const float renderScale = static_cast<float>(renderExtent.width) / static_cast<float>(frame.extent.width);
+    const float renderScale = static_cast<float>(renderExtent.width) / static_cast<float>(sceneExtent.width);
     RenderGraph& graph = impl.graph;
     const bool cacheView = impl.debugView == DebugView::RadianceCache;
     const bool reflectionView = impl.debugView == DebugView::Reflections;
@@ -703,7 +735,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     const bool fogView = impl.debugView == DebugView::Fog;
     const bool fog = (impl.fog || fogView) && (impl.debugView == DebugView::Off || fogView);
     if (status && fog) {
-        status = impl.volumetricFog->Resize(frame.extent, impl.fogGrid);
+        status = impl.volumetricFog->Resize(sceneExtent, impl.fogGrid);
     }
     const rhi::TextureHandle fogTexture = fog ? impl.volumetricFog->Output() : rhi::TextureHandle{};
     const glm::vec2 jitter = taa ? Jitter(impl.frameNumber, JitterPositions(renderScale)) : glm::vec2(0.0f);
@@ -711,7 +743,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         status = impl.rayTracing->Reserve(frame.slot, view.draws.size()).and_then([&](std::uint32_t structure) {
             return impl.meshPass->Prepare(
                 view, {.extent = renderExtent,
-                       .targetExtent = frame.extent,
+                       .targetExtent = sceneExtent,
                        // Textures keep the output's detail.
                        .mipBias = std::log2(renderScale),
                        .indirect = indirect,
@@ -910,7 +942,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     // the history over.
     const Upscaler upscaler = resolution.upscaler;
     if (status && hasFrame && taa && upscaler == Upscaler::Fsr3) {
-        status = impl.fsr3->Resize(frame.extent);
+        status = impl.fsr3->Resize(sceneExtent);
     }
     const bool resolve = status && hasFrame && taa;
     if (resolve) {
@@ -950,11 +982,11 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
             {.name = "G-buffer debug view",
              .rendering = rhi::RenderingDesc{.colorTarget = impl.hdr},
              .textures = {{impl.hdr, rhi::Access::ColorTarget, true}, {shown, rhi::Access::FragmentShaderRead}}},
-            [&impl, &frame, shown, normals](rhi::CommandList& commands) {
+            [&impl, sceneExtent, shown, normals](rhi::CommandList& commands) {
                 commands.BindPipeline(impl.gbufferDebug);
                 commands.Push(GBufferDebugPushConstants{
                     impl.device.BindlessIndex(shown), normals ? kShowNormals : kShowMotion,
-                    glm::vec2(static_cast<float>(frame.extent.width), static_cast<float>(frame.extent.height))});
+                    glm::vec2(static_cast<float>(sceneExtent.width), static_cast<float>(sceneExtent.height))});
                 commands.Draw(3);
             });
     }
@@ -967,7 +999,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     // not compared, so that moving objects leave trails in it.
     const bool path = status && hasFrame && impl.debugView == DebugView::Path;
     if (path) {
-        status = impl.pathTracer->Resize(frame.extent);
+        status = impl.pathTracer->Resize(sceneExtent);
     }
     if (path && status) {
         const PathTracerSettings& settings = impl.pathSettings;
@@ -1036,7 +1068,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
 
         // The lit scene is metered for the next frames' exposure; debug views are not.
         if (adapts && hasFrame && impl.debugView == DebugView::Off) {
-            impl.exposureMeter->AddTo(graph, frame.slot, source, frame.extent, preExposure);
+            impl.exposureMeter->AddTo(graph, frame.slot, source, sceneExtent, preExposure);
         }
         // Bloom spreads the lit scene's light; its debug view shows it alone.
         const bool bloomView = impl.debugView == DebugView::Bloom;
@@ -1057,7 +1089,9 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                        .paperWhite = paperWhite,
                                        .hdr10 = hdr10 ? 1U : 0U,
                                        // Sharpening undoes the softness of the temporal history.
-                                       .sharpness = resolve ? std::clamp(impl.image.sharpness, 0.0f, 1.0f) : 0.0f};
+                                       .sharpness = resolve ? std::clamp(impl.image.sharpness, 0.0f, 1.0f) : 0.0f,
+                                       .sceneX = sceneOffset.x,
+                                       .sceneY = sceneOffset.y};
         std::vector<rhi::TextureUse> reads{{frame.backBuffer, rhi::Access::ColorTarget, true},
                                            {source, rhi::Access::FragmentShaderRead}};
         if (layerDrawn) {

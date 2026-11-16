@@ -33,6 +33,9 @@ public:
     explicit DevTools(Application& app);
 
     [[nodiscard]] bool IsOpen() const { return m_open; }
+    /// The line of frame times and counts at the top left while the tools are closed; an editor that shows its own
+    /// hides it.
+    void SetSummaryShown(bool shown) { m_summaryShown = shown; }
     /// Called by the application, which also frees the pointer and holds the game's input.
     void SetOpen(bool open);
 
@@ -88,6 +91,7 @@ private:
 
     Application* m_app;
     Console m_console;
+    bool m_summaryShown = true;
     bool m_open = false;
     bool m_showConsole = true;
     bool m_showStats = true;

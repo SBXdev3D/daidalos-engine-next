@@ -15,6 +15,7 @@
 
 Usage: gltf_to_level.py assets/Factory/Factory.gltf [--factory]
 --factory adds what the sandbox's code used to build for the factory.
+Afterwards, `editor +editor.resave true +editor.level <level>` rewrites the file in the engine's own layout.
 """
 
 import argparse

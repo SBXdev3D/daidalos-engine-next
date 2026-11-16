@@ -131,6 +131,10 @@ void UpdateModifiers(ImGuiIO& io, platform::Key key, bool down) {
 } // namespace
 
 struct DebugUi::Impl {
+    /// What ImGui decided at the start of the frame. Its docking branch clears the flags in Render, so they are
+    /// kept here for code that asks between frames.
+    bool wantsMouse = false;
+    bool wantsKeyboard = false;
     struct GeometryBuffers {
         rhi::BufferHandle vertices;
         rhi::BufferHandle indices;
@@ -287,6 +291,8 @@ void DebugUi::BeginFrame(std::chrono::duration<double> delta, platform::Extent w
     // ImGui rejects a zero delta, which a paused frame timer can produce.
     io.DeltaTime = std::max(static_cast<float>(delta.count()), 1.0e-4f);
     ImGui::NewFrame();
+    m_impl->wantsMouse = io.WantCaptureMouse;
+    m_impl->wantsKeyboard = io.WantCaptureKeyboard;
 }
 
 void DebugUi::EndFrame() {
@@ -357,11 +363,11 @@ core::Result<void> DebugUi::Draw(rhi::CommandList& commands, rhi::Extent extent)
 }
 
 bool DebugUi::WantsMouse() const {
-    return ImGui::GetIO().WantCaptureMouse;
+    return m_impl->wantsMouse;
 }
 
 bool DebugUi::WantsKeyboard() const {
-    return ImGui::GetIO().WantCaptureKeyboard;
+    return m_impl->wantsKeyboard;
 }
 
 } // namespace daidalos::debugui

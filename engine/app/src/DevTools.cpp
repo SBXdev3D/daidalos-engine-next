@@ -207,7 +207,9 @@ void DevTools::Draw(const core::FrameTime& time) {
     m_frameCount = std::min(m_frameCount + 1, kFrameHistory);
 
     if (!m_open) {
-        DrawSummary();
+        if (m_summaryShown) {
+            DrawSummary();
+        }
         return;
     }
     DrawMenu();

@@ -94,6 +94,15 @@ build/linux-clang-debug/apps/sandbox/sandbox        # Linux
 
 It finds `assets/` from anywhere in the repository, so it also starts with a double-click. The level is committed, and [docs/DEMO.md](docs/DEMO.md) explains how to play.
 
+### Running the level editor
+
+```bash
+build/windows-msvc/apps/editor/Release/editor.exe   # Windows, development builds only
+build/linux-clang-debug/apps/editor/editor          # Linux
+```
+
+It opens `Factory/Factory.level.json`, or the level given with `+editor.level <path under assets/>` (ADR-0055). Hold the right mouse button to fly with WASD, Q and E; click to select; W, E and R choose the move, rotate and scale gizmos; F frames the selection; Ctrl+S saves the level file.
+
 In development builds, editing a file in `engine/renderer/shaders/` reloads it while the sandbox runs; a shader that does not compile leaves the previous one running and shows the error in the overlay. The sandbox writes `sandbox.log` and, on Windows, crash dumps to `crashdumps/` in the working directory.
 
 Settings are configuration variables (cvars). Every application reads the engine's settings from `daidalos.cfg` next to its executable, then a file of its own, such as the sandbox's `sandbox.cfg`. The build copies both, commented, from `config/daidalos.cfg` and `apps/sandbox/sandbox.cfg` the first time, and leaves them alone afterwards. The command line overrides them with `+name value`:
