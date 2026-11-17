@@ -281,6 +281,22 @@ void LevelInstance::Make(const LevelEntity& entity) {
     if (entity.visibility) {
         world.Add<RayVisibility>(created, *entity.visibility);
     }
+    if (entity.decal) {
+        world.Add<Decal>(created, *entity.decal);
+        DecalTextures textures;
+        if (core::Result<rhi::TextureHandle> albedo = assets.LoadTexture(Resolve(entity.decal->texture))) {
+            textures.albedo = *albedo;
+        } else {
+            DAI_LOG_WARNING(kModule, "Level entity {} '{}': {}", entity.id, entity.name, core::Format(albedo.error()));
+        }
+        if (!entity.decal->normal.empty()) {
+            if (core::Result<rhi::TextureHandle> normal =
+                    assets.LoadTexture(Resolve(entity.decal->normal), resources::TextureUse::Normal)) {
+                textures.normal = *normal;
+            }
+        }
+        world.Add<DecalTextures>(created, textures);
+    }
     if (entity.fog) {
         world.Add<FogVolume>(created, *entity.fog);
     }

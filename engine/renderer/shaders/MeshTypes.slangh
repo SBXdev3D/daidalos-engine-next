@@ -66,6 +66,10 @@ struct FrameData {
     uint fogVolumeCount;
     uint fogTexture;      // The fog in front of each point of the view (VolumetricFog), or kNoTexture.
     uint fogAliasBuffer;  // The fog's alias table of the sources, by power near the camera (ADR-0051).
+    uint decalBuffer;     // The frame's decals (ADR-0060, Decals.slangh), and how many.
+    uint decalCount;
+    uint debugFlags;      // kDebugDecals shows what decals cover.
+    uint framePadding;
 };
 
 // From texture coordinates of the frame, over the corner it draws into, to those of its targets, for
@@ -141,7 +145,7 @@ struct InstanceData {
     // world space; kNoTexture for a rigid draw.
     uint previousPositions;
     float emissiveScale; // Multiplies its material's emission: an animated lamp's glow (ADR-0057).
-    uint2 padding;
+    uint2 decalMask;     // The frame's decals that touch it, a bit each (ADR-0060).
 };
 
 

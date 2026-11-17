@@ -121,6 +121,8 @@ struct LevelEntity {
     std::optional<LevelLightning> lightning;
     /// Which rays see its meshes and those under it (ADR-0059).
     std::optional<RayVisibility> visibility;
+    /// A decal its box projects (ADR-0060).
+    std::optional<Decal> decal;
     std::optional<Tags> game;
     [[nodiscard]] bool operator==(const LevelEntity&) const;
 };

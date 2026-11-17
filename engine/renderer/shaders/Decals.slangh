@@ -1,0 +1,89 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+#ifndef DAIDALOS_DECALS_SLANGH
+#define DAIDALOS_DECALS_SLANGH
+
+// Decals in the material function (ADR-0060): a box projects an image along its -Z onto what is inside it,
+// changing the surface's base color, roughness, metalness and normal before it is lit. The G-buffer and ray
+// hits both call ApplyDecals, so decals show in reflections and in bounced light as on screen. Each draw
+// names the decals that touch it in a 64-bit mask, so a pixel tests only those. Include after MeshTypes.slangh.
+
+// Matches DecalData in renderer/src/MeshPass.cpp.
+struct DecalData {
+    float4x4 worldToBox;
+    float3 forward;  // The direction it projects along, in world space: the box's -Z.
+    float opacity;
+    float3 color;    // Multiplies its image.
+    float roughness;
+    uint albedo;     // Its image, with its coverage in alpha.
+    uint normal;     // Its normal map, or kNoTexture.
+    float metallic;
+    float angleFade; // Surfaces turned further than this cosine from facing it fade out.
+    float3 right;    // The box's +X and +Y in world space, the image's axes.
+    float texelSize; // Meters per texel of its image along its width.
+    float3 up;
+    uint padding;
+};
+
+[[vk::binding(2, 0)]] StructuredBuffer<DecalData> g_decals[];
+
+// What a debug view shows (FrameData::debugFlags).
+static const uint kDebugDecals = 1;
+
+// Changes a surface by the decals of its draw's mask. footprint is the meters a pixel covers there, from which
+// the image's level is chosen; lod0 reads full detail instead, as ray hits do.
+void ApplyDecals(FrameData frame, uint2 mask, float3 position, float footprint, inout float3 baseColor,
+                 inout float metallic, inout float roughness, inout float3 normal) {
+    if (frame.decalCount == 0 || all(mask == 0)) {
+        return;
+    }
+    float covered = 0.0;
+    uint2 remaining = mask;
+    while (any(remaining != 0)) {
+        uint index;
+        if (remaining.x != 0) {
+            index = firstbitlow(remaining.x);
+            remaining.x &= remaining.x - 1;
+        } else {
+            index = 32 + firstbitlow(remaining.y);
+            remaining.y &= remaining.y - 1;
+        }
+        if (index >= frame.decalCount) {
+            continue;
+        }
+        const DecalData decal = g_decals[frame.decalBuffer][index];
+        const float3 local = mul(decal.worldToBox, float4(position, 1.0)).xyz;
+        if (any(abs(local) > 0.5)) {
+            continue;
+        }
+        // Surfaces that face away from the projection, and the box's ends, fade out.
+        const float facing = dot(normal, -decal.forward);
+        const float fade = saturate((facing - decal.angleFade) / max(1.0 - decal.angleFade, 1e-3)) *
+                           saturate((0.5 - abs(local.z)) * 8.0);
+        if (fade <= 0.0) {
+            continue;
+        }
+        const float2 uv = float2(local.x + 0.5, 0.5 - local.y);
+        const float level = footprint > 0.0 ? max(log2(footprint / max(decal.texelSize, 1e-6)), 0.0) : 0.0;
+        const float4 image = g_textures[decal.albedo].SampleLevel(g_samplers[kSamplerLinearClamp], uv, level);
+        const float alpha = saturate(image.a * decal.opacity * fade);
+        if (alpha <= 0.0) {
+            continue;
+        }
+        baseColor = lerp(baseColor, image.rgb * decal.color, alpha);
+        roughness = lerp(roughness, decal.roughness, alpha);
+        metallic = lerp(metallic, decal.metallic, alpha);
+        if (decal.normal != kNoTexture) {
+            float2 tilt = g_textures[decal.normal].SampleLevel(g_samplers[kSamplerLinearClamp], uv, level).rg * 2.0 - 1.0;
+            normal = normalize(normal + (decal.right * tilt.x + decal.up * tilt.y) * alpha);
+        }
+        covered = max(covered, alpha);
+    }
+    if ((frame.debugFlags & kDebugDecals) != 0) {
+        baseColor = lerp(baseColor, float3(1.0, 0.0, 1.0), covered);
+    }
+}
+
+#endif

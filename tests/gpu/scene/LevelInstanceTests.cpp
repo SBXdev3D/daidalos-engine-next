@@ -175,3 +175,23 @@ TEST_F(LevelInstanceTest, SyncAppliesTheEnvironment) {
 }
 
 } // namespace
+
+TEST_F(LevelInstanceTest, SpawnedDecalsFadeAndKeepToTheirNumber) {
+    const core::Result<rhi::TextureHandle> image = m_scene->Assets().LoadTexture("Factory/Decals/bullet_hole.png");
+    ASSERT_TRUE(image.has_value()) << core::Format(image.error());
+    for (std::size_t index = 0; index < scene::Scene::kMaxTransientDecals + 10; ++index) {
+        m_scene->SpawnDecal({.position = glm::vec3(static_cast<float>(index), 0.0f, 0.0f),
+                             .albedo = *image,
+                             .lifetime = 10.0f,
+                             .fade = 4.0f});
+    }
+    EXPECT_EQ(m_scene->TransientDecalCount(), scene::Scene::kMaxTransientDecals) << "The oldest go";
+    m_scene->RunFrame(core::Seconds(8.0));
+    renderer::SceneView view;
+    m_scene->Extract(view);
+    ASSERT_EQ(view.decals.size(), scene::Scene::kMaxTransientDecals);
+    EXPECT_NEAR(view.decals.front().opacity, 0.5f, 1e-4f) << "Two seconds left of four of fading";
+    EXPECT_NEAR(view.decals.front().world[3].x, 10.0f, 1e-4f) << "The first ten went";
+    m_scene->RunFrame(core::Seconds(3.0));
+    EXPECT_EQ(m_scene->TransientDecalCount(), 0U);
+}

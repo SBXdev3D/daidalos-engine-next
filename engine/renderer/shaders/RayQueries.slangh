@@ -130,6 +130,7 @@ bool Occluded(RayDesc ray, uint structure, uint instanceBuffer, uint materialBuf
 // The surface at a hit, as the G-buffer holds it: its material, read at full detail, and its normal,
 // with the normal map, turned towards the ray as the G-buffer does for the back of double-sided surfaces.
 import Bsdf;
+#include "Decals.slangh"
 
 struct Surface {
     float3 position;
@@ -176,11 +177,14 @@ Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame, uint instanceBuf
     }
     surface.normal = normal;
 
-    const float4 baseColor = material.baseColorFactor * SampleLevelZero(material.baseColorTexture, vertex.uv, float4(1.0, 1.0, 1.0, 1.0));
+    float4 baseColor = material.baseColorFactor * SampleLevelZero(material.baseColorTexture, vertex.uv, float4(1.0, 1.0, 1.0, 1.0));
     // glTF: roughness in green, metalness in blue.
     const float4 metallicRoughness = SampleLevelZero(material.metallicRoughnessTexture, vertex.uv, float4(1.0, 1.0, 1.0, 1.0));
-    const float metallic = saturate(material.metallicFactor * metallicRoughness.b);
+    float metallic = saturate(material.metallicFactor * metallicRoughness.b);
     surface.roughness = clamp(material.roughnessFactor * metallicRoughness.g, 0.045, 1.0);
+    // Decals show in reflections and bounced light as on screen (ADR-0060), at a detail the hit's distance allows.
+    ApplyDecals(frame, instance.decalMask, surface.position, hit.distance * 0.002, baseColor.rgb, metallic,
+                surface.roughness, surface.normal);
     surface.diffuseColor = baseColor.rgb * (1.0 - metallic);
     surface.f0 = lerp(float3(0.04, 0.04, 0.04), baseColor.rgb, metallic);
     // Nits, times the frame's exposure (ADR-0043).

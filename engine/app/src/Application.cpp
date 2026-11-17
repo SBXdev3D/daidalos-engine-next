@@ -107,12 +107,15 @@ renderer::DebugView DebugViewMode(const core::CVar<std::string>& cvar) {
     if (name == "layers") {
         return renderer::DebugView::Layers;
     }
+    if (name == "decals") {
+        return renderer::DebugView::Decals;
+    }
     static std::string warned;
     if (name != "off" && name != warned) {
         warned = name;
         DAI_LOG_WARNING(kModule,
                         "Unknown debug view '{}': use off, rays, path, motion, normals, indirect, radiance_cache, "
-                        "reflections, lights, bloom, fog or layers",
+                        "reflections, lights, bloom, fog, layers or decals",
                         name);
     }
 
@@ -262,7 +265,11 @@ core::Result<void> Application::Start(IApplicationHandler& handler) {
     }
     DAI_TRY(Starting("configuration", LoadConfiguration()));
 
-    DAI_TRY_ASSIGN(platform::Platform platform, Starting("platform", platform::Platform::Create(m_config.platform)));
+    platform::PlatformConfig platformConfig = m_config.platform;
+    if (m_directInput.has_value()) {
+        platformConfig.directInputGamepads = platformConfig.directInputGamepads || m_directInput->Get();
+    }
+    DAI_TRY_ASSIGN(platform::Platform platform, Starting("platform", platform::Platform::Create(platformConfig)));
     m_platform.emplace(std::move(platform));
     DAI_TRY(Starting("main window", CreateMainWindow()));
 
@@ -390,7 +397,7 @@ core::Result<void> Application::LoadConfiguration() {
         m_debugView = m_cvars.Register<std::string>(
             "renderer.debug_view", "off",
             "Shows a debug view instead of the lit scene: off, rays, path, motion, normals, indirect, "
-            "radiance_cache, reflections, lights, bloom, fog or layers");
+            "radiance_cache, reflections, lights, bloom, fog, layers or decals");
         m_pathBounces = m_cvars.Register<std::int64_t>(
             "renderer.path_bounces", 4, "Surfaces a path of the path tracer meets at most; 1 is direct light only");
         m_pathSamples = m_cvars.Register<std::int64_t>(
@@ -403,6 +410,9 @@ core::Result<void> Application::LoadConfiguration() {
         m_musicVolume = m_cvars.Register<double>("audio.music", 1.0, "Volume of music, from 0 to 1");
         m_mouseSensitivity =
             m_cvars.Register<double>("input.mouse_sensitivity", 0.0025, "Radians of turn per mouse unit");
+        m_directInput = m_cvars.Register<bool>(
+            "input.directinput", false,
+            "Gamepads through DirectInput, for old pads; on some machines it delays the start by tens of seconds");
     }
 
     for (const std::filesystem::path& configFile : m_config.configFiles) {

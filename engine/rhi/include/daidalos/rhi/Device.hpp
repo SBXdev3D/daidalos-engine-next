@@ -138,6 +138,8 @@ public:
     [[nodiscard]] std::uint32_t StorageImageIndex(TextureHandle texture) const;
     /// Index of a sampled texture in the g_textures array of shaders, or of a cube in g_cubeTextures.
     [[nodiscard]] std::uint32_t BindlessIndex(TextureHandle texture) const;
+    /// The size of a texture's largest level.
+    [[nodiscard]] Extent TextureExtent(TextureHandle texture) const;
     /// Index of a BufferUsage::Storage buffer in the storage buffer arrays of shaders.
     [[nodiscard]] std::uint32_t StorageIndex(BufferHandle buffer) const;
 

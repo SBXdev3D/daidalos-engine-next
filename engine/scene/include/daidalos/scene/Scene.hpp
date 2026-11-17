@@ -15,6 +15,7 @@
 #include <daidalos/scene/Systems.hpp>
 
 #include <chrono>
+#include <deque>
 #include <filesystem>
 #include <optional>
 #include <utility>
@@ -76,6 +77,27 @@ public:
     /// Seconds of unpaused frames, which animated lights follow.
     [[nodiscard]] double LightClock() const { return m_lightClock; }
 
+    /// A decal that comes and goes (ADR-0060): a bullet hole, a splash of blood. It lies on the surface at
+    /// position, facing along normal, turned by a random angle, and fades out over the last seconds of its life.
+    /// The oldest go first once there are kMaxTransientDecals.
+    struct DecalSpawn {
+        glm::vec3 position{0.0f};
+        glm::vec3 normal{0.0f, 1.0f, 0.0f};
+        /// Meters across, and how deep it reaches into the surface and out of it.
+        float size = 0.1f;
+        float depth = 0.1f;
+        rhi::TextureHandle albedo;
+        rhi::TextureHandle normalMap;
+        glm::vec3 color{1.0f};
+        float roughness = 0.6f;
+        float metallic = 0.0f;
+        float lifetime = 60.0f;
+        float fade = 5.0f;
+    };
+    static constexpr std::size_t kMaxTransientDecals = 96;
+    void SpawnDecal(const DecalSpawn& spawn);
+    [[nodiscard]] std::size_t TransientDecalCount() const { return m_transientDecals.size(); }
+
     void SetPaused(bool paused);
     [[nodiscard]] bool IsPaused() const { return m_paused; }
 
@@ -114,6 +136,14 @@ private:
     /// Seconds of the last frame, for the particles of the next view.
     float m_frameDelta = 0.0f;
     double m_lightClock = 0.0;
+    struct TransientDecal {
+        renderer::Decal decal;
+        float age = 0.0f;
+        float lifetime = 0.0f;
+        float fade = 0.0f;
+    };
+    std::deque<TransientDecal> m_transientDecals;
+    std::uint32_t m_decalSeed = 0x9e3779b9U;
     PowerCircuits m_power;
     std::vector<renderer::ParticleSpawn> m_bursts;
     EmissionView m_emission;

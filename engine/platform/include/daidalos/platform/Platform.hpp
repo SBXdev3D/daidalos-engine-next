@@ -31,6 +31,10 @@ struct PlatformConfig {
     /// Video driver to use. Empty selects the best one for the system. "dummy" opens windows without
     /// a display, which is what tests and CI use.
     std::string videoDriver;
+    /// Gamepads through DirectInput, for old pads that speak nothing else. Off by default: on some machines a
+    /// device makes DirectInput's enumeration take tens of seconds, and SDL's other drivers (XInput, raw input,
+    /// HID) see every recent pad.
+    bool directInputGamepads = false;
 };
 
 /// Owns the platform layer (SDL3, hidden from users, ADR-0004).

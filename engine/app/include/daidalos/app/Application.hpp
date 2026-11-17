@@ -255,6 +255,7 @@ private:
     std::optional<core::CVar<double>> m_effectsVolume;
     std::optional<core::CVar<double>> m_musicVolume;
     std::optional<core::CVar<double>> m_mouseSensitivity;
+    std::optional<core::CVar<bool>> m_directInput;
     std::optional<platform::Platform> m_platform;
     std::optional<platform::Window> m_window;
     std::optional<core::WorkerPool> m_workers;

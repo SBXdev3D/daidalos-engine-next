@@ -64,6 +64,8 @@ struct FrameTargets {
     /// the smaller of GlobalIllumination::kSharpRoughness and the roughness above which no reflection is
     /// traced; 0 without.
     float sharpReflections = 0.0f;
+    /// Tints what decals cover (DebugView::Decals, ADR-0060).
+    bool showDecals = false;
 };
 
 /// What the G-buffer holds of the material, and what the lighting pass writes (ADR-0039, ADR-0044), which
@@ -352,6 +354,9 @@ private:
         /// The boxes of fog (ADR-0051).
         rhi::BufferHandle fogVolumes;
         std::uint64_t fogVolumeCapacity = 0;
+        /// The frame's decals (ADR-0060), kMaxDecals at most.
+        rhi::BufferHandle decals;
+        std::uint64_t decalCapacity = 0;
     };
 
     MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);

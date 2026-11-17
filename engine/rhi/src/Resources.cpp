@@ -434,6 +434,10 @@ std::uint32_t Device::BindlessIndex(TextureHandle texture) const {
     return data.bindlessIndex;
 }
 
+Extent Device::TextureExtent(TextureHandle texture) const {
+    return m_impl->textures.Get(texture).extent;
+}
+
 core::Result<PipelineHandle> Device::CreatePipeline(const GraphicsPipelineDesc& desc) {
 
     const auto createModule = [this](std::span<const std::uint32_t> code, VkShaderModule& module) {
