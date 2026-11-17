@@ -3,6 +3,7 @@ dai_add_test(NAME daidalos_renderer_tests
         CanvasTests.cpp
         ContextTests.cpp
         DisplayTransformTests.cpp
+        CameraEffectsTests.cpp
         DynamicResolutionTests.cpp
         ExposureTests.cpp
 

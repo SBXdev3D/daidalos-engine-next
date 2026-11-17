@@ -953,6 +953,10 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
     ecs::Schedule& systems = scene.FrameSystems();
     systems.Add("Look", [&, player](ecs::World& world, core::Seconds delta) {
         if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
+            if (scene::Camera* camera = world.TryGet<scene::Camera>(entity)) {
+                camera->aperture = settings.aperture;
+                camera->focusDistance = settings.focusDistance;
+            }
             LookAround(entity, scene, input, actions, settings.mouseSensitivity, static_cast<float>(delta.count()));
         }
     });

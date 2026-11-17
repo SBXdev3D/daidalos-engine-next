@@ -20,6 +20,14 @@ struct OutputPushConstants {
     float sharpness; // Of the contrast-adaptive sharpening, from 0 (none) to 1.
     int sceneX;      // Where the scene starts in the window (ADR-0055): black around it.
     int sceneY;
+    float grain;      // The lens and film (ADR-0063), each from 0 (none) to 1.
+    float vignette;
+    float aberration;
+    float lensDirt;   // Needs the bloom.
+    uint frame;       // Moves the grain.
+    uint padding0;
+    uint padding1;
+    uint padding2;
 };
 
 static const uint kNone = 0xFFFFFFFF;
@@ -146,6 +154,42 @@ float3 Sharpen(int2 pixel, int2 size, float sharpness) {
     return Expand(clamp((lobe * (north + west + east + south) + center) / (4.0 * lobe + 1.0), 0.0, 0.999));
 }
 
+uint LensHash(uint value) {
+    value ^= value >> 16;
+    value *= 0x7feb352d;
+    value ^= value >> 15;
+    value *= 0x846ca68b;
+    value ^= value >> 16;
+    return value;
+}
+
+float LensRandom(uint2 cell, uint salt) {
+    return float(LensHash(cell.x * 73856093u ^ cell.y * 19349663u ^ salt) & 0xFFFF) / 65535.0;
+}
+
+// Smudges and specks on the lens, from 0 to 1: blobs of grease in a coarse grid, specks of dust in a fine
+// one, each at a place and of a size of its own. The same every frame.
+float LensDirt(float2 uv, float aspect) {
+    float dirt = 0.0;
+    const float2 p = uv * float2(aspect, 1.0);
+    for (uint layer = 0; layer < 2; ++layer) {
+        const float cells = layer == 0 ? 3.0 : 14.0;
+        const float2 q = p * cells;
+        const int2 base = int2(floor(q));
+        for (int y = -1; y <= 1; ++y) {
+            for (int x = -1; x <= 1; ++x) {
+                const uint2 cell = uint2(base + int2(x, y) + 1000);
+                const float2 center = float2(cell) - 1000.0 + float2(LensRandom(cell, layer * 2), LensRandom(cell, layer * 2 + 1));
+                const float size = layer == 0 ? lerp(0.25, 0.6, LensRandom(cell, 7)) : lerp(0.04, 0.12, LensRandom(cell, 9));
+                const float d = length(q - center) / size;
+                const float strength = layer == 0 ? lerp(0.15, 0.5, LensRandom(cell, 11)) : (LensRandom(cell, 13) < 0.35 ? 1.0 : 0.0);
+                dirt += strength * saturate(1.0 - d * d) * saturate(1.0 - d * d);
+            }
+        }
+    }
+    return saturate(dirt);
+}
+
 float4 PSMain(float4 position : SV_Position) : SV_Target {
     const int2 pixel = int2(position.xy);
     uint width;
@@ -159,13 +203,36 @@ float4 PSMain(float4 position : SV_Position) : SV_Target {
         } else {
             color = max(g_textures[g_push.scene].Load(int3(scenePixel, 0)).rgb, 0.0);
         }
+        const float2 uv = (float2(scenePixel) + 0.5) / float2(width, height);
+        const float2 fromCenter = (uv - 0.5) * float2(float(width) / float(height), 1.0);
+        if (g_push.aberration > 0.0) {
+            // Red and blue land a little apart towards the edges, as through a plain lens.
+            const float2 shift = (uv - 0.5) * g_push.aberration * 0.012;
+            color.r = max(g_textures[g_push.scene].SampleLevel(g_samplers[kSamplerLinearClamp], uv + shift, 0.0).r, 0.0);
+            color.b = max(g_textures[g_push.scene].SampleLevel(g_samplers[kSamplerLinearClamp], uv - shift, 0.0).b, 0.0);
+        }
         if (g_push.bloom != kNone) {
-            const float2 uv = (float2(scenePixel) + 0.5) / float2(width, height);
-            const float3 bloom = g_textures[g_push.bloom].SampleLevel(g_samplers[kSamplerLinearClamp], uv, 0.0).rgb;
-            color = lerp(color, max(bloom, 0.0), g_push.bloomShare);
+            const float3 bloom = max(g_textures[g_push.bloom].SampleLevel(g_samplers[kSamplerLinearClamp], uv, 0.0).rgb, 0.0);
+            color = lerp(color, bloom, g_push.bloomShare);
+            if (g_push.lensDirt > 0.0) {
+                // The dirt scatters the light that crosses it: bright light in the view lights it up.
+                color += bloom * LensDirt(uv, float(width) / float(height)) * g_push.lensDirt * 2.0;
+            }
+        }
+        if (g_push.vignette > 0.0) {
+            // Light falls off towards the corners, about as the fourth power of the cosine of the angle.
+            const float r2 = dot(fromCenter, fromCenter);
+            color *= lerp(1.0, 1.0 / ((1.0 + r2 * 0.6) * (1.0 + r2 * 0.6)), g_push.vignette);
         }
         color *= g_push.scale;
         color = g_push.toneMapper == 0 ? AgX(color) : PbrNeutral(color);
+        if (g_push.grain > 0.0) {
+            // Film grain, new each frame: strongest in the mid-tones, as silver grains show most there.
+            const float noise = LensRandom(uint2(scenePixel), g_push.frame * 2654435761u) +
+                                LensRandom(uint2(scenePixel), g_push.frame * 2246822519u + 1u) - 1.0;
+            const float luma = dot(color, float3(0.2126, 0.7152, 0.0722));
+            color = max(color + noise * g_push.grain * 0.25 * sqrt(saturate(luma)) * (1.0 - saturate(luma) * 0.5), 0.0);
+        }
         color = ExpandHighlights(color, g_push.headroom);
     }
     if (g_push.layer != kNone) {

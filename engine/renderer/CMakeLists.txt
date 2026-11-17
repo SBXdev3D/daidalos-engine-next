@@ -18,6 +18,7 @@ dai_add_module(NAME renderer
         src/CornellBox.cpp
         src/DarkCorridor.cpp
         src/Bloom.cpp
+        src/CameraEffects.cpp
         src/Bloom.hpp
         src/DisplayTransform.cpp
         src/DynamicResolution.cpp
@@ -75,7 +76,7 @@ dai_add_shaders(TARGET daidalos_renderer
         shaders/RestirCandidates.slang shaders/RestirTemporal.slang shaders/RestirSpatial.slang
         shaders/RestirSpatialUnbiased.slang shaders/RestirShade.slang
         shaders/EmissiveAverage.slang shaders/EmissiveTriangles.slang shaders/ExposureHistogram.slang shaders/Bloom.slang
-        shaders/FogLighting.slang shaders/FogIntegrate.slang shaders/FogSmoke.slang
+        shaders/FogLighting.slang shaders/FogIntegrate.slang shaders/FogSmoke.slang shaders/CameraEffects.slang
     INCLUDES shaders/Bsdf.slang shaders/RayQueries.slangh shaders/GlobalIllumination.slangh shaders/MeshCommon.slangh shaders/GBufferSurface.slangh shaders/MeshTypes.slangh shaders/Particles.slangh shaders/ParticleSpawning.slangh
         shaders/Denoiser.slangh shaders/Random.slangh shaders/Lights.slangh shaders/GBuffer.slangh shaders/Restir.slangh shaders/RestirSpatial.slangh shaders/Fog.slangh
         shaders/Decals.slangh shaders/Wetness.slangh shaders/ParticleTypes.slangh)

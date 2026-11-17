@@ -327,6 +327,16 @@ core::Result<void> Application::LoadConfiguration() {
                                            "Share of the image that is its bloom, from 0 (none) to 1");
         m_sharpness = m_cvars.Register<double>("renderer.sharpness", 0.25,
                                                "Sharpening of the antialiased image, from 0 (none) to 1");
+        m_filmGrain = m_cvars.Register<double>("renderer.film_grain", 0.35, "Film grain, from 0 (none) to 1");
+        m_vignette =
+            m_cvars.Register<double>("renderer.vignette", 0.5, "Darker corners, as through a lens, from 0 (none) to 1");
+        m_chromaticAberration = m_cvars.Register<double>("renderer.chromatic_aberration", 0.0,
+                                                         "Red and blue split towards the edges, from 0 (none) to 1");
+        m_lensDirt = m_cvars.Register<double>("renderer.lens_dirt", 0.5,
+                                              "Smudges on the lens that bright light lights up, from 0 (none) to 1");
+        m_motionBlur =
+            m_cvars.Register<double>("renderer.motion_blur", 0.0,
+                                     "Motion blur: the fraction of a frame the shutter is open, from 0 (none) to 1");
         m_renderScale = m_cvars.Register<double>(
             "renderer.render_scale", 1.0,
             "Render size over the window's, from 0.5 to 1, upscaled by temporal antialiasing; with dynamic "
@@ -604,7 +614,12 @@ renderer::ImageConfig Application::Image() const {
             .hdr = m_hdr->Get(),
             .hdrPaperWhite = static_cast<float>(std::max(m_hdrPaperWhite->Get(), 0.0)),
             .hdrPeak = static_cast<float>(std::max(m_hdrPeak->Get(), 0.0)),
-            .sharpness = static_cast<float>(std::clamp(m_sharpness->Get(), 0.0, 1.0))};
+            .sharpness = static_cast<float>(std::clamp(m_sharpness->Get(), 0.0, 1.0)),
+            .filmGrain = static_cast<float>(std::clamp(m_filmGrain->Get(), 0.0, 1.0)),
+            .vignette = static_cast<float>(std::clamp(m_vignette->Get(), 0.0, 1.0)),
+            .chromaticAberration = static_cast<float>(std::clamp(m_chromaticAberration->Get(), 0.0, 1.0)),
+            .lensDirt = static_cast<float>(std::clamp(m_lensDirt->Get(), 0.0, 1.0)),
+            .motionBlur = static_cast<float>(std::clamp(m_motionBlur->Get(), 0.0, 1.0))};
 }
 
 renderer::ResolutionConfig Application::Resolution() const {

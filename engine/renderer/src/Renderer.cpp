@@ -28,6 +28,7 @@
 #include <utility>
 
 #include "Bloom.hpp"
+#include "CameraEffects.hpp"
 #include "Denoiser.hpp"
 #include "DirectLighting.hpp"
 #include "DynamicResolution.hpp"
@@ -70,6 +71,13 @@ struct OutputPushConstants {
     /// Where the scene starts in the window (SceneView::viewport); black around it.
     std::int32_t sceneX;
     std::int32_t sceneY;
+    /// The lens (ADR-0063).
+    float grain;
+    float vignette;
+    float aberration;
+    float lensDirt;
+    std::uint32_t frame;
+    std::array<std::uint32_t, 3> padding;
 };
 constexpr std::uint32_t kNoTexture = 0xFFFFFFFF;
 /// Stops between a level's darkest and brightest exposure beyond which the GPU's fixed exposure loses
@@ -110,6 +118,7 @@ struct Renderer::Impl {
         volumetricFog.reset();
         exposureMeter.reset();
         bloom.reset();
+        cameraEffects.reset();
         temporalResolve.reset();
         fsr3.reset();
         denoiser.reset();
@@ -185,6 +194,7 @@ struct Renderer::Impl {
     Upscaler upscaledBy = Upscaler::Engine;
     std::optional<ExposureMeter> exposureMeter;
     std::optional<Bloom> bloom;
+    std::optional<CameraEffects> cameraEffects;
     /// The eye's exposure, the last metering and histogram, and the range of the last frame (ADR-0048).
     EyeAdaptation eye;
     float meteredEv100 = std::numeric_limits<float>::quiet_NaN();
@@ -297,6 +307,7 @@ core::Result<void> Renderer::Impl::ResizeTargets(rhi::Extent extent) {
     background = {};
     DAI_TRY(temporalResolve->Resize(extent));
     DAI_TRY(bloom->Resize(extent));
+    DAI_TRY(cameraEffects->Resize(extent));
     DAI_TRY(denoiser->Resize(extent));
     DAI_TRY(directLighting->Resize(extent));
     DAI_TRY_ASSIGN(shading, meshPass->CreateShadingTargets(extent));
@@ -459,6 +470,8 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     impl->exposureMeter.emplace(std::move(exposureMeter));
     DAI_TRY_ASSIGN(Bloom bloom, Bloom::Create(impl->device));
     impl->bloom.emplace(std::move(bloom));
+    DAI_TRY_ASSIGN(CameraEffects cameraEffects, CameraEffects::Create(impl->device));
+    impl->cameraEffects.emplace(std::move(cameraEffects));
     DAI_TRY_ASSIGN(Denoiser denoiser, Denoiser::Create(impl->device));
     impl->denoiser.emplace(std::move(denoiser));
     DAI_TRY_ASSIGN(DirectLighting directLighting, DirectLighting::Create(impl->device));
@@ -1093,14 +1106,25 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         }
     }
     if (status) {
-        const rhi::TextureHandle source = path                           ? impl.pathTracer->Output()
-                                          : illuminate && reflectionView ? impl.globalIllumination->Reflections()
-                                          : illuminate && indirectView   ? impl.globalIllumination->Output()
-                                          : light && lightsView          ? impl.directLighting->DebugOutput()
-                                          : resolve && upscaler == Upscaler::Fsr3 ? impl.fsr3->Output()
-                                          : resolve                               ? impl.temporalResolve->Output()
-                                                                                  : impl.hdr;
+        rhi::TextureHandle source = path                                    ? impl.pathTracer->Output()
+                                    : illuminate && reflectionView          ? impl.globalIllumination->Reflections()
+                                    : illuminate && indirectView            ? impl.globalIllumination->Output()
+                                    : light && lightsView                   ? impl.directLighting->DebugOutput()
+                                    : resolve && upscaler == Upscaler::Fsr3 ? impl.fsr3->Output()
+                                    : resolve                               ? impl.temporalResolve->Output()
+                                                                            : impl.hdr;
 
+        // The lens and the shutter (ADR-0063): depth of field and motion blur, on the lit scene only.
+        if (hasFrame && resolve && impl.debugView == DebugView::Off && !path && view.camera.has_value()) {
+            source = impl.cameraEffects->AddTo(graph, {.frameBuffer = impl.meshPass->FrameDataIndex(),
+                                                       .color = source,
+                                                       .depth = impl.depth,
+                                                       .motion = impl.motion,
+                                                       .aperture = view.camera->aperture,
+                                                       .focusDistance = view.camera->focusDistance,
+                                                       .verticalFov = impl.meshPass->FramePerspective().verticalFov,
+                                                       .shutter = impl.image.motionBlur});
+        }
         // The lit scene is metered for the next frames' exposure; debug views are not.
         if (adapts && hasFrame && impl.debugView == DebugView::Off) {
             impl.exposureMeter->AddTo(graph, frame.slot, source, sceneExtent, preExposure);
@@ -1113,20 +1137,28 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
             impl.bloom->AddTo(graph, source);
         }
         const bool hdr10 = impl.swapchain.CurrentColorSpace() == rhi::ColorSpace::Hdr10;
-        const OutputPushConstants push{.scene = impl.device.BindlessIndex(source),
-                                       .bloom = blooms ? impl.device.BindlessIndex(impl.bloom->Output()) : kNoTexture,
-                                       .layer =
-                                           layerDrawn ? impl.device.BindlessIndex(impl.interfaceLayer) : kNoTexture,
-                                       .toneMapper = impl.image.toneMapper == ToneMapper::AgX ? 0U : 1U,
-                                       .scale = displayScale,
-                                       .bloomShare = blooms ? bloomShare : 0.0f,
-                                       .headroom = hdr10 ? peak / paperWhite : 1.0f,
-                                       .paperWhite = paperWhite,
-                                       .hdr10 = hdr10 ? 1U : 0U,
-                                       // Sharpening undoes the softness of the temporal history.
-                                       .sharpness = resolve ? std::clamp(impl.image.sharpness, 0.0f, 1.0f) : 0.0f,
-                                       .sceneX = sceneOffset.x,
-                                       .sceneY = sceneOffset.y};
+        // The lens marks the lit scene, not debug views or the path tracer's reference.
+        const bool lens = hasFrame && impl.debugView == DebugView::Off && !path;
+        const OutputPushConstants push{
+            .scene = impl.device.BindlessIndex(source),
+            .bloom = blooms ? impl.device.BindlessIndex(impl.bloom->Output()) : kNoTexture,
+            .layer = layerDrawn ? impl.device.BindlessIndex(impl.interfaceLayer) : kNoTexture,
+            .toneMapper = impl.image.toneMapper == ToneMapper::AgX ? 0U : 1U,
+            .scale = displayScale,
+            .bloomShare = blooms ? bloomShare : 0.0f,
+            .headroom = hdr10 ? peak / paperWhite : 1.0f,
+            .paperWhite = paperWhite,
+            .hdr10 = hdr10 ? 1U : 0U,
+            // Sharpening undoes the softness of the temporal history.
+            .sharpness = resolve ? std::clamp(impl.image.sharpness, 0.0f, 1.0f) : 0.0f,
+            .sceneX = sceneOffset.x,
+            .sceneY = sceneOffset.y,
+            .grain = lens ? std::clamp(impl.image.filmGrain, 0.0f, 1.0f) : 0.0f,
+            .vignette = lens ? std::clamp(impl.image.vignette, 0.0f, 1.0f) : 0.0f,
+            .aberration = lens ? std::clamp(impl.image.chromaticAberration, 0.0f, 1.0f) : 0.0f,
+            .lensDirt = lens && blooms ? std::clamp(impl.image.lensDirt, 0.0f, 1.0f) : 0.0f,
+            .frame = static_cast<std::uint32_t>(impl.frameNumber),
+            .padding = {}};
         std::vector<rhi::TextureUse> reads{{frame.backBuffer, rhi::Access::ColorTarget, true},
                                            {source, rhi::Access::FragmentShaderRead}};
         if (layerDrawn) {
