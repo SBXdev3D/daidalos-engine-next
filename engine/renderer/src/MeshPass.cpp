@@ -31,6 +31,7 @@
 #include <numbers>
 #include <utility>
 
+#include "RayTracingScene.hpp"
 #include "RenderGraph.hpp"
 
 namespace daidalos::renderer {
@@ -1030,8 +1031,10 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         const float scale = std::max({glm::length(glm::vec3(draw.world[0])), glm::length(glm::vec3(draw.world[1])),
                                       glm::length(glm::vec3(draw.world[2]))});
         const glm::vec3 center(draw.world * glm::vec4(glm::vec3(bounds), 1.0f));
+        // A draw the camera does not see (ADR-0059) is left out of the G-buffer and the glass pass.
         const bool visible =
-            draw.firstJoint != kNoJoints || glm::distance(center, cameraPosition) - bounds.w * scale <= farPlane;
+            draw.seenByCamera &&
+            (draw.firstJoint != kNoJoints || glm::distance(center, cameraPosition) - bounds.w * scale <= farPlane);
         const bool glass = m_materials.Get(material).glass;
         // Glass casts no shadow: light goes through it (ADR-0042).
         m_sorted.push_back({(doubleSided << 32U) | draw.mesh.Index(), draw.mesh, material, index,
@@ -1095,6 +1098,12 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         traced.doubleSided = material.doubleSided;
         traced.castsShadows = sorted.castsShadows;
         traced.glass = sorted.glass;
+        traced.mask = sorted.glass
+                          ? kMaskGlass
+                          : static_cast<std::uint8_t>((sorted.castsShadows ? kMaskShadow | kMaskCollision : 0) |
+                                                      (draw.seenByCamera ? kMaskCamera : 0) |
+                                                      (draw.seenInReflections ? kMaskReflection : 0) |
+                                                      (draw.seenByIndirect ? kMaskIndirect : 0));
         if (skinned) {
             traced.skinned = {.vertices = m_skinned,
                               .vertexOffset = std::uint64_t{sorted.firstSkinnedVertex} * sizeof(resources::Vertex),

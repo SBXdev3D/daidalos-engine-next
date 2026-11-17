@@ -120,6 +120,16 @@ struct Light {
     [[nodiscard]] bool operator==(const Light&) const = default;
 };
 
+/// ECS component: which rays see the meshes of an entity and of what is under it (ADR-0059). A figure only in
+/// mirrors: no camera, no bounced light. A shadow with no caster: shadows only.
+struct RayVisibility {
+    bool camera = true;
+    bool shadows = true;
+    bool reflections = true;
+    bool indirect = true;
+    [[nodiscard]] bool operator==(const RayVisibility&) const = default;
+};
+
 /// ECS component: the textures of a Light's profile and cookie, loaded when it was made.
 struct LightTextures {
     rhi::TextureHandle profile;

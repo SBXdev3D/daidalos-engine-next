@@ -122,9 +122,7 @@ core::Result<void> RayTracingScene::Prepare(std::span<const TracedDraw> draws) {
         m_bottomLevel.push_back({structure, rhi::Access::AccelerationStructureRead});
         m_instances.push_back({.transform = draw.world,
                                .customIndex = static_cast<std::uint32_t>(index),
-                               .mask = draw.glass          ? kMaskGlass
-                                       : draw.castsShadows ? kMaskShadowCasters
-                                                           : kMaskOthers,
+                               .mask = draw.mask,
                                .opaque = draw.opaque,
                                .doubleSided = draw.doubleSided,
                                .structure = structure});

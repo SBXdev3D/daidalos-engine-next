@@ -200,9 +200,11 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     // The path came straight from the camera, through glass or off a sharp reflection: it sees emission that
     // is not a light.
     bool seen = true;
+    // What the next ray sees (ADR-0059): the camera's, then a sharp reflection's or bounced light's.
+    uint mask = kMaskCamera | kMaskGlass;
     for (uint bounce = 0; bounce < g_path.maxBounces; ++bounce) {
         const Hit hit =
-            TraceClosest(ray, frame.accelerationStructure, g_path.instanceBuffer, g_path.materialBuffer, kMaskAll);
+            TraceClosest(ray, frame.accelerationStructure, g_path.instanceBuffer, g_path.materialBuffer, mask);
         // The fog in front of what the ray hits may scatter or absorb the light first.
         const float collision = FogCollision(frame, ray.Origin, ray.Direction, ray.TMin,
                                              hit.found ? hit.distance : ray.TMax, majorant, random);
@@ -282,6 +284,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         }
         throughput *= next.weight;
         seen = surface.roughness < kSharpReflection;
+        mask = (seen ? kMaskReflection : kMaskIndirect) | kMaskGlass;
         // Russian roulette: dim paths end early, and the ones that go on count for those that stopped.
         if (bounce >= 2) {
             const float keep = clamp(max(throughput.r, max(throughput.g, throughput.b)), 0.05, 0.95);

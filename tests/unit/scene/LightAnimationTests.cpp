@@ -2,6 +2,7 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+#include <daidalos/ecs/Transform.hpp>
 #include <daidalos/scene/Components.hpp>
 #include <daidalos/scene/Level.hpp>
 #include <daidalos/scene/LightAnimation.hpp>
@@ -134,3 +135,32 @@ TEST(AnimateLights, DrivesTheLightAndItsLampsGlow) {
 }
 
 } // namespace
+
+TEST(ExtractScene, AnEntitysRayVisibilityReachesTheMeshesUnderIt) {
+    ecs::World world;
+    const ecs::Entity figure = world.Create();
+    world.Add<ecs::LocalTransform>(figure);
+    world.Add<scene::RayVisibility>(figure, scene::RayVisibility{.camera = false, .indirect = false});
+    const ecs::Entity body = world.Create();
+    world.Add<ecs::LocalTransform>(body);
+    world.Add<scene::MeshRenderer>(body);
+    ASSERT_TRUE(world.SetParent(body, figure).has_value());
+    const ecs::Entity wall = world.Create();
+    world.Add<ecs::LocalTransform>(wall);
+    world.Add<scene::MeshRenderer>(wall);
+    ecs::PropagateTransforms(world);
+
+    renderer::SceneView view;
+    scene::ExtractScene(world, view);
+    ASSERT_EQ(view.draws.size(), 2U);
+    int hidden = 0;
+    for (const renderer::DrawItem& draw : view.draws) {
+        if (!draw.seenByCamera) {
+            ++hidden;
+            EXPECT_FALSE(draw.seenByIndirect);
+            EXPECT_TRUE(draw.seenInReflections);
+            EXPECT_TRUE(draw.castsShadows);
+        }
+    }
+    EXPECT_EQ(hidden, 1) << "Only the figure's body is hidden from the camera";
+}

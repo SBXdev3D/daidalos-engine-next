@@ -119,6 +119,8 @@ struct LevelEntity {
     std::optional<LevelWeather> weather;
     std::optional<LevelRibbon> ribbon;
     std::optional<LevelLightning> lightning;
+    /// Which rays see its meshes and those under it (ADR-0059).
+    std::optional<RayVisibility> visibility;
     std::optional<Tags> game;
     [[nodiscard]] bool operator==(const LevelEntity&) const;
 };

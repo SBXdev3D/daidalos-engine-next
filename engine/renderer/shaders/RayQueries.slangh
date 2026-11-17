@@ -12,12 +12,16 @@
 [[vk::binding(2, 0)]] StructuredBuffer<uint> g_indices[];
 [[vk::binding(3, 0)]] RaytracingAccelerationStructure g_accelerationStructures[];
 
-// Match the masks in renderer/src/RayTracingScene.hpp.
-static const uint kMaskShadowCasters = 0x01;
-static const uint kMaskOthers = 0x02;
-static const uint kMaskGlass = 0x04;
-// What rays see, but for glass: only the glass pass and the path tracer see it (ADR-0042).
-static const uint kMaskSurfaces = kMaskShadowCasters | kMaskOthers;
+// Match the masks in renderer/src/RayTracingScene.hpp: each kind of ray sees what has its bit (ADR-0059).
+static const uint kMaskShadow = 0x01;
+static const uint kMaskCamera = 0x02;
+static const uint kMaskReflection = 0x04;
+static const uint kMaskIndirect = 0x08;
+// Only the glass pass and the path tracer see glass (ADR-0042).
+static const uint kMaskGlass = 0x10;
+static const uint kMaskCollision = 0x20;
+// What rays of bounced light and reflections see, but for glass.
+static const uint kMaskSurfaces = kMaskReflection | kMaskIndirect;
 static const uint kMaskAll = 0xFF;
 // Nothing this close to a light shadows it: a lamp's own shade, around the light, would darken it.
 static const float kShadowNearPlane = 0.1;
@@ -112,7 +116,7 @@ Hit TraceClosest(RayDesc ray, uint structure, uint instanceBuffer, uint material
 // Whether anything that casts shadows lies on the ray.
 bool Occluded(RayDesc ray, uint structure, uint instanceBuffer, uint materialBuffer) {
     RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> query;
-    query.TraceRayInline(g_accelerationStructures[structure], RAY_FLAG_NONE, kMaskShadowCasters, ray);
+    query.TraceRayInline(g_accelerationStructures[structure], RAY_FLAG_NONE, kMaskShadow, ray);
     while (query.Proceed()) {
         if (query.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
             PassesAlphaTest(instanceBuffer, materialBuffer, query.CandidateInstanceID(), query.CandidatePrimitiveIndex(),

@@ -278,6 +278,9 @@ void LevelInstance::Make(const LevelEntity& entity) {
             world.Add<LightTextures>(created, textures);
         }
     }
+    if (entity.visibility) {
+        world.Add<RayVisibility>(created, *entity.visibility);
+    }
     if (entity.fog) {
         world.Add<FogVolume>(created, *entity.fog);
     }

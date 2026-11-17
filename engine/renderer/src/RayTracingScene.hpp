@@ -18,11 +18,16 @@ namespace daidalos::renderer {
 
 class RenderGraph;
 
-/// Instance masks: what rays see of a draw. A shadow ray queries with kMaskShadowCasters only.
-inline constexpr std::uint8_t kMaskShadowCasters = 0x01;
-inline constexpr std::uint8_t kMaskOthers = 0x02;
+/// Instance masks: which rays see a draw (ADR-0059). Each kind of ray queries with its own bit. Match the masks
+/// in shaders/RayQueries.slangh.
+inline constexpr std::uint8_t kMaskShadow = 0x01;
+inline constexpr std::uint8_t kMaskCamera = 0x02;
+inline constexpr std::uint8_t kMaskReflection = 0x04;
+inline constexpr std::uint8_t kMaskIndirect = 0x08;
 /// Glass (ADR-0042): only the glass pass and the path tracer see it.
-inline constexpr std::uint8_t kMaskGlass = 0x04;
+inline constexpr std::uint8_t kMaskGlass = 0x10;
+/// What particles collide with: what casts shadows, the level's solid geometry, not the player's weapons.
+inline constexpr std::uint8_t kMaskCollision = 0x20;
 
 /// The frame's draws as rays see them (ADR-0033): a top-level acceleration structure built each frame
 /// over the meshes' bottom-level structures, and a bottom-level structure per skinned draw, refitted each

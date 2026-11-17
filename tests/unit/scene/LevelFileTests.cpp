@@ -222,3 +222,16 @@ TEST(LevelFileTest, AnUnknownLightPatternIsAnError) {
         {"id": 1, "light": {"animation": {"pattern": "disco"}}}]})");
     EXPECT_NE(message.find("disco"), std::string::npos) << message;
 }
+
+TEST(LevelFileTest, EntitiesKeepWhichRaysSeeThem) {
+    Level level;
+    LevelEntity entity{.id = 1, .name = "Figure in the mirror"};
+    entity.visibility = scene::RayVisibility{.camera = false, .indirect = false};
+    level.entities.push_back(entity);
+    const std::string text = WriteLevel(level);
+    EXPECT_NE(text.find("\"camera\": false"), std::string::npos) << text;
+    EXPECT_EQ(text.find("\"shadows\""), std::string::npos) << "Defaults are left out";
+    const core::Result<Level> read = ParseLevel(text);
+    ASSERT_TRUE(read.has_value()) << core::Format(read.error());
+    EXPECT_EQ(*read, level);
+}

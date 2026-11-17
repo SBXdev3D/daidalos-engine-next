@@ -52,7 +52,7 @@ float3 IndirectAt(FrameData frame, Surface surface, inout uint random) {
     ray.Origin = OffsetOrigin(surface.position, surface.faceNormal);
     ray.TMin = 0.0;
     ray.TMax = 1e6;
-    const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer);
+    const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer, kMaskReflection);
     if (!hit.found) {
         return SkyRadiance(frame, ray.Direction);
     }
@@ -112,7 +112,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     float3 throughput = float3(1.0, 1.0, 1.0);
     float hitDistance = kFarHit;
     for (uint bounce = 0; bounce < kMirrorBounces; ++bounce) {
-        const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer);
+        const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer, kMaskReflection);
         if (!hit.found) {
             light += throughput * SkyRadiance(frame, ray.Direction);
             break;

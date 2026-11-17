@@ -61,6 +61,27 @@ void ExtractLights(ecs::World& world, renderer::SceneView& view) {
         });
 }
 
+// Which rays see an entity's meshes: the nearest RayVisibility among it and the entities above it.
+const RayVisibility* RayVisibilityOf(ecs::World& world, ecs::Entity entity) {
+    for (int depth = 0; depth < 8 && !entity.IsNull(); ++depth) {
+        if (const RayVisibility* visibility = world.TryGet<RayVisibility>(entity)) {
+            return visibility;
+        }
+        entity = world.Parent(entity);
+    }
+    return nullptr;
+}
+
+// Applies an entity's visibility to its draw.
+void SeeBy(renderer::DrawItem& draw, const RayVisibility* visibility) {
+    if (visibility != nullptr) {
+        draw.seenByCamera = visibility->camera;
+        draw.castsShadows = draw.castsShadows && visibility->shadows;
+        draw.seenInReflections = visibility->reflections;
+        draw.seenByIndirect = visibility->indirect;
+    }
+}
+
 // What the emission of an entity's meshes is multiplied by: the nearest EmissiveScale among it and the
 // entities above it, close enough to be its lamp.
 float EmissiveScaleOf(ecs::World& world, ecs::Entity entity) {
@@ -210,6 +231,7 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
 
     view.draws.reserve(world.Count<MeshRenderer>());
     const bool scaled = world.Count<EmissiveScale>() > 0;
+    const bool masked = world.Count<RayVisibility>() > 0;
     world.Each<ecs::WorldTransform, MeshRenderer>(
         [&](ecs::Entity entity, const ecs::WorldTransform& transform, const MeshRenderer& component) {
             view.draws.push_back({.mesh = component.mesh,
@@ -219,6 +241,9 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
                                   .previousWorld = drawn.Previous(entity, transform.matrix),
                                   .id = SceneIdOf(entity),
                                   .emissiveScale = scaled ? EmissiveScaleOf(world, entity) : 1.0f});
+            if (masked) {
+                SeeBy(view.draws.back(), RayVisibilityOf(world, entity));
+            }
         });
 
     world.Each<ecs::WorldTransform, SkinnedMeshRenderer>(
@@ -245,6 +270,9 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
                                   .castsShadows = component.castsShadows,
                                   .previousWorld = previousWorld,
                                   .id = SceneIdOf(entity)});
+            if (masked) {
+                SeeBy(view.draws.back(), RayVisibilityOf(world, entity));
+            }
         });
     drawn.Keep();
     ExtractLights(world, view);
