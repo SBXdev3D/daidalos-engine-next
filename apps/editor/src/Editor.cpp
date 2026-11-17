@@ -188,6 +188,7 @@ core::Result<void> Editor::OnStart(app::Application& app) {
     style.TabRounding = 2.0f;
     style.Colors[ImGuiCol_WindowBg].w = 1.0f;
     app.MainWindow().SetTextInput(true);
+    m_browser = std::make_unique<AssetBrowser>(m_assetRoot, app.Renderer().Device(), app.Workers());
     if (app::DevTools* tools = app.Tools()) {
         tools->SetSummaryShown(false); // The status panel shows the same.
     }
@@ -257,6 +258,9 @@ core::Result<void> Editor::Open(app::Application& app, const std::string& levelP
     m_sinceAutosave = 0.0f;
     m_scene = &target;
     app.SetScene(std::move(scene));
+    if (m_browser != nullptr) {
+        m_browser->Open(std::filesystem::path(levelPath).parent_path().generic_string());
+    }
     m_status = std::format("Opened {}: {} entities", levelPath, m_level.entities.size());
     DAI_LOG_INFO(kModule, "{}", m_status);
     UpdateTitle(app);
@@ -357,18 +361,82 @@ void Editor::Redo() {
     }
 }
 
-void Editor::Create(std::string_view label, scene::LevelEntity entity) {
+void Editor::Create(std::string_view label, scene::LevelEntity entity, std::optional<glm::vec3> position) {
     m_history.Commit(m_level);
     entity.id = m_level.NextId();
     entity.parent = 0;
     if (entity.name.empty()) {
         entity.name = std::string(label);
     }
-    entity.transform.translation = m_camera.position + m_camera.Forward() * 4.0f;
+    entity.transform.translation = position.value_or(m_camera.position + m_camera.Forward() * 4.0f);
     Change(std::format("Create {}", label), [&entity](scene::Level& level) { level.entities.push_back(entity); });
     m_history.Commit(m_level);
     Select(entity.id);
     m_status = std::format("Created {}", EntityLabel(entity));
+}
+
+std::string Editor::RelativeToLevel(const std::string& path) const {
+    std::filesystem::path directory = std::filesystem::path(m_levelPath).parent_path();
+    if (directory.empty()) {
+        directory = ".";
+    }
+    return std::filesystem::path(path).lexically_relative(directory).generic_string();
+}
+
+void Editor::PlaceAsset(app::Application& app, const AssetEntry& asset, std::optional<glm::vec2> at) {
+    const std::optional<glm::vec3> position = at ? std::optional<glm::vec3>(PlaceAt(*at)) : std::nullopt;
+    const std::string name = std::filesystem::path(asset.name).stem().generic_string();
+    scene::LevelEntity entity;
+    switch (asset.kind) {
+    case AssetKind::Level:
+        Guard(app, Pending::Open, asset.path);
+        return;
+    case AssetKind::Sky: {
+        const std::string sky = RelativeToLevel(asset.path);
+        Change("Change the sky", [&sky](scene::Level& level) { level.environment.skyFaces = sky; });
+        m_history.Commit(m_level);
+        m_status = std::format("The sky is {}", asset.name);
+        return;
+    }
+    case AssetKind::Model:
+        entity.model = RelativeToLevel(asset.path);
+        entity.name = name;
+        break;
+    case AssetKind::Effect:
+        entity.particles = scene::LevelParticles{.effect = RelativeToLevel(asset.path)};
+        entity.name = std::filesystem::path(name).stem().generic_string();
+        break;
+    case AssetKind::Ribbon:
+        entity.ribbon = scene::LevelRibbon{.effect = RelativeToLevel(asset.path)};
+        entity.name = std::filesystem::path(name).stem().generic_string();
+        break;
+    case AssetKind::Folder:
+    case AssetKind::Other:
+        return;
+    }
+    Create(entity.name, std::move(entity), position);
+}
+
+void Editor::OnEvent(app::Application& app, const platform::Event& event) {
+    const auto* dropped = std::get_if<platform::FileDropped>(&event);
+    if (dropped == nullptr || m_browser == nullptr) {
+        return;
+    }
+    core::Result<AssetEntry> imported =
+        m_browser->Import(std::filesystem::path(std::u8string(dropped->path.begin(), dropped->path.end())));
+    if (!imported) {
+        m_status = core::Format(imported.error());
+        DAI_LOG_WARNING(kModule, "{}", m_status);
+        return;
+    }
+    const glm::vec2 at = dropped->position;
+    const bool inView =
+        at.x >= m_viewportMin.x && at.y >= m_viewportMin.y && at.x < m_viewportMax.x && at.y < m_viewportMax.y;
+    if (inView) {
+        PlaceAsset(app, *imported, at);
+    } else {
+        m_status = std::format("Imported {}", imported->path);
+    }
 }
 
 void Editor::DeleteSelected() {
@@ -544,6 +612,22 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
     DrawEnvironment();
     DrawStatus(app, time);
     DrawDialogs(app);
+    if (m_browser != nullptr) {
+        if (const std::optional<AssetEntry> chosen = m_browser->Draw()) {
+            PlaceAsset(app, *chosen, std::nullopt);
+        }
+        // An asset dragged out of the browser is placed where it is let go over the view.
+        if (const std::optional<AssetEntry> dragged = m_browser->Dragged();
+            dragged && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+            m_browser->EndDrag();
+            const bool overPanel =
+                ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+            if (MouseInViewport() && !overPanel) {
+                const ImVec2 mouse = ImGui::GetIO().MousePos;
+                PlaceAsset(app, *dragged, glm::vec2(mouse.x, mouse.y));
+            }
+        }
+    }
 
     if (m_scene != nullptr) {
         UpdateCamera(app, static_cast<float>(time.unclampedDelta.count()));
@@ -920,14 +1004,21 @@ void Editor::DrawDockspace() {
         ImGuiID center = dockspace;
         const ImGuiID left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.2f, nullptr, &center);
         const ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.27f, nullptr, &center);
-        const ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.12f, nullptr, &center);
+        const ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.3f, nullptr, &center);
         ImGui::DockBuilderDockWindow("Hierarchy", left);
         ImGui::DockBuilderDockWindow("Inspector", right);
         ImGui::DockBuilderDockWindow("Environment", right);
+        ImGui::DockBuilderDockWindow("Assets", bottom);
         ImGui::DockBuilderDockWindow("Status", bottom);
         ImGui::DockBuilderFinish(dockspace);
     }
     m_layoutBuilt = true;
+    // A layout saved before the browser existed: it joins the status.
+    if (ImGui::FindWindowSettingsByID(ImHashStr("Assets")) == nullptr) {
+        if (const ImGuiWindow* status = ImGui::FindWindowByName("Status"); status != nullptr && status->DockId != 0) {
+            ImGui::DockBuilderDockWindow("Assets", status->DockId);
+        }
+    }
     if (const ImGuiDockNode* central = ImGui::DockBuilderGetCentralNode(dockspace)) {
         m_viewportMin = {central->Pos.x, central->Pos.y};
         m_viewportMax = {central->Pos.x + central->Size.x, central->Pos.y + central->Size.y};
@@ -1251,19 +1342,35 @@ void Editor::Pick(app::Application& app) {
         }
     }
     if (nearest == 0) {
-        const glm::vec2 extent = m_viewportMax - m_viewportMin;
-        const glm::vec2 ndc((mouse.x - m_viewportMin.x) / extent.x * 2.0f - 1.0f,
-                            1.0f - (mouse.y - m_viewportMin.y) / extent.y * 2.0f);
-        const glm::mat4 inverse = glm::inverse(Projection() * m_camera.View());
-        const glm::vec4 near = inverse * glm::vec4(ndc, -1.0f, 1.0f);
-        const glm::vec4 far = inverse * glm::vec4(ndc, 1.0f, 1.0f);
-        const glm::vec3 origin = glm::vec3(near) / near.w;
-        const glm::vec3 direction = glm::normalize(glm::vec3(far) / far.w - origin);
+        const auto [origin, direction] = RayAt(mouse);
         if (const std::optional<PickHit> hit = m_picker.Cast(world, origin, direction)) {
             nearest = m_instance->IdOf(hit->entity);
         }
     }
     Select(nearest);
+}
+
+std::pair<glm::vec3, glm::vec3> Editor::RayAt(const glm::vec2& point) const {
+    const glm::vec2 extent = glm::max(m_viewportMax - m_viewportMin, glm::vec2(1.0f));
+    const glm::vec2 ndc((point.x - m_viewportMin.x) / extent.x * 2.0f - 1.0f,
+                        1.0f - (point.y - m_viewportMin.y) / extent.y * 2.0f);
+    const glm::mat4 inverse = glm::inverse(Projection() * m_camera.View());
+    const glm::vec4 near = inverse * glm::vec4(ndc, -1.0f, 1.0f);
+    const glm::vec4 far = inverse * glm::vec4(ndc, 1.0f, 1.0f);
+    const glm::vec3 origin = glm::vec3(near) / near.w;
+    return {origin, glm::normalize(glm::vec3(far) / far.w - origin)};
+}
+
+glm::vec3 Editor::PlaceAt(const glm::vec2& point) {
+    const auto [origin, direction] = RayAt(point);
+    if (m_scene != nullptr) {
+        ecs::PropagateTransforms(m_scene->World());
+        if (const std::optional<PickHit> hit = m_picker.Cast(m_scene->World(), origin, direction);
+            hit && hit->distance < 200.0f) {
+            return hit->position;
+        }
+    }
+    return origin + direction * 6.0f;
 }
 
 } // namespace editor
