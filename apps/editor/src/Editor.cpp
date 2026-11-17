@@ -1150,6 +1150,12 @@ void Editor::DrawMenu(app::Application& app) {
             entity.transform.scale = glm::vec3(4.0f, 2.0f, 4.0f);
             Create("Fog volume", std::move(entity));
         }
+        if (ImGui::MenuItem("Wet area")) {
+            scene::LevelEntity entity;
+            entity.wet = scene::WetVolume{.puddles = 0.4f, .puddleHeight = 0.6f, .rain = 0.0f, .streaks = 0.3f};
+            entity.transform.scale = glm::vec3(6.0f, 3.0f, 6.0f);
+            Create("Wet area", std::move(entity));
+        }
         if (ImGui::MenuItem("Wind volume")) {
             scene::LevelEntity entity;
             entity.wind = scene::WindVolume{};
@@ -1678,7 +1684,7 @@ void Editor::DrawMarkers() {
         const ImU32 alpha = static_cast<ImU32>(fade * 255.0f) << 24;
         const ImU32 color = selected ? IM_COL32(255, 220, 60, 255) : ((MarkerColor(entity) & 0x00FFFFFFU) | alpha);
         // Volumes show their box; a selected light shows where it points and how far it reaches.
-        if (entity.fog || entity.wind || entity.weather || entity.lightning || entity.decal) {
+        if (entity.fog || entity.wind || entity.weather || entity.lightning || entity.decal || entity.wet) {
             box(matrix, glm::vec3(-0.5f), glm::vec3(0.5f),
                 (color & 0x00FFFFFFU) | (selected ? 0xFF000000U : static_cast<ImU32>(fade * 90.0f) << 24),
                 selected ? 2.0f : 1.0f);

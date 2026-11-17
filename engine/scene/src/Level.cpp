@@ -281,6 +281,9 @@ void LevelInstance::Make(const LevelEntity& entity) {
     if (entity.visibility) {
         world.Add<RayVisibility>(created, *entity.visibility);
     }
+    if (entity.wet) {
+        world.Add<WetVolume>(created, *entity.wet);
+    }
     if (entity.decal) {
         world.Add<Decal>(created, *entity.decal);
         DecalTextures textures;

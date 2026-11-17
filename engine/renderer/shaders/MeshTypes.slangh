@@ -68,7 +68,11 @@ struct FrameData {
     uint fogAliasBuffer;  // The fog's alias table of the sources, by power near the camera (ADR-0051).
     uint decalBuffer;     // The frame's decals (ADR-0060, Decals.slangh), and how many.
     uint decalCount;
-    uint debugFlags;      // kDebugDecals shows what decals cover.
+    uint debugFlags;      // Tints of the lit scene: kDebugDecals, kDebugWetness.
+    uint wetVolumeBuffer; // The boxes of wet air (ADR-0061, Wetness.slangh), and the ripples on their water.
+    uint wetVolumeCount;
+    uint rippleBuffer;
+    uint rippleCount;
     uint framePadding;
 };
 
@@ -192,16 +196,16 @@ struct MaterialData {
     float clearcoat;
     float clearcoatRoughness;
     float sheenRoughness;
-    uint layerPadding;
+    float porosity; // How much it darkens when wet (ADR-0061).
     float3 sheenColor;
     float layerPadding2;
 };
 
 // The G-buffer keeps a material's layers in two integers, eight bits each (ADR-0056): the coat, its
 // roughness and the sheen's roughness in the first, the sheen's color in the second.
-uint2 PackLayers(MaterialData material) {
-    const uint3 a = uint3(round(saturate(float3(material.clearcoat, material.clearcoatRoughness, material.sheenRoughness)) * 255.0));
-    const uint3 b = uint3(round(saturate(material.sheenColor) * 255.0));
+uint2 PackLayers(float coat, float coatRoughness, float3 sheen, float sheenRoughness) {
+    const uint3 a = uint3(round(saturate(float3(coat, coatRoughness, sheenRoughness)) * 255.0));
+    const uint3 b = uint3(round(saturate(sheen) * 255.0));
     return uint2(a.x | (a.y << 8) | (a.z << 16), b.x | (b.y << 8) | (b.z << 16));
 }
 

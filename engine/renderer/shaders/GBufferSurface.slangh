@@ -6,6 +6,7 @@
 #define DAIDALOS_GBUFFER_SURFACE_SLANGH
 
 #include "Decals.slangh"
+#include "Wetness.slangh"
 
 // The G-buffer's pixel shader (ADR-0044), which the meshes (GBuffer.slang) and mesh particles
 // (ParticleMesh.slang, ADR-0053) share. Include after MeshCommon.slangh.
@@ -41,6 +42,14 @@ GBufferOutput PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) {
                     footprint, baseColor.rgb, metallic, roughness, normal);
     }
 #endif
+    // Water (ADR-0061): a film, puddles, streaks, over the material and its decals.
+    Layers layers;
+    layers.coat = material.clearcoat;
+    layers.coatRoughness = material.clearcoatRoughness;
+    layers.sheen = material.sheenColor;
+    layers.sheenRoughness = material.sheenRoughness;
+    ApplyWetness(frame, input.worldPosition, normalize(input.worldNormal) * (isFrontFace ? 1.0 : -1.0), material.porosity,
+                 baseColor.rgb, roughness, normal, layers);
     const float occlusion =
         lerp(1.0, SampleTexture(material.occlusionTexture, input.uv, float4(1.0, 1.0, 1.0, 1.0)).r, material.occlusionStrength);
     float3 emission = material.emissiveFactor *
@@ -55,7 +64,7 @@ GBufferOutput PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) {
     output.motion = ClipToUv(input.previousClip) - ClipToUv(input.currentClip);
     output.baseColor = float4(baseColor.rgb, metallic);
     output.emission = float4(emission, occlusion);
-    output.layers = PackLayers(material);
+    output.layers = PackLayers(layers.coat, layers.coatRoughness, layers.sheen, layers.sheenRoughness);
     return output;
 }
 

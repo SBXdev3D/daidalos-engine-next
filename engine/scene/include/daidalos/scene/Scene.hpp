@@ -95,6 +95,8 @@ public:
         float fade = 5.0f;
     };
     static constexpr std::size_t kMaxTransientDecals = 96;
+    /// Rings on still water (ADR-0061): a step in a puddle, a shot into it. The 16 most recent show.
+    void AddRipple(const glm::vec3& position, float strength = 1.0f);
     void SpawnDecal(const DecalSpawn& spawn);
     [[nodiscard]] std::size_t TransientDecalCount() const { return m_transientDecals.size(); }
 
@@ -143,6 +145,7 @@ private:
         float fade = 0.0f;
     };
     std::deque<TransientDecal> m_transientDecals;
+    std::deque<renderer::Ripple> m_ripples;
     std::uint32_t m_decalSeed = 0x9e3779b9U;
     PowerCircuits m_power;
     std::vector<renderer::ParticleSpawn> m_bursts;

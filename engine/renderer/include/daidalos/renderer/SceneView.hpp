@@ -100,6 +100,31 @@ struct Decal {
     float angleFade = 0.3f;
 };
 
+/// A box of wet air (ADR-0061): what is inside it is wet, the box from -0.5 to 0.5 of world. Porous materials
+/// darken, everything gets a film of water; on what faces up near the box's bottom, water pools in low spots;
+/// on walls, streaks of water run down.
+struct WetVolume {
+    glm::mat4 world{1.0f};
+    /// 0 dry, 1 soaked.
+    float wetness = 1.0f;
+    /// The fraction of the floor under still water, 0 to 1.
+    float puddles = 0.0f;
+    /// Meters above the box's bottom up to which water pools.
+    float puddleHeight = 0.05f;
+    /// Rain drops per square meter per second, which ripple the puddles.
+    float rain = 0.0f;
+    /// How much water runs down walls, 0 to 1.
+    float streaks = 0.0f;
+};
+
+/// A ripple on still water that the game started: a step, an impact (ADR-0061).
+struct Ripple {
+    glm::vec3 position{0.0f};
+    /// Seconds since it started.
+    float age = 0.0f;
+    float strength = 1.0f;
+};
+
 /// A box of fog, added to the level's (ADR-0051): dust in a room, steam from a pipe. The box is the cube
 /// from -0.5 to 0.5 in world's space: its scale is the box's size.
 struct FogVolume {
@@ -243,6 +268,9 @@ struct SceneView {
     std::vector<FogVolume> fogVolumes;
     /// Decals, the nearest kMaxDecals of which are drawn (ADR-0060).
     std::vector<Decal> decals;
+    /// Boxes of wet air, kMaxWetVolumes of them at most, and ripples on their water (ADR-0061).
+    std::vector<WetVolume> wetVolumes;
+    std::vector<Ripple> ripples;
     /// New particles of the frame (ADR-0025).
     std::vector<ParticleSpawn> particleSpawns;
     /// Ribbons of the frame, built by the CPU (ADR-0053).

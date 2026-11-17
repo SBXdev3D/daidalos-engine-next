@@ -249,3 +249,14 @@ TEST(LevelFileTest, DecalsKeepTheirImagesAndLook) {
         {"id": 1, "decal": {"opacity": 0.5}}]})");
     EXPECT_NE(message.find("texture"), std::string::npos) << message;
 }
+
+TEST(LevelFileTest, WetAreasKeepTheirWater) {
+    Level level;
+    LevelEntity entity{.id = 1, .name = "Flooded"};
+    entity.wet = scene::WetVolume{
+        .wetness = 0.8f, .puddles = 0.4f, .puddleHeight = 0.3f, .rain = 40.0f, .streaks = 0.5f, .dryingRate = 0.1f};
+    level.entities.push_back(entity);
+    const core::Result<Level> read = ParseLevel(WriteLevel(level));
+    ASSERT_TRUE(read.has_value()) << core::Format(read.error());
+    EXPECT_EQ(*read, level);
+}

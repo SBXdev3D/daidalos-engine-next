@@ -86,6 +86,12 @@ constexpr std::uint32_t kShowMotion = 0;
 constexpr std::uint32_t kShowNormals = 1;
 constexpr std::uint32_t kShowLayers = 2;
 
+/// The tints of the lit scene a debug view asks for: decals (1), wetness (2). Match Decals.slangh and
+/// Wetness.slangh.
+std::uint32_t TintFlags(DebugView view) {
+    return view == DebugView::Decals ? 1U : view == DebugView::Wetness ? 2U : 0U;
+}
+
 } // namespace
 
 struct Renderer::Impl {
@@ -217,7 +223,7 @@ struct Renderer::Impl {
     bool illuminated = false;
     Antialiasing antialiasing = Antialiasing::Taa;
     DebugView debugView = DebugView::Off;
-    bool showDecals = false;
+    std::uint32_t debugFlags = 0; // The lit scene's tints (MeshPass::FrameTargets::debugFlags).
     std::optional<RayTracingScene> rayTracing;
     std::optional<PathTracerPass> pathTracer;
     PathTracerSettings pathSettings;
@@ -433,8 +439,8 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     impl->meshPass.emplace(std::move(meshPass));
     DAI_TRY_ASSIGN(RayTracingScene rayTracing, RayTracingScene::Create(impl->device, kHdrFormat));
     impl->rayTracing.emplace(std::move(rayTracing));
-    impl->showDecals = config.debugView == DebugView::Decals;
-    impl->debugView = config.debugView == DebugView::Decals ? DebugView::Off : config.debugView;
+    impl->debugFlags = TintFlags(config.debugView);
+    impl->debugView = impl->debugFlags != 0 ? DebugView::Off : config.debugView;
     DAI_TRY_ASSIGN(PathTracerPass pathTracer, PathTracerPass::Create(impl->device));
     impl->pathTracer.emplace(std::move(pathTracer));
     impl->pathSettings = {
@@ -568,9 +574,9 @@ void Renderer::SetAntialiasing(Antialiasing antialiasing) {
 }
 
 void Renderer::SetDebugView(DebugView view) {
-    // The decals' view is the lit scene, with what decals cover tinted (ADR-0060).
-    m_impl->showDecals = view == DebugView::Decals;
-    m_impl->debugView = view == DebugView::Decals ? DebugView::Off : view;
+    // The decals' and the wetness' views are the lit scene, tinted (ADR-0060, ADR-0061).
+    m_impl->debugFlags = TintFlags(view);
+    m_impl->debugView = m_impl->debugFlags != 0 ? DebugView::Off : view;
 }
 
 void Renderer::SetPathTracer(std::uint32_t bounces, std::uint32_t samples) {
@@ -763,7 +769,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                        .time = static_cast<float>(impl.time),
                        .sharpReflections =
                            reflect ? std::min(GlobalIllumination::kSharpRoughness, impl.reflectionRoughness) : 0.0f,
-                       .showDecals = impl.showDecals});
+                       .debugFlags = impl.debugFlags});
         });
         impl.particleSpawns = static_cast<std::uint32_t>(view.particleSpawns.size());
     }

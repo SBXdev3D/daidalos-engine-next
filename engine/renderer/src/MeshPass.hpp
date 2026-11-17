@@ -64,8 +64,8 @@ struct FrameTargets {
     /// the smaller of GlobalIllumination::kSharpRoughness and the roughness above which no reflection is
     /// traced; 0 without.
     float sharpReflections = 0.0f;
-    /// Tints what decals cover (DebugView::Decals, ADR-0060).
-    bool showDecals = false;
+    /// Tints of the lit scene: what decals cover (1, ADR-0060), how wet surfaces are (2, ADR-0061).
+    std::uint32_t debugFlags = 0;
 };
 
 /// What the G-buffer holds of the material, and what the lighting pass writes (ADR-0039, ADR-0044), which
@@ -357,6 +357,11 @@ private:
         /// The frame's decals (ADR-0060), kMaxDecals at most.
         rhi::BufferHandle decals;
         std::uint64_t decalCapacity = 0;
+        /// The frame's wet volumes and ripples (ADR-0061).
+        rhi::BufferHandle wetVolumes;
+        std::uint64_t wetVolumeCapacity = 0;
+        rhi::BufferHandle ripples;
+        std::uint64_t rippleCapacity = 0;
     };
 
     MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);

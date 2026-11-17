@@ -260,6 +260,8 @@ struct Impact {
 // What a shot leaves (ADR-0060): a hole where it lands, and, through a zombie, blood on what is behind it.
 void LeaveMark(scene::Scene& scene, physics::PhysicsWorld& physics, const ParticleEffects& effects,
                const physics::RayHit& hit, bool flesh, std::string_view surface, const glm::vec3& direction) {
+    // A shot into a puddle rings its water (ADR-0061).
+    scene.AddRipple(hit.position, 2.0f);
     if (!flesh) {
         const bool metal = surface == "metal";
         const rhi::TextureHandle albedo = metal ? effects.holeMetal : effects.hole;

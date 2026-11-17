@@ -103,6 +103,20 @@ bool InspectLight(scene::Light& light) {
     return changed;
 }
 
+bool InspectWet(scene::WetVolume& wet) {
+    bool changed = ImGui::Checkbox("Enabled", &wet.enabled);
+    changed |= ImGui::SliderFloat("Wetness", &wet.wetness, 0.0f, 1.0f);
+    changed |= ImGui::SliderFloat("Puddles", &wet.puddles, 0.0f, 1.0f);
+    changed |= ImGui::DragFloat("Water height (m)", &wet.puddleHeight, 0.005f, 0.0f, 20.0f, "%.3f");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Above the box's bottom: floors below it hold puddles");
+    }
+    changed |= ImGui::DragFloat("Rain (drops/m2/s)", &wet.rain, 0.5f, 0.0f, 500.0f, "%.1f");
+    changed |= ImGui::SliderFloat("Streaks on walls", &wet.streaks, 0.0f, 1.0f);
+    changed |= ImGui::DragFloat("Drying (per minute)", &wet.dryingRate, 0.01f, 0.0f, 10.0f, "%.2f");
+    return changed;
+}
+
 bool InspectDecal(scene::Decal& decal) {
     bool changed = ImGui::Checkbox("Enabled", &decal.enabled);
     changed |= InputString("Texture", decal.texture);
@@ -328,12 +342,17 @@ bool InspectComponents(scene::LevelEntity& entity) {
     changed |= Section("Game", entity.game, InspectGame);
     changed |= Section("Ray visibility", entity.visibility, InspectVisibility);
     changed |= Section("Decal", entity.decal, InspectDecal);
+    changed |= Section("Wet", entity.wet, InspectWet);
 
     ImGui::Separator();
     if (ImGui::Button("Add a component")) {
         ImGui::OpenPopup("add component");
     }
     if (ImGui::BeginPopup("add component")) {
+        if (!entity.wet && ImGui::MenuItem("Wet")) {
+            entity.wet = scene::WetVolume{};
+            changed = true;
+        }
         if (!entity.decal && ImGui::MenuItem("Decal")) {
             entity.decal = scene::Decal{.texture = "Decals/grime.png"};
             changed = true;

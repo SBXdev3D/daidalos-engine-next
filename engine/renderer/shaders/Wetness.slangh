@@ -1,0 +1,169 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+#ifndef DAIDALOS_WETNESS_SLANGH
+#define DAIDALOS_WETNESS_SLANGH
+
+// Wetness in the material function (ADR-0061). Boxes of wet air make what is inside them wet: porous surfaces
+// darken, every surface gets a film of water, a clear coat of index about 1.33 over the material; on what faces
+// up near the bottom of the box, water pools in the low spots of a noise, flat and smooth, rippled by rain and by
+// the game's ripples (steps, impacts); on walls, streaks of water run down. The G-buffer and ray hits both call
+// ApplyWetness, so reflections and the path tracer see the same water. Include after MeshTypes.slangh.
+
+import Bsdf;
+
+// Matches WetVolumeData in renderer/src/MeshPass.cpp.
+struct WetVolumeData {
+    float4x4 worldToBox;
+    float wetness;      // 0 dry to 1 soaked.
+    float puddles;      // The fraction of the floor under still water, 0 to 1.
+    float puddleHeight; // Meters above the box's bottom up to which water pools.
+    float rain;         // Rain drops per square meter per second, which ripple the puddles.
+    float streaks;      // How much water runs down walls, 0 to 1.
+    float bottom;       // The box's bottom, in world Y.
+    float2 padding;
+};
+
+// A ripple the game started (a step, an impact): where, when, how strong. Matches RippleData.
+struct RippleData {
+    float3 position;
+    float start;    // Frame time it started, in seconds.
+    float strength;
+    float3 padding;
+};
+
+[[vk::binding(2, 0)]] StructuredBuffer<WetVolumeData> g_wetVolumes[];
+[[vk::binding(2, 0)]] StructuredBuffer<RippleData> g_ripples[];
+
+static const float kWaterRoughness = 0.04;
+// How fast a ring of a ripple spreads, in meters per second, and how long it lasts.
+static const float kRippleSpeed = 0.35;
+static const float kRippleLife = 1.2;
+
+float WetHash(float2 cell) {
+    return frac(sin(dot(cell, float2(127.1, 311.7))) * 43758.5453);
+}
+
+// Smooth noise in the plane, from 0 to 1.
+float WetNoise(float2 p) {
+    const float2 i = floor(p);
+    const float2 f = frac(p);
+    const float2 u = f * f * (3.0 - 2.0 * f);
+    const float a = WetHash(i);
+    const float b = WetHash(i + float2(1.0, 0.0));
+    const float c = WetHash(i + float2(0.0, 1.0));
+    const float d = WetHash(i + float2(1.0, 1.0));
+    return lerp(lerp(a, b, u.x), lerp(c, d, u.x), u.y);
+}
+
+// The tilt a ring of a ripple gives the water at a distance from its center, a while after it started.
+float RingSlope(float distanceToCenter, float age) {
+    if (age < 0.0 || age > kRippleLife) {
+        return 0.0;
+    }
+    const float radius = age * kRippleSpeed;
+    const float x = (distanceToCenter - radius) * 40.0;
+    const float fade = (1.0 - age / kRippleLife) * exp(-x * x * 0.5);
+    return -x * fade * 0.6;
+}
+
+// The rain's ripples on still water: in each cell of 25 cm, a drop falls now and then at a place of its own.
+float2 RainRipples(float2 xz, float rate, float time) {
+    if (rate <= 0.0) {
+        return float2(0.0, 0.0);
+    }
+    float2 tilt = float2(0.0, 0.0);
+    const float cellSize = 0.25;
+    // One drop per cell per period: rate drops per square meter per second.
+    const float period = 1.0 / max(rate * cellSize * cellSize, 1e-3);
+    const float2 cell = floor(xz / cellSize);
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            const float2 neighbour = cell + float2(x, y);
+            const float2 center = (neighbour + float2(WetHash(neighbour), WetHash(neighbour + 17.0))) * cellSize;
+            const float phase = WetHash(neighbour + 31.0) * period;
+            const float age = fmod(time + phase, period);
+            const float2 offset = xz - center;
+            const float distanceToCenter = length(offset);
+            if (distanceToCenter > 1e-4) {
+                tilt += offset / distanceToCenter * RingSlope(distanceToCenter, age);
+            }
+        }
+    }
+    return tilt;
+}
+
+// Makes a surface wet by the frame's wet volumes. porosity says how much it darkens when soaked. faceNormal is
+// the surface's own, without its normal map: water pools on what is flat, whatever its bumps.
+void ApplyWetness(FrameData frame, float3 position, float3 faceNormal, float porosity, inout float3 baseColor,
+                  inout float roughness, inout float3 normal, inout Layers layers) {
+    if (frame.wetVolumeCount == 0) {
+        return;
+    }
+    float wet = 0.0;
+    float pool = 0.0;
+    float2 tilt = float2(0.0, 0.0);
+    for (uint index = 0; index < frame.wetVolumeCount; ++index) {
+        const WetVolumeData volume = g_wetVolumes[frame.wetVolumeBuffer][index];
+        const float3 local = mul(volume.worldToBox, float4(position, 1.0)).xyz;
+        if (any(abs(local) > 0.5)) {
+            continue;
+        }
+        // Wetness fades over the last tenth of the box, so its edges do not show.
+        const float3 inside = saturate((0.5 - abs(local)) * 10.0);
+        float here = volume.wetness * inside.x * inside.y * inside.z;
+        // Walls: streaks of water run down.
+        if (abs(faceNormal.y) < 0.5 && volume.streaks > 0.0) {
+            const float3 across = normalize(cross(faceNormal, float3(0.0, 1.0, 0.0)));
+            const float u = dot(position, across) * 9.0;
+            const float streak = smoothstep(0.55, 0.8, WetNoise(float2(u, position.y * 0.7 + frame.time * 0.35))) *
+                                 smoothstep(0.3, 0.6, WetNoise(float2(u * 0.3, 5.0)));
+            here = max(here, volume.streaks * streak * inside.x * inside.z);
+        }
+        wet = max(wet, here);
+        // Floors: still water in the low spots, up to the box's water height.
+        if (faceNormal.y > 0.8 && volume.puddles > 0.0 && position.y - volume.bottom < volume.puddleHeight) {
+            const float lowSpot = WetNoise(position.xz * 0.9) * 0.65 + WetNoise(position.xz * 3.1) * 0.35;
+            const float edge = smoothstep(1.0 - volume.puddles, 1.0 - volume.puddles + 0.06, 1.0 - lowSpot);
+            if (edge > pool) {
+                pool = edge;
+                tilt = RainRipples(position.xz, volume.rain, frame.time);
+            }
+        }
+    }
+    if (wet <= 0.0 && pool <= 0.0) {
+        return;
+    }
+    // The game's ripples, on the water.
+    if (pool > 0.0) {
+        for (uint index = 0; index < frame.rippleCount; ++index) {
+            const RippleData ripple = g_ripples[frame.rippleBuffer][index];
+            const float2 offset = position.xz - ripple.position.xz;
+            const float distanceToCenter = length(offset);
+            if (distanceToCenter > 1e-4 && distanceToCenter < kRippleSpeed * kRippleLife + 0.1) {
+                tilt += offset / distanceToCenter * RingSlope(distanceToCenter, frame.time - ripple.start) * ripple.strength;
+            }
+        }
+    }
+    wet = max(wet, pool);
+    // Soaked, a porous surface darkens: water fills its pores, and less light comes back out.
+    baseColor *= lerp(1.0, 1.0 - 0.6 * saturate(porosity), wet);
+    roughness = lerp(roughness, max(roughness * 0.4, kWaterRoughness), wet * (1.0 - 0.5 * saturate(porosity)));
+    // Standing water covers the surface: flat, smooth, rippled.
+    if (pool > 0.0) {
+        normal = normalize(lerp(normal, float3(0.0, 1.0, 0.0), pool) + float3(tilt.x, 0.0, tilt.y) * pool);
+        roughness = lerp(roughness, kWaterRoughness, pool);
+        // Under standing water, the floor shows little: the water's surface reflects, what is below darkens.
+        baseColor *= lerp(1.0, 0.35, pool);
+    }
+    // The film of water is a clear coat over the material.
+    layers.coatRoughness = lerp(layers.coat > 0.0 ? layers.coatRoughness : kWaterRoughness, kWaterRoughness, wet);
+    layers.coat = max(layers.coat, wet);
+    if ((frame.debugFlags & 2) != 0) {
+        // Wet in blue, standing water in cyan.
+        baseColor = lerp(lerp(baseColor, float3(0.1, 0.3, 1.0), wet), float3(0.1, 1.0, 1.0), pool);
+    }
+}
+
+#endif

@@ -433,6 +433,8 @@ void PlayMovementSounds(scene::Scene& scene, ecs::Entity entity, bool climbing, 
             const std::size_t offset = 1 + bank->random() % (bank->steps.size() - 1);
             bank->lastStep = (bank->lastStep + offset) % bank->steps.size();
             scene.Sounds().Play(bank->steps[bank->lastStep]);
+            // In a puddle, the step rings the water (ADR-0061); elsewhere the ring shows on nothing.
+            scene.AddRipple(player.feet, 1.5f);
         }
     } else {
         bank->stepDistance = 0.0f;
