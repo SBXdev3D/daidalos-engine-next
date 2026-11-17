@@ -2325,3 +2325,83 @@ TEST_F(PathTracerTest, AnEmissiveScaleDimsAPanelAndTheLightItGives) {
     const Image tracedFull = Trace(full, kExtent, {.maxBounces = 2, .seed = 41, .jitter = false}, 1024);
     EXPECT_NEAR(TotalLuminance(tracedHalf) / TotalLuminance(tracedFull), 0.5, 0.05);
 }
+
+namespace {
+
+// A grey floor and a block in front of the camera, lit from above and to the side, so the block's shadow
+// falls beside it (ADR-0059).
+SceneView BlockOnAFloor(renderer::MeshHandle cube,
+                        const std::function<renderer::MaterialHandle(const MaterialDesc&)>& material,
+                        float floorRoughness) {
+    SceneView view;
+    view.camera = LookAt({0.0f, 2.0f, 4.0f}, {0.0f, 0.4f, 0.0f}, 0.9f);
+    view.atmosphere = Dark();
+    view.lights.push_back({.type = renderer::LightType::Point,
+                           .position = {1.5f, 3.0f, 0.5f},
+                           .color = glm::vec3(50.0f),
+                           .range = 12.0f});
+    view.draws.push_back(
+        {.mesh = cube,
+         .world = glm::scale(glm::translate(glm::mat4(1.0f), {0.0f, -0.05f, 0.0f}), {8.0f, 0.1f, 8.0f}),
+         .material = material({.baseColorFactor = glm::vec4(0.6f, 0.6f, 0.6f, 1.0f),
+                               .metallicFactor = floorRoughness < 0.2f ? 1.0f : 0.0f,
+                               .roughnessFactor = floorRoughness})});
+    view.draws.push_back(
+        {.mesh = cube,
+         .world = glm::translate(glm::mat4(1.0f), {0.0f, 0.5f, 0.0f}),
+         .material = material(
+             {.baseColorFactor = glm::vec4(0.8f, 0.2f, 0.1f, 1.0f), .metallicFactor = 0.0f, .roughnessFactor = 0.6f})});
+    return view;
+}
+
+} // namespace
+
+TEST_F(PathTracerTest, RayVisibilityMatchesThePathTracer) {
+    // The block hidden from the camera still casts its shadow; the block that casts no shadow still shows. The
+    // lighting and the path tracer apply the same masks (ADR-0059).
+    const auto material = [this](const MaterialDesc& desc) { return Material(desc); };
+    constexpr rhi::Extent kExtent{96, 96};
+    const SceneView shown = BlockOnAFloor(m_cube, material, 0.8f);
+    SceneView ghost = shown;
+    ghost.draws.back().seenByCamera = false;
+    SceneView shadowless = shown;
+    shadowless.draws.back().castsShadows = false;
+    for (const auto& [name, view] : {std::pair{"ghost", ghost}, std::pair{"shadowless", shadowless}}) {
+        const Image traced = Trace(view, kExtent, {.maxBounces = 1, .seed = 43, .jitter = false}, 1);
+        const Image raster = Rasterize(view, kExtent);
+        const Image normal = Rasterize(shown, kExtent);
+        const float flip = Flip(traced, raster, kExtent);
+        const float flipNormal = Flip(traced, normal, kExtent);
+        RecordProperty(std::string("flip_") + name, std::to_string(flip));
+        // Measured on an RTX 3090: 0.005 for the ghost, 0.006 for the block without a shadow.
+        EXPECT_LT(flip, 0.03f) << name;
+        EXPECT_GT(flipNormal, 2.0f * flip) << name << ": the mask changes the image";
+    }
+}
+
+TEST_F(PathTracerTest, AFigureSeenOnlyInAMirror) {
+    // The block is seen neither by the camera nor by bounced light, but a polished metal floor reflects it: the
+    // lighting's reflections find it as the path tracer does (ADR-0059).
+    const auto material = [this](const MaterialDesc& desc) { return Material(desc); };
+    SceneView view = BlockOnAFloor(m_cube, material, 0.05f);
+    view.draws.back().seenByCamera = false;
+    view.draws.back().seenByIndirect = false;
+    SceneView empty = view;
+    empty.draws.pop_back();
+    constexpr rhi::Extent kExtent{96, 96};
+    const Image traced = Trace(view, kExtent, {.maxBounces = 3, .seed = 47, .jitter = false}, 256);
+    core::Result<renderer::GlobalIllumination> created = renderer::GlobalIllumination::Create(Device());
+    ASSERT_TRUE(created.has_value()) << core::Format(created.error());
+    const Image reflected =
+        Rasterize(view, kExtent, {.frames = 64, .indirect = &*created, .warmup = 16, .reflections = true});
+    core::Result<renderer::GlobalIllumination> again = renderer::GlobalIllumination::Create(Device());
+    ASSERT_TRUE(again.has_value());
+    const Image nothing =
+        Rasterize(empty, kExtent, {.frames = 64, .indirect = &*again, .warmup = 16, .reflections = true});
+    const float flip = Flip(traced, reflected, kExtent);
+    const float flipEmpty = Flip(traced, nothing, kExtent);
+    RecordProperty("flip", std::to_string(flip));
+    RecordProperty("flipWithoutTheFigure", std::to_string(flipEmpty));
+    // Measured on an RTX 3090: 0.088, and 0.132 when the figure is not there at all.
+    EXPECT_LT(flip, 0.8f * flipEmpty) << "The mirror shows the figure the camera does not see";
+}

@@ -47,7 +47,8 @@ bool OnScreen(FrameData frame, float3 position, out int2 pixel) {
 // The light that comes back along a ray: what the frame shows where it hits, or the hit shaded (lit or not),
 // or the sky. Emissive lights show: glass is a mirror, whose highlights leave them out (ADR-0044).
 float3 TraceLight(FrameData frame, RayDesc ray, bool lit, inout uint random) {
-    const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_push.instanceBuffer, g_push.materialBuffer);
+    const Hit hit =
+        TraceClosest(ray, frame.accelerationStructure, g_push.instanceBuffer, g_push.materialBuffer, kMaskReflection);
     if (!hit.found) {
         return SkyRadiance(frame, ray.Direction);
     }

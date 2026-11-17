@@ -118,6 +118,8 @@ struct TracedDraw {
     bool castsShadows = true;
     /// Its material is glass (ADR-0042): rays other than the glass pass's go through it.
     bool glass = false;
+    /// Which rays see it (RayTracingScene.hpp's masks, ADR-0059).
+    std::uint8_t mask = 0;
 };
 
 /// Owns the meshes, the materials, the frame's lights and the pipelines that draw meshes: the G-buffer, glass

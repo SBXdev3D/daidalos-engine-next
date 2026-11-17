@@ -103,6 +103,17 @@ bool InspectLight(scene::Light& light) {
     return changed;
 }
 
+bool InspectVisibility(scene::RayVisibility& visibility) {
+    bool changed = ImGui::Checkbox("Camera", &visibility.camera);
+    ImGui::SameLine();
+    changed |= ImGui::Checkbox("Shadows", &visibility.shadows);
+    changed |= ImGui::Checkbox("Reflections", &visibility.reflections);
+    ImGui::SameLine();
+    changed |= ImGui::Checkbox("Bounced light", &visibility.indirect);
+    ImGui::TextDisabled("Which rays see its meshes and those under it");
+    return changed;
+}
+
 bool InspectFog(scene::FogVolume& fog) {
     bool changed = false;
     changed |= ImGui::Checkbox("Enabled", &fog.enabled);
@@ -302,12 +313,17 @@ bool InspectComponents(scene::LevelEntity& entity) {
     changed |= Section("Ribbon", entity.ribbon, InspectRibbon);
     changed |= Section("Lightning", entity.lightning, InspectLightning);
     changed |= Section("Game", entity.game, InspectGame);
+    changed |= Section("Ray visibility", entity.visibility, InspectVisibility);
 
     ImGui::Separator();
     if (ImGui::Button("Add a component")) {
         ImGui::OpenPopup("add component");
     }
     if (ImGui::BeginPopup("add component")) {
+        if (!entity.visibility && ImGui::MenuItem("Ray visibility")) {
+            entity.visibility = scene::RayVisibility{};
+            changed = true;
+        }
         if (!entity.light && ImGui::MenuItem("Light")) {
             entity.light = scene::Light{.intensity = 100.0f};
             changed = true;

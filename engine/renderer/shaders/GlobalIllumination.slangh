@@ -295,7 +295,7 @@ float3 BouncedLight(FrameData frame, BouncePoint first, inout uint random) {
         ray.Origin = OffsetOrigin(point.position, point.faceNormal);
         ray.TMin = 0.0;
         ray.TMax = 1e6;
-        const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer);
+        const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer, kMaskIndirect);
         if (!hit.found) {
             light += throughput * SkyRadiance(frame, ray.Direction);
             break;
@@ -312,7 +312,7 @@ float3 BouncedLight(FrameData frame, BouncePoint first, inout uint random) {
 
 // Traces ray, from a pixel, and returns the light that comes back along it (BouncedLight), or the sky's.
 float3 TraceBounce(FrameData frame, RayDesc ray, inout uint random) {
-    const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer);
+    const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer, kMaskIndirect);
     if (!hit.found) {
         return ClampBounce(SkyRadiance(frame, ray.Direction));
     }

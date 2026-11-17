@@ -283,6 +283,16 @@ core::Result<Light> ReadLight(Reader reader) {
     return light;
 }
 
+core::Result<RayVisibility> ReadVisibility(Reader reader) {
+    RayVisibility visibility;
+    DAI_LEVEL_TRY(reader.Flag("camera", visibility.camera));
+    DAI_LEVEL_TRY(reader.Flag("shadows", visibility.shadows));
+    DAI_LEVEL_TRY(reader.Flag("reflections", visibility.reflections));
+    DAI_LEVEL_TRY(reader.Flag("indirect", visibility.indirect));
+    DAI_LEVEL_TRY(reader.Finish());
+    return visibility;
+}
+
 core::Result<FogVolume> ReadFog(Reader reader) {
     FogVolume fog;
     DAI_LEVEL_TRY(reader.Number("density", fog.density));
@@ -459,6 +469,7 @@ core::Result<LevelEntity> ReadEntity(const JsonObject& object, std::size_t index
         entity.transform = *value;
     }
     DAI_LEVEL_TRY(component("light", entity.light, &ReadLight));
+    DAI_LEVEL_TRY(component("visibility", entity.visibility, &ReadVisibility));
     DAI_LEVEL_TRY(component("fog", entity.fog, &ReadFog));
     DAI_LEVEL_TRY(component("wind", entity.wind, &ReadWind));
     DAI_LEVEL_TRY(component("particles", entity.particles, &ReadParticles));
@@ -717,6 +728,15 @@ Json WriteEntity(const LevelEntity& entity) {
     if (entity.light) {
         object.emplace("light", WriteLight(*entity.light));
     }
+    if (entity.visibility) {
+        const RayVisibility fallback;
+        JsonObject visibility;
+        Put(visibility, "camera", entity.visibility->camera, fallback.camera);
+        Put(visibility, "shadows", entity.visibility->shadows, fallback.shadows);
+        Put(visibility, "reflections", entity.visibility->reflections, fallback.reflections);
+        Put(visibility, "indirect", entity.visibility->indirect, fallback.indirect);
+        object.emplace("visibility", Json{std::move(visibility)});
+    }
     if (entity.fog) {
         object.emplace("fog", WriteFog(*entity.fog));
     }
@@ -919,7 +939,8 @@ bool LevelEntity::operator==(const LevelEntity& other) const {
     return id == other.id && name == other.name && parent == other.parent && transform == other.transform &&
            model == other.model && light == other.light && fog == other.fog && wind == other.wind &&
            particles == other.particles && attractor == other.attractor && weather == other.weather &&
-           ribbon == other.ribbon && lightning == other.lightning && game == other.game;
+           ribbon == other.ribbon && lightning == other.lightning && game == other.game &&
+           visibility == other.visibility;
 }
 
 const LevelEntity* Level::Find(std::uint64_t id) const {

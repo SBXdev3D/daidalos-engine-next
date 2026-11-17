@@ -59,6 +59,11 @@ struct DrawItem {
     SceneId id = 0;
     /// Multiplies its material's emission, and the light it gives: an animated lamp's glow (ADR-0057).
     float emissiveScale = 1.0f;
+    /// Which rays see it besides shadow rays (castsShadows) (ADR-0059): the camera, reflections, and the rays
+    /// of bounced light. A figure seen only in a mirror sees neither the camera nor bounced light.
+    bool seenByCamera = true;
+    bool seenInReflections = true;
+    bool seenByIndirect = true;
 };
 
 /// The fog that fills the level (ADR-0051): a participating medium, the same everywhere within the view

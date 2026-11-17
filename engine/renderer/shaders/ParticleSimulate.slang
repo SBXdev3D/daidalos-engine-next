@@ -300,7 +300,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             ray.TMin = 0.0;
             ray.TMax = distance;
             hit = TraceClosest(ray, frame.accelerationStructure, g_particles.instanceBuffer, g_particles.materialBuffer,
-                               kMaskShadowCasters | kMaskGlass);
+                               kMaskCollision | kMaskGlass);
         }
         if (hit.found) {
             const InstanceData instance = g_instances[g_particles.instanceBuffer][hit.instance];
