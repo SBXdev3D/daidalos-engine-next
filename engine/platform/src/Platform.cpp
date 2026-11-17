@@ -95,6 +95,7 @@ core::Result<Platform> Platform::Create(const PlatformConfig& config) {
         SDL_SetHint(SDL_HINT_VIDEO_DRIVER, config.videoDriver.c_str());
     }
 
+    SDL_SetHint(SDL_HINT_JOYSTICK_DIRECTINPUT, config.directInputGamepads ? "1" : "0");
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         std::string message = std::format("Cannot initialize SDL video: {}", SDL_GetError());
         SDL_Quit();
