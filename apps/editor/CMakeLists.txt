@@ -5,6 +5,8 @@ dai_add_app(NAME editor
     SOURCES
         src/AssetBrowser.cpp
         src/AssetBrowser.hpp
+        src/Clipboard.cpp
+        src/Clipboard.hpp
         src/Editor.cpp
         src/Editor.hpp
         src/History.cpp
