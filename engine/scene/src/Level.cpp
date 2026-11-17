@@ -255,6 +255,28 @@ void LevelInstance::Make(const LevelEntity& entity) {
     }
     if (entity.light) {
         world.Add<Light>(created, *entity.light);
+        // Its profile and cookie (ADR-0057): a light without them shines alike everywhere.
+        LightTextures textures;
+        if (!entity.light->profile.empty()) {
+            if (core::Result<rhi::TextureHandle> profile = assets.LoadLightProfile(Resolve(entity.light->profile))) {
+                textures.profile = *profile;
+            } else {
+                DAI_LOG_WARNING(kModule, "Level entity {} '{}': {}", entity.id, entity.name,
+                                core::Format(profile.error()));
+            }
+        }
+        if (!entity.light->cookie.empty()) {
+            if (core::Result<rhi::TextureHandle> cookie =
+                    assets.LoadTexture(Resolve(entity.light->cookie), resources::TextureUse::Data)) {
+                textures.cookie = *cookie;
+            } else {
+                DAI_LOG_WARNING(kModule, "Level entity {} '{}': {}", entity.id, entity.name,
+                                core::Format(cookie.error()));
+            }
+        }
+        if (!textures.profile.IsNull() || !textures.cookie.IsNull()) {
+            world.Add<LightTextures>(created, textures);
+        }
     }
     if (entity.fog) {
         world.Add<FogVolume>(created, *entity.fog);

@@ -39,7 +39,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     result.b = mul(instance.world, float4(LoadVertex(instance, g_indices[instance.indexBuffer][first + 1]).position, 1.0)).xyz;
     result.c = mul(instance.world, float4(LoadVertex(instance, g_indices[instance.indexBuffer][first + 2]).position, 1.0)).xyz;
     result.twoSided = g_triangles.twoSided;
-    result.emission = g_emissions[g_triangles.emission][triangle].rgb;
+    result.emission = g_emissions[g_triangles.emission][triangle].rgb * instance.emissiveScale;
     result.padding0 = 0;
     result.padding1 = 0;
     result.padding2 = 0;

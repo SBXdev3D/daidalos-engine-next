@@ -2227,3 +2227,101 @@ TEST_F(PathTracerTest, ClearCoatKeepsItsEnergyInAWhiteSky) {
         Trace(CubeInFront(Material(coated)), kSmall, {.maxBounces = 8, .background = glm::vec3(1.0f), .seed = 31}, 256);
     ExpectFurnace(image, 0.85f);
 }
+
+namespace {
+
+// A light profile (ADR-0057) as the asset library makes one: a row of half floats, by angle from the axis.
+rhi::TextureHandle MakeRow(rhi::Device& device, const std::vector<float>& values, rhi::Extent extent) {
+    std::vector<std::uint16_t> halves;
+    for (const float value : values) {
+        halves.push_back(glm::packHalf1x16(value));
+    }
+    const core::Result<rhi::TextureHandle> texture =
+        device.CreateTexture({.extent = extent,
+                              .format = rhi::Format::R16Float,
+                              .usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDst,
+                              .name = "Test light texture"});
+    EXPECT_TRUE(texture.has_value());
+    EXPECT_TRUE(device.UploadTexture(*texture, std::as_bytes(std::span(halves))).has_value());
+    return *texture;
+}
+
+} // namespace
+
+TEST_F(PathTracerTest, AProfileAndACookieShapeTheLightAsThePathTracerSees) {
+    // A point light above a grey floor, shaped by a profile that lights only within 25 degrees of straight
+    // down, and a spot light whose cookie is dark on one half (ADR-0057). Both live in the one attenuation
+    // function, so the lighting and the path tracer shape them alike.
+    std::vector<float> profile(128, 0.0f);
+    for (std::size_t sample = 0; sample < profile.size(); ++sample) {
+        profile[sample] = static_cast<float>(sample) / 127.0f * 180.0f < 25.0f ? 1.0f : 0.0f;
+    }
+    const rhi::TextureHandle row = MakeRow(Device(), profile, {128, 1});
+    std::vector<float> half(16 * 16, 1.0f);
+    for (std::size_t y = 0; y < 16; ++y) {
+        for (std::size_t x = 0; x < 8; ++x) {
+            half[y * 16 + x] = 0.0f;
+        }
+    }
+    const rhi::TextureHandle cookie = MakeRow(Device(), half, {16, 16});
+    SceneView view;
+    view.camera = LookAt({0.0f, 5.0f, 4.0f}, {0.0f, 0.0f, 0.0f}, 0.9f);
+    view.atmosphere = Dark();
+    view.draws.push_back(
+        {.mesh = m_cube,
+         .world = glm::scale(glm::translate(glm::mat4(1.0f), {0.0f, -0.05f, 0.0f}), {10.0f, 0.1f, 10.0f}),
+         .material = Material(
+             {.baseColorFactor = glm::vec4(0.6f, 0.6f, 0.6f, 1.0f), .metallicFactor = 0.0f, .roughnessFactor = 0.9f})});
+    view.lights.push_back({.type = renderer::LightType::Point,
+                           .position = {-1.5f, 2.0f, 0.0f},
+                           .direction = {0.0f, -1.0f, 0.0f},
+                           .color = glm::vec3(40.0f),
+                           .range = 10.0f,
+                           .id = 1,
+                           .profile = row});
+    view.lights.push_back({.type = renderer::LightType::Spot,
+                           .position = {1.5f, 2.0f, 0.0f},
+                           .direction = {0.0f, -1.0f, 0.0f},
+                           .color = glm::vec3(40.0f),
+                           .range = 10.0f,
+                           .innerAngle = 0.5f,
+                           .outerAngle = 0.6f,
+                           .id = 2,
+                           .cookie = cookie,
+                           .up = {0.0f, 0.0f, -1.0f}});
+    constexpr rhi::Extent kExtent{96, 96};
+    const Image traced = Trace(view, kExtent, {.maxBounces = 1, .seed = 37, .jitter = false}, 1);
+    const Image raster = Rasterize(view, kExtent, {.frames = 16});
+    SceneView plain = view;
+    plain.lights[0].profile = {};
+    plain.lights[1].cookie = {};
+    const Image unshaped = Rasterize(plain, kExtent, {.frames = 16});
+    const float flip = Flip(traced, raster, kExtent);
+    const float flipUnshaped = Flip(traced, unshaped, kExtent);
+    RecordProperty("flip", std::to_string(flip));
+    RecordProperty("flipUnshaped", std::to_string(flipUnshaped));
+    EXPECT_LT(flip, 0.03f);
+    EXPECT_GT(flipUnshaped, 3.0f * flip);
+    EXPECT_LT(TotalLuminance(raster), 0.6 * TotalLuminance(unshaped)) << "The profile and the cookie hold light back";
+    Device().DestroyTexture(row);
+    Device().DestroyTexture(cookie);
+}
+
+TEST_F(PathTracerTest, AnEmissiveScaleDimsAPanelAndTheLightItGives) {
+    // The emissive panel of the Cornell box at half its glow (ADR-0057): what it shows and what it lights both
+    // halve, in the lighting and in the path tracer.
+    SceneView full = CornellBoxWithPanel(m_cube, [this](const MaterialDesc& desc) { return Material(desc); }, true);
+    SceneView dimmed = full;
+    dimmed.draws.back().emissiveScale = 0.5f;
+    SceneView off = full;
+    off.draws.back().emissiveScale = 0.0f;
+    constexpr rhi::Extent kExtent{48, 48};
+    const Image bright = Rasterize(full, kExtent, {.frames = 32, .warmup = 4, .restir = {.unbiased = true}});
+    const Image half = Rasterize(dimmed, kExtent, {.frames = 32, .warmup = 4, .restir = {.unbiased = true}});
+    const Image dark = Rasterize(off, kExtent, {.frames = 4, .warmup = 4});
+    EXPECT_NEAR(TotalLuminance(half) / TotalLuminance(bright), 0.5, 0.05);
+    EXPECT_LT(TotalLuminance(dark), 0.01 * TotalLuminance(bright)) << "Off, it neither glows nor lights";
+    const Image tracedHalf = Trace(dimmed, kExtent, {.maxBounces = 2, .seed = 41, .jitter = false}, 1024);
+    const Image tracedFull = Trace(full, kExtent, {.maxBounces = 2, .seed = 41, .jitter = false}, 1024);
+    EXPECT_NEAR(TotalLuminance(tracedHalf) / TotalLuminance(tracedFull), 0.5, 0.05);
+}

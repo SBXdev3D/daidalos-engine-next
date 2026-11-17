@@ -102,14 +102,16 @@ struct LightData {
     float3 position;
     float range; // Meters: the light fades to zero there.
     float3 direction;
-    float spare;
+    uint profile; // Its intensity by angle from direction, a row of a texture (ADR-0057), or kNoTexture.
     float3 color;
     float cosOuter;
     float cosInner;
     float radius; // Meters: a sphere whose shadows are soft; 0 is a point (ADR-0039). Directional
                   // lights: the tangent of their angular radius.
     uint kind;
-    uint padding;
+    uint cookie;       // Spot lights: a grey image over the cone (ADR-0057), or kNoTexture.
+    float3 up;         // The cookie's up.
+    float cookieScale; // One over the tangent of the cone's outer angle.
 };
 
 // How far a directional light is put from the point it lights: beyond anything in a level.
@@ -138,7 +140,7 @@ struct InstanceData {
     // A skinned draw's positions in the previous frame, three floats per vertex from firstVertex, in
     // world space; kNoTexture for a rigid draw.
     uint previousPositions;
-    uint padding0; // Not a uint3, which would be aligned to 16 bytes.
+    float emissiveScale; // Multiplies its material's emission: an animated lamp's glow (ADR-0057).
     uint2 padding;
 };
 
@@ -221,12 +223,34 @@ static const uint kSamplerLinearRepeat = 1;
 static const uint kSamplerNearestClamp = 2;
 static const uint kSamplerShadowCompare = 3;
 
+// How a real lamp's light varies with the direction it leaves in (ADR-0057): its profile, by the angle from
+// its direction, and a spot light's cookie, the image it shines through. 1 without either.
+float LightShape(LightData light, float3 toLight) {
+    float shape = 1.0;
+    const float3 outward = -toLight;
+    if (light.profile != kNoTexture) {
+        const float angle = acos(clamp(dot(outward, light.direction), -1.0, 1.0));
+        shape *= g_textures[light.profile].SampleLevel(g_samplers[kSamplerLinearClamp], float2(angle / 3.14159265, 0.5), 0.0).r;
+    }
+    if (light.cookie != kNoTexture) {
+        const float along = dot(outward, light.direction);
+        if (along <= 0.0) {
+            return 0.0;
+        }
+        const float3 right = normalize(cross(light.direction, light.up));
+        const float3 up = cross(right, light.direction);
+        const float2 uv = float2(dot(outward, right), -dot(outward, up)) / along * light.cookieScale * 0.5 + 0.5;
+        shape *= g_textures[light.cookie].SampleLevel(g_samplers[kSamplerLinearClamp], uv, 0.0).r;
+    }
+    return shape;
+}
+
 // What a light's color is multiplied by to give the illuminance it makes at a point, facing it, in lux
 // (ADR-0043): the inverse square of the distance, faded to zero at the light's range by a smooth window
 // (Karis, "Real Shading in Unreal Engine 4", 2013), never nearer than the surface of its sphere; inside the
 // cone of a spot light. A directional light's color is its illuminance already.
 float Attenuation(LightData light, float distanceToLight, float3 toLight) {
-    const float cone = smoothstep(light.cosOuter, light.cosInner, dot(-toLight, light.direction));
+    const float cone = smoothstep(light.cosOuter, light.cosInner, dot(-toLight, light.direction)) * LightShape(light, toLight);
     if (light.kind == kLightDirectional) {
         return cone;
     }

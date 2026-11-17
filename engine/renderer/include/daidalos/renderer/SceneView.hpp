@@ -57,6 +57,8 @@ struct DrawItem {
     std::optional<glm::mat4> previousWorld;
     /// The same from frame to frame, if its material is an emissive light.
     SceneId id = 0;
+    /// Multiplies its material's emission, and the light it gives: an animated lamp's glow (ADR-0057).
+    float emissiveScale = 1.0f;
 };
 
 /// The fog that fills the level (ADR-0051): a participating medium, the same everywhere within the view
@@ -181,6 +183,13 @@ struct Light {
     float angularRadius = 0.0f;
     /// The same from frame to frame.
     SceneId id = 0;
+    /// How a real lamp sends its light around its direction (ADR-0057): a row of its intensity by the angle
+    /// from it, from 0 to 180 degrees (scene::AssetLibrary::LoadLightProfile); null for every direction alike.
+    rhi::TextureHandle profile;
+    /// Spot lights: a grey image the light shines through, over its cone; null for none.
+    rhi::TextureHandle cookie;
+    /// The cookie's up, across the light's direction.
+    glm::vec3 up{0.0f, 1.0f, 0.0f};
 };
 
 /// What the renderer draws in one frame. It holds copies, so that rendering never touches the ECS

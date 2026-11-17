@@ -9,6 +9,7 @@
 #include <daidalos/physics/PhysicsWorld.hpp>
 #include <daidalos/renderer/SceneView.hpp>
 #include <daidalos/scene/Components.hpp>
+#include <daidalos/scene/LightAnimation.hpp>
 
 #include <glm/mat4x4.hpp>
 
@@ -29,6 +30,11 @@ namespace daidalos::scene {
 /// Each drawn entity and joint keeps its matrix in a DrawnTransform, which the next extraction gives as
 /// the previous one; an entity drawn for the first time has no motion.
 void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity activeCamera = {});
+
+/// Sets the brightness of every animated light for this time (ADR-0057): its LightState, and the
+/// EmissiveScale of its lamp, the entity it hangs from when that places a model, so that the lamp glows as it
+/// shines. Lights on a circuit that is cut go dark.
+void AnimateLights(ecs::World& world, double seconds, const PowerCircuits& circuits);
 
 /// Who sees the particles, and how many are worth emitting (ADR-0053).
 struct EmissionView {

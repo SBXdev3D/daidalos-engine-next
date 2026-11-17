@@ -7,7 +7,10 @@
 #include <daidalos/logging/Log.hpp>
 #include <daidalos/renderer/LightUnits.hpp>
 #include <daidalos/resources/AssetPath.hpp>
+#include <daidalos/resources/LightProfile.hpp>
 #include <daidalos/scene/AssetLibrary.hpp>
+
+#include <glm/gtc/packing.hpp>
 
 #include <algorithm>
 #include <array>
@@ -422,6 +425,35 @@ core::Result<rhi::TextureHandle> AssetLibrary::LoadCubeTexture(std::span<const s
     DAI_TRY_ASSIGN(rhi::TextureHandle texture,
                    renderer::CreateCubeTexture(m_renderer->Device(), images, identities.front()));
     m_textures.Insert(key, texture);
+    return texture;
+}
+
+core::Result<rhi::TextureHandle> AssetLibrary::LoadLightProfile(std::string_view path) {
+    DAI_TRY_ASSIGN(std::string identity, resources::NormalizeAssetPath(path));
+    const std::string key = "profile|" + identity;
+    if (const rhi::TextureHandle* found = m_textures.Find(key)) {
+        return *found;
+    }
+    DAI_TRY_ASSIGN(std::filesystem::path file, resources::ResolveAssetPath(m_root, identity));
+    DAI_TRY_ASSIGN(const resources::LightProfile profile, resources::LoadIesFile(file));
+    // Half floats, which every GPU filters: a row of the intensity by angle from the axis (ADR-0057).
+    std::vector<std::uint16_t> texels;
+    texels.reserve(profile.samples.size());
+    for (const float sample : profile.samples) {
+        texels.push_back(glm::packHalf1x16(sample));
+    }
+    rhi::Device& device = m_renderer->Device();
+    DAI_TRY_ASSIGN(rhi::TextureHandle texture,
+                   device.CreateTexture({.extent = {static_cast<std::uint32_t>(texels.size()), 1},
+                                         .format = rhi::Format::R16Float,
+                                         .usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDst,
+                                         .name = identity}));
+    if (core::Result<void> uploaded = device.UploadTexture(texture, std::as_bytes(std::span(texels))); !uploaded) {
+        device.DestroyTexture(texture);
+        return tl::unexpected(uploaded.error());
+    }
+    m_textures.Insert(key, texture);
+    DAI_LOG_INFO(kModule, "Loaded light profile '{}', {:.0f} cd at its brightest", identity, profile.peakCandela);
     return texture;
 }
 

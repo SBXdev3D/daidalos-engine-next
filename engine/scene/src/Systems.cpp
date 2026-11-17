@@ -6,6 +6,7 @@
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/renderer/LightUnits.hpp>
 #include <daidalos/scene/Components.hpp>
+#include <daidalos/scene/Level.hpp>
 #include <daidalos/scene/Systems.hpp>
 
 #include <glm/common.hpp>
@@ -35,24 +36,74 @@ renderer::SceneId SceneIdOf(ecs::Entity entity) {
 void ExtractLights(ecs::World& world, renderer::SceneView& view) {
     world.Each<ecs::WorldTransform, Light>(
         [&](ecs::Entity entity, const ecs::WorldTransform& transform, const Light& light) {
-            if (!light.enabled || light.intensity <= 0.0f || light.range <= 0.0f) {
+            const LightState* state = world.TryGet<LightState>(entity);
+            const float factor = state != nullptr ? state->factor : 1.0f;
+            if (!light.enabled || light.intensity * factor <= 0.0f || light.range <= 0.0f) {
                 return;
             }
+            const LightTextures* textures = world.TryGet<LightTextures>(entity);
             view.lights.push_back(
                 {.type = light.type,
                  .position = glm::vec3(transform.matrix[3]),
                  .direction = glm::normalize(-glm::vec3(transform.matrix[2])),
                  .color = light.color *
                           (light.temperature > 0.0f ? renderer::ColorTemperature(light.temperature) : glm::vec3(1.0f)) *
-                          light.intensity,
+                          light.intensity * factor,
                  .range = light.range,
                  .innerAngle = light.innerAngle,
                  .outerAngle = light.outerAngle,
                  .radius = light.radius,
                  .angularRadius = light.angularRadius,
-                 .id = SceneIdOf(entity)});
+                 .id = SceneIdOf(entity),
+                 .profile = textures != nullptr ? textures->profile : rhi::TextureHandle{},
+                 .cookie = textures != nullptr ? textures->cookie : rhi::TextureHandle{},
+                 .up = glm::normalize(glm::vec3(transform.matrix[1]))});
         });
 }
+
+// What the emission of an entity's meshes is multiplied by: the nearest EmissiveScale among it and the
+// entities above it, close enough to be its lamp.
+float EmissiveScaleOf(ecs::World& world, ecs::Entity entity) {
+    for (int depth = 0; depth < 6 && !entity.IsNull(); ++depth) {
+        if (const EmissiveScale* scale = world.TryGet<EmissiveScale>(entity)) {
+            return scale->value;
+        }
+        entity = world.Parent(entity);
+    }
+    return 1.0f;
+}
+
+} // namespace
+
+void AnimateLights(ecs::World& world, double seconds, const PowerCircuits& circuits) {
+    world.Each<Light>([&](ecs::Entity entity, const Light& light) {
+        if (!light.animation.Animated()) {
+            if (LightState* state = world.TryGet<LightState>(entity)) {
+                state->factor = 1.0f;
+            }
+            return;
+        }
+        float factor = LightFactor(light.animation, seconds, entity.Index() * 2654435761U);
+        if (!light.animation.circuit.empty()) {
+            factor *= circuits.Factor(light.animation.circuit, seconds);
+        }
+        if (LightState* state = world.TryGet<LightState>(entity)) {
+            state->factor = factor;
+        } else {
+            world.Add<LightState>(entity, LightState{factor});
+        }
+        // The lamp: the entity the light hangs from when it places a model, else the light's own entity.
+        const ecs::Entity parent = world.Parent(entity);
+        const ecs::Entity lamp = !parent.IsNull() && world.Has<ModelInstance>(parent) ? parent : entity;
+        if (EmissiveScale* scale = world.TryGet<EmissiveScale>(lamp)) {
+            scale->value = factor;
+        } else {
+            world.Add<EmissiveScale>(lamp, EmissiveScale{factor});
+        }
+    });
+}
+
+namespace {
 
 void ExtractFogVolumes(ecs::World& world, renderer::SceneView& view) {
     world.Each<ecs::WorldTransform, FogVolume>(
@@ -158,6 +209,7 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
     });
 
     view.draws.reserve(world.Count<MeshRenderer>());
+    const bool scaled = world.Count<EmissiveScale>() > 0;
     world.Each<ecs::WorldTransform, MeshRenderer>(
         [&](ecs::Entity entity, const ecs::WorldTransform& transform, const MeshRenderer& component) {
             view.draws.push_back({.mesh = component.mesh,
@@ -165,7 +217,8 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
                                   .material = component.material,
                                   .castsShadows = component.castsShadows,
                                   .previousWorld = drawn.Previous(entity, transform.matrix),
-                                  .id = SceneIdOf(entity)});
+                                  .id = SceneIdOf(entity),
+                                  .emissiveScale = scaled ? EmissiveScaleOf(world, entity) : 1.0f});
         });
 
     world.Each<ecs::WorldTransform, SkinnedMeshRenderer>(

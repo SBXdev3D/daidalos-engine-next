@@ -181,7 +181,8 @@ Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame, uint instanceBuf
     surface.f0 = lerp(float3(0.04, 0.04, 0.04), baseColor.rgb, metallic);
     // Nits, times the frame's exposure (ADR-0043).
     surface.emission = material.emissiveFactor *
-                       SampleLevelZero(material.emissiveTexture, vertex.uv, float4(1.0, 1.0, 1.0, 1.0)).rgb * frame.exposure;
+                       SampleLevelZero(material.emissiveTexture, vertex.uv, float4(1.0, 1.0, 1.0, 1.0)).rgb * frame.exposure *
+                       instance.emissiveScale;
     surface.emissiveLight = material.emissiveLight != 0;
 
     surface.transmission = material.transmission;
