@@ -21,12 +21,17 @@ Phase 10 builds a level editor (ADR-0041) on the level files of ADR-0054. The ow
 - **Controls follow common editors.** Holding the right mouse button flies the camera with WASD, Q and E (Shift faster, the wheel sets the speed). Without it, the wheel walks and the middle button pans. W, E and R choose move, rotate and scale. F frames the selection, Escape clears it, and Ctrl+S saves.
 - **`+editor.resave true`** reads a level, writes it in the engine's own layout and quits, after a script has written one.
 
+- **Assets (10.4).** An Assets panel browses the folders under `assets/` and shows, in the open one, models, skies (one tile for the six faces), particle effects, ribbons and levels. A double click places a tile in front of the camera; dragging it into the view places it on what the view shows under the mouse (the picking ray), or six meters along it. A model becomes an entity with its path relative to the level, an effect a particle emitter, a ribbon a ribbon emitter; a sky becomes the level's; a level opens.
+- **Thumbnails drawn as clay on the CPU.** A worker reads the glTF (`resources::LoadModelFile`, no GPU), rasterizes its triangles at twice 128 pixels with a depth buffer, lit by a key light, the sky and a rim, tinted by each material's base color and emission, and averages down; skies show their front face. The main thread uploads the result as a texture that ImGui draws by its bindless index. No renderer change, no second view, nothing drawn while the frame is drawn; two thumbnails at a time so the browser never stalls the editor. Textures are not drawn on the clay: a shape reads better small, and the browser's tiles are for finding a model.
+- **Importing copies files into the open folder.** Files dropped on the window from the system (`platform::FileDropped`), or a path typed in Import, are copied: a glTF with the buffers and images it reads (`resources::ModelFiles`), in a folder of its name when it has some; a sky's six faces. Nothing is converted or replaced, and a model whose files lie outside its folder is refused with a message, so an import never half-succeeds. A file dropped over the view is also placed there.
+
 ## Consequences
 
 - The engine's summary bar can be hidden (`DevTools::SetSummaryShown`); the editor shows its numbers in its status panel.
 - The renderer's scene targets follow the viewport's size, so dragging a splitter makes them again each frame it changes, as resizing the window does. Editors resize rarely.
 - `LevelInstance` builds in an order that creates parents and the models emitters sit on first, whatever the file's order, and links ribbons and lightning once per build instead of once per entity.
 - Play is not inside the editor's window: the game's code would have to run in the editor's scene and be reset after. A separate process is simpler and closer to what players get; playing inside the viewport can come later if switching windows proves slow.
+- Imports keep the source's format: textures stay PNG or JPEG until texture-tool converts them (ADR-0046). An importer that converts and compresses on the way in belongs to the pipeline work of Phase 15.
 - Picking ignores skinned poses (the bind pose is used) and particles. Both are acceptable for placing level entities.
 
 ## Alternatives considered
