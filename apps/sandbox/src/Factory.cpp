@@ -77,10 +77,11 @@ constexpr float kMessageTime = 3.0f;    // Seconds.
 // it is exposed this many stops brighter, without its haze.
 constexpr float kBrightStops = 4.0f;
 constexpr glm::vec3 kFlashlightColor{1.06f, 1.0f, 0.86f};
-constexpr float kFlashlightCandela = 1090.0f;                // As bright as before 4 m away.
-constexpr float kFlashlightRange = 32.0f;                    // Meters.
-constexpr float kFlashlightInnerAngle = glm::radians(13.0f); // From the axis.
-constexpr float kFlashlightOuterAngle = glm::radians(22.0f);
+constexpr float kFlashlightCandela = 1090.0f; // As bright as before 4 m away.
+constexpr float kFlashlightRange = 32.0f;     // Meters.
+// The beam's shape is its profile's (ADR-0058): the cone only bounds it.
+constexpr float kFlashlightInnerAngle = glm::radians(26.0f); // From the axis.
+constexpr float kFlashlightOuterAngle = glm::radians(30.0f);
 // The flashlight is in the left hand, the weapon in the right: from the eye, its shadows would all fall
 // straight behind what casts them, out of sight. It aims at what the player looks at, a few meters ahead.
 constexpr glm::vec3 kFlashlightHand{-0.3f, -0.15f, 0.0f};
@@ -325,9 +326,15 @@ void Collect(Player& player, PickupKind kind) {
         Say(player, "Shotgun: press 2");
         break;
     case PickupKind::Flashlight:
+        // A second flashlight is a fresh battery.
+        if (player.hasFlashlight) {
+            player.torch.battery = 1.0f;
+            Say(player, "Fresh batteries");
+        } else {
+            Say(player, "Flashlight: press F");
+        }
         player.hasFlashlight = true;
         player.flashlightOn = true;
-        Say(player, "Flashlight: press F");
         break;
     case PickupKind::RedCard:
         player.hasRedCard = true;
@@ -712,6 +719,20 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
                                      .innerAngle = kFlashlightInnerAngle,
                                      .outerAngle = kFlashlightOuterAngle,
                                      .enabled = false});
+    // The beam of a real torch: a hot spot, its ring and spill, through a lens (ADR-0058).
+    {
+        const std::string levelDirectory = std::filesystem::path(levelPath).parent_path().generic_string();
+        const std::string lights = levelDirectory.empty() ? "Lights/" : levelDirectory + "/Lights/";
+        scene::LightTextures textures;
+        if (core::Result<rhi::TextureHandle> profile = scene.Assets().LoadLightProfile(lights + "flashlight.ies")) {
+            textures.profile = *profile;
+        }
+        if (core::Result<rhi::TextureHandle> lens =
+                scene.Assets().LoadTexture(lights + "flashlight_cookie.png", resources::TextureUse::Data)) {
+            textures.cookie = *lens;
+        }
+        world.Add<scene::LightTextures>(newPlayer.flashlight, textures);
+    }
     world.Get<Player>(playerEntity).muzzleFlash =
         AddLight(world, playerEntity, math::kForward * 0.7f, glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
                  {.type = renderer::LightType::Point,
@@ -952,14 +973,36 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
                 state->flashlightOn = true;
             }
             state->muzzleFlashTime = std::max(state->muzzleFlashTime - seconds, 0.0f);
+            // The torch in the hand (ADR-0058): it trails the camera's turns and sways with each step, its
+            // battery runs down while it is on, and it dims, buzzes and fails as the game says.
+            const glm::vec2 look{state->yaw, state->pitch};
+            const glm::vec2 turned = look - state->lastLook;
+            state->lastLook = look;
+            const glm::vec3 walk = (state->feet - state->previousFeet) / std::max(seconds, 1e-4f);
+            SwayFlashlight(state->torch, turned.x, turned.y, glm::length(glm::vec2(walk.x, walk.z)), seconds);
+            if (state->flashlightOn) {
+                DrainFlashlight(state->torch, seconds, settings.flashlightBattery);
+            }
             if (scene::Light* flashlight = world.TryGet<scene::Light>(state->flashlight)) {
-                flashlight->enabled = state->flashlightOn;
+                const float brightness = FlashlightBrightness(state->torch, scene.LightClock());
+                flashlight->enabled = state->flashlightOn && brightness > 0.0f;
+                flashlight->intensity = kFlashlightCandela * brightness;
+            }
+            if (ecs::LocalTransform* hand = world.TryGet<ecs::LocalTransform>(state->flashlight)) {
+                const glm::vec2 aim = FlashlightAim(state->torch);
+                const glm::vec3 straight = glm::normalize(math::kForward * kFlashlightAimDistance - kFlashlightHand);
+                hand->rotation = glm::normalize(glm::angleAxis(aim.x, math::kUp) * glm::angleAxis(aim.y, math::kRight) *
+                                                glm::quatLookAtRH(straight, math::kUp));
             }
             if (scene::Light* flash = world.TryGet<scene::Light>(state->muzzleFlash)) {
                 flash->enabled = state->muzzleFlashTime > 0.0f;
             }
         }
     });
+}
+
+void FailFlashlight(Player& player, float seconds) {
+    player.torch.fault = std::max(player.torch.fault, seconds);
 }
 
 } // namespace sandbox

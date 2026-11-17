@@ -109,6 +109,13 @@ void DrawHud(ui::Canvas& canvas, const HudAssets& hud, const Player& player) {
         const float alpha = player.flashlightOn ? 1.0f : 0.4f;
         canvas.DrawImage(hud.icons, {{size.x - kMargin - kIconSize, 20.0f}, glm::vec2(kIconSize)},
                          {.source = kFlashlightIcon, .color = {1.0f, 1.0f, 1.0f, alpha}});
+        // Its battery, red when low (ADR-0058).
+        const float battery = std::clamp(player.torch.battery, 0.0f, 1.0f);
+        const glm::vec2 bar{size.x - kMargin - kIconSize, 24.0f + kIconSize};
+        canvas.FillRect({bar, {kIconSize, 4.0f}}, {0.0f, 0.0f, 0.0f, 0.5f * alpha});
+        canvas.FillRect({bar, {kIconSize * battery, 4.0f}}, battery < kLowBattery
+                                                                ? glm::vec4(1.0f, 0.2f, 0.1f, alpha)
+                                                                : glm::vec4(1.0f, 1.0f, 1.0f, 0.8f * alpha));
     }
     if (player.hasRedCard) {
         canvas.DrawText(*hud.boldFont, "RED CARD", {size.x - kMargin - kIconSize - 16.0f, 20.0f + (kIconSize * 0.5f)},

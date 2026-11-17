@@ -11,6 +11,7 @@
 #include <daidalos/scene/Level.hpp>
 #include <daidalos/scene/Scene.hpp>
 
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
 #include <array>
@@ -19,6 +20,8 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+
+#include "Flashlight.hpp"
 
 namespace sandbox {
 
@@ -118,6 +121,10 @@ struct Player {
     int zombieCount = 0;
     bool hasFlashlight = false;
     bool flashlightOn = false;
+    /// Its sway, battery and faults (ADR-0058).
+    FlashlightState torch;
+    /// Where the camera looked last frame, from which the beam's lag follows a turn.
+    glm::vec2 lastLook{0.0f};
     /// Lights that follow the camera, as its children.
     daidalos::ecs::Entity flashlight;
     daidalos::ecs::Entity muzzleFlash;
@@ -138,7 +145,12 @@ struct Settings {
     float darkness = 1.0f;
     /// Starts with the flashlight on, for tests, instead of finding it in the east wing.
     bool startWithFlashlight = false;
+    /// Seconds a full flashlight battery lasts; 0 never runs down (ADR-0058).
+    float flashlightBattery = 900.0f;
 };
+
+/// Makes the flashlight fail for this long: it stutters and dies at random, as scripted scares want.
+void FailFlashlight(Player& player, float seconds);
 
 /// A sound that does not stop the game when it is missing, because the game can be played without it.
 /// The name is a file of Factory/Sounds.
