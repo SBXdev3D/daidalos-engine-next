@@ -5,6 +5,8 @@
 #ifndef DAIDALOS_GBUFFER_SURFACE_SLANGH
 #define DAIDALOS_GBUFFER_SURFACE_SLANGH
 
+#include "Decals.slangh"
+
 // The G-buffer's pixel shader (ADR-0044), which the meshes (GBuffer.slang) and mesh particles
 // (ParticleMesh.slang, ADR-0053) share. Include after MeshCommon.slangh.
 
@@ -25,12 +27,20 @@ struct GBufferOutput {
 GBufferOutput PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) {
     const FrameData frame = g_frames[g_push.frameBuffer][0];
     const MaterialData material = g_materials[g_push.materialBuffer][g_push.materialIndex];
-    const float4 baseColor = BaseColor(material, input.uv); // Discards below the alpha cutoff.
-    const float3 normal = SurfaceNormal(input, isFrontFace, material, frame.normalStrength);
+    float4 baseColor = BaseColor(material, input.uv); // Discards below the alpha cutoff.
+    float3 normal = SurfaceNormal(input, isFrontFace, material, frame.normalStrength);
     // glTF: roughness in green, metalness in blue.
     const float4 metallicRoughness = SampleTexture(material.metallicRoughnessTexture, input.uv, float4(1.0, 1.0, 1.0, 1.0));
-    const float metallic = saturate(material.metallicFactor * metallicRoughness.b);
-    const float roughness = clamp(material.roughnessFactor * metallicRoughness.g, 0.045, 1.0);
+    float metallic = saturate(material.metallicFactor * metallicRoughness.b);
+    float roughness = clamp(material.roughnessFactor * metallicRoughness.g, 0.045, 1.0);
+#ifndef DAI_NO_INSTANCE_EMISSIVE_SCALE
+    // Decals (ADR-0060): blood, grime, holes, over the material.
+    {
+        const float footprint = max(length(ddx(input.worldPosition)), length(ddy(input.worldPosition)));
+        ApplyDecals(frame, g_instances[g_push.instanceBuffer][g_push.instanceIndex].decalMask, input.worldPosition,
+                    footprint, baseColor.rgb, metallic, roughness, normal);
+    }
+#endif
     const float occlusion =
         lerp(1.0, SampleTexture(material.occlusionTexture, input.uv, float4(1.0, 1.0, 1.0, 1.0)).r, material.occlusionStrength);
     float3 emission = material.emissiveFactor *

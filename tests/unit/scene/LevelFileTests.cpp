@@ -235,3 +235,17 @@ TEST(LevelFileTest, EntitiesKeepWhichRaysSeeThem) {
     ASSERT_TRUE(read.has_value()) << core::Format(read.error());
     EXPECT_EQ(*read, level);
 }
+
+TEST(LevelFileTest, DecalsKeepTheirImagesAndLook) {
+    Level level;
+    LevelEntity entity{.id = 1, .name = "Blood"};
+    entity.decal =
+        scene::Decal{.texture = "Decals/blood_splatter.png", .color = {0.9f, 0.8f, 0.8f}, .roughness = 0.25f};
+    level.entities.push_back(entity);
+    const core::Result<Level> read = ParseLevel(WriteLevel(level));
+    ASSERT_TRUE(read.has_value()) << core::Format(read.error());
+    EXPECT_EQ(*read, level);
+    const std::string message = ErrorOf(R"({"format": "daidalos-level", "version": 1, "entities": [
+        {"id": 1, "decal": {"opacity": 0.5}}]})");
+    EXPECT_NE(message.find("texture"), std::string::npos) << message;
+}

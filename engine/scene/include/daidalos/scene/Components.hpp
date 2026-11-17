@@ -120,6 +120,30 @@ struct Light {
     [[nodiscard]] bool operator==(const Light&) const = default;
 };
 
+/// ECS component: a decal (ADR-0060). The entity's box, from -0.5 to 0.5 scaled by its transform, projects an
+/// image along its -Z onto what is inside it: blood on a wall, mold in a corner, grime on a floor.
+struct Decal {
+    /// The image, with its coverage in alpha, relative to the level's directory.
+    std::string texture;
+    /// A normal map over the same image, or empty.
+    std::string normal;
+    glm::vec3 color{1.0f};
+    float opacity = 1.0f;
+    /// What the surface becomes where it is covered: wet blood is smooth, grime rough.
+    float roughness = 0.6f;
+    float metallic = 0.0f;
+    /// Surfaces turned further than this cosine from facing it fade out.
+    float angleFade = 0.3f;
+    bool enabled = true;
+    [[nodiscard]] bool operator==(const Decal&) const = default;
+};
+
+/// ECS component: a Decal's textures, loaded when it was made.
+struct DecalTextures {
+    rhi::TextureHandle albedo;
+    rhi::TextureHandle normal;
+};
+
 /// ECS component: which rays see the meshes of an entity and of what is under it (ADR-0059). A figure only in
 /// mirrors: no camera, no bounced light. A shadow with no caster: shadows only.
 struct RayVisibility {

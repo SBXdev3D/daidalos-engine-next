@@ -103,6 +103,19 @@ bool InspectLight(scene::Light& light) {
     return changed;
 }
 
+bool InspectDecal(scene::Decal& decal) {
+    bool changed = ImGui::Checkbox("Enabled", &decal.enabled);
+    changed |= InputString("Texture", decal.texture);
+    changed |= InputString("Normal map", decal.normal);
+    changed |= ImGui::ColorEdit3("Color", &decal.color.x);
+    changed |= ImGui::SliderFloat("Opacity", &decal.opacity, 0.0f, 1.0f);
+    changed |= ImGui::SliderFloat("Roughness", &decal.roughness, 0.045f, 1.0f);
+    changed |= ImGui::SliderFloat("Metallic", &decal.metallic, 0.0f, 1.0f);
+    changed |= ImGui::SliderFloat("Angle fade", &decal.angleFade, -1.0f, 0.95f);
+    ImGui::TextDisabled("The box projects along its -Z: scale it to the size of the mark");
+    return changed;
+}
+
 bool InspectVisibility(scene::RayVisibility& visibility) {
     bool changed = ImGui::Checkbox("Camera", &visibility.camera);
     ImGui::SameLine();
@@ -314,12 +327,17 @@ bool InspectComponents(scene::LevelEntity& entity) {
     changed |= Section("Lightning", entity.lightning, InspectLightning);
     changed |= Section("Game", entity.game, InspectGame);
     changed |= Section("Ray visibility", entity.visibility, InspectVisibility);
+    changed |= Section("Decal", entity.decal, InspectDecal);
 
     ImGui::Separator();
     if (ImGui::Button("Add a component")) {
         ImGui::OpenPopup("add component");
     }
     if (ImGui::BeginPopup("add component")) {
+        if (!entity.decal && ImGui::MenuItem("Decal")) {
+            entity.decal = scene::Decal{.texture = "Decals/grime.png"};
+            changed = true;
+        }
         if (!entity.visibility && ImGui::MenuItem("Ray visibility")) {
             entity.visibility = scene::RayVisibility{};
             changed = true;

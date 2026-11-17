@@ -12,6 +12,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/matrix.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -68,6 +69,10 @@ void Scene::RunFrame(core::Seconds delta, float fixedAlpha) {
     m_fixedAlpha = fixedAlpha;
     m_frameDelta = static_cast<float>(delta.count());
     m_lightClock += delta.count();
+    for (TransientDecal& decal : m_transientDecals) {
+        decal.age += m_frameDelta;
+    }
+    std::erase_if(m_transientDecals, [](const TransientDecal& decal) { return decal.age >= decal.lifetime; });
     m_frameSystems.Run(m_world, delta);
     animation::UpdateAnimators(m_world, static_cast<float>(delta.count()));
 }
@@ -111,6 +116,13 @@ void Scene::Extract(renderer::SceneView& view) {
     EmitParticles(m_world, m_frameDelta, view.particleSpawns, emission);
     EmitWeather(m_world, m_frameDelta, view.particleSpawns, emission);
     ExtractEmitterLights(m_world, view);
+    // Decals that come and go, fading at the end of their lives (ADR-0060).
+    for (const TransientDecal& transient : m_transientDecals) {
+        renderer::Decal decal = transient.decal;
+        const float left = transient.lifetime - transient.age;
+        decal.opacity *= transient.fade > 0.0f ? std::clamp(left / transient.fade, 0.0f, 1.0f) : 1.0f;
+        view.decals.push_back(decal);
+    }
     ExtractRibbons(m_world, m_frameDelta, view);
     UpdateLightning(m_world, m_frameDelta, view, emission, m_thunder);
 
@@ -121,6 +133,40 @@ void Scene::Extract(renderer::SceneView& view) {
                              glm::normalize(glm::vec3(camera[1])));
     }
     m_sounds.Update();
+}
+
+void Scene::SpawnDecal(const DecalSpawn& spawn) {
+    if (spawn.albedo.IsNull()) {
+        return;
+    }
+    // A frame on the surface: Z out of it, the image turned by a random angle about it.
+    const glm::vec3 out = glm::normalize(spawn.normal);
+    const glm::vec3 helper = std::abs(out.y) < 0.95f ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::vec3 right = glm::normalize(glm::cross(helper, out));
+    glm::vec3 up = glm::cross(out, right);
+    m_decalSeed = m_decalSeed * 1664525U + 1013904223U;
+    const float angle = static_cast<float>(m_decalSeed >> 8U) / static_cast<float>(1U << 24U) * 6.2831853f;
+    const glm::vec3 turnedRight = right * std::cos(angle) + up * std::sin(angle);
+    up = glm::cross(out, turnedRight);
+    right = turnedRight;
+    // The box projects along its -Z, which points into the surface.
+    glm::mat4 world(1.0f);
+    world[0] = glm::vec4(right * spawn.size, 0.0f);
+    world[1] = glm::vec4(up * spawn.size, 0.0f);
+    world[2] = glm::vec4(out * spawn.depth, 0.0f);
+    world[3] = glm::vec4(spawn.position, 1.0f);
+    if (m_transientDecals.size() >= kMaxTransientDecals) {
+        m_transientDecals.pop_front();
+    }
+    m_transientDecals.push_back({.decal = {.world = world,
+                                           .albedo = spawn.albedo,
+                                           .normal = spawn.normalMap,
+                                           .color = spawn.color,
+                                           .roughness = spawn.roughness,
+                                           .metallic = spawn.metallic,
+                                           .angleFade = 0.2f},
+                                 .lifetime = spawn.lifetime,
+                                 .fade = spawn.fade});
 }
 
 } // namespace daidalos::scene

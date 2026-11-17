@@ -257,6 +257,39 @@ struct Impact {
     int count = 0;
 };
 
+// What a shot leaves (ADR-0060): a hole where it lands, and, through a zombie, blood on what is behind it.
+void LeaveMark(scene::Scene& scene, physics::PhysicsWorld& physics, const ParticleEffects& effects,
+               const physics::RayHit& hit, bool flesh, std::string_view surface, const glm::vec3& direction) {
+    if (!flesh) {
+        const bool metal = surface == "metal";
+        const rhi::TextureHandle albedo = metal ? effects.holeMetal : effects.hole;
+        scene.SpawnDecal({.position = hit.position,
+                          .normal = hit.normal,
+                          .size = metal ? 0.12f : 0.2f,
+                          .depth = 0.06f,
+                          .albedo = albedo,
+                          .normalMap = metal ? rhi::TextureHandle{} : effects.holeNormal,
+                          .roughness = metal ? 0.35f : 0.9f,
+                          .metallic = metal ? 0.8f : 0.0f,
+                          .lifetime = 120.0f,
+                          .fade = 10.0f});
+        return;
+    }
+    // Through the zombie, onto the wall or the floor within reach.
+    const glm::vec3 through = hit.position + direction * 0.4f;
+    if (const std::optional<physics::RayHit> behind = physics.CastRay(through, direction, 2.5f, hit.body)) {
+        scene.SpawnDecal(
+            {.position = behind->position,
+             .normal = behind->normal,
+             .size = 0.6f + 0.4f * std::abs(std::sin(behind->position.x * 13.0f + behind->position.z * 7.0f)),
+             .depth = 0.3f,
+             .albedo = effects.bloodSplatter,
+             .roughness = 0.25f,
+             .lifetime = 180.0f,
+             .fade = 15.0f});
+    }
+}
+
 // The effects of a shot's impact on a surface (ADR-0053): blood from flesh, sparks from metal, dust and
 // chips from stone, dust and splinters from wood, shards from glass, and dust from what has no surface.
 std::vector<Impact> ImpactsOf(const ParticleEffects& effects, std::string_view surface) {
@@ -338,6 +371,7 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
             for (const Impact& impact : ImpactsOf(*effects, flesh ? "flesh" : surface)) {
                 scene.SpawnParticles(impact.effect, hit.position, hit.normal, impact.count);
             }
+            LeaveMark(scene, physics, *effects, hit, flesh, surface, aim);
         }
     }
 

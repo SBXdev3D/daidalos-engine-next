@@ -147,8 +147,30 @@ struct FrameData {
     std::uint32_t fogVolumeCount;
     std::uint32_t fogTexture;
     std::uint32_t fogAliasBuffer;
+    std::uint32_t decalBuffer; // The frame's decals (ADR-0060), and how many.
+    std::uint32_t decalCount;
+    std::uint32_t debugFlags; // kDebugDecals shows what decals cover.
+    std::uint32_t framePadding;
 };
-static_assert(sizeof(FrameData) == 448);
+static_assert(sizeof(FrameData) == 464);
+
+/// A decal as shaders read it (ADR-0060). Matches its twin in shaders/Decals.slangh.
+struct DecalData {
+    glm::mat4 worldToBox;
+    glm::vec3 forward;
+    float opacity;
+    glm::vec3 color;
+    float roughness;
+    std::uint32_t albedo;
+    std::uint32_t normal;
+    float metallic;
+    float angleFade;
+    glm::vec3 right;
+    float texelSize;
+    glm::vec3 up;
+    std::uint32_t padding;
+};
+static_assert(sizeof(DecalData) == 144);
 
 /// A box of fog (ADR-0051). Matches its twin in shaders/Fog.slangh.
 struct FogVolumeData {
@@ -235,7 +257,8 @@ struct InstanceData {
     glm::mat4 previousWorld;
     std::uint32_t previousPositions;
     float emissiveScale; // Multiplies its material's emission (ADR-0057).
-    std::array<std::uint32_t, 2> padding;
+    /// The frame's decals that touch it, a bit each (ADR-0060).
+    std::array<std::uint32_t, 2> decalMask;
 };
 static_assert(sizeof(resources::Vertex) == 12 * sizeof(float), "Matches kVertexFloats in MeshTypes.slangh");
 static_assert(sizeof(InstanceData) == 160);
@@ -283,6 +306,34 @@ constexpr std::uint64_t kInitialInstanceCapacity = 256;
 constexpr std::uint64_t kInitialJointCapacity = 256;
 constexpr std::uint64_t kInitialLightCapacity = 64;
 constexpr std::uint64_t kInitialFogVolumeCapacity = 8;
+/// Decals drawn in a frame, the nearest to the camera: a draw's mask has a bit for each (ADR-0060).
+constexpr std::size_t kMaxDecals = 64;
+
+/// A decal's box in world space, to test draws against.
+struct DecalBox {
+    glm::vec3 min{0.0f};
+    glm::vec3 max{0.0f};
+};
+
+/// The bits of the decals whose boxes a draw's bounding sphere touches.
+std::array<std::uint32_t, 2> DecalMaskOf(const glm::vec4& bounds, const glm::mat4& world,
+                                         std::span<const DecalBox> boxes) {
+    std::array<std::uint32_t, 2> mask{0, 0};
+    if (boxes.empty()) {
+        return mask;
+    }
+    const float scale = std::max(
+        {glm::length(glm::vec3(world[0])), glm::length(glm::vec3(world[1])), glm::length(glm::vec3(world[2]))});
+    const glm::vec3 center(world * glm::vec4(glm::vec3(bounds), 1.0f));
+    const float radius = bounds.w * scale;
+    for (std::size_t index = 0; index < boxes.size(); ++index) {
+        const glm::vec3 nearest = glm::clamp(center, boxes[index].min, boxes[index].max);
+        if (glm::dot(nearest - center, nearest - center) <= radius * radius) {
+            mask[index / 32] |= 1U << (index % 32);
+        }
+    }
+    return mask;
+}
 /// A light that moved farther than this, in meters, or turned by more than this cosine, since the last frame
 /// moved: the histories that its light fills must follow it at once.
 constexpr float kMovedDistance = 0.001f;
@@ -373,6 +424,7 @@ MeshPass::~MeshPass() {
         m_device->DestroyBuffer(slot.emissiveDraws);
         m_device->DestroyBuffer(slot.emissiveTriangles);
         m_device->DestroyBuffer(slot.fogVolumes);
+        m_device->DestroyBuffer(slot.decals);
     }
 }
 
@@ -692,6 +744,7 @@ core::Result<void> MeshPass::PrepareFrameSlot(FrameSlot& slot, const SceneView& 
                     "Lights"));
     DAI_TRY(reserve(slot.fogVolumes, slot.fogVolumeCapacity, view.fogVolumes.size(), kInitialFogVolumeCapacity,
                     sizeof(FogVolumeData), "Fog volumes"));
+    DAI_TRY(reserve(slot.decals, slot.decalCapacity, kMaxDecals, kMaxDecals, sizeof(DecalData), "Decals"));
     return {};
 }
 
@@ -1006,6 +1059,54 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         }
     }
 
+    // The decals nearest to the camera, within the view distance (ADR-0060), and their boxes in world space.
+    std::vector<std::size_t> nearDecals;
+    for (std::size_t index = 0; index < view.decals.size(); ++index) {
+        const Decal& decal = view.decals[index];
+        if (!decal.albedo.IsNull() && decal.opacity > 0.0f &&
+            glm::distance(glm::vec3(decal.world[3]), cameraPosition) <= farPlane) {
+            nearDecals.push_back(index);
+        }
+    }
+    if (nearDecals.size() > kMaxDecals) {
+        std::ranges::partial_sort(nearDecals, nearDecals.begin() + kMaxDecals, {}, [&](std::size_t index) {
+            return glm::distance(glm::vec3(view.decals[index].world[3]), cameraPosition);
+        });
+        nearDecals.resize(kMaxDecals);
+    }
+    std::vector<DecalBox> decalBoxes;
+    auto* decals = reinterpret_cast<DecalData*>(m_device->Mapped(slot.decals).data());
+    for (std::size_t slotIndex = 0; slotIndex < nearDecals.size(); ++slotIndex) {
+        const Decal& decal = view.decals[nearDecals[slotIndex]];
+        DecalBox box{glm::vec3(1e30f), glm::vec3(-1e30f)};
+        for (int corner = 0; corner < 8; ++corner) {
+            const glm::vec3 local((corner & 1) != 0 ? 0.5f : -0.5f, (corner & 2) != 0 ? 0.5f : -0.5f,
+                                  (corner & 4) != 0 ? 0.5f : -0.5f);
+            const glm::vec3 point(decal.world * glm::vec4(local, 1.0f));
+            box.min = glm::min(box.min, point);
+            box.max = glm::max(box.max, point);
+        }
+        decalBoxes.push_back(box);
+        const rhi::Extent size = m_device->TextureExtent(decal.albedo);
+        const float width = glm::length(glm::vec3(decal.world[0]));
+        decals[slotIndex] = {.worldToBox = glm::inverse(decal.world),
+                             .forward = glm::normalize(-glm::vec3(decal.world[2])),
+                             .opacity = std::clamp(decal.opacity, 0.0f, 1.0f),
+                             .color = decal.color,
+                             .roughness = std::clamp(decal.roughness, 0.045f, 1.0f),
+                             .albedo = m_device->BindlessIndex(decal.albedo),
+                             .normal = decal.normal.IsNull() ? kNoTexture : m_device->BindlessIndex(decal.normal),
+                             .metallic = std::clamp(decal.metallic, 0.0f, 1.0f),
+                             .angleFade = std::clamp(decal.angleFade, -1.0f, 0.99f),
+                             .right = glm::normalize(glm::vec3(decal.world[0])),
+                             .texelSize = width / static_cast<float>(std::max(size.width, 1U)),
+                             .up = glm::normalize(glm::vec3(decal.world[1])),
+                             .padding = 0};
+    }
+    frame.decalBuffer = m_device->StorageIndex(slot.decals);
+    frame.decalCount = static_cast<std::uint32_t>(nearDecals.size());
+    frame.debugFlags = targets.showDecals ? 1U : 0U;
+
     if (!view.jointMatrices.empty()) {
         // Without previous joints, they stood still.
         const bool moved = view.previousJointMatrices.size() == view.jointMatrices.size();
@@ -1091,7 +1192,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                             .previousWorld = skinned ? world : draw.previousWorld.value_or(world),
                             .previousPositions = skinned ? m_device->StorageIndex(m_previousSkinned) : kNoTexture,
                             .emissiveScale = std::max(draw.emissiveScale, 0.0f),
-                            .padding = {}};
+                            .decalMask = DecalMaskOf(m_meshes.Get(draw.mesh).bounds, draw.world, decalBoxes)};
         TracedDraw& traced = m_traced.emplace_back();
         traced.world = world;
         traced.opaque = !material.alphaTested;

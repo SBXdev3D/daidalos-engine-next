@@ -126,6 +126,24 @@ void AnimateLights(ecs::World& world, double seconds, const PowerCircuits& circu
 
 namespace {
 
+void ExtractDecals(ecs::World& world, renderer::SceneView& view) {
+    world.Each<ecs::WorldTransform, Decal>(
+        [&](ecs::Entity entity, const ecs::WorldTransform& transform, const Decal& decal) {
+            const DecalTextures* textures = world.TryGet<DecalTextures>(entity);
+            if (!decal.enabled || textures == nullptr || textures->albedo.IsNull()) {
+                return;
+            }
+            view.decals.push_back({.world = transform.matrix,
+                                   .albedo = textures->albedo,
+                                   .normal = textures->normal,
+                                   .color = decal.color,
+                                   .opacity = decal.opacity,
+                                   .roughness = decal.roughness,
+                                   .metallic = decal.metallic,
+                                   .angleFade = decal.angleFade});
+        });
+}
+
 void ExtractFogVolumes(ecs::World& world, renderer::SceneView& view) {
     world.Each<ecs::WorldTransform, FogVolume>(
         [&](ecs::Entity /*entity*/, const ecs::WorldTransform& transform, const FogVolume& volume) {
@@ -214,6 +232,7 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
     view.lights.clear();
     view.ribbons.clear();
     view.fogVolumes.clear();
+    view.decals.clear();
     view.windVolumes.clear();
     view.particleAttractors.clear();
     DrawnTransforms drawn(world);
@@ -277,6 +296,7 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
     drawn.Keep();
     ExtractLights(world, view);
     ExtractFogVolumes(world, view);
+    ExtractDecals(world, view);
     ExtractParticleForces(world, view);
 }
 

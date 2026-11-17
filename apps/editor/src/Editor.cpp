@@ -1054,6 +1054,32 @@ void Editor::DrawMenu(app::Application& app) {
             entity.light = scene::Light{.type = renderer::LightType::Spot, .intensity = 200.0f, .range = 12.0f};
             Create("Spot light", std::move(entity));
         }
+        // Decals: the box faces away from the camera, onto what is in front of it (ADR-0060).
+        if (ImGui::BeginMenu("Decals")) {
+            const auto decal = [this](const char* name, const char* texture, glm::vec3 size, float roughness) {
+                scene::LevelEntity entity;
+                entity.decal = scene::Decal{.texture = texture, .roughness = roughness};
+                entity.transform.scale = size;
+                entity.transform.rotation = math::FromYawPitchRoll(m_camera.yaw, 0.0f, 0.0f);
+                Create(name, std::move(entity));
+            };
+            if (ImGui::MenuItem("Blood splatter")) {
+                decal("Blood splatter", "Decals/blood_splatter.png", {1.2f, 1.2f, 0.6f}, 0.25f);
+            }
+            if (ImGui::MenuItem("Blood drips")) {
+                decal("Blood drips", "Decals/blood_drips.png", {0.9f, 1.6f, 0.6f}, 0.3f);
+            }
+            if (ImGui::MenuItem("Grime")) {
+                decal("Grime", "Decals/grime.png", {2.0f, 2.0f, 1.0f}, 0.9f);
+            }
+            if (ImGui::MenuItem("Mold")) {
+                decal("Mold", "Decals/mold.png", {1.5f, 1.5f, 0.8f}, 0.85f);
+            }
+            if (ImGui::MenuItem("Scorch mark")) {
+                decal("Scorch mark", "Decals/scorch.png", {1.4f, 1.4f, 0.8f}, 0.95f);
+            }
+            ImGui::EndMenu();
+        }
         // Presets: lights a horror level keeps asking for (ADR-0057).
         if (ImGui::BeginMenu("Light presets")) {
             const auto preset = [this](const char* name, scene::Light light) {
@@ -1652,7 +1678,7 @@ void Editor::DrawMarkers() {
         const ImU32 alpha = static_cast<ImU32>(fade * 255.0f) << 24;
         const ImU32 color = selected ? IM_COL32(255, 220, 60, 255) : ((MarkerColor(entity) & 0x00FFFFFFU) | alpha);
         // Volumes show their box; a selected light shows where it points and how far it reaches.
-        if (entity.fog || entity.wind || entity.weather || entity.lightning) {
+        if (entity.fog || entity.wind || entity.weather || entity.lightning || entity.decal) {
             box(matrix, glm::vec3(-0.5f), glm::vec3(0.5f),
                 (color & 0x00FFFFFFU) | (selected ? 0xFF000000U : static_cast<ImU32>(fade * 90.0f) << 24),
                 selected ? 2.0f : 1.0f);

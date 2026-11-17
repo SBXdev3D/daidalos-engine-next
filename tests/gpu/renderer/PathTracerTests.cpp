@@ -2405,3 +2405,93 @@ TEST_F(PathTracerTest, AFigureSeenOnlyInAMirror) {
     // Measured on an RTX 3090: 0.088, and 0.132 when the figure is not there at all.
     EXPECT_LT(flip, 0.8f * flipEmpty) << "The mirror shows the figure the camera does not see";
 }
+
+namespace {
+
+// A decal's image (ADR-0060): a disk of color, opaque within it.
+rhi::TextureHandle MakeDecalImage(rhi::Device& device, const glm::u8vec4& color) {
+    resources::ImageData image{.width = 32, .height = 32, .format = resources::PixelFormat::Rgba8Srgb};
+    for (std::uint32_t y = 0; y < 32; ++y) {
+        for (std::uint32_t x = 0; x < 32; ++x) {
+            const float u = (static_cast<float>(x) + 0.5f) / 16.0f - 1.0f;
+            const float v = (static_cast<float>(y) + 0.5f) / 16.0f - 1.0f;
+            const bool inside = u * u + v * v < 0.8f;
+            for (const std::uint8_t channel : {color.r, color.g, color.b, inside ? color.a : std::uint8_t{0}}) {
+                image.pixels.push_back(static_cast<std::byte>(channel));
+            }
+        }
+    }
+    const core::Result<rhi::TextureHandle> texture = renderer::CreateTexture(device, image, "Test decal");
+    EXPECT_TRUE(texture.has_value());
+    return *texture;
+}
+
+// A decal lying on the floor at the origin: its box faces down into it.
+renderer::Decal FloorDecal(rhi::TextureHandle image, float size) {
+    glm::mat4 world = glm::rotate(glm::mat4(1.0f), -glm::half_pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+    world = glm::scale(world, glm::vec3(size, size, 0.4f));
+    world[3] = glm::vec4(0.3f, 0.0f, 0.8f, 1.0f);
+    return {.world = world, .albedo = image, .roughness = 0.3f};
+}
+
+} // namespace
+
+TEST_F(PathTracerTest, DecalsMatchThePathTracer) {
+    // A red disk on the grey floor beside the block (ADR-0060): the G-buffer and the path tracer's hits apply
+    // it in the same function.
+    const auto material = [this](const MaterialDesc& desc) { return Material(desc); };
+    const rhi::TextureHandle image = MakeDecalImage(Device(), {200, 20, 20, 255});
+    SceneView view = BlockOnAFloor(m_cube, material, 0.8f);
+    view.decals.push_back(FloorDecal(image, 1.4f));
+    SceneView bare = BlockOnAFloor(m_cube, material, 0.8f);
+    constexpr rhi::Extent kExtent{96, 96};
+    const Image traced = Trace(view, kExtent, {.maxBounces = 1, .seed = 53, .jitter = false}, 1);
+    const Image raster = Rasterize(view, kExtent);
+    const Image without = Rasterize(bare, kExtent);
+    const float flip = Flip(traced, raster, kExtent);
+    const float flipWithout = Flip(traced, without, kExtent);
+    RecordProperty("flip", std::to_string(flip));
+    RecordProperty("flipWithout", std::to_string(flipWithout));
+    EXPECT_LT(flip, 0.03f);
+    EXPECT_GT(flipWithout, 2.0f * flip);
+    Device().DestroyTexture(image);
+}
+
+TEST_F(PathTracerTest, DecalsShowInReflections) {
+    // A green disk on the block's face, which a polished metal floor reflects: the reflection pass shades its
+    // hits with the decal (ADR-0060), as the path tracer does.
+    const auto material = [this](const MaterialDesc& desc) { return Material(desc); };
+    const rhi::TextureHandle image = MakeDecalImage(Device(), {20, 200, 20, 255});
+    SceneView view = BlockOnAFloor(m_cube, material, 0.05f);
+    // The light in front, so that the face towards the camera is lit.
+    view.lights.front().position = {1.0f, 2.0f, 3.0f};
+    // On the block's face towards the camera.
+    glm::mat4 world = glm::scale(glm::translate(glm::mat4(1.0f), {0.0f, 0.5f, 0.5f}), {0.9f, 0.9f, 0.4f});
+    view.decals.push_back({.world = world, .albedo = image, .roughness = 0.5f});
+    constexpr rhi::Extent kExtent{96, 96};
+    core::Result<renderer::GlobalIllumination> created = renderer::GlobalIllumination::Create(Device());
+    ASSERT_TRUE(created.has_value());
+    const Image reflected =
+        Rasterize(view, kExtent, {.frames = 16, .indirect = &*created, .warmup = 8, .reflections = true});
+    // The green of the decal shows twice: on the block, and in the floor below it.
+    std::size_t green = 0;
+    for (std::size_t y = kExtent.height / 2; y < kExtent.height; ++y) {
+        for (std::size_t x = 0; x < kExtent.width; ++x) {
+            const glm::vec4& pixel = reflected[y * kExtent.width + x];
+            green += pixel.g > 2.0f * pixel.r && pixel.g > 0.01f ? 1 : 0;
+        }
+    }
+    const Image traced = Trace(view, kExtent, {.maxBounces = 3, .seed = 59, .jitter = false}, 64);
+    std::size_t tracedGreen = 0;
+    for (std::size_t y = kExtent.height / 2; y < kExtent.height; ++y) {
+        for (std::size_t x = 0; x < kExtent.width; ++x) {
+            const glm::vec4& pixel = traced[y * kExtent.width + x];
+            tracedGreen += pixel.g > 2.0f * pixel.r && pixel.g > 0.01f ? 1 : 0;
+        }
+    }
+    RecordProperty("greenPixels", std::to_string(green));
+    RecordProperty("tracedGreenPixels", std::to_string(tracedGreen));
+    EXPECT_GT(green, 50U);
+    EXPECT_NEAR(static_cast<double>(green), static_cast<double>(tracedGreen), 0.35 * static_cast<double>(tracedGreen));
+    Device().DestroyTexture(image);
+}

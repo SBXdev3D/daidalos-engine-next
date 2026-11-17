@@ -80,6 +80,26 @@ struct Fog {
     float anisotropy = 0.3f;
 };
 
+/// A decal (ADR-0060): the box from -0.5 to 0.5 of world projects an image along its -Z onto the surfaces inside
+/// it, in the material function, so that it shows in reflections and bounced light too. Its scale is the box's
+/// size: the image covers X and Y, Z is how deep it reaches.
+struct Decal {
+    glm::mat4 world{1.0f};
+    /// The image, with its coverage in alpha (sRGB colors).
+    rhi::TextureHandle albedo;
+    /// A normal map over the same image, or null.
+    rhi::TextureHandle normal;
+    /// Multiplies the image.
+    glm::vec3 color{1.0f};
+    /// Multiplies its coverage: 0 shows nothing.
+    float opacity = 1.0f;
+    /// What the surface becomes where it covers it.
+    float roughness = 0.6f;
+    float metallic = 0.0f;
+    /// Surfaces turned further than this cosine from facing it fade out: a decal does not run down the sides.
+    float angleFade = 0.3f;
+};
+
 /// A box of fog, added to the level's (ADR-0051): dust in a room, steam from a pipe. The box is the cube
 /// from -0.5 to 0.5 in world's space: its scale is the box's size.
 struct FogVolume {
@@ -221,6 +241,8 @@ struct SceneView {
     std::vector<Light> lights;
     /// Boxes of fog, added to the atmosphere's (ADR-0051).
     std::vector<FogVolume> fogVolumes;
+    /// Decals, the nearest kMaxDecals of which are drawn (ADR-0060).
+    std::vector<Decal> decals;
     /// New particles of the frame (ADR-0025).
     std::vector<ParticleSpawn> particleSpawns;
     /// Ribbons of the frame, built by the CPU (ADR-0053).

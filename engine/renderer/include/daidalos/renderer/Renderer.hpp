@@ -56,6 +56,8 @@ enum class DebugView {
     Fog,
     /// The material layers of the G-buffer (ADR-0056): the clear coat in red, the sheen in green.
     Layers,
+    /// The lit scene, with what decals cover in magenta (ADR-0060).
+    Decals,
 };
 
 /// How indirect light is traced (ADR-0045).

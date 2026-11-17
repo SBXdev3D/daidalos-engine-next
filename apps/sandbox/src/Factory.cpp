@@ -203,6 +203,18 @@ std::string RibbonPath(const std::string& directory, std::string_view name) {
     return std::format("{}Effects/{}.ribbon.json", directory.empty() ? "" : directory + "/", name);
 }
 
+/// A decal's image of the level's Decals folder (ADR-0060), or none when it is missing.
+rhi::TextureHandle Decal(scene::Scene& scene, const std::string& directory, std::string_view name,
+                         resources::TextureUse use) {
+    const std::string path = std::format("{}Decals/{}", directory.empty() ? "" : directory + "/", name);
+    core::Result<rhi::TextureHandle> texture = scene.Assets().LoadTexture(path, use);
+    if (!texture) {
+        DAI_LOG_WARNING("sandbox", "A decal is missing: {}", core::Format(texture.error()));
+        return {};
+    }
+    return *texture;
+}
+
 ParticleEffects LoadParticleEffects(scene::Scene& scene, const std::string& directory) {
     const auto load = [&](std::string_view name) {
         core::Result<scene::ParticleEffectAsset> effect =
@@ -222,7 +234,11 @@ ParticleEffects LoadParticleEffects(scene::Scene& scene, const std::string& dire
             .impactChips = load("impact_chips"),
             .impactSplinters = load("impact_splinters"),
             .impactGlass = load("impact_glass"),
-            .barrelSmoke = load("barrel_smoke")};
+            .barrelSmoke = load("barrel_smoke"),
+            .hole = Decal(scene, directory, "bullet_hole.png", resources::TextureUse::Color),
+            .holeNormal = Decal(scene, directory, "bullet_hole_normal.png", resources::TextureUse::Normal),
+            .holeMetal = Decal(scene, directory, "bullet_hole_metal.png", resources::TextureUse::Color),
+            .bloodSplatter = Decal(scene, directory, "blood_splatter.png", resources::TextureUse::Color)};
 }
 
 std::optional<PickupKind> PickupOf(std::string_view kind) {

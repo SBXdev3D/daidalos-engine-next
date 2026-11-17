@@ -77,6 +77,11 @@ struct ParticleEffects {
     daidalos::renderer::ParticleEffectHandle impactGlass;
     /// Curling out of a hot barrel after a shot, at a rate the game sets (ADR-0053).
     daidalos::renderer::ParticleEffectHandle barrelSmoke;
+    /// What shots leave on surfaces (ADR-0060): holes in stone and metal, and blood behind what they go through.
+    daidalos::rhi::TextureHandle hole;
+    daidalos::rhi::TextureHandle holeNormal;
+    daidalos::rhi::TextureHandle holeMetal;
+    daidalos::rhi::TextureHandle bloodSplatter;
 };
 
 /// What the level's bodies are made of, by body, from their materials' surface (ADR-0053): "concrete",

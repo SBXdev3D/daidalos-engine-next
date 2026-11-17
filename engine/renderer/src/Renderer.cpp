@@ -217,6 +217,7 @@ struct Renderer::Impl {
     bool illuminated = false;
     Antialiasing antialiasing = Antialiasing::Taa;
     DebugView debugView = DebugView::Off;
+    bool showDecals = false;
     std::optional<RayTracingScene> rayTracing;
     std::optional<PathTracerPass> pathTracer;
     PathTracerSettings pathSettings;
@@ -432,7 +433,8 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     impl->meshPass.emplace(std::move(meshPass));
     DAI_TRY_ASSIGN(RayTracingScene rayTracing, RayTracingScene::Create(impl->device, kHdrFormat));
     impl->rayTracing.emplace(std::move(rayTracing));
-    impl->debugView = config.debugView;
+    impl->showDecals = config.debugView == DebugView::Decals;
+    impl->debugView = config.debugView == DebugView::Decals ? DebugView::Off : config.debugView;
     DAI_TRY_ASSIGN(PathTracerPass pathTracer, PathTracerPass::Create(impl->device));
     impl->pathTracer.emplace(std::move(pathTracer));
     impl->pathSettings = {
@@ -566,7 +568,9 @@ void Renderer::SetAntialiasing(Antialiasing antialiasing) {
 }
 
 void Renderer::SetDebugView(DebugView view) {
-    m_impl->debugView = view;
+    // The decals' view is the lit scene, with what decals cover tinted (ADR-0060).
+    m_impl->showDecals = view == DebugView::Decals;
+    m_impl->debugView = view == DebugView::Decals ? DebugView::Off : view;
 }
 
 void Renderer::SetPathTracer(std::uint32_t bounces, std::uint32_t samples) {
@@ -758,7 +762,8 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                        .fog = fogTexture,
                        .time = static_cast<float>(impl.time),
                        .sharpReflections =
-                           reflect ? std::min(GlobalIllumination::kSharpRoughness, impl.reflectionRoughness) : 0.0f});
+                           reflect ? std::min(GlobalIllumination::kSharpRoughness, impl.reflectionRoughness) : 0.0f,
+                       .showDecals = impl.showDecals});
         });
         impl.particleSpawns = static_cast<std::uint32_t>(view.particleSpawns.size());
     }

@@ -283,6 +283,23 @@ core::Result<Light> ReadLight(Reader reader) {
     return light;
 }
 
+core::Result<Decal> ReadDecal(Reader reader) {
+    Decal decal;
+    DAI_LEVEL_TRY(reader.Text("texture", decal.texture));
+    DAI_LEVEL_TRY(reader.Text("normal", decal.normal));
+    DAI_LEVEL_TRY(reader.Vector("color", decal.color));
+    DAI_LEVEL_TRY(reader.Number("opacity", decal.opacity));
+    DAI_LEVEL_TRY(reader.Number("roughness", decal.roughness));
+    DAI_LEVEL_TRY(reader.Number("metallic", decal.metallic));
+    DAI_LEVEL_TRY(reader.Number("angle_fade", decal.angleFade));
+    DAI_LEVEL_TRY(reader.Flag("enabled", decal.enabled));
+    DAI_LEVEL_TRY(reader.Finish());
+    if (decal.texture.empty()) {
+        return Invalid(reader.Where(), "a decal needs a texture");
+    }
+    return decal;
+}
+
 core::Result<RayVisibility> ReadVisibility(Reader reader) {
     RayVisibility visibility;
     DAI_LEVEL_TRY(reader.Flag("camera", visibility.camera));
@@ -470,6 +487,7 @@ core::Result<LevelEntity> ReadEntity(const JsonObject& object, std::size_t index
     }
     DAI_LEVEL_TRY(component("light", entity.light, &ReadLight));
     DAI_LEVEL_TRY(component("visibility", entity.visibility, &ReadVisibility));
+    DAI_LEVEL_TRY(component("decal", entity.decal, &ReadDecal));
     DAI_LEVEL_TRY(component("fog", entity.fog, &ReadFog));
     DAI_LEVEL_TRY(component("wind", entity.wind, &ReadWind));
     DAI_LEVEL_TRY(component("particles", entity.particles, &ReadParticles));
@@ -728,6 +746,19 @@ Json WriteEntity(const LevelEntity& entity) {
     if (entity.light) {
         object.emplace("light", WriteLight(*entity.light));
     }
+    if (entity.decal) {
+        const Decal fallback;
+        JsonObject decal;
+        decal.emplace("texture", Json{entity.decal->texture});
+        Put(decal, "normal", entity.decal->normal, fallback.normal);
+        Put(decal, "color", entity.decal->color, fallback.color);
+        Put(decal, "opacity", entity.decal->opacity, fallback.opacity);
+        Put(decal, "roughness", entity.decal->roughness, fallback.roughness);
+        Put(decal, "metallic", entity.decal->metallic, fallback.metallic);
+        Put(decal, "angle_fade", entity.decal->angleFade, fallback.angleFade);
+        Put(decal, "enabled", entity.decal->enabled, fallback.enabled);
+        object.emplace("decal", Json{std::move(decal)});
+    }
     if (entity.visibility) {
         const RayVisibility fallback;
         JsonObject visibility;
@@ -940,7 +971,7 @@ bool LevelEntity::operator==(const LevelEntity& other) const {
            model == other.model && light == other.light && fog == other.fog && wind == other.wind &&
            particles == other.particles && attractor == other.attractor && weather == other.weather &&
            ribbon == other.ribbon && lightning == other.lightning && game == other.game &&
-           visibility == other.visibility;
+           visibility == other.visibility && decal == other.decal;
 }
 
 const LevelEntity* Level::Find(std::uint64_t id) const {
@@ -1110,6 +1141,10 @@ void Relocate(Level& level, std::string_view fromLevelPath, std::string_view toL
         if (entity.light) {
             move(entity.light->profile);
             move(entity.light->cookie);
+        }
+        if (entity.decal) {
+            move(entity.decal->texture);
+            move(entity.decal->normal);
         }
         if (entity.particles) {
             move(entity.particles->effect);
