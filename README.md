@@ -124,6 +124,11 @@ sandbox.exe +window.fullscreen true +renderer.antialiasing off
 | `renderer.reflection_roughness` | 0.6 | Surfaces rougher than this trace no reflection |
 | `renderer.volumetric_fog` | true | Fog lit by the lights, with light shafts; off, the air is clear |
 | `renderer.traced_particles` | true | Particles in the ray-traced scene: smoke casts shadows, sparks show in mirrors; off (Low), rays pass them |
+| `renderer.film_grain` | 0.35 | Film grain, from 0 (none) to 1 |
+| `renderer.vignette` | 0.5 | Darker corners, as through a lens |
+| `renderer.lens_dirt` | 0.5 | Smudges on the lens that bright light lights up |
+| `renderer.chromatic_aberration` | 0 | Red and blue split towards the edges |
+| `renderer.motion_blur` | 0 | Fraction of a frame the shutter is open; 0 for none |
 | `renderer.log_gpu_times` | 0 | Logs each pass group's GPU time, averaged over 100 frames from this frame of the level; 0 for none |
 | `renderer.fog_slices` | 64 | Slices of the volumetric fog in depth, from 16 to 256 |
 | `renderer.restir_spatial` | true | Pixels reuse the lights their neighbours chose, as well as their own past |
@@ -144,6 +149,8 @@ The sandbox adds its own:
 | `sandbox.darkness` | 1 | Multiplies the darkness; 0 shows the level |
 | `sandbox.ambient` | 0.1 | Light that reaches everywhere in the dark; 0 is pitch black |
 | `sandbox.flashlight` | false | Start with the flashlight on |
+| `sandbox.aperture` | 0 | The camera's f-number for depth of field; 0 keeps everything sharp |
+| `sandbox.focus` | 3 | Meters the camera is focused at |
 | `sandbox.start` | | Where the player's eyes start: `x y z yaw pitch`, in meters and degrees |
 
 ## Releasing

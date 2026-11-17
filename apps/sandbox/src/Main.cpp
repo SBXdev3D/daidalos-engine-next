@@ -89,6 +89,13 @@ public:
                                    .Register<double>("sandbox.flashlight_battery", 900.0,
                                                      "Seconds a full flashlight battery lasts; 0 never runs down")
                                    .Get());
+        m_settings.aperture = static_cast<float>(
+            app.CVars()
+                .Register<double>("sandbox.aperture", 0.0,
+                                  "The camera's f-number for depth of field, as 2.8 or 8; 0 keeps everything sharp")
+                .Get());
+        m_settings.focusDistance = static_cast<float>(
+            app.CVars().Register<double>("sandbox.focus", 3.0, "Meters the camera is focused at").Get());
         m_start =
             app.CVars()
                 .Register<std::string>("sandbox.start", "", "Where to start: 'x y z yaw pitch', in meters and degrees")

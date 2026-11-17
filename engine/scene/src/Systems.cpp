@@ -256,14 +256,18 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
 
     bool chosen = false;
     std::uint32_t cameraIndex = std::numeric_limits<std::uint32_t>::max();
-    world.Each<ecs::WorldTransform, Camera>([&](ecs::Entity entity, const ecs::WorldTransform& transform,
-                                                const Camera& camera) {
-        if (entity == activeCamera || (!chosen && entity.Index() < cameraIndex)) {
-            chosen = (entity == activeCamera);
-            cameraIndex = entity.Index();
-            view.camera = renderer::CameraView{glm::inverse(transform.matrix), camera.verticalFov, camera.nearPlane};
-        }
-    });
+    world.Each<ecs::WorldTransform, Camera>(
+        [&](ecs::Entity entity, const ecs::WorldTransform& transform, const Camera& camera) {
+            if (entity == activeCamera || (!chosen && entity.Index() < cameraIndex)) {
+                chosen = (entity == activeCamera);
+                cameraIndex = entity.Index();
+                view.camera = renderer::CameraView{.view = glm::inverse(transform.matrix),
+                                                   .verticalFov = camera.verticalFov,
+                                                   .nearPlane = camera.nearPlane,
+                                                   .aperture = camera.aperture,
+                                                   .focusDistance = camera.focusDistance};
+            }
+        });
 
     view.draws.reserve(world.Count<MeshRenderer>());
     const bool scaled = world.Count<EmissiveScale>() > 0;

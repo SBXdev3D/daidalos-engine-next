@@ -33,6 +33,9 @@ struct Camera {
     /// Radians from the bottom of the view to the top. Without one, the engine's view.fov applies.
     std::optional<float> verticalFov;
     float nearPlane = 0.1f;
+    /// Depth of field (ADR-0063): the lens's f-number, 0 for none, and the meters it is focused at.
+    float aperture = 0.0f;
+    float focusDistance = 3.0f;
 };
 
 /// ECS component: draws a mesh at the entity's WorldTransform.

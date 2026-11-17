@@ -249,6 +249,27 @@ TEST_F(RendererTest, ShowsEachDebugView) {
     EXPECT_EQ(target->Device().ValidationErrorCount(), 0U);
 }
 
+TEST_F(RendererTest, DrawsTheLensAndShutter) {
+    // Depth of field, motion blur, grain, vignette, chromatic aberration and lens dirt, all at once, then
+    // none: frames draw without a validation error (ADR-0063).
+    std::optional<renderer::Renderer> target = CreateRenderer();
+    if (!target.has_value()) {
+        GTEST_SKIP();
+    }
+    const core::Result<renderer::MeshHandle> mesh = target->CreateMesh(renderer::MakeCube(), "Cube");
+    ASSERT_TRUE(mesh.has_value());
+    renderer::SceneView view = TestView(*mesh);
+    view.camera->aperture = 1.4f;
+    view.camera->focusDistance = 1.0f;
+    target->SetImage(
+        {.filmGrain = 1.0f, .vignette = 1.0f, .chromaticAberration = 1.0f, .lensDirt = 1.0f, .motionBlur = 0.5f});
+    RenderFrames(*target, view, 4);
+    view.camera->aperture = 0.0f;
+    target->SetImage({});
+    RenderFrames(*target, view, 2);
+    EXPECT_EQ(target->Device().ValidationErrorCount(), 0U);
+}
+
 TEST_F(RendererTest, CreatesNoPipelineOnceItHasDrawnAFrame) {
     // Every setting a player or a quality preset can change, and every debug view, after the first frame:
     // none may create a pipeline, which would stall a frame in play (ADR-0052).

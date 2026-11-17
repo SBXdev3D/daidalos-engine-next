@@ -33,6 +33,10 @@ struct CameraView {
     /// (RendererConfig::fieldOfView), across the view.
     std::optional<float> verticalFov;
     float nearPlane = 0.0f;
+    /// Depth of field (ADR-0063), with temporal antialiasing: the lens's f-number, as a camera's on a
+    /// full-frame sensor, 0 for none (everything sharp), and the distance in meters it is focused at.
+    float aperture = 0.0f;
+    float focusDistance = 3.0f;
 };
 
 /// Marks a draw that is not skinned.

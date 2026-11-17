@@ -91,6 +91,16 @@ struct ImageConfig {
     float hdrPeak = 0.0f;
     /// Contrast-adaptive sharpening of the antialiased image, from 0 (none) to 1 (ADR-0049).
     float sharpness = 0.25f;
+    /// The camera's lens and film (ADR-0063), each from 0 (none) to 1: grain that moves each frame, most in
+    /// the mid-tones; darker corners; red and blue split towards the edges; smudges and specks on the lens
+    /// that bright light in the view, as the flashlight on a near wall, lights up.
+    float filmGrain = 0.0f;
+    float vignette = 0.0f;
+    float chromaticAberration = 0.0f;
+    float lensDirt = 0.0f;
+    /// Motion blur with temporal antialiasing: the fraction of the frame's time the shutter is open, 0 for
+    /// none.
+    float motionBlur = 0.0f;
 };
 
 /// The resolution the scene is rendered at, below the output's, and how it moves to hold the frame rate

@@ -243,6 +243,11 @@ private:
     std::optional<core::CVar<double>> m_reflectionRoughness;
     std::optional<core::CVar<bool>> m_volumetricFog;
     std::optional<core::CVar<bool>> m_tracedParticles;
+    std::optional<core::CVar<double>> m_filmGrain;
+    std::optional<core::CVar<double>> m_vignette;
+    std::optional<core::CVar<double>> m_chromaticAberration;
+    std::optional<core::CVar<double>> m_lensDirt;
+    std::optional<core::CVar<double>> m_motionBlur;
     std::optional<core::CVar<std::int64_t>> m_fogSlices;
     std::optional<core::CVar<std::int64_t>> m_fogTile;
     std::optional<core::CVar<double>> m_particleDensity;
