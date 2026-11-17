@@ -238,6 +238,7 @@ struct Receiver {
     float3 f0;
     float roughness;
     Layers layers; // The clear coat and the sheen (ADR-0056).
+    uint relief;   // The relief's horizons (ADR-0064), which shadow light from below them; 0 for none.
     uint response;
     // The specular light of emissive triangles: false where a sharp reflection shows them (ADR-0044).
     bool emissiveSpecular;
@@ -266,7 +267,12 @@ BsdfTerms Respond(Receiver receiver, float3 toLight) {
         terms.diffuse = saturate(dot(receiver.normal, toLight)) * 0.31830989;
         return terms;
     }
-    return EvaluateLayeredTerms(receiver.normal, receiver.view, toLight, receiver.f0, receiver.roughness, receiver.layers);
+    terms = EvaluateLayeredTerms(receiver.normal, receiver.view, toLight, receiver.f0, receiver.roughness, receiver.layers);
+    // Mortar and cracks hide from light that grazes the surface.
+    const float relief = ReliefShadow(receiver.relief, receiver.faceNormal, toLight);
+    terms.diffuse *= relief;
+    terms.specular *= relief;
+    return terms;
 }
 
 float3 Reflected(Receiver receiver, BsdfTerms terms) {
@@ -414,6 +420,7 @@ float3 SampleDirectLight(FrameData frame, Receiver receiver, inout uint random, 
 // A receiver for a surface that rays hit (Surface, in RayQueries.slangh).
 Receiver ReceiverOf(Surface surface, float3 view, uint response) {
     Receiver receiver;
+    receiver.relief = 0;
     receiver.position = surface.position;
     receiver.origin = OffsetOrigin(surface.position, surface.faceNormal);
     receiver.faceNormal = surface.faceNormal;

@@ -63,6 +63,7 @@ FogLight InScattered(FrameData frame, float3 position, float3 view, inout uint r
     result.light = float3(0.0, 0.0, 0.0);
     result.moving = false;
     Receiver receiver;
+    receiver.relief = 0;
     receiver.position = position;
     receiver.origin = position;
     receiver.faceNormal = view;

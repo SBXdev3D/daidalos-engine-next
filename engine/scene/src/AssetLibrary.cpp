@@ -144,6 +144,7 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
         desc.sheenColor = material.sheenColor;
         desc.sheenRoughness = material.sheenRoughness;
         desc.porosity = material.porosity;
+        desc.heightScale = material.heightScale;
         desc.baseColorTexture = textureOf(material.baseColorImage);
         desc.metallicRoughnessTexture = textureOf(material.metallicRoughnessImage);
         desc.normalTexture = textureOf(material.normalImage);

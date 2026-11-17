@@ -55,6 +55,10 @@ struct MaterialDesc {
     /// How much water the surface soaks up (ADR-0061): wet, a porous surface (concrete, cloth, wood) darkens
     /// much, a sealed one (metal, glazed tile) little. From the material's glTF extras {"porosity": 0.7}.
     float porosity = 0.5f;
+    /// Relief from a height map (ADR-0064): meters from the lowest to the highest point of the height in the
+    /// metallic-roughness texture's alpha, which texture-tool relief packs there. The relief shadows the
+    /// light that grazes the surface. 0 for none. From the material's glTF extras {"height": 0.012}.
+    float heightScale = 0.0f;
     rhi::TextureHandle baseColorTexture;
     rhi::TextureHandle metallicRoughnessTexture;
     rhi::TextureHandle normalTexture;

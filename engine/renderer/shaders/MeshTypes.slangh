@@ -202,15 +202,57 @@ struct MaterialData {
     float sheenRoughness;
     float porosity; // How much it darkens when wet (ADR-0061).
     float3 sheenColor;
-    float layerPadding2;
+    float heightScale; // Meters of relief across the height in the metallic-roughness texture's alpha; 0: none.
 };
 
 // The G-buffer keeps a material's layers in two integers, eight bits each (ADR-0056): the coat, its
 // roughness and the sheen's roughness in the first, the sheen's color in the second.
+uint4 PackGBufferLayers(float coat, float coatRoughness, float3 sheen, float sheenRoughness, uint horizons) {
+    const uint3 a = uint3(round(saturate(float3(coat, coatRoughness, sheenRoughness)) * 255.0));
+    const uint3 b = uint3(round(saturate(sheen) * 255.0));
+    return uint4(a.x | (a.y << 8) | (a.z << 16), b.x | (b.y << 8) | (b.z << 16), horizons, 0);
+}
+
 uint2 PackLayers(float coat, float coatRoughness, float3 sheen, float sheenRoughness) {
     const uint3 a = uint3(round(saturate(float3(coat, coatRoughness, sheenRoughness)) * 255.0));
     const uint3 b = uint3(round(saturate(sheen) * 255.0));
     return uint2(a.x | (a.y << 8) | (a.z << 16), b.x | (b.y << 8) | (b.z << 16));
+}
+
+// Relief from height maps (ADR-0064): how high the surface around a point rises, as seen from it, in eight
+// directions across it, which shadows the light that comes from lower. The directions are those of a basis
+// built from the surface's own normal, the same in the G-buffer, which finds the horizons, and in the
+// lighting, which reads them. Each is the sine of the horizon's elevation, square-rooted, in 4 bits.
+static const uint kReliefDirections = 8;
+
+void ReliefBasis(float3 n, out float3 b1, out float3 b2) {
+    // Frisvad's orthonormal basis, as Duff et al. 2017 made it robust.
+    const float sign = n.z >= 0.0 ? 1.0 : -1.0;
+    const float a = -1.0 / (sign + n.z);
+    const float b = n.x * n.y * a;
+    b1 = float3(1.0 + sign * n.x * n.x * a, sign * b, -sign * n.x);
+    b2 = float3(b, sign + n.y * n.y * a, -n.y);
+}
+
+// How much of a light from toLight the relief lets through, from 0 to 1. 0 packed horizons are a flat
+// surface: everything.
+float ReliefShadow(uint horizons, float3 faceNormal, float3 toLight) {
+    if (horizons == 0) {
+        return 1.0;
+    }
+    float3 b1;
+    float3 b2;
+    ReliefBasis(faceNormal, b1, b2);
+    const float elevation = dot(toLight, faceNormal);
+    float azimuth = atan2(dot(toLight, b2), dot(toLight, b1)) / 6.28318531;
+    azimuth = (azimuth < 0.0 ? azimuth + 1.0 : azimuth) * float(kReliefDirections);
+    const uint first = uint(floor(azimuth)) % kReliefDirections;
+    const uint second = (first + 1) % kReliefDirections;
+    const float h1 = float((horizons >> (first * 4)) & 0xF) / 15.0;
+    const float h2 = float((horizons >> (second * 4)) & 0xF) / 15.0;
+    const float horizon = lerp(h1 * h1, h2 * h2, frac(azimuth));
+    // A soft edge: the light is a disc, and the horizon's 4 bits are coarse.
+    return smoothstep(horizon - 0.04, horizon + 0.08, elevation);
 }
 
 // Fullscreen passes declare their own push constants.

@@ -20,7 +20,7 @@ struct GBufferTextures {
     int2 size;
 };
 
-[[vk::binding(0, 0)]] Texture2D<uint2> g_layerTextures[];
+[[vk::binding(0, 0)]] Texture2D<uint4> g_layerTextures[];
 
 // The layers PackLayers wrote.
 Layers UnpackLayers(uint2 packed) {
@@ -82,6 +82,7 @@ struct GBufferSurface {
     float3 emission;
     float occlusion;
     Layers layers;
+    uint relief; // The relief's horizons (ADR-0064), 0 for a flat surface.
 };
 
 // The surface of a pixel, its face normal known already, or computed when faceNormal is null; without its
@@ -103,6 +104,7 @@ GBufferSurface ReadGBuffer(FrameData frame, GBufferTextures textures, int2 pixel
         surface.emission = float3(0.0, 0.0, 0.0);
         surface.occlusion = 1.0;
         surface.layers = NoLayers();
+        surface.relief = 0;
         return surface;
     }
     surface.faceNormal = any(faceNormal != 0.0) ? faceNormal
@@ -117,8 +119,13 @@ GBufferSurface ReadGBuffer(FrameData frame, GBufferTextures textures, int2 pixel
     surface.f0 = lerp(float3(0.04, 0.04, 0.04), baseMetallic.rgb, baseMetallic.a);
     surface.emission = float3(0.0, 0.0, 0.0);
     surface.occlusion = 1.0;
-    surface.layers = textures.layers != kNoTexture ? UnpackLayers(g_layerTextures[textures.layers].Load(int3(pixel, 0)))
-                                                   : NoLayers();
+    surface.relief = 0;
+    surface.layers = NoLayers();
+    if (textures.layers != kNoTexture) {
+        const uint4 packed = g_layerTextures[textures.layers].Load(int3(pixel, 0));
+        surface.layers = UnpackLayers(packed.xy);
+        surface.relief = packed.z;
+    }
     if (all) {
         const float4 emissionOcclusion = g_textures[textures.emission].Load(int3(pixel, 0));
         surface.emission = emissionOcclusion.rgb;
@@ -144,6 +151,7 @@ Receiver ReceiverOf(FrameData frame, GBufferSurface surface) {
     receiver.f0 = surface.f0;
     receiver.roughness = surface.roughness;
     receiver.layers = surface.layers;
+    receiver.relief = surface.relief;
     receiver.response = kRespondBsdf;
     receiver.emissiveSpecular = surface.roughness >= frame.sharpReflections;
     receiver.nearest = kNearestLight;

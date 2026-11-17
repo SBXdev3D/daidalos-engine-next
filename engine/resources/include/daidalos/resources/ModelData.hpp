@@ -84,6 +84,9 @@ struct MaterialData {
     float ior = 1.5f;
     /// How much water it soaks up, from the extras {"porosity": 0.8} or from its surface (ADR-0061).
     float porosity = 0.5f;
+    /// Meters of relief across the height in the metallic-roughness image's alpha, from the extras
+    /// {"height": 0.012} (ADR-0064); 0 for none.
+    float heightScale = 0.0f;
     /// KHR_materials_clearcoat: a clear varnish over the material, how much of it and how rough.
     float clearcoat = 0.0f;
     float clearcoatRoughness = 0.0f;

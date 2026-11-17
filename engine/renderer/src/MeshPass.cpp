@@ -318,7 +318,7 @@ struct GpuMaterial {
     float sheenRoughness;
     float porosity; // How much it darkens when wet (ADR-0061).
     glm::vec3 sheenColor;
-    float layerPadding2;
+    float heightScale; // Meters of relief across the metallic-roughness texture's alpha (ADR-0064).
 };
 static_assert(sizeof(GpuMaterial) == 128);
 
@@ -731,7 +731,7 @@ core::Result<MaterialHandle> MeshPass::CreateMaterial(const MaterialDesc& desc) 
         .sheenRoughness = std::clamp(desc.sheenRoughness, 0.0f, 1.0f),
         .porosity = std::clamp(desc.porosity, 0.0f, 1.0f),
         .sheenColor = glm::clamp(desc.sheenColor, glm::vec3(0.0f), glm::vec3(1.0f)),
-        .layerPadding2 = 0.0f,
+        .heightScale = desc.metallicRoughnessTexture ? std::max(desc.heightScale, 0.0f) : 0.0f,
     };
 
     const bool glass = desc.transmission > 0.0f;

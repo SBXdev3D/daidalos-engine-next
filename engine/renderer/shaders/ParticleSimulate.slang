@@ -36,6 +36,7 @@ static const float kLightBlend = 0.15;
 // radius: a puff is lit as a whole.
 Receiver SmokeReceiver(FrameData frame, float3 position, float radius) {
     Receiver receiver;
+    receiver.relief = 0;
     receiver.position = position;
     receiver.origin = position;
     receiver.faceNormal = -frame.cameraForward;
