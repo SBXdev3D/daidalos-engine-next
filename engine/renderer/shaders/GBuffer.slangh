@@ -16,8 +16,21 @@ struct GBufferTextures {
     uint normals;
     uint baseColor;
     uint emission;
+    uint layers;
     int2 size;
 };
+
+[[vk::binding(0, 0)]] Texture2D<uint2> g_layerTextures[];
+
+// The layers PackLayers wrote.
+Layers UnpackLayers(uint2 packed) {
+    Layers layers;
+    layers.coat = float(packed.x & 0xFF) / 255.0;
+    layers.coatRoughness = float((packed.x >> 8) & 0xFF) / 255.0;
+    layers.sheenRoughness = float((packed.x >> 16) & 0xFF) / 255.0;
+    layers.sheen = float3(packed.y & 0xFF, (packed.y >> 8) & 0xFF, (packed.y >> 16) & 0xFF) / 255.0;
+    return layers;
+}
 
 // The surface behind a pixel, in world space, from its reverse-Z depth.
 float3 PositionAt(FrameData frame, uint depthTexture, int2 pixel, int2 size) {
@@ -68,6 +81,7 @@ struct GBufferSurface {
     float3 view;
     float3 emission;
     float occlusion;
+    Layers layers;
 };
 
 // The surface of a pixel, its face normal known already, or computed when faceNormal is null; without its
@@ -88,6 +102,7 @@ GBufferSurface ReadGBuffer(FrameData frame, GBufferTextures textures, int2 pixel
         surface.f0 = float3(0.0, 0.0, 0.0);
         surface.emission = float3(0.0, 0.0, 0.0);
         surface.occlusion = 1.0;
+        surface.layers = NoLayers();
         return surface;
     }
     surface.faceNormal = any(faceNormal != 0.0) ? faceNormal
@@ -102,6 +117,8 @@ GBufferSurface ReadGBuffer(FrameData frame, GBufferTextures textures, int2 pixel
     surface.f0 = lerp(float3(0.04, 0.04, 0.04), baseMetallic.rgb, baseMetallic.a);
     surface.emission = float3(0.0, 0.0, 0.0);
     surface.occlusion = 1.0;
+    surface.layers = textures.layers != kNoTexture ? UnpackLayers(g_layerTextures[textures.layers].Load(int3(pixel, 0)))
+                                                   : NoLayers();
     if (all) {
         const float4 emissionOcclusion = g_textures[textures.emission].Load(int3(pixel, 0));
         surface.emission = emissionOcclusion.rgb;
@@ -126,6 +143,7 @@ Receiver ReceiverOf(FrameData frame, GBufferSurface surface) {
     receiver.diffuseColor = surface.diffuseColor;
     receiver.f0 = surface.f0;
     receiver.roughness = surface.roughness;
+    receiver.layers = surface.layers;
     receiver.response = kRespondBsdf;
     receiver.emissiveSpecular = surface.roughness >= frame.sharpReflections;
     receiver.nearest = kNearestLight;

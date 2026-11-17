@@ -182,7 +182,22 @@ struct MaterialData {
     uint thin;          // 1: thin glass, which bends nothing; 0: a closed volume.
     float3 absorption;  // Thick glass: exp(-absorption * meters) of each color goes through.
     uint emissiveLight; // 1: its emission lights the scene (ADR-0044); 0: it is only seen.
+    // The layers over the base (ADR-0056).
+    float clearcoat;
+    float clearcoatRoughness;
+    float sheenRoughness;
+    uint layerPadding;
+    float3 sheenColor;
+    float layerPadding2;
 };
+
+// The G-buffer keeps a material's layers in two integers, eight bits each (ADR-0056): the coat, its
+// roughness and the sheen's roughness in the first, the sheen's color in the second.
+uint2 PackLayers(MaterialData material) {
+    const uint3 a = uint3(round(saturate(float3(material.clearcoat, material.clearcoatRoughness, material.sheenRoughness)) * 255.0));
+    const uint3 b = uint3(round(saturate(material.sheenColor) * 255.0));
+    return uint2(a.x | (a.y << 8) | (a.z << 16), b.x | (b.y << 8) | (b.z << 16));
+}
 
 // Fullscreen passes declare their own push constants.
 #ifndef DAI_NO_MESH_PUSH_CONSTANTS

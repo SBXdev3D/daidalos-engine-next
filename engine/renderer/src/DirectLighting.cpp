@@ -46,6 +46,7 @@ struct RestirPushConstants {
     std::uint32_t seed;
     std::uint32_t flags;
     std::uint32_t currentGuides;
+    std::uint32_t layers; // The G-buffer's clear coat and sheen (ADR-0056).
 };
 static_assert(sizeof(RestirPushConstants) <= rhi::kMaxPushConstantSize);
 
@@ -149,28 +150,15 @@ void DirectLighting::AddTo(RenderGraph& graph, const DirectLightingInputs& input
     std::uint32_t flags = (settings.spatial ? kSpatial : 0) | (settings.unbiased ? kUnbiased : 0) |
                           (settings.debug ? kDebug : 0) | (m_hasHistory ? kTemporal : 0) |
                           (inputs.indirect ? kIndirect : 0);
-    RestirPushConstants push{inputs.frameBuffer,
-                             inputs.instanceBuffer,
-                             inputs.materialBuffer,
-                             sampled(inputs.depth),
-                             sampled(inputs.normals),
-                             sampled(inputs.baseColor),
-                             sampled(inputs.emission),
-                             sampled(inputs.motion),
-                             extent.width,
-                             extent.height,
-                             m_device->StorageIndex(m_reservoirs),
-                             m_device->StorageIndex(m_finalReservoirs),
-                             inputs.lightMap,
-                             inputs.previousLightCount,
-                             storage(m_guides[m_current]),
-                             sampled(m_guides[previous]),
-                             storage(inputs.diffuse),
-                             storage(inputs.specular),
-                             storage(m_debug),
-                             inputs.frameIndex,
-                             flags,
-                             sampled(m_guides[m_current])};
+    RestirPushConstants push{inputs.frameBuffer, inputs.instanceBuffer, inputs.materialBuffer, sampled(inputs.depth),
+                             sampled(inputs.normals), sampled(inputs.baseColor), sampled(inputs.emission),
+                             sampled(inputs.motion), extent.width, extent.height, m_device->StorageIndex(m_reservoirs),
+                             m_device->StorageIndex(m_finalReservoirs), inputs.lightMap, inputs.previousLightCount,
+                             storage(m_guides[m_current]), sampled(m_guides[previous]), storage(inputs.diffuse),
+                             storage(inputs.specular), storage(m_debug), inputs.frameIndex, flags,
+                             sampled(m_guides[m_current]),
+                             // A G-buffer without layers reads none (ADR-0056).
+                             inputs.layers.IsNull() ? 0xFFFFFFFFU : sampled(inputs.layers)};
     const std::uint32_t groupsX = (extent.width + kGroupSize - 1) / kGroupSize;
     const std::uint32_t groupsY = (extent.height + kGroupSize - 1) / kGroupSize;
     const auto dispatch = [this, groupsX, groupsY](rhi::PipelineHandle pipeline, const RestirPushConstants& constants) {
@@ -182,10 +170,13 @@ void DirectLighting::AddTo(RenderGraph& graph, const DirectLightingInputs& input
         };
     };
     // What every pass reads: the G-buffer, and rays.
-    const std::vector<rhi::TextureUse> gbuffer{{inputs.depth, rhi::Access::ComputeShaderRead},
-                                               {inputs.normals, rhi::Access::ComputeShaderRead},
-                                               {inputs.baseColor, rhi::Access::ComputeShaderRead},
-                                               {inputs.emission, rhi::Access::ComputeShaderRead}};
+    std::vector<rhi::TextureUse> gbuffer{{inputs.depth, rhi::Access::ComputeShaderRead},
+                                         {inputs.normals, rhi::Access::ComputeShaderRead},
+                                         {inputs.baseColor, rhi::Access::ComputeShaderRead},
+                                         {inputs.emission, rhi::Access::ComputeShaderRead}};
+    if (!inputs.layers.IsNull()) {
+        gbuffer.push_back({inputs.layers, rhi::Access::ComputeShaderRead});
+    }
     const rhi::BufferUse skinned{inputs.skinnedVertices, rhi::Access::ComputeShaderRead};
     const rhi::BufferUse lights{inputs.emissiveTriangles, rhi::Access::ComputeShaderRead};
     const std::vector<rhi::AccelerationStructureUse> structures{{inputs.structure, rhi::Access::RayQueryRead}};

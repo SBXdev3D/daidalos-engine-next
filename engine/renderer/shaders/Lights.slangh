@@ -237,6 +237,7 @@ struct Receiver {
     float3 diffuseColor;
     float3 f0;
     float roughness;
+    Layers layers; // The clear coat and the sheen (ADR-0056).
     uint response;
     // The specular light of emissive triangles: false where a sharp reflection shows them (ADR-0044).
     bool emissiveSpecular;
@@ -265,7 +266,7 @@ BsdfTerms Respond(Receiver receiver, float3 toLight) {
         terms.diffuse = saturate(dot(receiver.normal, toLight)) * 0.31830989;
         return terms;
     }
-    return EvaluateBsdfTerms(receiver.normal, receiver.view, toLight, receiver.f0, receiver.roughness);
+    return EvaluateLayeredTerms(receiver.normal, receiver.view, toLight, receiver.f0, receiver.roughness, receiver.layers);
 }
 
 float3 Reflected(Receiver receiver, BsdfTerms terms) {
@@ -421,6 +422,7 @@ Receiver ReceiverOf(Surface surface, float3 view, uint response) {
     receiver.diffuseColor = surface.diffuseColor;
     receiver.f0 = surface.f0;
     receiver.roughness = surface.roughness;
+    receiver.layers = surface.layers;
     receiver.response = response;
     receiver.emissiveSpecular = true;
     receiver.nearest = kNearestLight;

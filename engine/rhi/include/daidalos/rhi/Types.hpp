@@ -60,6 +60,8 @@ enum class Format {
     R16Float,
     R32Float,
     R32Uint,
+    /// Two unsigned integers: data packed bit by bit, such as the G-buffer's material layers.
+    Rg32Uint,
     D32Float,
     /// Block-compressed formats, with blocks of 4x4 pixels.
     Bc5Unorm,
@@ -232,7 +234,7 @@ enum class TextureState {
 [[nodiscard]] Access AccessOf(TextureState state);
 
 /// Color targets a rendering and a pipeline can have.
-inline constexpr std::uint32_t kMaxColorTargets = 4;
+inline constexpr std::uint32_t kMaxColorTargets = 8; // Vulkan guarantees 4; every GPU with ray tracing has 8.
 
 enum class IndexType { Uint16, Uint32 };
 enum class CullMode { None, Front, Back };

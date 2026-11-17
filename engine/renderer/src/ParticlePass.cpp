@@ -414,22 +414,22 @@ core::Result<void> ParticlePass::CreateResources(rhi::Format colorFormat, rhi::F
     for (const auto& [pipeline, cull] :
          {std::pair{&m_meshDraw, rhi::CullMode::Back}, std::pair{&m_meshDrawDoubleSided, rhi::CullMode::None}}) {
         using resources::Vertex;
-        DAI_TRY_ASSIGN(
-            *pipeline,
-            m_device->CreatePipeline(
-                {.vertexShader = rhi::ToSpirv(kParticleMeshVsSpirv),
-                 .fragmentShader = rhi::ToSpirv(kParticleMeshPsSpirv),
-                 .vertexStride = sizeof(Vertex),
-                 .vertexAttributes =
-                     {{0, rhi::Format::Rgb32Float, static_cast<std::uint32_t>(offsetof(Vertex, position))},
-                      {1, rhi::Format::Rgb32Float, static_cast<std::uint32_t>(offsetof(Vertex, normal))},
-                      {2, rhi::Format::Rg32Float, static_cast<std::uint32_t>(offsetof(Vertex, uv))},
-                      {3, rhi::Format::Rgba32Float, static_cast<std::uint32_t>(offsetof(Vertex, tangent))}},
-                 .colorFormat = MeshPass::kNormalFormat,
-                 .moreColorFormats = {MeshPass::kMotionFormat, MeshPass::kBaseColorFormat, MeshPass::kEmissionFormat},
-                 .depthFormat = depthFormat,
-                 .cull = cull,
-                 .name = "Mesh particles"}));
+        DAI_TRY_ASSIGN(*pipeline,
+                       m_device->CreatePipeline(
+                           {.vertexShader = rhi::ToSpirv(kParticleMeshVsSpirv),
+                            .fragmentShader = rhi::ToSpirv(kParticleMeshPsSpirv),
+                            .vertexStride = sizeof(Vertex),
+                            .vertexAttributes =
+                                {{0, rhi::Format::Rgb32Float, static_cast<std::uint32_t>(offsetof(Vertex, position))},
+                                 {1, rhi::Format::Rgb32Float, static_cast<std::uint32_t>(offsetof(Vertex, normal))},
+                                 {2, rhi::Format::Rg32Float, static_cast<std::uint32_t>(offsetof(Vertex, uv))},
+                                 {3, rhi::Format::Rgba32Float, static_cast<std::uint32_t>(offsetof(Vertex, tangent))}},
+                            .colorFormat = MeshPass::kNormalFormat,
+                            .moreColorFormats = {MeshPass::kMotionFormat, MeshPass::kBaseColorFormat,
+                                                 MeshPass::kEmissionFormat, MeshPass::kLayersFormat},
+                            .depthFormat = depthFormat,
+                            .cull = cull,
+                            .name = "Mesh particles"}));
     }
 
     const auto buffer = [this](std::uint64_t size, rhi::BufferUsage usage, const char* name,

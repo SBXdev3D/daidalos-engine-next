@@ -172,6 +172,15 @@ core::Result<void> ModelBuilder::AddMaterials() {
         if (material.transmission) {
             data.transmission = material.transmission->transmissionFactor;
         }
+        if (material.clearcoat) {
+            data.clearcoat = material.clearcoat->clearcoatFactor;
+            data.clearcoatRoughness = material.clearcoat->clearcoatRoughnessFactor;
+        }
+        if (material.sheen) {
+            data.sheenColor = {material.sheen->sheenColorFactor[0], material.sheen->sheenColorFactor[1],
+                               material.sheen->sheenColorFactor[2]};
+            data.sheenRoughness = material.sheen->sheenRoughnessFactor;
+        }
         if (material.volume) {
             data.thickness = material.volume->thicknessFactor;
             data.attenuationColor = {material.volume->attenuationColor[0], material.volume->attenuationColor[1],
@@ -570,7 +579,8 @@ core::Result<ModelData> LoadModelFile(const std::filesystem::path& path) {
     fastgltf::Parser parser(
         fastgltf::Extensions::KHR_texture_basisu | fastgltf::Extensions::KHR_materials_transmission |
         fastgltf::Extensions::KHR_materials_volume | fastgltf::Extensions::KHR_materials_ior |
-        fastgltf::Extensions::KHR_materials_emissive_strength | fastgltf::Extensions::KHR_lights_punctual);
+        fastgltf::Extensions::KHR_materials_emissive_strength | fastgltf::Extensions::KHR_lights_punctual |
+        fastgltf::Extensions::KHR_materials_clearcoat | fastgltf::Extensions::KHR_materials_sheen);
     Extras extras;
     parser.setUserPointer(&extras);
     parser.setExtrasParseCallback(&ReadExtras);
@@ -598,7 +608,8 @@ core::Result<std::vector<std::filesystem::path>> ModelFiles(const std::filesyste
     fastgltf::Parser parser(
         fastgltf::Extensions::KHR_texture_basisu | fastgltf::Extensions::KHR_materials_transmission |
         fastgltf::Extensions::KHR_materials_volume | fastgltf::Extensions::KHR_materials_ior |
-        fastgltf::Extensions::KHR_materials_emissive_strength | fastgltf::Extensions::KHR_lights_punctual);
+        fastgltf::Extensions::KHR_materials_emissive_strength | fastgltf::Extensions::KHR_lights_punctual |
+        fastgltf::Extensions::KHR_materials_clearcoat | fastgltf::Extensions::KHR_materials_sheen);
     fastgltf::Expected<fastgltf::Asset> asset = parser.loadGltf(stream, path.parent_path(), fastgltf::Options::None);
     if (asset.error() != fastgltf::Error::None) {
         return core::MakeError(core::ErrorCode::ParseError, kModule,

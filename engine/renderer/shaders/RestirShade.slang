@@ -34,7 +34,8 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         return;
     }
     const Receiver receiver = ReceiverOf(frame, surface);
-    const float3 specularAlbedo = SpecularAlbedo(surface.f0, surface.roughness, max(dot(surface.normal, surface.view), 0.0));
+    const float3 specularAlbedo =
+        LayeredSpecularAlbedo(surface.f0, surface.roughness, max(dot(surface.normal, surface.view), 0.0), surface.layers);
     float3 diffuseLight = float3(0.0, 0.0, 0.0);
     float3 specularLight = float3(0.0, 0.0, 0.0);
     // Where the light may be noisy, so that the denoiser filters it: one light chosen among several, a light

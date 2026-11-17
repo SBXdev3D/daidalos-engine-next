@@ -247,8 +247,15 @@ struct GpuMaterial {
     /// Thick glass: the fraction of each color lost per meter, as an exponent: exp(-absorption * meters).
     glm::vec3 absorption;
     std::uint32_t emissiveLight;
+    // The layers over the base (ADR-0056).
+    float clearcoat;
+    float clearcoatRoughness;
+    float sheenRoughness;
+    std::uint32_t layerPadding;
+    glm::vec3 sheenColor;
+    float layerPadding2;
 };
-static_assert(sizeof(GpuMaterial) == 96);
+static_assert(sizeof(GpuMaterial) == 128);
 
 /// The absorption coefficient of glass that gives white light this color after this distance.
 glm::vec3 Absorption(const glm::vec3& color, float distance) {
@@ -387,7 +394,7 @@ core::Result<rhi::PipelineHandle> MeshPass::BuildPipeline(std::span<const std::u
                              {2, rhi::Format::Rg32Float, static_cast<std::uint32_t>(offsetof(Vertex, uv))},
                              {3, rhi::Format::Rgba32Float, static_cast<std::uint32_t>(offsetof(Vertex, tangent))}},
         .colorFormat = kNormalFormat,
-        .moreColorFormats = {kMotionFormat, kBaseColorFormat, kEmissionFormat},
+        .moreColorFormats = {kMotionFormat, kBaseColorFormat, kEmissionFormat, kLayersFormat},
         .depthFormat = m_depthFormat,
         .cull = cull,
         .name = "G-buffer",
@@ -621,6 +628,12 @@ core::Result<MaterialHandle> MeshPass::CreateMaterial(const MaterialDesc& desc) 
         .thin = desc.thin ? 1U : 0U,
         .absorption = Absorption(desc.attenuationColor, desc.attenuationDistance),
         .emissiveLight = desc.emissiveLight ? 1U : 0U,
+        .clearcoat = std::clamp(desc.clearcoat, 0.0f, 1.0f),
+        .clearcoatRoughness = std::clamp(desc.clearcoatRoughness, 0.0f, 1.0f),
+        .sheenRoughness = std::clamp(desc.sheenRoughness, 0.0f, 1.0f),
+        .layerPadding = 0,
+        .sheenColor = glm::clamp(desc.sheenColor, glm::vec3(0.0f), glm::vec3(1.0f)),
+        .layerPadding2 = 0.0f,
     };
 
     const bool glass = desc.transmission > 0.0f;
@@ -1235,6 +1248,7 @@ core::Result<ShadingTargets> MeshPass::CreateShadingTargets(rhi::Extent extent) 
     core::Result<void> created =
         create(targets.baseColor, kBaseColorFormat, ColorTarget, "Base color")
             .and_then([&] { return create(targets.emission, kEmissionFormat, ColorTarget, "Emission"); })
+            .and_then([&] { return create(targets.layers, kLayersFormat, ColorTarget, "Layers"); })
             .and_then([&] { return create(targets.diffuse, kLightFormat, Storage, "Diffuse light"); })
             .and_then([&] { return create(targets.specular, kLightFormat, Storage, "Specular light"); });
     if (!created) {
@@ -1247,6 +1261,7 @@ core::Result<ShadingTargets> MeshPass::CreateShadingTargets(rhi::Extent extent) 
 void MeshPass::DestroyShadingTargets(ShadingTargets& targets) const {
     m_device->DestroyTexture(targets.baseColor);
     m_device->DestroyTexture(targets.emission);
+    m_device->DestroyTexture(targets.layers);
     m_device->DestroyTexture(targets.diffuse);
     m_device->DestroyTexture(targets.specular);
     targets = {};
@@ -1260,7 +1275,8 @@ rhi::RenderingDesc MeshPass::GBufferRendering(const ShadingTargets& targets, rhi
             .clearColor = glm::vec4(0.5f, 1.0f, 0.5f, 1.0f),
             .moreColorTargets = {{motion, glm::vec4(0.0f)},
                                  {targets.baseColor, glm::vec4(0.0f)},
-                                 {targets.emission, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f)}},
+                                 {targets.emission, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f)},
+                                 {targets.layers, glm::vec4(0.0f)}},
             .depthTarget = depth,
             .clearDepth = 0.0f,
             .area = area};

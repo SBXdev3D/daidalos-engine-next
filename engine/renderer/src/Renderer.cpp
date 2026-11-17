@@ -84,6 +84,7 @@ struct GBufferDebugPushConstants {
 };
 constexpr std::uint32_t kShowMotion = 0;
 constexpr std::uint32_t kShowNormals = 1;
+constexpr std::uint32_t kShowLayers = 2;
 
 } // namespace
 
@@ -853,6 +854,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                     .motion = impl.motion,
                                     .baseColor = impl.shading.baseColor,
                                     .emission = impl.shading.emission,
+                                    .layers = impl.shading.layers,
                                     .indirect = illuminate ? indirect : rhi::TextureHandle{},
                                     .reflections = illuminate ? reflections : rhi::TextureHandle{},
                                     .diffuse = impl.shading.diffuse,
@@ -974,18 +976,23 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         ++impl.frameNumber;
     }
     impl.resolved = resolve;
-    const bool gbufferView = impl.debugView == DebugView::Motion || impl.debugView == DebugView::Normals;
+    const bool gbufferView = impl.debugView == DebugView::Motion || impl.debugView == DebugView::Normals ||
+                             impl.debugView == DebugView::Layers;
     if (status && hasFrame && gbufferView) {
-        const bool normals = impl.debugView == DebugView::Normals;
-        const rhi::TextureHandle shown = normals ? impl.normals : impl.motion;
+        const std::uint32_t mode = impl.debugView == DebugView::Normals  ? kShowNormals
+                                   : impl.debugView == DebugView::Layers ? kShowLayers
+                                                                         : kShowMotion;
+        const rhi::TextureHandle shown = mode == kShowNormals  ? impl.normals
+                                         : mode == kShowLayers ? impl.shading.layers
+                                                               : impl.motion;
         graph.AddPass(
             {.name = "G-buffer debug view",
              .rendering = rhi::RenderingDesc{.colorTarget = impl.hdr},
              .textures = {{impl.hdr, rhi::Access::ColorTarget, true}, {shown, rhi::Access::FragmentShaderRead}}},
-            [&impl, sceneExtent, shown, normals](rhi::CommandList& commands) {
+            [&impl, sceneExtent, shown, mode](rhi::CommandList& commands) {
                 commands.BindPipeline(impl.gbufferDebug);
                 commands.Push(GBufferDebugPushConstants{
-                    impl.device.BindlessIndex(shown), normals ? kShowNormals : kShowMotion,
+                    impl.device.BindlessIndex(shown), mode,
                     glm::vec2(static_cast<float>(sceneExtent.width), static_cast<float>(sceneExtent.height))});
                 commands.Draw(3);
             });

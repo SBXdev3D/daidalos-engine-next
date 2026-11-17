@@ -33,6 +33,8 @@ struct DirectLightingInputs {
     rhi::TextureHandle motion;
     rhi::TextureHandle baseColor;
     rhi::TextureHandle emission;
+    /// The clear coat and sheen (ADR-0056); none reads no layers.
+    rhi::TextureHandle layers;
     /// The indirect light and the reflections that the lighting adds, which FrameData names; null for none.
     rhi::TextureHandle indirect;
     rhi::TextureHandle reflections;
