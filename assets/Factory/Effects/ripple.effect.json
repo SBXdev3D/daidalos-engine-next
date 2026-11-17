@@ -1,5 +1,6 @@
 {
     "comment": "A ring spreading on a wet floor.",
+    "traced": false,
     "texture": "sprites.png",
     "columns": 4,
     "cell": 1,

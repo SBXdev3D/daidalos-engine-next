@@ -204,6 +204,7 @@ private:
     /// After a frame with a scene: locks pipeline creation, and measures the frame for the first launch's
     /// choice of preset.
     void AfterSceneFrame();
+    void LogGpuTimes();
 
     ApplicationConfig m_config;
     core::CVarRegistry m_cvars;
@@ -220,6 +221,11 @@ private:
     std::optional<core::CVar<bool>> m_dynamicResolution;
     std::optional<core::CVar<double>> m_minRenderScale;
     std::optional<core::CVar<std::int64_t>> m_targetFps;
+    /// renderer.log_gpu_times: the passes' GPU times, summed over the frames logged.
+    std::optional<core::CVar<std::int64_t>> m_logGpuTimes;
+    std::map<std::string, double> m_gpuTimes;
+    std::uint32_t m_gpuTimeFrames = 0;
+    bool m_gpuTimesLogged = false;
     std::optional<core::CVar<std::string>> m_upscaler;
     std::optional<core::CVar<std::string>> m_toneMapper;
     std::optional<core::CVar<bool>> m_hdr;
@@ -236,6 +242,7 @@ private:
     std::optional<core::CVar<bool>> m_reflections;
     std::optional<core::CVar<double>> m_reflectionRoughness;
     std::optional<core::CVar<bool>> m_volumetricFog;
+    std::optional<core::CVar<bool>> m_tracedParticles;
     std::optional<core::CVar<std::int64_t>> m_fogSlices;
     std::optional<core::CVar<std::int64_t>> m_fogTile;
     std::optional<core::CVar<double>> m_particleDensity;

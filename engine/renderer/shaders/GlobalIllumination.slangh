@@ -143,7 +143,7 @@ bool SeesAnchor(FrameData frame, float3 from, float3 anchor) {
     ray.Direction = offset / distance;
     ray.TMin = 0.0;
     ray.TMax = distance;
-    return !Occluded(ray, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer);
+    return !Occluded(ray, frame, g_gi.instanceBuffer, g_gi.materialBuffer);
 }
 
 // The slot of a cell, or kNoCell. With insert, a cell that is not there takes a free slot if there is one,
@@ -295,7 +295,7 @@ float3 BouncedLight(FrameData frame, BouncePoint first, inout uint random) {
         ray.Origin = OffsetOrigin(point.position, point.faceNormal);
         ray.TMin = 0.0;
         ray.TMax = 1e6;
-        const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer, kMaskIndirect);
+        const Hit hit = TraceClosest(ray, frame, g_gi.instanceBuffer, g_gi.materialBuffer, kMaskIndirect);
         if (!hit.found) {
             light += throughput * SkyRadiance(frame, ray.Direction);
             break;
@@ -312,7 +312,7 @@ float3 BouncedLight(FrameData frame, BouncePoint first, inout uint random) {
 
 // Traces ray, from a pixel, and returns the light that comes back along it (BouncedLight), or the sky's.
 float3 TraceBounce(FrameData frame, RayDesc ray, inout uint random) {
-    const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer, kMaskIndirect);
+    const Hit hit = TraceClosest(ray, frame, g_gi.instanceBuffer, g_gi.materialBuffer, kMaskIndirect);
     if (!hit.found) {
         return ClampBounce(SkyRadiance(frame, ray.Direction));
     }

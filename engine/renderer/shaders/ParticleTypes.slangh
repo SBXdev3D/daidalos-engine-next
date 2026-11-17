@@ -1,0 +1,252 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+#ifndef DAIDALOS_PARTICLE_TYPES_SLANGH
+#define DAIDALOS_PARTICLE_TYPES_SLANGH
+
+// The particles' data, as the passes that simulate and draw them and the rays that meet them read it (ADR-0025,
+// ADR-0053, ADR-0062). Each structure matches its C++ twin in engine/renderer/src/ParticlePass.cpp. It declares
+// no buffer: Particles.slangh does for the particle passes, RayQueries.slangh for rays.
+
+struct Particle {
+    float3 position;
+    float age;
+    float3 velocity;
+    float lifetime;
+    float size;
+    float rotation;
+    float rotationSpeed;
+    uint effect;
+    // A lit particle's light from the frame's lights, per unit of its color, kept from frame to frame: the
+    // simulation adds a few samples each frame (ADR-0044).
+    float3 light;
+    float lightSamples; // Frames of samples it holds; 0 until it is first lit.
+    uint4 reservoir;    // The light it keeps choosing (Lights.slangh, Pack).
+    float3 axis;        // The effect's axis, turned like the emitter was (ADR-0053).
+    float startFrame;   // Its first frame of the flipbook.
+    float3 lightDirection; // Towards the light it chose, for six-way light maps; 0 until it has one.
+    uint state;            // kParticleResting once it has come to rest on a surface.
+};
+
+static const uint kParticleResting = 1;
+
+static const uint kEffectLit = 1;
+static const uint kEffectReportsHits = 2;
+static const uint kEffectAdditive = 4;
+static const uint kEffectLoop = 8;
+static const uint kEffectRandomStart = 16;
+static const uint kEffectTraced = 32; // Rays meet it (ADR-0062).
+// Particles of a frame that add to the fog: more are left out of it.
+static const uint kMaxSmokeParticles = 1024;
+
+// No effect: a sub-emitter that spawns nothing, a force that moves every effect.
+static const uint kNoEffect = 0xFFFFFFFF;
+
+// renderer::ParticleCollision.
+static const uint kCollisionNone = 0;
+static const uint kCollisionBounce = 1;
+static const uint kCollisionStick = 2;
+static const uint kCollisionDie = 3;
+
+// renderer::ParticleShape and renderer::ParticleOrientation.
+static const uint kShapeBox = 0;
+static const uint kShapeCylinder = 1;
+static const uint kShapeCone = 2;
+static const uint kShapeLine = 3;
+static const uint kOrientCamera = 0;
+static const uint kOrientVelocity = 1;
+static const uint kOrientAxis = 2;
+static const uint kOrientPlane = 3;
+
+struct ParticleEffectData {
+    float3 spawnBox;     // Half extents, in the emitter's frame.
+    float spawnRadius;   // Added: a random point in a sphere.
+    float3 direction;    // In the emitter's frame.
+    float spread;        // Radians around the direction.
+    float3 axis;         // Of Axis and Plane particles, in the emitter's frame.
+    float stretch;       // Seconds of motion a Velocity particle stretches over.
+    float speedMin;
+    float speedMax;
+    float lifeMin;
+    float lifeMax;
+    float sizeMin;
+    float sizeMax;
+    float gravity;       // Multiplies the Earth's.
+    float drag;          // Fraction of its speed relative to the air lost per second.
+    float rotationSpeed; // Radians per second, either way.
+    float softness;      // Meters over which it fades into what it touches.
+    float bounce;        // Speed kept when it bounces off a surface.
+    float fadeIn;        // Fraction of its life over which it fades in.
+    float inheritVelocity;
+    float frameRate;     // Frames per second of the flipbook; 0 plays it once over the life.
+    uint shape;
+    uint orientation;
+    uint texture;
+    uint cell;           // The flipbook's first cell.
+    uint columns;
+    uint rows;
+    uint frames;
+    uint flags;
+    uint collision;
+    uint deathEffect; // Spawned where a particle dies of age, deathCount of it.
+    uint deathCount;
+    uint hitEffect;   // Spawned where a particle hits a surface, hitCount of it.
+    uint hitCount;
+    float turbulence;      // Meters per second squared of curl noise.
+    float turbulenceScale; // Meters across its swirls.
+    float anisotropy;      // Of the light it scatters (Henyey-Greenstein), from -1 back to 1 forwards.
+    float distortion;      // Bends the frame behind it by up to this fraction of its height.
+    uint lightPositive;    // Six-way light maps: lit from its right, top and front, in RGB, or kNoTexture.
+    uint lightNegative;    // From its left, bottom and back.
+    uint meshSlot;         // A mesh effect's list of particles to draw (kMaxMeshEffects), or kNoEffect.
+    float meshRest;        // How far above a surface a resting mesh's origin is, per unit of its size.
+    float fogDensity;      // Of the fog it adds around it, per meter, where it is opaque (ADR-0062).
+};
+
+// Mesh effects at once, and the particles each draws (ADR-0053): more are simulated but not drawn.
+static const uint kMaxMeshEffects = 32;
+static const uint kMeshCapacity = 4096;
+
+// A ribbon's point and the ribbon it belongs to, which the CPU builds each frame (ADR-0053).
+struct RibbonPointData {
+    float3 position;
+    float width;
+    float4 color;
+    float3 tangent; // Along the ribbon at the point.
+    float u;
+    uint ribbon;
+    uint padding0;
+    uint padding1;
+    uint padding2;
+};
+struct RibbonData {
+    uint texture;
+    uint flags; // kEffectAdditive.
+    float softness;
+    uint padding;
+};
+// The key of a ribbon's segment in the sort, besides its index in the frame's segments.
+static const uint kRibbonKey = 0x80000000;
+
+struct ParticleSpawn {
+    float3 position;
+    uint effect;
+    float4 rotation; // Quaternion (x, y, z, w) of the emitter.
+    float3 previous; // Where the emitter was last frame: particles are spread along the way.
+    uint first;      // Particles spawned by the requests before this one.
+    float3 velocity; // The emitter's.
+    uint count;
+    float3 scale;    // Stretches the effect's shape along the emitter's axes.
+    uint padding;
+};
+
+// New particles that the GPU asks for, where particles died or hit something (ADR-0053): read the next frame.
+struct ParticleSubSpawn {
+    float3 position;
+    uint effect;
+    float3 direction; // The new particles' effect direction turns towards it, as an emitter's +Y.
+    uint count;
+    float3 velocity;  // The particle's, which the new ones inherit as their effect says.
+    uint padding;
+};
+
+// renderer::WindVolume and renderer::ParticleAttractor, in one kind of record.
+static const uint kForceWind = 0;
+static const uint kForceAttractor = 1;
+struct ParticleForce {
+    float4 toBox0; // Wind: the rows of the matrix from the world into its box, the cube from -0.5 to 0.5.
+    float4 toBox1;
+    float4 toBox2;
+    float3 vector; // Wind: its velocity, meters per second. Attractor: its position.
+    uint kind;
+    float3 axis;   // Attractor: the axis it turns particles around.
+    uint effect;   // Attractor: the only effect it moves, or kNoEffect for all.
+    float strength;      // Attractor: meters per second squared towards it.
+    float vortex;        // Attractor: meters per second squared around its axis.
+    float radius;        // Attractor: where its pull fades to nothing; 0 reaches everywhere.
+    float gust;          // Wind: how much it varies, from 0 (steady) to 1.
+    float gustFrequency; // Wind: gusts per second.
+    float edge;          // Wind: the fraction of the box's half-size over which it fades at the faces.
+    float padding0;
+    float padding1;
+};
+
+// A hit reported to the CPU (renderer::ParticleHit). Element 0 of the buffer is its header: the count of
+// hits, then the particles alive after the frame.
+struct ParticleHitData {
+    float3 position;
+    uint effect;
+    float3 normal;
+    uint material;
+};
+
+// The simulation's frame, besides the push constants: the air, the forces, and the lists of events.
+struct ParticleFrame {
+    float3 wind;           // The level's, meters per second.
+    uint forceCount;
+    float windGust;
+    float windGustFrequency;
+    uint forces;           // Storage index of the forces.
+    uint hits;             // Storage index of this frame's hits, for the CPU.
+    uint subSpawnsIn;      // Storage index of the sub-spawns of the last frame, spawned this frame.
+    uint subSpawnsOut;     // Storage index of this frame's, spawned the next.
+    uint subCounterIn;     // Their counters, in the counters buffer.
+    uint subCounterOut;
+    uint hitCapacity;
+    uint ribbons;        // Storage indices of the frame's ribbons, their points and segments (the first point of
+    uint ribbonPoints;   // each, joined to the next).
+    uint ribbonSegments;
+    uint ribbonSegmentCount;
+    uint meshLists; // Storage index of the lists of mesh particles, kMeshCapacity per mesh effect.
+    uint boxes; // Storage index of the particles' boxes in the frame's structure (ADR-0062), six floats each.
+    uint smoke; // The particles that add to the fog (ADR-0062): how many, then their indices.
+    uint4 meshIndexCounts[kMaxMeshEffects / 4]; // Indices of each mesh effect's mesh; 0 draws nothing.
+};
+
+// Requests a frame can make of the next, and the hits it can report.
+static const uint kMaxSubSpawns = 4096;
+
+// The frames of the flipbook a particle is between, and how far it is from the first to the second. At a
+// frame rate, the flipbook loops or holds its last frame, as the effect says; over the life, it plays once,
+// or wraps around from a particle's own start frame.
+// Samples per curve, and the curves of each effect: color, then size, emission and speed.
+static const uint kCurveSamples = 256;
+static const uint kCurveColor = 0;
+static const uint kCurveScales = 1;
+
+// An effect's curve at a moment of the life, from 0 to 1, blended between its samples.
+float4 SampleCurveFrom(StructuredBuffer<float4> curves, uint effect, uint curve, float life) {
+    const float x = saturate(life) * float(kCurveSamples - 1);
+    const uint i = min(uint(x), kCurveSamples - 2);
+    const uint base = (effect * 2 + curve) * kCurveSamples + i;
+    return lerp(curves[base], curves[base + 1], x - float(i));
+}
+
+struct Flipbook {
+    uint current;
+    uint next;
+    float blend;
+};
+Flipbook FlipbookAt(ParticleEffectData effect, Particle particle, float life) {
+    const uint count = max(effect.frames, 1);
+    const float frames = float(count);
+    const bool loops = effect.frameRate > 0.0 ? (effect.flags & kEffectLoop) != 0 : particle.startFrame > 0.0;
+    float frame = particle.startFrame + (effect.frameRate > 0.0 ? particle.age * effect.frameRate : life * frames);
+    frame = loops ? frame - frames * floor(frame / frames) : min(frame, frames - 1.0);
+    Flipbook flipbook;
+    flipbook.current = min(uint(frame), count - 1);
+    flipbook.next = loops ? (flipbook.current + 1) % count : min(flipbook.current + 1, count - 1);
+    flipbook.blend = frame - floor(frame);
+    return flipbook;
+}
+
+// The corner of a cell of the grid, as texture coordinates; rows of the image go down.
+float2 CellUv(ParticleEffectData effect, uint cell, float2 corner) {
+    const uint columns = max(effect.columns, 1);
+    const uint rows = effect.rows > 0 ? effect.rows : columns;
+    const float2 grid = float2(float(columns), float(rows));
+    return (float2(float(cell % columns), float((cell / columns) % rows)) + (corner * float2(0.5, -0.5) + 0.5)) / grid;
+}
+
+#endif

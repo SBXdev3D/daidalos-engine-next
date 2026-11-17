@@ -154,9 +154,12 @@ struct FrameData {
     std::uint32_t wetVolumeCount;
     std::uint32_t rippleBuffer;
     std::uint32_t rippleCount;
-    std::uint32_t framePadding;
+    std::uint32_t particleData; // The particles rays meet (ADR-0062): their pool, effects and curves.
+    std::uint32_t particleEffects;
+    std::uint32_t particleCurves;
+    std::array<std::uint32_t, 2> framePadding;
 };
-static_assert(sizeof(FrameData) == 480);
+static_assert(sizeof(FrameData) == 496);
 
 /// A box of wet air (ADR-0061). Matches its twin in shaders/Wetness.slangh.
 struct WetVolumeData {
@@ -1140,6 +1143,9 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     frame.decalBuffer = m_device->StorageIndex(slot.decals);
     frame.decalCount = static_cast<std::uint32_t>(nearDecals.size());
     frame.debugFlags = targets.debugFlags;
+    frame.particleData = targets.particleData;
+    frame.particleEffects = targets.particleEffects;
+    frame.particleCurves = targets.particleCurves;
 
     // Wet air, and ripples on its water (ADR-0061).
     auto* wetVolumes = reinterpret_cast<WetVolumeData*>(m_device->Mapped(slot.wetVolumes).data());

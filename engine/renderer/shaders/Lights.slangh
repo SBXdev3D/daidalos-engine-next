@@ -302,7 +302,7 @@ bool Unoccluded(FrameData frame, Receiver receiver, LightContact contact, uint i
     ray.Direction = offset / max(distanceToTarget, 0.0001);
     ray.TMin = receiver.response == kRespondEverywhere ? min(kSmokeShadowStart, distanceToTarget * 0.5) : 0.0;
     ray.TMax = max(distanceToTarget - contact.gap, 0.0);
-    return !Occluded(ray, frame.accelerationStructure, instanceBuffer, materialBuffer);
+    return !Occluded(ray, frame, instanceBuffer, materialBuffer);
 }
 
 // A sample of the frame's lights for one receiver: a light, the point on it, and what it is worth (Bitterli

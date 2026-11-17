@@ -30,6 +30,9 @@ struct VolumetricFogInputs {
     /// The light map (MeshPass::LightMapIndex): froxels lit by a light that moved keep less of their history.
     std::uint32_t lightMap = 0;
     std::uint32_t previousLightCount = 0;
+    /// The particles that add to the fog, as the simulation listed them this frame (ADR-0062,
+    /// ParticlePass::Traced::smoke), or null. The frame's FrameData says where the particles are.
+    rhi::BufferHandle smoke;
 };
 
 /// The size of the froxel grid.
@@ -72,6 +75,8 @@ public:
     [[nodiscard]] std::array<std::uint32_t, 3> Size() const { return {m_size.width, m_size.height, m_slices}; }
 
     static constexpr rhi::Format kFormat = rhi::Format::Rgba16Float;
+    /// The smoke's density in each froxel (FogSmoke.slang).
+    static constexpr rhi::Format kSmokeFormat = rhi::Format::R32Uint;
     /// The share of the last frame in each froxel's light: the noise of one ray per froxel averages over
     /// about twenty frames.
     static constexpr float kHistoryWeight = 0.95f;
@@ -84,6 +89,11 @@ private:
     rhi::Device* m_device;
     rhi::PipelineHandle m_lighting;
     rhi::PipelineHandle m_integrate;
+    rhi::PipelineHandle m_smokeSplat;
+    /// The smoke's density in each froxel (ADR-0062), which the integration empties for the next frame; it
+    /// holds nothing until it has once.
+    rhi::TextureHandle m_smoke;
+    bool m_smokeEmptied = false;
     /// The light each froxel scatters, per meter, and its extinction: this frame's and the last.
     std::array<rhi::TextureHandle, 2> m_scattering;
     rhi::TextureHandle m_integrated;

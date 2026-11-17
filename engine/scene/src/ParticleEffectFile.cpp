@@ -335,6 +335,10 @@ core::Result<void> Read(ParticleEffectFile& file, std::string_view key, Element 
         DAI_TRY_ASSIGN(desc.additive, Boolean(value, key));
     } else if (key == "lit") {
         DAI_TRY_ASSIGN(desc.lit, Boolean(value, key));
+    } else if (key == "traced") {
+        DAI_TRY_ASSIGN(desc.traced, Boolean(value, key));
+    } else if (key == "fog_density") {
+        DAI_TRY_ASSIGN(desc.fogDensity, Number(value, key));
     } else if (key == "collision") {
         DAI_TRY_ASSIGN(desc.collision, Collision(value, key));
     } else if (key == "bounce") {

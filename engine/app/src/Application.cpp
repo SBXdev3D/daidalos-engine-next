@@ -14,6 +14,7 @@
 #include <chrono>
 #include <format>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <thread>
 #include <utility>
@@ -34,11 +35,12 @@ constexpr std::uint32_t kMaxWorkerThreads = 4;
 constexpr std::uint32_t kProbeWarmupFrames = 90;
 constexpr std::uint32_t kProbeFrames = 120;
 // The settings the presets decide, which ChooseQuality puts back to the preset.
-constexpr std::array<std::string_view, 12> kPresetSettings{
+constexpr std::array<std::string_view, 13> kPresetSettings{
     "renderer.render_scale",         "renderer.min_render_scale", "renderer.indirect_light",
     "renderer.gi_bounces",           "renderer.gi_rays",          "renderer.reflections",
     "renderer.reflection_roughness", "renderer.restir_spatial",   "renderer.volumetric_fog",
-    "renderer.fog_slices",           "renderer.fog_tile",         "renderer.particle_density"};
+    "renderer.fog_slices",           "renderer.fog_tile",         "renderer.particle_density",
+    "renderer.traced_particles"};
 
 /// The variable's value if something set it, the preset's otherwise.
 template <class T>
@@ -334,6 +336,10 @@ core::Result<void> Application::LoadConfiguration() {
             "Lower the render size when the GPU cannot hold the target frame rate, and raise it back after");
         m_minRenderScale = m_cvars.Register<double>("renderer.min_render_scale", 0.5,
                                                     "Lowest render size over the window's with dynamic resolution");
+        m_logGpuTimes = m_cvars.Register<std::int64_t>(
+            "renderer.log_gpu_times", 0,
+            "Logs the GPU time of each pass once this many frames of the level are drawn, and their average over the "
+            "next hundred; 0 for none");
         m_targetFps = m_cvars.Register<std::int64_t>(
             "renderer.target_fps", 60, "Frames per second dynamic resolution holds on the GPU, from 30 to 240");
         m_upscaler = m_cvars.Register<std::string>(
@@ -366,6 +372,9 @@ core::Result<void> Application::LoadConfiguration() {
         m_particleDensity = m_cvars.Register<double>(
             "renderer.particle_density", 1.0,
             "Multiplies the particles that emitters and weather emit, from 0 to 1: fewer, for their cost");
+        m_tracedParticles = m_cvars.Register<bool>(
+            "renderer.traced_particles", true,
+            "Particles in the ray-traced scene: smoke casts shadows, sparks show in mirrors; off, rays pass them");
         m_quality = m_cvars.Register<std::string>(
             "renderer.quality", "auto",
             "Quality preset: low, medium, high or ultra; auto measures the GPU at the first launch and chooses. "
@@ -572,6 +581,7 @@ core::Result<void> Application::CreateRenderer() {
              .reflections = quality.reflections,
              .reflectionRoughness = ReflectionRoughness(quality.reflectionRoughness),
              .volumetricFog = quality.volumetricFog,
+             .tracedParticles = quality.tracedParticles,
              .fogSlices = FogSlices(quality.fogSlices),
              .fogTile = FogTile(quality.fogTile),
              .restirSpatial = quality.restirSpatial,
@@ -663,7 +673,8 @@ QualitySettings Application::EffectiveQualitySettings() const {
             .volumetricFog = Preset(*m_volumetricFog, preset.volumetricFog),
             .fogSlices = Preset(*m_fogSlices, preset.fogSlices),
             .fogTile = Preset(*m_fogTile, preset.fogTile),
-            .particleDensity = Preset(*m_particleDensity, preset.particleDensity)};
+            .particleDensity = Preset(*m_particleDensity, preset.particleDensity),
+            .tracedParticles = Preset(*m_tracedParticles, preset.tracedParticles)};
 }
 
 std::filesystem::path Application::PipelineCachePath() const {
@@ -674,12 +685,38 @@ std::filesystem::path Application::PipelineCachePath() const {
     return file.is_relative() ? platform::ExecutableDirectory() / file : file;
 }
 
+void Application::LogGpuTimes() {
+    // Averages each pass over a hundred frames from the frame asked for, then logs them, slowest first.
+    const std::int64_t from = m_logGpuTimes.has_value() ? m_logGpuTimes->Get() : 0;
+    if (from <= 0 || m_sceneFrames < static_cast<std::uint64_t>(from) || m_gpuTimesLogged) {
+        return;
+    }
+    constexpr std::uint32_t kFrames = 100;
+    for (const renderer::PassTime& pass : m_renderer->GpuTimes()) {
+        m_gpuTimes[std::string(pass.name)] += pass.milliseconds / kFrames;
+    }
+    if (++m_gpuTimeFrames < kFrames) {
+        return;
+    }
+    std::vector<std::pair<std::string, double>> passes(m_gpuTimes.begin(), m_gpuTimes.end());
+    std::ranges::sort(passes, std::greater{}, &std::pair<std::string, double>::second);
+    double total = 0.0;
+    for (const auto& [name, milliseconds] : passes) {
+        total += milliseconds;
+        DAI_LOG_INFO(kModule, "GPU {:7.3f} ms  {}", milliseconds, name);
+    }
+    DAI_LOG_INFO(kModule, "GPU {:7.3f} ms  in all, over {} frames", total, kFrames);
+    logging::Flush();
+    m_gpuTimesLogged = true;
+}
+
 void Application::AfterSceneFrame() {
     // Only frames that draw a level count: a loading screen measures nothing.
     if (!m_currentScene || !m_renderer.has_value() || !m_scene.camera.has_value() || m_scene.draws.empty()) {
         return;
     }
     ++m_sceneFrames;
+    LogGpuTimes();
     rhi::Device& device = m_renderer->Device();
     if (!device.PipelineCreationLocked()) {
         // Every pipeline is made by now: one made later stalls a frame (ADR-0052).
@@ -761,6 +798,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_renderer->SetReflectionRoughness(ReflectionRoughness(quality.reflectionRoughness));
     m_renderer->SetVolumetricFog(quality.volumetricFog, FogSlices(quality.fogSlices), FogTile(quality.fogTile));
     m_renderer->SetRestir(quality.restirSpatial, m_restirUnbiased->Get());
+    m_renderer->SetTracedParticles(quality.tracedParticles);
     m_renderer->SetIndirectLightConfig(IndirectLight());
     m_renderer->SetFieldOfView(FieldOfViewRadians(*m_fieldOfView));
     m_renderer->SetViewDistance(ViewDistanceMeters(*m_viewDistance));

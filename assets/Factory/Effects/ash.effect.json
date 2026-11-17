@@ -1,5 +1,6 @@
 {
     "comment": "Ash drifting down through a broken roof, swirled by the air; it stays where it lands. Placed by weather zones.",
+    "traced": false,
     "texture": "sprites.png",
     "columns": 4,
     "cell": 5,

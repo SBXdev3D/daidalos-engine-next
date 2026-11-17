@@ -189,6 +189,9 @@ protected:
         std::optional<renderer::FroxelGrid> fog;
         /// Tints of the lit scene (MeshPass::FrameTargets::debugFlags): decals 1, wetness 2.
         std::uint32_t debugFlags = 0;
+        /// Simulates the view's particles each frame, spawned on the first, and puts them in the frame's
+        /// structure (ADR-0062). They are not drawn: only what rays see of them shows.
+        renderer::ParticlePass* particles = nullptr;
     };
 
     // What the G-buffer and the lighting draw of the view, in linear HDR. The view is drawn frames times, each with the
@@ -266,6 +269,11 @@ protected:
             if (options.animate) {
                 options.animate(animated, drawn);
             }
+            if (drawn > 0) {
+                animated.particleSpawns.clear();
+            }
+            const renderer::ParticlePass::Traced traced =
+                options.particles != nullptr ? options.particles->TracedParticles() : renderer::ParticlePass::Traced{};
             EXPECT_TRUE(
                 Device()
                     .Submit([&](rhi::CommandList& commands) {
@@ -291,13 +299,34 @@ protected:
                                      .fog = fogTexture,
                                      .sharpReflections =
                                          reflections ? renderer::GlobalIllumination::kSharpRoughness : 0.0f,
-                                     .debugFlags = options.debugFlags})
+                                     .debugFlags = options.debugFlags,
+                                     .particleData = traced.particles,
+                                     .particleEffects = traced.effects,
+                                     .particleCurves = traced.curves})
                                 .has_value());
-                        ASSERT_TRUE(m_scene->Prepare(m_pass->TracedDraws()).has_value());
+                        ASSERT_TRUE(m_scene
+                                        ->Prepare(m_pass->TracedDraws(), {.structure = traced.structure,
+                                                                          .boxes = traced.boxes,
+                                                                          .count = traced.boxCount})
+                                        .has_value());
                         renderer::RenderGraph graph;
                         m_pass->AddSkinning(graph);
                         m_scene->AddBuild(graph);
                         m_pass->AddEmissiveLights(graph);
+                        if (options.particles != nullptr) {
+                            animated.timeStep = 1.0f / 60.0f;
+                            ASSERT_TRUE(options.particles
+                                            ->AddSimulation(graph, animated, m_pass->FrameDataIndex(),
+                                                            {.structure = m_scene->Structure(),
+                                                             .instanceBuffer = m_pass->InstanceDataIndex(),
+                                                             .materialBuffer = m_pass->MaterialDataIndex(),
+                                                             .skinnedVertices = m_pass->SkinnedVertices(),
+                                                             .emissiveTriangles = m_pass->EmissiveTriangles(),
+                                                             .lightMap = m_pass->LightMapIndex(),
+                                                             .previousLightCount = m_pass->PreviousLightCount()},
+                                                            *m_pass)
+                                            .has_value());
+                        }
                         graph.AddPass(
                             {.name = "G-buffer",
                              .rendering = MeshPass::GBufferRendering(*shading, normals, motion, depth, renderExtent)},
@@ -344,7 +373,8 @@ protected:
                                                .emissiveTriangles = m_pass->EmissiveTriangles(),
                                                .frameIndex = frame,
                                                .lightMap = m_pass->LightMapIndex(),
-                                               .previousLightCount = m_pass->PreviousLightCount()});
+                                               .previousLightCount = m_pass->PreviousLightCount(),
+                                               .smoke = traced.smoke});
                         }
                         if (denoiser.has_value()) {
                             denoiser->AddTo(
@@ -2533,4 +2563,115 @@ TEST_F(PathTracerTest, AWetFloorMatchesThePathTracer) {
     RecordProperty("puddlePixels", std::to_string(cyan));
     EXPECT_GT(cyan, kExtent.width * kExtent.height / 20);
     EXPECT_LT(cyan, kExtent.width * kExtent.height / 2);
+}
+
+namespace {
+
+// A particle that hangs where it appears, for as long as a test lasts: a ball of its size and color, without
+// an image.
+renderer::ParticleEffectDesc StillParticle(glm::vec4 color, bool additive, bool traced) {
+    renderer::ParticleEffectDesc desc;
+    desc.color = {{0.0f, color}, {1.0f, color}};
+    desc.fadeIn = 0.0f;
+    desc.lifetime = {1000.0f, 1000.0f};
+    desc.size = {1.2f, 1.2f};
+    desc.additive = additive;
+    desc.lit = false;
+    desc.traced = traced;
+    return desc;
+}
+
+float Sum(const Image& image) {
+    float sum = 0.0f;
+    for (const glm::vec4& pixel : image) {
+        sum += pixel.r + pixel.g + pixel.b;
+    }
+    return sum;
+}
+
+} // namespace
+
+TEST_F(PathTracerTest, ParticlesCastShadows) {
+    // A ball of smoke between the lamp and the floor shades it (ADR-0062); the same particle opted out of rays
+    // does not. The harness does not draw particles: only their shadow shows.
+    core::Result<renderer::ParticlePass> created = renderer::ParticlePass::Create(Device(), kColorFormat, kDepthFormat);
+    ASSERT_TRUE(created.has_value()) << core::Format(created.error());
+    renderer::ParticlePass& particles = *created;
+    const auto material = [this](const MaterialDesc& desc) { return Material(desc); };
+    constexpr rhi::Extent kExtent{96, 96};
+    const auto render = [&](bool traced) {
+        const core::Result<renderer::ParticleEffectHandle> effect =
+            particles.CreateEffect(StillParticle(glm::vec4(0.5f, 0.5f, 0.5f, 1.0f), false, traced), *m_pass);
+        EXPECT_TRUE(effect.has_value());
+        SceneView view = BlockOnAFloor(m_cube, material, 0.8f);
+        // Halfway from the lamp to the floor, in front of the block.
+        view.particleSpawns.push_back({.effect = *effect, .position = {0.75f, 1.5f, 1.2f}, .count = 1});
+        const Image image = Rasterize(view, kExtent, {.frames = 16, .warmup = 3, .particles = &particles});
+        particles.DestroyEffect(*effect);
+        return image;
+    };
+    const float shaded = Sum(render(true));
+    const float lit = Sum(render(false));
+    RecordProperty("shaded", std::to_string(shaded));
+    RecordProperty("lit", std::to_string(lit));
+    EXPECT_LT(shaded, lit * 0.97f);
+}
+
+TEST_F(PathTracerTest, ParticlesShowInMirrors) {
+    // A red spark above a mirror floor: the harness does not draw it, but the mirror shows it (ADR-0062); opted
+    // out of rays, it is gone from the mirror too.
+    core::Result<renderer::ParticlePass> created = renderer::ParticlePass::Create(Device(), kColorFormat, kDepthFormat);
+    ASSERT_TRUE(created.has_value()) << core::Format(created.error());
+    renderer::ParticlePass& particles = *created;
+    core::Result<renderer::GlobalIllumination> gi = renderer::GlobalIllumination::Create(Device());
+    ASSERT_TRUE(gi.has_value()) << core::Format(gi.error());
+    const auto material = [this](const MaterialDesc& desc) { return Material(desc); };
+    constexpr rhi::Extent kExtent{96, 96};
+    const auto red = [&](bool traced) {
+        const core::Result<renderer::ParticleEffectHandle> effect =
+            particles.CreateEffect(StillParticle(glm::vec4(40.0f, 0.0f, 0.0f, 1.0f), true, traced), *m_pass);
+        EXPECT_TRUE(effect.has_value());
+        SceneView view = BlockOnAFloor(m_cube, material, 0.0f);
+        view.particleSpawns.push_back({.effect = *effect, .position = {-1.2f, 0.9f, 0.0f}, .count = 1});
+        const Image image = Rasterize(
+            view, kExtent, {.frames = 4, .indirect = &*gi, .warmup = 3, .reflections = true, .particles = &particles});
+        particles.DestroyEffect(*effect);
+        float redness = 0.0f;
+        for (const glm::vec4& pixel : image) {
+            redness += std::max(pixel.r - pixel.g - pixel.b, 0.0f);
+        }
+        return redness;
+    };
+    const float shown = red(true);
+    const float hidden = red(false);
+    RecordProperty("shown", std::to_string(shown));
+    RecordProperty("hidden", std::to_string(hidden));
+    EXPECT_GT(shown, hidden + 1.0f);
+}
+
+TEST_F(PathTracerTest, SmokeThickensTheFog) {
+    // A ball of smoke with a fog density, near the lamp: the fog's lighting scatters the lamp's light in it
+    // (ADR-0062), which brightens the view; without one, the clear air shows nothing.
+    core::Result<renderer::ParticlePass> created = renderer::ParticlePass::Create(Device(), kColorFormat, kDepthFormat);
+    ASSERT_TRUE(created.has_value()) << core::Format(created.error());
+    renderer::ParticlePass& particles = *created;
+    const auto material = [this](const MaterialDesc& desc) { return Material(desc); };
+    constexpr rhi::Extent kExtent{96, 96};
+    const auto render = [&](float density) {
+        renderer::ParticleEffectDesc desc = StillParticle(glm::vec4(0.5f, 0.5f, 0.5f, 1.0f), false, false);
+        desc.fogDensity = density;
+        const core::Result<renderer::ParticleEffectHandle> effect = particles.CreateEffect(desc, *m_pass);
+        EXPECT_TRUE(effect.has_value());
+        SceneView view = BlockOnAFloor(m_cube, material, 0.8f);
+        view.particleSpawns.push_back({.effect = *effect, .position = {1.0f, 2.0f, 0.8f}, .count = 1});
+        const Image image = Rasterize(
+            view, kExtent, {.frames = 16, .warmup = 3, .fog = renderer::FroxelGrid{}, .particles = &particles});
+        particles.DestroyEffect(*effect);
+        return image;
+    };
+    const float smoky = Sum(render(3.0f));
+    const float clear = Sum(render(0.0f));
+    RecordProperty("smoky", std::to_string(smoky));
+    RecordProperty("clear", std::to_string(clear));
+    EXPECT_GT(smoky, clear * 1.05f);
 }

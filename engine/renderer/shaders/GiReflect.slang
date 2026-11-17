@@ -52,9 +52,12 @@ float3 IndirectAt(FrameData frame, Surface surface, inout uint random) {
     ray.Origin = OffsetOrigin(surface.position, surface.faceNormal);
     ray.TMin = 0.0;
     ray.TMax = 1e6;
-    const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer, kMaskReflection);
+    const Hit hit = TraceClosest(ray, frame, g_gi.instanceBuffer, g_gi.materialBuffer, kMaskReflection);
     if (!hit.found) {
         return SkyRadiance(frame, ray.Direction);
+    }
+    if (hit.particle) {
+        return hit.particleLight;
     }
     const InstanceData instance = g_instances[g_gi.instanceBuffer][hit.instance];
     float3 hitNormal = normalize(FaceNormal(instance, hit.primitive));
@@ -112,13 +115,18 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     float3 throughput = float3(1.0, 1.0, 1.0);
     float hitDistance = kFarHit;
     for (uint bounce = 0; bounce < kMirrorBounces; ++bounce) {
-        const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer, kMaskReflection);
+        const Hit hit = TraceClosest(ray, frame, g_gi.instanceBuffer, g_gi.materialBuffer, kMaskReflection);
         if (!hit.found) {
             light += throughput * SkyRadiance(frame, ray.Direction);
             break;
         }
         if (bounce == 0) {
             hitDistance = min(hit.distance, kFarHit);
+        }
+        if (hit.particle) {
+            // A particle in the mirror: the light it sends back, which the cache must not keep (ADR-0062).
+            light += throughput * hit.particleLight;
+            break;
         }
         const Surface surface = ShadeHit(hit, ray.Direction, frame, g_gi.instanceBuffer, g_gi.materialBuffer);
         if (!sharp) {

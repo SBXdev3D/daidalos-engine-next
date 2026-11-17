@@ -24,7 +24,8 @@ constexpr std::array<QualitySettings, 4> kPresets{{
      .restirSpatial = false,
      .fogSlices = 32,
      .fogTile = 16,
-     .particleDensity = 0.5},
+     .particleDensity = 0.5,
+     .tracedParticles = false},
     // Medium, the minimum tier's (an RTX 3060 at 1080p): two thirds of the resolution at most.
     {.renderScale = 0.67, .minRenderScale = 0.5, .reflectionRoughness = 0.45, .fogSlices = 48},
     // High: what the engine is tuned for.

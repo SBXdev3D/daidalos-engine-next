@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstring>
+#include <limits>
 #include <numeric>
 #include <utility>
 #include <vector>
@@ -62,6 +63,7 @@ constexpr std::uint32_t kEffectReportsHits = 2;
 constexpr std::uint32_t kEffectAdditive = 4;
 constexpr std::uint32_t kEffectLoop = 8;
 constexpr std::uint32_t kEffectRandomStart = 16;
+constexpr std::uint32_t kEffectTraced = 32;
 
 struct GpuEffect {
     glm::vec3 spawnBox;
@@ -105,7 +107,7 @@ struct GpuEffect {
     std::uint32_t lightNegative;
     std::uint32_t meshSlot;
     float meshRest;
-    float padding;
+    float fogDensity;
 };
 static_assert(sizeof(GpuEffect) == 192);
 
@@ -175,7 +177,8 @@ struct GpuFrame {
     std::uint32_t ribbonSegments;
     std::uint32_t ribbonSegmentCount;
     std::uint32_t meshLists;
-    std::array<std::uint32_t, 2> padding;
+    std::uint32_t boxes;
+    std::uint32_t smoke;
     std::array<std::uint32_t, ParticlePass::kMaxMeshEffects> meshIndexCounts;
 };
 static_assert(sizeof(GpuFrame) == 208);
@@ -291,7 +294,7 @@ GpuEffect ToGpu(const ParticleEffectDesc& desc, std::uint32_t texture, std::uint
                 std::uint32_t meshSlot, float meshRest) {
     const std::uint32_t flags = (desc.lit ? kEffectLit : 0U) | (desc.reportHits ? kEffectReportsHits : 0U) |
                                 (desc.additive ? kEffectAdditive : 0U) | (desc.loop ? kEffectLoop : 0U) |
-                                (desc.randomStartFrame ? kEffectRandomStart : 0U);
+                                (desc.randomStartFrame ? kEffectRandomStart : 0U) | (desc.traced ? kEffectTraced : 0U);
     return {.spawnBox = desc.spawnBox,
             .spawnRadius = desc.spawnRadius,
             .direction = Normalized(desc.direction),
@@ -333,7 +336,7 @@ GpuEffect ToGpu(const ParticleEffectDesc& desc, std::uint32_t texture, std::uint
             .lightNegative = lightNegative,
             .meshSlot = meshSlot,
             .meshRest = meshRest,
-            .padding = 0.0f};
+            .fogDensity = desc.fogDensity};
 }
 // The sort's groups, as in ParticleSort.slang: each sorts kSortLocal keys in its own memory.
 constexpr std::uint32_t kSortThreads = 1024;
@@ -358,17 +361,21 @@ ParticlePass::ParticlePass(ParticlePass&& other) noexcept
       m_effectTable(std::exchange(other.m_effectTable, {})), m_curveTable(std::exchange(other.m_curveTable, {})),
       m_effectCapacity(std::exchange(other.m_effectCapacity, 0)), m_frameSlots(std::exchange(other.m_frameSlots, {})),
       m_nextFrameSlot(other.m_nextFrameSlot), m_frame(other.m_frame), m_hits(std::move(other.m_hits)),
-      m_aliveCount(other.m_aliveCount), m_distorting(std::move(other.m_distorting)) {}
+      m_aliveCount(other.m_aliveCount), m_distorting(std::move(other.m_distorting)),
+      m_boxes(std::exchange(other.m_boxes, {})), m_structure(std::exchange(other.m_structure, {})),
+      m_smoke(std::exchange(other.m_smoke, {})) {}
 
 ParticlePass::~ParticlePass() {
     for (const rhi::PipelineHandle pipeline :
          {m_subEmit, m_emit, m_simulate, m_finish, m_sort, m_draw, m_distort, m_meshDraw, m_meshDrawDoubleSided}) {
         m_device->DestroyPipeline(pipeline);
     }
-    for (const rhi::BufferHandle buffer : {m_particles, m_dead, m_alive[0], m_alive[1], m_subSpawns[0], m_subSpawns[1],
-                                           m_keys, m_counters, m_arguments, m_effectTable, m_curveTable, m_meshLists}) {
+    for (const rhi::BufferHandle buffer :
+         {m_particles, m_dead, m_alive[0], m_alive[1], m_subSpawns[0], m_subSpawns[1], m_keys, m_counters, m_arguments,
+          m_effectTable, m_curveTable, m_meshLists, m_boxes, m_smoke}) {
         m_device->DestroyBuffer(buffer);
     }
+    m_device->DestroyAccelerationStructure(m_structure);
     for (const FrameSlot& slot : m_frameSlots) {
         for (const rhi::BufferHandle buffer : {slot.spawns, slot.forces, slot.parameters, slot.hits, slot.ribbons,
                                                slot.ribbonPoints, slot.ribbonSegments}) {
@@ -466,10 +473,29 @@ core::Result<void> ParticlePass::CreateResources(rhi::Format colorFormat, rhi::F
                    "Particle draw", m_arguments));
     DAI_TRY(buffer(std::uint64_t{kMaxMeshEffects} * kMeshCapacity * sizeof(std::uint32_t), rhi::BufferUsage::Storage,
                    "Mesh particles", m_meshLists));
+    // A box per slot of the pool, which rays meet (ADR-0062): the simulation writes them, and a dead slot's
+    // is inactive.
+    DAI_TRY(
+        buffer(std::uint64_t{kMaxParticles} * kBoxSize,
+               rhi::BufferUsage::Storage | rhi::BufferUsage::AccelerationStructureInput | rhi::BufferUsage::TransferDst,
+               "Particle boxes", m_boxes));
+    DAI_TRY(buffer((std::uint64_t{kMaxSmokeParticles} + 1) * sizeof(std::uint32_t),
+                   rhi::BufferUsage::Storage | rhi::BufferUsage::TransferDst, "Smoke particles", m_smoke));
+    const std::vector<std::uint32_t> noSmoke(std::size_t{kMaxSmokeParticles} + 1, 0U);
+    DAI_TRY(m_device->UploadBuffer(m_smoke, std::as_bytes(std::span(noSmoke))));
+    const std::vector<float> boxes(std::size_t{kMaxParticles} * 6, std::numeric_limits<float>::quiet_NaN());
+    DAI_TRY(m_device->UploadBuffer(m_boxes, std::as_bytes(std::span(boxes))));
+    DAI_TRY_ASSIGN(m_structure,
+                   m_device->CreateAccelerationStructure({.level = rhi::AccelerationStructureLevel::Bottom,
+                                                          .boxes = {.boxes = m_boxes, .count = kMaxParticles},
+                                                          .rebuiltEveryFrame = true,
+                                                          .name = "Particles"}));
 
     // Every slot starts dead, nothing is alive, and nothing is drawn.
+    // The list is taken from its end: the lowest slots first, so that the particles alive keep to the first
+    // slots, the only boxes rays need (ADR-0062).
     std::vector<std::uint32_t> dead(kMaxParticles);
-    std::iota(dead.begin(), dead.end(), 0U);
+    std::iota(dead.rbegin(), dead.rend(), 0U);
     DAI_TRY(m_device->UploadBuffer(m_dead, std::as_bytes(std::span(dead))));
     std::array<std::uint32_t, kCounters> counters{};
     counters[0] = kMaxParticles;
@@ -589,10 +615,11 @@ void ParticlePass::ReadHits(const FrameSlot& slot) {
         return;
     }
     const std::span<const std::byte> bytes = m_device->Mapped(slot.hits);
-    std::array<std::uint32_t, 2> header{};
+    std::array<std::uint32_t, 3> header{};
     std::memcpy(header.data(), bytes.data(), sizeof(header));
     std::uint32_t count = header[0];
     m_aliveCount = header[1];
+    m_tracedSlots = header[2];
     count = std::min(count, kMaxHits);
     m_hits.reserve(count);
     for (std::uint32_t i = 0; i < count; ++i) {
@@ -831,7 +858,8 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, const SceneVi
                               .ribbonSegments = m_device->StorageIndex(slot.ribbonSegments),
                               .ribbonSegmentCount = segments,
                               .meshLists = m_device->StorageIndex(m_meshLists),
-                              .padding = {},
+                              .boxes = m_device->StorageIndex(m_boxes),
+                              .smoke = m_device->StorageIndex(m_smoke),
                               .meshIndexCounts = indexCounts};
     std::memcpy(m_device->Mapped(slot.parameters).data(), &parameters, sizeof(parameters));
     m_parameters = m_device->StorageIndex(slot.parameters);
@@ -871,6 +899,7 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, const SceneVi
                                            {m_counters, rhi::Access::ComputeShaderWrite},
                                            {m_arguments, rhi::Access::ComputeShaderWrite},
                                            {m_meshLists, rhi::Access::ComputeShaderWrite},
+                                           {m_smoke, rhi::Access::ComputeShaderWrite},
                                            {slot.hits, rhi::Access::ComputeShaderWrite}};
     const auto dispatch = [push](rhi::PipelineHandle pipeline, std::uint32_t groups) {
         return [push, pipeline, groups](rhi::CommandList& commands) {
@@ -889,6 +918,7 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, const SceneVi
     }
     // Particles meet the frame's surfaces, and lit ones cast shadow rays.
     std::vector<rhi::BufferUse> simulated = pool;
+    simulated.push_back({m_boxes, rhi::Access::ComputeShaderWrite});
     simulated.push_back({shadows.skinnedVertices, rhi::Access::ComputeShaderRead});
     simulated.push_back({shadows.emissiveTriangles, rhi::Access::ComputeShaderRead});
     graph.AddPass({.name = "Particle simulation",
@@ -897,6 +927,12 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, const SceneVi
                    .structures = {{shadows.structure, rhi::Access::RayQueryRead}}},
                   dispatch(m_simulate, kGroups));
     graph.AddPass({.name = "Particle finish", .group = "Simulation", .buffers = pool}, dispatch(m_finish, kGroups));
+    // The frame's rays read the particles they meet (ADR-0062) in passes that do not name them: they wait here.
+    graph.AddPass({.name = "Particles to rays",
+                   .group = "Simulation",
+                   .buffers = {{m_particles, rhi::Access::ComputeShaderRead | rhi::Access::FragmentShaderRead},
+                               {m_smoke, rhi::Access::ComputeShaderRead}}},
+                  [](rhi::CommandList&) {});
 
     // Bitonic sort over the whole pool: the slots past the alive particles sort last. Groups sort
     // kSortLocal keys in their own memory; only the longer steps need a dispatch each.

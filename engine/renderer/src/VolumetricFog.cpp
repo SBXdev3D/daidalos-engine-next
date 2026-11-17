@@ -9,6 +9,7 @@
 
 #include <shaders/FogIntegrate.cs.spv.h>
 #include <shaders/FogLighting.cs.spv.h>
+#include <shaders/FogSmoke.cs.spv.h>
 
 #include <algorithm>
 #include <utility>
@@ -34,11 +35,15 @@ struct FogPushConstants {
     float historyWeight;
     std::uint32_t lightMap;
     std::uint32_t previousLightCount;
+    std::uint32_t smoke;
+    std::uint32_t smokeList;
     std::uint32_t padding;
 };
 static_assert(sizeof(FogPushConstants) <= rhi::kMaxPushConstantSize);
 
 constexpr std::uint32_t kNoTexture = 0xFFFFFFFF;
+// Match FogSmoke.slang and ParticlePass::kMaxSmokeParticles: a group per particle.
+constexpr std::uint32_t kSmokeGroups = 1024;
 // Match the thread groups of the shaders.
 constexpr std::uint32_t kLightingGroup = 4;
 constexpr std::uint32_t kIntegrateGroup = 8;
@@ -51,13 +56,16 @@ std::uint32_t Groups(std::uint32_t count, std::uint32_t group) {
 
 VolumetricFog::VolumetricFog(VolumetricFog&& other) noexcept
     : m_device(other.m_device), m_lighting(std::exchange(other.m_lighting, {})),
-      m_integrate(std::exchange(other.m_integrate, {})), m_scattering(std::exchange(other.m_scattering, {})),
-      m_integrated(std::exchange(other.m_integrated, {})), m_current(other.m_current), m_output(other.m_output),
-      m_grid(other.m_grid), m_size(other.m_size), m_slices(other.m_slices), m_hasHistory(other.m_hasHistory) {}
+      m_integrate(std::exchange(other.m_integrate, {})), m_smokeSplat(std::exchange(other.m_smokeSplat, {})),
+      m_smoke(std::exchange(other.m_smoke, {})), m_smokeEmptied(other.m_smokeEmptied),
+      m_scattering(std::exchange(other.m_scattering, {})), m_integrated(std::exchange(other.m_integrated, {})),
+      m_current(other.m_current), m_output(other.m_output), m_grid(other.m_grid), m_size(other.m_size),
+      m_slices(other.m_slices), m_hasHistory(other.m_hasHistory) {}
 
 VolumetricFog::~VolumetricFog() {
     m_device->DestroyPipeline(m_lighting);
     m_device->DestroyPipeline(m_integrate);
+    m_device->DestroyPipeline(m_smokeSplat);
     DestroyResources();
 }
 
@@ -66,8 +74,11 @@ void VolumetricFog::DestroyResources() {
         m_device->DestroyTexture(texture);
     }
     m_device->DestroyTexture(m_integrated);
+    m_device->DestroyTexture(m_smoke);
     m_scattering = {};
     m_integrated = {};
+    m_smoke = {};
+    m_smokeEmptied = false;
 }
 
 core::Result<VolumetricFog> VolumetricFog::Create(rhi::Device& device) {
@@ -76,6 +87,8 @@ core::Result<VolumetricFog> VolumetricFog::Create(rhi::Device& device) {
                    device.CreateComputePipeline({.shader = rhi::ToSpirv(kFogLightingCsSpirv), .name = "Fog lighting"}));
     DAI_TRY_ASSIGN(fog.m_integrate, device.CreateComputePipeline(
                                         {.shader = rhi::ToSpirv(kFogIntegrateCsSpirv), .name = "Fog integration"}));
+    DAI_TRY_ASSIGN(fog.m_smokeSplat,
+                   device.CreateComputePipeline({.shader = rhi::ToSpirv(kFogSmokeCsSpirv), .name = "Fog smoke"}));
     return fog;
 }
 
@@ -97,10 +110,19 @@ core::Result<void> VolumetricFog::Resize(rhi::Extent output, const FroxelGrid& g
                                                 .name = name}));
         return {};
     };
-    core::Result<void> created = texture(m_scattering[0], "Fog scattering")
+    core::Result<void> created =
+        texture(m_scattering[0], "Fog scattering")
 
-                                     .and_then([&] { return texture(m_scattering[1], "Fog scattering"); })
-                                     .and_then([&] { return texture(m_integrated, "Fog"); });
+            .and_then([&] { return texture(m_scattering[1], "Fog scattering"); })
+            .and_then([&] { return texture(m_integrated, "Fog"); })
+            .and_then([&]() -> core::Result<void> {
+                DAI_TRY_ASSIGN(m_smoke, m_device->CreateTexture({.extent = size,
+                                                                 .format = kSmokeFormat,
+                                                                 .usage = rhi::TextureUsage::Storage,
+                                                                 .depth = slices,
+                                                                 .name = "Fog smoke"}));
+                return {};
+            });
     if (!created) {
         DestroyResources();
         return created;
@@ -128,10 +150,26 @@ void VolumetricFog::AddTo(RenderGraph& graph, const VolumetricFogInputs& inputs)
                                 kHistoryWeight,
                                 inputs.lightMap,
                                 inputs.previousLightCount,
+                                m_smokeEmptied ? m_device->StorageImageIndex(m_smoke) : kNoTexture,
+                                inputs.smoke ? m_device->StorageIndex(inputs.smoke) : kNoTexture,
                                 0};
+    if (inputs.smoke && m_smokeEmptied) {
+        // Smoke of the particles (ADR-0062), into the froxels the lighting reads.
+        graph.AddPass({.name = "Fog smoke",
+                       .group = "Volumetric fog",
+                       .textures = {{m_smoke, rhi::Access::ComputeShaderWrite}},
+                       .buffers = {{inputs.smoke, rhi::Access::ComputeShaderRead}}},
+                      [this, push](rhi::CommandList& commands) {
+                          commands.BindPipeline(m_smokeSplat);
+                          commands.Push(push);
+                          commands.Dispatch(kSmokeGroups);
+                      });
+    }
     PassDesc lighting{.name = "Fog lighting",
                       .group = "Volumetric fog",
-                      .textures = {{m_scattering[m_current], rhi::Access::ComputeShaderWrite, true}},
+                      .textures = {{m_scattering[m_current], rhi::Access::ComputeShaderWrite, true},
+                                   // Read as a storage image.
+                                   {m_smoke, rhi::Access::ComputeShaderWrite}},
                       .buffers = {{inputs.skinnedVertices, rhi::Access::ComputeShaderRead},
                                   {inputs.emissiveTriangles, rhi::Access::ComputeShaderRead}},
                       .structures = {{inputs.structure, rhi::Access::RayQueryRead}}};
@@ -148,16 +186,20 @@ void VolumetricFog::AddTo(RenderGraph& graph, const VolumetricFogInputs& inputs)
 
     FogPushConstants integratePush = push;
     integratePush.scattering = m_device->BindlessIndex(m_scattering[m_current]);
+    // The integration empties the smoke for the next frame.
+    integratePush.smoke = m_device->StorageImageIndex(m_smoke);
     graph.AddPass({.name = "Fog integration",
                    .group = "Volumetric fog",
                    .textures = {{m_scattering[m_current], rhi::Access::ComputeShaderRead},
-                                {m_integrated, rhi::Access::ComputeShaderWrite, true}}},
+                                {m_integrated, rhi::Access::ComputeShaderWrite, true},
+                                {m_smoke, rhi::Access::ComputeShaderWrite, true}}},
                   [this, integratePush](rhi::CommandList& commands) {
                       commands.BindPipeline(m_integrate);
                       commands.Push(integratePush);
                       commands.Dispatch(Groups(m_size.width, kIntegrateGroup), Groups(m_size.height, kIntegrateGroup));
                   });
     m_hasHistory = true;
+    m_smokeEmptied = true;
 }
 
 } // namespace daidalos::renderer

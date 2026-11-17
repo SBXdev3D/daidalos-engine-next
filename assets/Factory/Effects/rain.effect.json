@@ -1,5 +1,6 @@
 {
     "comment": "Rain: streaks that fall, die where they hit, and splash. Placed by weather zones.",
+    "traced": false,
     "texture": "sprites.png",
     "columns": 4,
     "cell": 0,

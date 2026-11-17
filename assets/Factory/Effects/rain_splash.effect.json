@@ -1,5 +1,6 @@
 {
     "comment": "Where a raindrop lands: droplets thrown up, for a moment.",
+    "traced": false,
     "texture": "sprites.png",
     "columns": 4,
     "cell": 2,

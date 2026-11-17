@@ -195,6 +195,17 @@ float3 ViewRay(FrameData frame, float2 uv) {
     return normalize(through.xyz / through.w - frame.cameraPosition);
 }
 
+// The point of the view at texture coordinates uv, slice in [0, 1].
+float3 FroxelPoint(FrameData frame, float2 uv, float slice) {
+    const float3 ray = ViewRay(frame, uv);
+    return frame.cameraPosition + ray * (FroxelDepth(frame, slice) / max(dot(ray, frame.cameraForward), 0.01));
+}
+
+// Smoke in the fog (ADR-0062): its density in each froxel, as integers of this many per meter, and the share
+// of the light it scatters rather than absorbs.
+static const float kSmokeScale = 4096.0;
+static const float kSmokeAlbedo = 0.9;
+
 // Where a pixel reads the froxels, from its center, in froxels: up to half of one each way, a different
 // offset for each pixel and frame (interleaved gradient noise, Jimenez 2014). Temporal antialiasing averages
 // them, which blends each froxel's noise with its neighbours' instead of showing the grid.

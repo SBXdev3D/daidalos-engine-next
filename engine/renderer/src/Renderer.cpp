@@ -197,6 +197,7 @@ struct Renderer::Impl {
     /// Volumetric fog (ADR-0051), its froxel grid, and whether the last frame had it: its history follows.
     std::optional<VolumetricFog> volumetricFog;
     bool fog = true;
+    bool tracedParticles = true;
     FroxelGrid fogGrid;
     bool fogged = false;
     /// Seconds the views drawn have moved on by, which the noise of fog volumes follows.
@@ -465,6 +466,7 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     DAI_TRY_ASSIGN(VolumetricFog volumetricFog, VolumetricFog::Create(impl->device));
     impl->volumetricFog.emplace(std::move(volumetricFog));
     impl->fog = config.volumetricFog;
+    impl->tracedParticles = config.tracedParticles;
     impl->fogGrid.slices = std::clamp(config.fogSlices, 16U, 256U);
     impl->fogGrid.tileSize = std::clamp(config.fogTile, 8U, 32U);
     impl->restir.spatial = config.restirSpatial;
@@ -588,6 +590,10 @@ void Renderer::SetVolumetricFog(bool enabled, std::uint32_t slices, std::uint32_
     m_impl->fog = enabled;
     m_impl->fogGrid.slices = std::clamp(slices, 16U, 256U);
     m_impl->fogGrid.tileSize = std::clamp(tile, 8U, 32U);
+}
+
+void Renderer::SetTracedParticles(bool enabled) {
+    m_impl->tracedParticles = enabled;
 }
 
 void Renderer::SetNormalStrength(float strength) {
@@ -750,6 +756,11 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     }
     const rhi::TextureHandle fogTexture = fog ? impl.volumetricFog->Output() : rhi::TextureHandle{};
     const glm::vec2 jitter = taa ? Jitter(impl.frameNumber, JitterPositions(renderScale)) : glm::vec2(0.0f);
+    // Particles in the frame's structure (ADR-0062), where they were at the end of the last simulation.
+    ParticlePass::Traced traced = impl.particlePass->TracedParticles();
+    if (!impl.tracedParticles) {
+        traced.structure = {};
+    }
     if (status) {
         status = impl.rayTracing->Reserve(frame.slot, view.draws.size()).and_then([&](std::uint32_t structure) {
             return impl.meshPass->Prepare(
@@ -769,13 +780,18 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                        .time = static_cast<float>(impl.time),
                        .sharpReflections =
                            reflect ? std::min(GlobalIllumination::kSharpRoughness, impl.reflectionRoughness) : 0.0f,
-                       .debugFlags = impl.debugFlags});
+                       .debugFlags = impl.debugFlags,
+                       .particleData = traced.particles,
+                       .particleEffects = traced.effects,
+                       .particleCurves = traced.curves});
         });
         impl.particleSpawns = static_cast<std::uint32_t>(view.particleSpawns.size());
     }
     const bool hasFrame = status && view.camera.has_value();
     if (hasFrame) {
-        status = impl.rayTracing->Prepare(impl.meshPass->TracedDraws());
+        status =
+            impl.rayTracing->Prepare(impl.meshPass->TracedDraws(),
+                                     {.structure = traced.structure, .boxes = traced.boxes, .count = traced.boxCount});
     }
     // Skinned draws are skinned once, for every pass that draws them and for rays.
     const rhi::BufferUse skinnedVertices{impl.meshPass->SkinnedVertices(), rhi::Access::VertexInputRead};
@@ -891,7 +907,8 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                           .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
                                           .frameIndex = frameIndex,
                                           .lightMap = impl.meshPass->LightMapIndex(),
-                                          .previousLightCount = impl.meshPass->PreviousLightCount()});
+                                          .previousLightCount = impl.meshPass->PreviousLightCount(),
+                                          .smoke = traced.smoke});
     }
     impl.fogged = fogs;
     // The lights' light, denoised, then put back together with the rest (ADR-0039). A frame that does not

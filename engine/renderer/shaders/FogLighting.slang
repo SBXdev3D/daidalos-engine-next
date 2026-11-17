@@ -32,11 +32,14 @@ struct FogPushConstants {
     float historyWeight; // The share of the history in the blend.
     uint lightMap;       // The light map's flags (MeshPass::LightMapIndex), for lights that moved.
     uint previousLightCount;
+    uint smoke;     // Storage image of the smoke's density (FogSmoke.slang), or kNoTexture.
+    uint smokeList;
     uint padding;
 };
 
 [[vk::push_constant]] FogPushConstants g_fog;
 [[vk::binding(4, 0)]] [[vk::image_format("rgba16f")]] RWTexture3D<float4> g_volumeImages[];
+[[vk::binding(4, 0)]] [[vk::image_format("r32ui")]] RWTexture3D<uint> g_smokeImages[];
 
 // Lights weighed before one is kept. Drawn by power near the camera; a light next to a froxel far from the
 // camera, among hundreds, such as an emissive panel, is still rarely one of them: its light comes in rare,
@@ -98,11 +101,6 @@ FogLight InScattered(FrameData frame, float3 position, float3 view, inout uint r
     return result;
 }
 
-// The point of the view at texture coordinates uv, slice in [0, 1].
-float3 FroxelPoint(FrameData frame, float2 uv, float slice) {
-    const float3 ray = ViewRay(frame, uv);
-    return frame.cameraPosition + ray * (FroxelDepth(frame, slice) / max(dot(ray, frame.cameraForward), 0.01));
-}
 
 [numthreads(4, 4, 4)]
 void CSMain(uint3 id : SV_DispatchThreadID) {
@@ -118,15 +116,22 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     const float3 inFroxel = float3(Random(random), Random(random), Random(random));
     const float3 position = FroxelPoint(frame, (float2(id.xy) + inFroxel.xy) / float2(size.xy),
                                         (float(id.z) + inFroxel.z) / float(size.z));
-    const FogMedium medium = FogMediumAt(frame, position);
-    float4 current = float4(0.0, 0.0, 0.0, medium.extinction);
+    FogMedium medium = FogMediumAt(frame, position);
     bool moving = false;
+    if (g_fog.smoke != kNoTexture) {
+        // The smoke of the particles around (ADR-0062): it moves, so it keeps less of the past.
+        const float smoke = float(g_smokeImages[g_fog.smoke][id]) / kSmokeScale;
+        medium.extinction += smoke;
+        medium.scattering += smoke * kSmokeAlbedo;
+        moving = smoke > 0.0;
+    }
+    float4 current = float4(0.0, 0.0, 0.0, medium.extinction);
     if (medium.extinction > 0.0) {
         const float3 view = normalize(position - frame.cameraPosition);
         const FogLight light = InScattered(frame, position, view, random);
         // What it scatters of the light, and what it gives off itself.
         current.rgb = medium.scattering * light.light + medium.emission;
-        moving = light.moving;
+        moving = moving || light.moving;
     }
 
     // Where the froxel's center was last frame. Out of view, the nearest edge of last frame's view: fog

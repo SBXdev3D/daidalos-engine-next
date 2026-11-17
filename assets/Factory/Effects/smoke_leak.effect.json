@@ -1,5 +1,6 @@
 {
     "comment": "Smoke blowing out of a leaking pipe, along the emitter's -Z.",
+    "fog_density": 0.6,
     "texture": "../particles.png",
     "columns": 4,
     "cell": 0,

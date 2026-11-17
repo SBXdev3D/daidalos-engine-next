@@ -129,6 +129,13 @@ struct ParticleEffectDesc {
     bool additive = false;
     /// Takes the light of the lamps around it, like smoke. Otherwise its color is its own.
     bool lit = true;
+    /// Rays meet it (ADR-0062): it shows in reflections and, unless additive, casts shadows; a mesh effect's
+    /// particles cast shadows only. Rain and motes that would cost more than they show opt out.
+    bool traced = true;
+    /// Smoke and steam in the volumetric fog (ADR-0062): per meter, the fog it adds around it where it is
+    /// opaque, thinning to nothing at its edge, which the fog's lighting lights: the flashlight's beam shows
+    /// in it. 0 adds none. Not for mesh effects.
+    float fogDensity = 0.0f;
     /// Meets the surfaces of the frame's acceleration structure, glass included, along its motion.
     ParticleCollision collision = ParticleCollision::None;
     float bounce = 0.3f;
