@@ -31,6 +31,8 @@ struct ParticleMeshPushConstants {
 [[vk::push_constant]] ParticleMeshPushConstants g_push;
 
 #include "MeshCommon.slangh"
+// Mesh particles have no draw of their own: their emission is not scaled.
+#define DAI_NO_INSTANCE_EMISSIVE_SCALE
 #include "GBufferSurface.slangh"
 
 float4 AxisAngle(float3 axis, float angle) {

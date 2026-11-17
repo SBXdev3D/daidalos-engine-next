@@ -3,6 +3,7 @@ dai_add_test(NAME daidalos_resources_tests
         AssetPathTests.cpp
         FontDataTests.cpp
         ImageDataTests.cpp
+        LightProfileTests.cpp
         ModelDataTests.cpp
     DEPS
         daidalos::resources

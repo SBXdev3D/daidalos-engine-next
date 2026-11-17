@@ -122,6 +122,10 @@ public:
     /// (renderer::CreateCubeTexture), loading it the first time. The handle lives as long as the library.
     [[nodiscard]] core::Result<rhi::TextureHandle> LoadCubeTexture(std::span<const std::string, 6> faces);
 
+    /// Returns a light's profile (an IES file, ADR-0057) as a texture of its intensity by angle from the axis,
+    /// loading it the first time. The handle lives as long as the library.
+    [[nodiscard]] core::Result<rhi::TextureHandle> LoadLightProfile(std::string_view path);
+
     /// Same as LoadModel, but files are read and decoded on a worker, so that the main thread keeps
     /// running. The function is called on the main thread, from WorkerPool::Deliver, or at once if the
     /// model is already there or the path is invalid. It is not called once the library is destroyed.

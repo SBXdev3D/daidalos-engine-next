@@ -33,8 +33,12 @@ GBufferOutput PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) {
     const float roughness = clamp(material.roughnessFactor * metallicRoughness.g, 0.045, 1.0);
     const float occlusion =
         lerp(1.0, SampleTexture(material.occlusionTexture, input.uv, float4(1.0, 1.0, 1.0, 1.0)).r, material.occlusionStrength);
-    const float3 emission = material.emissiveFactor *
-                            SampleTexture(material.emissiveTexture, input.uv, float4(1.0, 1.0, 1.0, 1.0)).rgb * frame.exposure;
+    float3 emission = material.emissiveFactor *
+                      SampleTexture(material.emissiveTexture, input.uv, float4(1.0, 1.0, 1.0, 1.0)).rgb * frame.exposure;
+#ifndef DAI_NO_INSTANCE_EMISSIVE_SCALE
+    // An animated lamp's glow (ADR-0057).
+    emission *= g_instances[g_push.instanceBuffer][g_push.instanceIndex].emissiveScale;
+#endif
 
     GBufferOutput output;
     output.normal = float4(normal * 0.5 + 0.5, roughness);

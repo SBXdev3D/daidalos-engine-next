@@ -8,6 +8,7 @@ dai_add_module(NAME resources
         src/AssetPath.cpp
         src/FontData.cpp
         src/ImageData.cpp
+        src/LightProfile.cpp
         src/ModelData.cpp
         src/StbImage.cpp
         src/StbTrueType.cpp

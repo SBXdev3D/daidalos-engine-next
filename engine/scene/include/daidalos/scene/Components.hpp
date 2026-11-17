@@ -8,6 +8,7 @@
 #include <daidalos/ecs/Entity.hpp>
 #include <daidalos/physics/PhysicsWorld.hpp>
 #include <daidalos/renderer/SceneView.hpp>
+#include <daidalos/scene/LightAnimation.hpp>
 
 #include <glm/mat4x4.hpp>
 #include <glm/trigonometric.hpp>
@@ -108,7 +109,32 @@ struct Light {
     /// Directional lights: radians from the center of their disk to its edge, which softens the shadows.
     float angularRadius = 0.0f;
     bool enabled = true;
+    /// How a real lamp sends its light around its axis: an IES file, relative to the level's directory, or
+    /// empty for every direction alike (ADR-0057). The light points down its entity's -Z.
+    std::string profile;
+    /// Spot lights: a grey image the light shines through, as a fan or a cage would cut it, relative to the
+    /// level's directory; empty for none. Its up is the entity's +Y.
+    std::string cookie;
+    /// Flicker, failure, power cuts: what changes its brightness over time, and its lamp's glow with it.
+    LightAnimation animation;
     [[nodiscard]] bool operator==(const Light&) const = default;
+};
+
+/// ECS component: the textures of a Light's profile and cookie, loaded when it was made.
+struct LightTextures {
+    rhi::TextureHandle profile;
+    rhi::TextureHandle cookie;
+};
+
+/// ECS component: how bright an animated light is this frame, from 0 to 1 (AnimateLights).
+struct LightState {
+    float factor = 1.0f;
+};
+
+/// ECS component: what the emission of the meshes under an entity is multiplied by this frame: the lamp of an
+/// animated light glows as its light shines (ADR-0057).
+struct EmissiveScale {
+    float value = 1.0f;
 };
 
 /// ECS component: a box of fog at the entity's WorldTransform (ADR-0051), added to the atmosphere's: the

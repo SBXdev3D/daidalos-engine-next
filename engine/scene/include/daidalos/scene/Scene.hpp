@@ -71,6 +71,11 @@ public:
 
     /// Stops time in the scene, for a game's pause menu: its systems, physics, animations, particles and
     /// sounds hold where they are, and it is still drawn as it was.
+    /// The power circuits lights are on (ADR-0057): game code cuts and restores them.
+    [[nodiscard]] PowerCircuits& Power() { return m_power; }
+    /// Seconds of unpaused frames, which animated lights follow.
+    [[nodiscard]] double LightClock() const { return m_lightClock; }
+
     void SetPaused(bool paused);
     [[nodiscard]] bool IsPaused() const { return m_paused; }
 
@@ -108,6 +113,8 @@ private:
     bool m_cut = true;
     /// Seconds of the last frame, for the particles of the next view.
     float m_frameDelta = 0.0f;
+    double m_lightClock = 0.0;
+    PowerCircuits m_power;
     std::vector<renderer::ParticleSpawn> m_bursts;
     EmissionView m_emission;
     std::vector<Thunder> m_thunder;

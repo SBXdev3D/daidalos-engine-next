@@ -198,3 +198,27 @@ TEST(LevelFileTest, RelocateKeepsPathsOnTheSameFiles) {
     scene::Relocate(same, "Factory/Factory.level.json", "Factory/Other.level.json");
     EXPECT_EQ(same, level);
 }
+
+TEST(LevelFileTest, LightsKeepTheirProfileCookieAndAnimation) {
+    Level level;
+    LevelEntity entity{.id = 1, .name = "Tube"};
+    entity.light = scene::Light{.type = renderer::LightType::Spot,
+                                .profile = "Lights/downlight.ies",
+                                .cookie = "Lights/fan_cookie.png",
+                                .animation = {.pattern = scene::LightPattern::Buzz, .rate = 2.0f, .circuit = "hall"}};
+    level.entities.push_back(entity);
+    const core::Result<Level> read = ParseLevel(WriteLevel(level));
+    ASSERT_TRUE(read.has_value()) << core::Format(read.error());
+    EXPECT_EQ(*read, level);
+
+    scene::Level moved = level;
+    scene::Relocate(moved, "Factory/Factory.level.json", "Other/Copy.level.json");
+    EXPECT_EQ(moved.entities[0].light->profile, "../Factory/Lights/downlight.ies");
+    EXPECT_EQ(moved.entities[0].light->cookie, "../Factory/Lights/fan_cookie.png");
+}
+
+TEST(LevelFileTest, AnUnknownLightPatternIsAnError) {
+    const std::string message = ErrorOf(R"({"format": "daidalos-level", "version": 1, "entities": [
+        {"id": 1, "light": {"animation": {"pattern": "disco"}}}]})");
+    EXPECT_NE(message.find("disco"), std::string::npos) << message;
+}

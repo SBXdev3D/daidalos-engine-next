@@ -167,19 +167,24 @@ struct FogVolumeData {
 };
 static_assert(sizeof(FogVolumeData) == 128);
 
+/// Matches kNoTexture in MeshTypes.slangh: no texture, or no buffer.
+constexpr std::uint32_t kNoTexture = 0xFFFFFFFF;
+
 struct LightData {
     glm::vec3 position;
     float range;
     glm::vec3 direction;
-    float spare;
+    std::uint32_t profile; // Bindless index of its profile (ADR-0057), or kNoTexture.
     glm::vec3 color;
     float cosOuter; // kPointLight for a point light.
     float cosInner;
-    float radius;       // Directional lights: the tangent of their angular radius.
-    std::uint32_t kind; // kLightNear or kLightDirectional.
-    std::uint32_t padding;
+    float radius;         // Directional lights: the tangent of their angular radius.
+    std::uint32_t kind;   // kLightNear or kLightDirectional.
+    std::uint32_t cookie; // Bindless index of its cookie, or kNoTexture.
+    glm::vec3 up;         // The cookie's up.
+    float cookieScale;    // One over the tangent of the cone's outer angle: the cookie's edge.
 };
-static_assert(sizeof(LightData) == 64);
+static_assert(sizeof(LightData) == 80);
 
 /// The cosine of the outer angle of a point light: every direction is inside.
 constexpr float kPointLight = -2.0f;
@@ -187,31 +192,37 @@ constexpr float kPointLight = -2.0f;
 constexpr std::uint32_t kLightNear = 0;
 constexpr std::uint32_t kLightDirectional = 1;
 
-/// A light as shaders read it, its color times the frame's exposure (ADR-0043).
-LightData ToGpu(const Light& light, float exposure) {
+/// A light as shaders read it, its color times the frame's exposure (ADR-0043), with the bindless indices of
+/// its profile and cookie (ADR-0057).
+LightData ToGpu(const Light& light, float exposure, std::uint32_t profile, std::uint32_t cookie) {
     if (light.type == LightType::Directional) {
         return {glm::vec3(0.0f),
                 0.0f,
                 glm::normalize(light.direction),
-                0.0f,
+                kNoTexture,
                 light.color * exposure,
                 kPointLight,
                 kPointLight + 1.0f,
                 std::tan(std::clamp(light.angularRadius, 0.0f, 1.0f)),
                 kLightDirectional,
-                0};
+                kNoTexture,
+                glm::vec3(0.0f, 1.0f, 0.0f),
+                1.0f};
     }
     const bool spot = light.type == LightType::Spot;
+    const float length = glm::length(light.direction);
     return {light.position,
             light.range,
-            spot ? glm::normalize(light.direction) : glm::vec3(0.0f, 0.0f, -1.0f),
-            0.0f,
+            length > 0.0f ? light.direction / length : glm::vec3(0.0f, 0.0f, -1.0f),
+            profile,
             light.color * exposure,
             spot ? std::cos(light.outerAngle) : kPointLight,
             spot ? std::cos(light.innerAngle) : kPointLight + 1.0f,
             std::max(light.radius, 0.0f),
             kLightNear,
-            0};
+            spot ? cookie : kNoTexture,
+            light.up,
+            spot ? 1.0f / std::max(std::tan(std::clamp(light.outerAngle, 0.01f, 1.5f)), 1e-3f) : 1.0f};
 }
 
 struct InstanceData {
@@ -222,7 +233,8 @@ struct InstanceData {
     std::uint32_t material;
     glm::mat4 previousWorld;
     std::uint32_t previousPositions;
-    std::array<std::uint32_t, 3> padding;
+    float emissiveScale; // Multiplies its material's emission (ADR-0057).
+    std::array<std::uint32_t, 2> padding;
 };
 static_assert(sizeof(resources::Vertex) == 12 * sizeof(float), "Matches kVertexFloats in MeshTypes.slangh");
 static_assert(sizeof(InstanceData) == 160);
@@ -265,7 +277,6 @@ glm::vec3 Absorption(const glm::vec3& color, float distance) {
     return -glm::log(glm::clamp(color, glm::vec3(1e-4f), glm::vec3(1.0f))) / distance;
 }
 
-constexpr std::uint32_t kNoTexture = 0xFFFFFFFF;
 constexpr std::uint32_t kInitialMaterialCapacity = 64;
 constexpr std::uint64_t kInitialInstanceCapacity = 256;
 constexpr std::uint64_t kInitialJointCapacity = 256;
@@ -774,7 +785,10 @@ core::Result<MeshPass::FrameLights> MeshPass::PrepareLights(FrameSlot& slot, con
     std::unordered_map<std::uint64_t, LightPlace> places;
     for (std::uint32_t index = 0; index < lightCount; ++index) {
         const Light& light = view.lights[index];
-        lights[index] = ToGpu(light, exposure);
+        const auto bindless = [this](rhi::TextureHandle texture) {
+            return texture.IsNull() ? kNoTexture : m_device->BindlessIndex(texture);
+        };
+        lights[index] = ToGpu(light, exposure, bindless(light.profile), bindless(light.cookie));
         powers.push_back(LightPower(light));
         fogPowers.push_back(FogSourceWeight(powers.back(), light.type == LightType::Directional
                                                                ? kFogReach
@@ -809,9 +823,14 @@ core::Result<MeshPass::FrameLights> MeshPass::PrepareLights(FrameSlot& slot, con
             continue;
         }
         const DrawItem& draw = view.draws[sorted.draw];
+        // A lamp switched off gives no light; one that flickers gives what it glows (ADR-0057).
+        if (draw.emissiveScale <= 0.0f) {
+            continue;
+        }
         const bool skinned = sorted.firstSkinnedVertex != kNotSkinned;
         const float sides = material.doubleSided ? 2.0f : 1.0f;
-        powers.push_back(source->power * (skinned ? 1.0f : AreaScale(draw.world)) * std::numbers::pi_v<float> * sides);
+        powers.push_back(source->power * (skinned ? 1.0f : AreaScale(draw.world)) * std::numbers::pi_v<float> * sides *
+                         draw.emissiveScale);
         // Its distance to the camera from its bounding sphere.
         const glm::vec4& bounds = m_meshes.Get(sorted.mesh).bounds;
         const float scale = std::max({glm::length(glm::vec3(draw.world[0])), glm::length(glm::vec3(draw.world[1])),
@@ -819,7 +838,9 @@ core::Result<MeshPass::FrameLights> MeshPass::PrepareLights(FrameSlot& slot, con
         const glm::vec3 center(draw.world * glm::vec4(glm::vec3(bounds), 1.0f));
         fogPowers.push_back(
             FogSourceWeight(powers.back(), std::max(glm::distance(center, cameraPosition) - bounds.w * scale, 0.0f)));
-        moved.push_back(skinned || (draw.previousWorld.has_value() && *draw.previousWorld != draw.world));
+        // A lamp whose glow changes moves for the histories, as a flickering light does.
+        moved.push_back(skinned || draw.emissiveScale != 1.0f ||
+                        (draw.previousWorld.has_value() && *draw.previousWorld != draw.world));
         ranges.push_back({EmissiveDrawKey(draw.id, sorted.draw, sorted.mesh, sorted.material),
                           lightCount + triangleCount, source->triangleCount});
         draws.push_back({triangleCount, source->triangleCount, m_device->StorageIndex(source->aliasTable), 0});
@@ -1066,6 +1087,7 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                             .material = sorted.material.Index(),
                             .previousWorld = skinned ? world : draw.previousWorld.value_or(world),
                             .previousPositions = skinned ? m_device->StorageIndex(m_previousSkinned) : kNoTexture,
+                            .emissiveScale = std::max(draw.emissiveScale, 0.0f),
                             .padding = {}};
         TracedDraw& traced = m_traced.emplace_back();
         traced.world = world;

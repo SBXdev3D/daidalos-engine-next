@@ -67,6 +67,7 @@ void Scene::RunFrame(core::Seconds delta, float fixedAlpha) {
     }
     m_fixedAlpha = fixedAlpha;
     m_frameDelta = static_cast<float>(delta.count());
+    m_lightClock += delta.count();
     m_frameSystems.Run(m_world, delta);
     animation::UpdateAnimators(m_world, static_cast<float>(delta.count()));
 }
@@ -92,6 +93,7 @@ void Scene::Extract(renderer::SceneView& view) {
     }
 #endif
     ecs::PropagateTransforms(m_world);
+    AnimateLights(m_world, m_lightClock, m_power);
     ExtractScene(m_world, view, m_activeCamera);
     view.atmosphere = m_atmosphere;
     view.timeStep = m_frameDelta;

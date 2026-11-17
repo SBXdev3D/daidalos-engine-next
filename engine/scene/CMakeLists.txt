@@ -17,6 +17,7 @@ dai_add_module(NAME scene
         src/AssetLibrary.cpp
         src/Level.cpp
         src/LevelFile.cpp
+        src/LightAnimation.cpp
         src/ParticleEffectFile.cpp
         src/Scene.cpp
         src/Schedule.cpp

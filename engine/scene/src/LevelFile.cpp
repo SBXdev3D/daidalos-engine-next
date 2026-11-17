@@ -262,6 +262,23 @@ core::Result<Light> ReadLight(Reader reader) {
     DAI_LEVEL_TRY(reader.Number("radius", light.radius));
     DAI_LEVEL_TRY(reader.Angle("angular_radius", light.angularRadius));
     DAI_LEVEL_TRY(reader.Flag("enabled", light.enabled));
+    DAI_LEVEL_TRY(reader.Text("profile", light.profile));
+    DAI_LEVEL_TRY(reader.Text("cookie", light.cookie));
+    core::Result<std::optional<Reader>> animation = reader.Object("animation");
+    DAI_LEVEL_TRY(animation);
+    if (animation->has_value()) {
+        Reader& fields = **animation;
+        std::string pattern = "steady";
+        DAI_LEVEL_TRY(fields.Text("pattern", pattern));
+        if (!LightPatternOf(pattern, light.animation.pattern)) {
+            return Invalid(fields.Where() + ".pattern",
+                           std::format("'{}' is no pattern: steady, flicker, buzz, failing, strobe or pulse", pattern));
+        }
+        DAI_LEVEL_TRY(fields.Number("rate", light.animation.rate));
+        DAI_LEVEL_TRY(fields.Number("depth", light.animation.depth));
+        DAI_LEVEL_TRY(fields.Text("circuit", light.animation.circuit));
+        DAI_LEVEL_TRY(fields.Finish());
+    }
     DAI_LEVEL_TRY(reader.Finish());
     return light;
 }
@@ -580,6 +597,17 @@ Json WriteLight(const Light& light) {
     Put(object, "radius", light.radius, fallback.radius);
     PutAngle(object, "angular_radius", light.angularRadius, fallback.angularRadius);
     Put(object, "enabled", light.enabled, fallback.enabled);
+    Put(object, "profile", light.profile, fallback.profile);
+    Put(object, "cookie", light.cookie, fallback.cookie);
+    if (!(light.animation == fallback.animation)) {
+        const LightAnimation still;
+        JsonObject animation;
+        animation.emplace("pattern", Json{std::string(LightPatternName(light.animation.pattern))});
+        Put(animation, "rate", light.animation.rate, still.rate);
+        Put(animation, "depth", light.animation.depth, still.depth);
+        Put(animation, "circuit", light.animation.circuit, still.circuit);
+        object.emplace("animation", Json{std::move(animation)});
+    }
     return Json{std::move(object)};
 }
 
@@ -1058,6 +1086,10 @@ void Relocate(Level& level, std::string_view fromLevelPath, std::string_view toL
     move(level.environment.skyFaces);
     for (LevelEntity& entity : level.entities) {
         move(entity.model);
+        if (entity.light) {
+            move(entity.light->profile);
+            move(entity.light->cookie);
+        }
         if (entity.particles) {
             move(entity.particles->effect);
         }
