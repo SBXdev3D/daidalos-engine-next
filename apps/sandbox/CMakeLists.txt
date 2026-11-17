@@ -4,6 +4,8 @@ dai_add_app(NAME sandbox
         src/Combat.hpp
         src/Factory.cpp
         src/Factory.hpp
+        src/Flashlight.cpp
+        src/Flashlight.hpp
         src/Hud.cpp
         src/Hud.hpp
         src/Main.cpp

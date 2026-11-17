@@ -8,9 +8,11 @@ Profiles (assets/Factory/Lights/*.ies, IES LM-63, type C, candela by angle from 
     downlight.ies   a ceiling lamp under a shade: bright below, dark past 75 degrees
     narrow.ies      a narrow reflector: a tight beam with a soft halo
     bare_bulb.ies   a bare bulb: even, but shadowed by its socket above
+    flashlight.ies  a hand torch: a hot spot, a bright ring at its edge, and a dim spill
 Cookies (assets/Factory/Lights/*.png, white lets light through):
     fan_cookie.png   four blades of a fan in front of a light
     cage_cookie.png  the wire cage of a work lamp
+    flashlight_cookie.png  the torch's lens: faint rings and smudges over the beam
 """
 
 import math
@@ -86,12 +88,28 @@ def cage(u, v):
     return wire(u, 0.5, 0.06) * wire(v, 0.5, 0.06) * ring
 
 
+def flashlight(a):
+    hot = 1.0 - smooth(4.0, 9.0, a)
+    ring = math.exp(-((a - 10.5) / 1.6) ** 2) * 0.55
+    spill = 0.14 * (1.0 - smooth(14.0, 28.0, a))
+    return 1000.0 * max(hot, 0.0) + 1000.0 * ring + 1000.0 * spill
+
+
+def lens(u, v):
+    r = math.hypot(u, v)
+    rings = 0.93 + 0.07 * math.cos(r * 38.0)
+    smudge = 1.0 - 0.12 * math.exp(-((u - 0.25) ** 2 + (v + 0.15) ** 2) / 0.02) - 0.08 * math.exp(-((u + 0.3) ** 2 + (v - 0.35) ** 2) / 0.05)
+    return rings * smudge * (1.0 - smooth(0.9, 1.0, r))
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     write_ies("downlight", "Ceiling lamp under a shade", lambda a: 1000.0 * math.cos(math.radians(a)) ** 1.5 * (1.0 - smooth(60.0, 78.0, a)), 90.0)
     write_ies("narrow", "Narrow reflector", lambda a: 4000.0 * math.cos(math.radians(min(a, 89.0))) ** 40 + 120.0 * (1.0 - smooth(20.0, 45.0, a)), 90.0)
     write_ies("bare_bulb", "Bare bulb under its socket", lambda a: 300.0 * (1.0 - 0.85 * smooth(130.0, 170.0, a)))
+    write_ies("flashlight", "Hand torch with a reflector", flashlight, 60.0, 0.5)
     write_png("fan_cookie", 128, fan)
+    write_png("flashlight_cookie", 128, lens)
     write_png("cage_cookie", 128, cage)
     print(f"Wrote profiles and cookies to {OUT}")
 
