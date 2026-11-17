@@ -10,6 +10,9 @@ sandbox.log
 /sandbox.cfg
 /crashdumps/
 
+# The copy of a level the editor's Play starts the sandbox on
+*.play.level.json
+
 # Assets downloaded by scripts/fetch_sample_assets.py
 /assets/*/
 !/assets/Factory/

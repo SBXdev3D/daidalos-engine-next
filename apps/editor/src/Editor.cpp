@@ -18,9 +18,11 @@
 #include <glm/matrix.hpp>
 #include <glm/trigonometric.hpp>
 
-#include <ImGuizmo.h>
 #include <imgui.h>
 #include <imgui_internal.h>
+
+// After imgui.h, which it needs.
+#include <ImGuizmo.h>
 
 #include <algorithm>
 #include <array>
@@ -28,6 +30,8 @@
 #include <format>
 #include <limits>
 #include <map>
+#include <set>
+#include <utility>
 #include <vector>
 
 #include "Inspector.hpp"
@@ -43,6 +47,7 @@ constexpr float kMarkerRadius = 7.0f;  // Interface pixels.
 constexpr float kPickDistance = 12.0f; // How close a click must be to a marker.
 constexpr float kLookSpeed = 0.0035f;  // Radians per pixel of mouse motion.
 constexpr float kMarkerReach = 60.0f;  // Meters beyond which markers of unselected entities are hidden.
+constexpr std::string_view kLevelExtension = ".level.json";
 
 // Finds "assets" in the working directory, then beside the executable and in the directories above it.
 std::filesystem::path FindAssetRoot() {
@@ -93,6 +98,53 @@ glm::vec3 CubeCorner(int corner, const glm::vec3& min, const glm::vec3& max) {
     return {(corner & 1) != 0 ? max.x : min.x, (corner & 2) != 0 ? max.y : min.y, (corner & 4) != 0 ? max.z : min.z};
 }
 
+/// The level files under the asset root, as paths under it, sorted: what File > Open offers.
+std::vector<std::string> FindLevelFiles(const std::filesystem::path& root) {
+    std::vector<std::string> files;
+    std::error_code error;
+    for (auto entry = std::filesystem::recursive_directory_iterator(root, error);
+         !error && entry != std::filesystem::recursive_directory_iterator(); entry.increment(error)) {
+        const std::string name = entry->path().filename().generic_string();
+        if (entry->is_regular_file(error) && name.ends_with(kLevelExtension) && !name.ends_with(".play.level.json")) {
+            files.push_back(entry->path().lexically_relative(root).generic_string());
+        }
+    }
+    std::ranges::sort(files);
+    return files;
+}
+
+/// A level path under the asset root, as typed, with the extension added when missing.
+std::string LevelPathOf(std::string path) {
+    std::ranges::replace(path, '\\', '/');
+    while (!path.empty() && (path.back() == ' ' || path.back() == '/')) {
+        path.pop_back();
+    }
+    if (!path.empty() && !path.ends_with(kLevelExtension)) {
+        path += kLevelExtension;
+    }
+    return path;
+}
+
+/// The sandbox, which plays levels: beside the editor once installed, else where the build put it.
+std::filesystem::path SandboxExecutable() {
+#ifdef _WIN32
+    const std::filesystem::path beside = platform::ExecutableDirectory() / "sandbox.exe";
+#else
+    const std::filesystem::path beside = platform::ExecutableDirectory() / "sandbox";
+#endif
+#ifdef DAI_SANDBOX_PATH
+    std::error_code error;
+    if (!std::filesystem::exists(beside, error)) {
+        return DAI_SANDBOX_PATH;
+    }
+#endif
+    return beside;
+}
+
+std::string EntityLabel(const scene::LevelEntity& entity) {
+    return entity.name.empty() ? std::format("entity {}", entity.id) : entity.name;
+}
+
 } // namespace
 
 glm::mat4 EditorCamera::World() const {
@@ -117,6 +169,11 @@ core::Result<void> Editor::OnStart(app::Application& app) {
         app.CVars()
             .Register<std::string>("editor.level", "Factory/Factory.level.json", "Level file to open, under assets/")
             .Get();
+    m_autosaveSeconds = static_cast<float>(
+        app.CVars()
+            .Register<double>("editor.autosave", 120.0,
+                              "Seconds between autosaves of a changed level, beside the editor; 0 turns them off")
+            .Get());
 
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
@@ -193,29 +250,55 @@ core::Result<void> Editor::Open(app::Application& app, const std::string& levelP
     m_level = std::move(*level);
     m_levelPath = levelPath;
     m_selected = 0;
-    m_dirty = false;
+    m_eulerOf = 0;
+    m_history.Clear();
+    m_savedRevision = m_history.Current();
+    m_autosavedRevision = m_history.Current();
+    m_sinceAutosave = 0.0f;
     m_scene = &target;
     app.SetScene(std::move(scene));
     m_status = std::format("Opened {}: {} entities", levelPath, m_level.entities.size());
     DAI_LOG_INFO(kModule, "{}", m_status);
     UpdateTitle(app);
+    CheckAutosave();
     return {};
 }
 
-void Editor::Save() {
-    const std::filesystem::path file = m_assetRoot / std::filesystem::path(m_levelPath);
-    if (core::Result<void> saved = scene::SaveLevelFile(file, m_level); !saved) {
+bool Editor::Save(const std::string& levelPath) {
+    m_history.Commit(m_level);
+    const std::string target = levelPath.empty() ? m_levelPath : levelPath;
+    scene::Level level = m_level;
+    scene::Relocate(level, m_levelPath, target);
+    if (core::Result<void> saved = scene::SaveLevelFile(m_assetRoot / std::filesystem::path(target), level); !saved) {
         m_status = core::Format(saved.error());
         DAI_LOG_ERROR(kModule, "{}", m_status);
-        return;
+        return false;
     }
-    m_dirty = false;
+    std::error_code error;
+    std::filesystem::remove(AutosaveFile(), error);
+    if (target != m_levelPath) {
+        // The copy is the document now. Its paths resolve from its own directory, so it opens again, seen from
+        // where the camera is.
+        const EditorCamera camera = m_camera;
+        if (core::Result<void> opened = Open(*m_app, target); !opened) {
+            m_status = core::Format(opened.error());
+            return false;
+        }
+        m_camera = camera;
+    }
+    m_savedRevision = m_history.Current();
     m_status = std::format("Saved {}", m_levelPath);
+    DAI_LOG_INFO(kModule, "{}", m_status);
     UpdateTitle(*m_app);
+    return true;
 }
 
 void Editor::UpdateTitle(app::Application& app) {
-    app.MainWindow().SetTitle(std::format("Daidalos Editor - {}{}", m_levelPath, m_dirty ? " *" : ""));
+    std::string title = std::format("Daidalos Editor - {}{}", m_levelPath, Dirty() ? " *" : "");
+    if (title != m_shownTitle) {
+        app.MainWindow().SetTitle(title);
+        m_shownTitle = std::move(title);
+    }
 }
 
 scene::LevelEntity* Editor::Selected() {
@@ -227,34 +310,229 @@ void Editor::Select(std::uint64_t id) {
     m_eulerOf = 0;
 }
 
-void Editor::Apply(const scene::LevelEntity& after) {
-    scene::LevelEntity* before = m_level.Find(after.id);
+void Editor::Change(std::string_view label, const std::function<void(scene::Level&)>& edit) {
+    m_history.Begin(m_level, label);
+    const scene::Level before = m_level;
+    edit(m_level);
+    if (m_instance != nullptr && m_instance->Sync(before, m_level).models) {
+        m_picker.Rebuild(m_scene->World());
+    }
+}
+
+void Editor::Apply(const scene::LevelEntity& after, std::string_view label) {
+    const scene::LevelEntity* before = m_level.Find(after.id);
     if (before == nullptr || *before == after) {
         return;
     }
-    scene::LevelEntity changed = *before;
-    changed.transform = after.transform;
-    if (changed == after && m_instance != nullptr) {
-        // Only the transform: move what is there.
-        const ecs::Entity entity = m_instance->Find(after.id);
-        if (!entity.IsNull()) {
-            static_cast<math::Transform&>(m_scene->World().Get<ecs::LocalTransform>(entity)) = after.transform;
-        }
-        *before = after;
-    } else {
-        const bool newModel = before->model != after.model;
-        *before = after;
-        if (m_instance != nullptr) {
-            m_instance->Create(m_level, *before);
-            if (newModel) {
-                m_picker.Rebuild(m_scene->World());
+    Change(label, [&after](scene::Level& level) { *level.Find(after.id) = after; });
+}
+
+void Editor::GoTo(scene::Level level) {
+    const scene::Level before = std::move(m_level);
+    m_level = std::move(level);
+    if (m_instance != nullptr && m_instance->Sync(before, m_level).models) {
+        m_picker.Rebuild(m_scene->World());
+    }
+    if (m_selected != 0 && m_level.Find(m_selected) == nullptr) {
+        Select(0);
+    }
+    m_eulerOf = 0;
+}
+
+void Editor::Undo() {
+    m_history.Commit(m_level);
+    const std::string label = m_history.UndoLabel();
+    if (std::optional<scene::Level> level = m_history.Undo(m_level)) {
+        GoTo(std::move(*level));
+        m_status = std::format("Undid: {}", label);
+    }
+}
+
+void Editor::Redo() {
+    m_history.Commit(m_level);
+    const std::string label = m_history.RedoLabel();
+    if (std::optional<scene::Level> level = m_history.Redo(m_level)) {
+        GoTo(std::move(*level));
+        m_status = std::format("Redid: {}", label);
+    }
+}
+
+void Editor::Create(std::string_view label, scene::LevelEntity entity) {
+    m_history.Commit(m_level);
+    entity.id = m_level.NextId();
+    entity.parent = 0;
+    if (entity.name.empty()) {
+        entity.name = std::string(label);
+    }
+    entity.transform.translation = m_camera.position + m_camera.Forward() * 4.0f;
+    Change(std::format("Create {}", label), [&entity](scene::Level& level) { level.entities.push_back(entity); });
+    m_history.Commit(m_level);
+    Select(entity.id);
+    m_status = std::format("Created {}", EntityLabel(entity));
+}
+
+void Editor::DeleteSelected() {
+    const scene::LevelEntity* selected = Selected();
+    if (selected == nullptr) {
+        return;
+    }
+    // The entity and everything under it.
+    std::set<std::uint64_t> doomed{selected->id};
+    for (bool grew = true; grew;) {
+        grew = false;
+        for (const scene::LevelEntity& entity : m_level.entities) {
+            if (doomed.contains(entity.parent) && doomed.insert(entity.id).second) {
+                grew = true;
             }
         }
     }
-    if (!m_dirty) {
-        m_dirty = true;
-        UpdateTitle(*m_app);
+    const std::string label = std::format("Delete {}", EntityLabel(*selected));
+    m_history.Commit(m_level);
+    Change(label, [&doomed](scene::Level& level) {
+        std::erase_if(level.entities,
+                      [&doomed](const scene::LevelEntity& entity) { return doomed.contains(entity.id); });
+    });
+    m_history.Commit(m_level);
+    m_status = doomed.size() > 1 ? std::format("{}, and {} entities under it", label, doomed.size() - 1) : label;
+    Select(0);
+}
+
+void Editor::Guard(app::Application& app, Pending what, std::string path) {
+    m_history.Commit(m_level);
+    m_pending = what;
+    m_pendingPath = std::move(path);
+    if (Dirty()) {
+        m_openPopup = "Unsaved changes";
+    } else {
+        Proceed(app);
     }
+}
+
+void Editor::Proceed(app::Application& app) {
+    const Pending pending = std::exchange(m_pending, Pending::None);
+    std::string path = std::move(m_pendingPath);
+    switch (pending) {
+    case Pending::None:
+        return;
+    case Pending::Quit:
+        app.RequestQuit();
+        return;
+    case Pending::Reload:
+        path = m_levelPath;
+        break;
+    case Pending::New:
+        if (core::Result<void> written =
+                scene::SaveLevelFile(m_assetRoot / std::filesystem::path(path), scene::Level{});
+            !written) {
+            m_status = core::Format(written.error());
+            return;
+        }
+        break;
+    case Pending::Open:
+        break;
+    }
+    if (core::Result<void> opened = Open(app, path); !opened) {
+        m_status = core::Format(opened.error());
+        DAI_LOG_ERROR(kModule, "{}", m_status);
+    }
+}
+
+bool Editor::OnCloseRequested(app::Application& app) {
+    m_history.Commit(m_level);
+    if (!Dirty()) {
+        return true;
+    }
+    Guard(app, Pending::Quit);
+    return false;
+}
+
+void Editor::OnStop(app::Application& /*app*/) {
+    // The sandbox reads its level again when F5 starts it over: the play copy stays while it runs.
+    if (!m_play.Running() && !m_playFile.empty()) {
+        std::error_code error;
+        std::filesystem::remove(m_playFile, error);
+    }
+}
+
+std::filesystem::path Editor::AutosaveFile() const {
+    std::string name = m_levelPath;
+    std::ranges::replace(name, '/', '_');
+    std::ranges::replace(name, '\\', '_');
+    return platform::ExecutableDirectory() / "autosave" / name;
+}
+
+void Editor::Autosave(float seconds) {
+    if (m_autosaveSeconds <= 0.0f || !Dirty() || m_history.Current() == m_autosavedRevision) {
+        m_sinceAutosave = 0.0f;
+        return;
+    }
+    m_sinceAutosave += seconds;
+    if (m_sinceAutosave < m_autosaveSeconds || m_history.IsOpen()) {
+        return;
+    }
+    m_sinceAutosave = 0.0f;
+    const std::filesystem::path file = AutosaveFile();
+    std::error_code error;
+    std::filesystem::create_directories(file.parent_path(), error);
+    if (core::Result<void> saved = scene::SaveLevelFile(file, m_level); !saved) {
+        DAI_LOG_WARNING(kModule, "Autosave failed: {}", core::Format(saved.error()));
+        return;
+    }
+    m_autosavedRevision = m_history.Current();
+    DAI_LOG_INFO(kModule, "Autosaved to {}", file.generic_string());
+}
+
+void Editor::CheckAutosave() {
+    const std::filesystem::path file = AutosaveFile();
+    std::error_code error;
+    if (!std::filesystem::exists(file, error)) {
+        return;
+    }
+    const auto autosaved = std::filesystem::last_write_time(file, error);
+    const auto saved = std::filesystem::last_write_time(m_assetRoot / std::filesystem::path(m_levelPath), error);
+    core::Result<scene::Level> read = scene::LoadLevelFile(file);
+    if (error || autosaved <= saved || !read || *read == m_level) {
+        std::filesystem::remove(file, error);
+        return;
+    }
+    m_recovered = std::move(*read);
+    m_openPopup = "Recover";
+}
+
+void Editor::Play(bool fromCamera) {
+    m_history.Commit(m_level);
+    if (m_play.Running()) {
+        m_play.Kill();
+    }
+    // The level as it is, saved or not, beside its file so that its paths still resolve.
+    std::string name = std::filesystem::path(m_levelPath).filename().generic_string();
+    if (name.ends_with(kLevelExtension)) {
+        name.resize(name.size() - kLevelExtension.size());
+    }
+    const std::string playPath =
+        (std::filesystem::path(m_levelPath).parent_path() / (name + ".play.level.json")).generic_string();
+    m_playFile = m_assetRoot / std::filesystem::path(playPath);
+    if (core::Result<void> saved = scene::SaveLevelFile(m_playFile, m_level); !saved) {
+        m_status = core::Format(saved.error());
+        return;
+    }
+    const std::filesystem::path sandbox = SandboxExecutable();
+    std::vector<std::string> arguments{sandbox.string(), "+sandbox.scene",      playPath, "+sandbox.menu",
+                                       "false",          "+sandbox.calibrated", "true"};
+    if (fromCamera) {
+        arguments.emplace_back("+sandbox.start");
+        arguments.push_back(std::format("{} {} {} {} {}", m_camera.position.x, m_camera.position.y, m_camera.position.z,
+                                        glm::degrees(m_camera.yaw), glm::degrees(m_camera.pitch)));
+    }
+    core::Result<platform::ChildProcess> started = platform::StartProcess(arguments, sandbox.parent_path());
+    if (!started) {
+        m_status = core::Format(started.error());
+        DAI_LOG_ERROR(kModule, "{}", m_status);
+        return;
+    }
+    m_play = std::move(*started);
+    m_status = fromCamera ? "Playing from the camera" : "Playing from the start";
+    DAI_LOG_INFO(kModule, "Playing {} with {}", playPath, sandbox.generic_string());
 }
 
 void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
@@ -265,6 +543,7 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
     DrawInspector();
     DrawEnvironment();
     DrawStatus(app, time);
+    DrawDialogs(app);
 
     if (m_scene != nullptr) {
         UpdateCamera(app, static_cast<float>(time.unclampedDelta.count()));
@@ -272,44 +551,97 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
         DrawGizmo();
         Pick(app);
     }
+    HandleShortcuts(app);
 
-    const ImGuiIO& io = ImGui::GetIO();
-    if (!io.WantTextInput && !m_flying) {
-        const bool control = io.KeyCtrl;
-        if (control && ImGui::IsKeyPressed(ImGuiKey_S, false)) {
-            Save();
-        }
-        if (!control && ImGui::IsKeyPressed(ImGuiKey_W, false)) {
-            m_operation = ImGuizmo::TRANSLATE;
-        }
-        if (!control && ImGui::IsKeyPressed(ImGuiKey_E, false)) {
-            m_operation = ImGuizmo::ROTATE;
-        }
-        if (!control && ImGui::IsKeyPressed(ImGuiKey_R, false)) {
-            m_operation = ImGuizmo::SCALE;
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
-            Select(0);
-        }
-        if (!control && ImGui::IsKeyPressed(ImGuiKey_F, false) && Selected() != nullptr && m_instance != nullptr) {
-            // Frames the selection.
-            const ecs::Entity entity = m_instance->Find(m_selected);
-            if (!entity.IsNull()) {
-                ecs::PropagateTransforms(m_scene->World());
-                Bounds bounds = m_picker.WorldBounds(m_scene->World(), entity);
-                const glm::vec3 center = bounds.Empty()
-                                             ? glm::vec3(m_scene->World().Get<ecs::WorldTransform>(entity).matrix[3])
-                                             : (bounds.min + bounds.max) * 0.5f;
-                const float radius = bounds.Empty() ? 1.0f : glm::length(bounds.max - bounds.min) * 0.5f;
-                const float distance = std::max(radius / std::tan(m_camera.verticalFov * 0.5f), 1.0f);
-                m_camera.position = center - m_camera.Forward() * distance;
-            }
-        }
+    // An edit ends when the mouse lets go of the widget or the gizmo that made it.
+    if (m_history.IsOpen() && !ImGui::IsAnyItemActive() && !ImGuizmo::IsUsing()) {
+        m_history.Commit(m_level);
     }
+    Autosave(static_cast<float>(time.unclampedDelta.count()));
+    if (!m_playFile.empty() && !m_play.Running()) {
+        std::error_code error;
+        std::filesystem::remove(m_playFile, error);
+        m_playFile.clear();
+    }
+    UpdateTitle(app);
     if (m_scene != nullptr && !m_cameraEntity.IsNull()) {
         static_cast<math::Transform&>(m_scene->World().Get<ecs::LocalTransform>(m_cameraEntity)) =
             Decompose(m_camera.World());
     }
+}
+
+void Editor::HandleShortcuts(app::Application& /*app*/) {
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.WantTextInput || m_flying || !m_openPopup.empty() ||
+        ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) {
+        return;
+    }
+    const auto pressed = [](ImGuiKey key) { return ImGui::IsKeyPressed(key, false); };
+    if (io.KeyCtrl) {
+        if (pressed(ImGuiKey_S)) {
+            if (io.KeyShift) {
+                m_pathField = m_levelPath;
+                m_openPopup = "Save As";
+            } else {
+                Save();
+            }
+        } else if (pressed(ImGuiKey_O)) {
+            m_levelFiles = FindLevelFiles(m_assetRoot);
+            m_openPopup = "Open";
+        } else if (pressed(ImGuiKey_N)) {
+            m_pathField = "Levels/New.level.json";
+            m_openPopup = "New";
+        } else if (ImGui::IsKeyPressed(ImGuiKey_Z, true)) {
+            if (io.KeyShift) {
+                Redo();
+            } else {
+                Undo();
+            }
+        } else if (ImGui::IsKeyPressed(ImGuiKey_Y, true)) {
+            Redo();
+        } else if (pressed(ImGuiKey_F5)) {
+            Play(true);
+        }
+        return;
+    }
+    if (pressed(ImGuiKey_F5)) {
+        Play(false);
+    }
+    if (pressed(ImGuiKey_W)) {
+        m_operation = ImGuizmo::TRANSLATE;
+    }
+    if (pressed(ImGuiKey_E)) {
+        m_operation = ImGuizmo::ROTATE;
+    }
+    if (pressed(ImGuiKey_R)) {
+        m_operation = ImGuizmo::SCALE;
+    }
+    if (pressed(ImGuiKey_Escape)) {
+        Select(0);
+    }
+    if (pressed(ImGuiKey_Delete)) {
+        DeleteSelected();
+    }
+    if (pressed(ImGuiKey_F)) {
+        FrameSelection();
+    }
+}
+
+void Editor::FrameSelection() {
+    if (Selected() == nullptr || m_instance == nullptr) {
+        return;
+    }
+    const ecs::Entity entity = m_instance->Find(m_selected);
+    if (entity.IsNull()) {
+        return;
+    }
+    ecs::PropagateTransforms(m_scene->World());
+    const Bounds bounds = m_picker.WorldBounds(m_scene->World(), entity);
+    const glm::vec3 center = bounds.Empty() ? glm::vec3(m_scene->World().Get<ecs::WorldTransform>(entity).matrix[3])
+                                            : (bounds.min + bounds.max) * 0.5f;
+    const float radius = bounds.Empty() ? 1.0f : glm::length(bounds.max - bounds.min) * 0.5f;
+    const float distance = std::max(radius / std::tan(m_camera.verticalFov * 0.5f), 1.0f);
+    m_camera.position = center - m_camera.Forward() * distance;
 }
 
 void Editor::OnRender(app::Application& app, renderer::SceneView& view) {
@@ -332,17 +664,87 @@ void Editor::DrawMenu(app::Application& app) {
         return;
     }
     if (ImGui::BeginMenu("File")) {
+        if (ImGui::MenuItem("New...", "Ctrl+N")) {
+            m_pathField = "Levels/New.level.json";
+            m_openPopup = "New";
+        }
+        if (ImGui::MenuItem("Open...", "Ctrl+O")) {
+            m_levelFiles = FindLevelFiles(m_assetRoot);
+            m_openPopup = "Open";
+        }
         if (ImGui::MenuItem("Save", "Ctrl+S")) {
             Save();
         }
+        if (ImGui::MenuItem("Save As...", "Ctrl+Shift+S")) {
+            m_pathField = m_levelPath;
+            m_openPopup = "Save As";
+        }
         if (ImGui::MenuItem("Reload from disk")) {
-            if (core::Result<void> opened = Open(app, m_levelPath); !opened) {
-                m_status = core::Format(opened.error());
-            }
+            Guard(app, Pending::Reload);
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Quit")) {
-            app.RequestQuit();
+            Guard(app, Pending::Quit);
+        }
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Edit")) {
+        const std::string undo = m_history.CanUndo() ? std::format("Undo {}", m_history.UndoLabel()) : "Undo";
+        const std::string redo = m_history.CanRedo() ? std::format("Redo {}", m_history.RedoLabel()) : "Redo";
+        if (ImGui::MenuItem(undo.c_str(), "Ctrl+Z", false, m_history.CanUndo())) {
+            Undo();
+        }
+        if (ImGui::MenuItem(redo.c_str(), "Ctrl+Y", false, m_history.CanRedo())) {
+            Redo();
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Delete", "Del", false, Selected() != nullptr)) {
+            DeleteSelected();
+        }
+        if (ImGui::MenuItem("Frame the selection", "F", false, Selected() != nullptr)) {
+            FrameSelection();
+        }
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Create")) {
+        if (ImGui::MenuItem("Empty")) {
+            Create("Empty", {});
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Point light")) {
+            scene::LevelEntity entity;
+            entity.light = scene::Light{.type = renderer::LightType::Point, .intensity = 50.0f, .range = 8.0f};
+            Create("Point light", std::move(entity));
+        }
+        if (ImGui::MenuItem("Spot light")) {
+            scene::LevelEntity entity;
+            entity.light = scene::Light{.type = renderer::LightType::Spot, .intensity = 200.0f, .range = 12.0f};
+            Create("Spot light", std::move(entity));
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Fog volume")) {
+            scene::LevelEntity entity;
+            entity.fog = scene::FogVolume{};
+            entity.transform.scale = glm::vec3(4.0f, 2.0f, 4.0f);
+            Create("Fog volume", std::move(entity));
+        }
+        if (ImGui::MenuItem("Wind volume")) {
+            scene::LevelEntity entity;
+            entity.wind = scene::WindVolume{};
+            entity.transform.scale = glm::vec3(4.0f);
+            Create("Wind volume", std::move(entity));
+        }
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Play")) {
+        if (ImGui::MenuItem("From the start", "F5")) {
+            Play(false);
+        }
+        if (ImGui::MenuItem("From the camera", "Ctrl+F5")) {
+            Play(true);
+        }
+        if (ImGui::MenuItem("Stop", nullptr, false, m_play.Running())) {
+            m_play.Kill();
         }
         ImGui::EndMenu();
     }
@@ -379,6 +781,133 @@ void Editor::DrawMenu(app::Application& app) {
         ImGui::SetTooltip("The axes the gizmo moves along: the entity's own, or the world's");
     }
     ImGui::EndMainMenuBar();
+}
+
+void Editor::DrawDialogs(app::Application& app) {
+    if (!m_openPopup.empty()) {
+        ImGui::OpenPopup(m_openPopup.c_str());
+        m_openPopup.clear();
+        m_filter.clear();
+    }
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    const auto place = [&center](float width) {
+        ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ImVec2(width, 0.0f), ImGuiCond_Appearing);
+    };
+
+    place(560.0f);
+    if (ImGui::BeginPopupModal("Open", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::IsWindowAppearing()) {
+            ImGui::SetKeyboardFocusHere();
+        }
+        InputString("##filter", m_filter);
+        ImGui::BeginChild("files", ImVec2(0.0f, 300.0f), ImGuiChildFlags_Borders);
+        for (const std::string& file : m_levelFiles) {
+            if (!m_filter.empty() && file.find(m_filter) == std::string::npos) {
+                continue;
+            }
+            if (ImGui::Selectable(file.c_str(), file == m_levelPath, ImGuiSelectableFlags_AllowDoubleClick) &&
+                ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                ImGui::CloseCurrentPopup();
+                Guard(app, Pending::Open, file);
+            }
+        }
+        ImGui::EndChild();
+        ImGui::TextDisabled("Level files under assets/. Double-click one to open it.");
+        if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    // Asks for a level path under assets/; mustBeNew refuses one that exists.
+    const auto pathDialog = [&](const char* name, const char* action, bool mustBeNew,
+                                const std::function<void(const std::string&)>& run) {
+        place(560.0f);
+        if (!ImGui::BeginPopupModal(name, nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+            return;
+        }
+        ImGui::TextUnformatted("Path under assets/:");
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::IsWindowAppearing()) {
+            ImGui::SetKeyboardFocusHere();
+        }
+        InputString("##path", m_pathField);
+        const std::string path = LevelPathOf(m_pathField);
+        std::error_code error;
+        const bool exists = !path.empty() && std::filesystem::exists(m_assetRoot / std::filesystem::path(path), error);
+        if (exists) {
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f),
+                               mustBeNew ? "%s exists already." : "%s exists and will be replaced.", path.c_str());
+        } else {
+            ImGui::TextDisabled("%s", path.c_str());
+        }
+        const bool allowed = !path.empty() && !(mustBeNew && exists);
+        ImGui::BeginDisabled(!allowed);
+        const bool confirmed = ImGui::Button(action);
+        ImGui::EndDisabled();
+        if (allowed && (confirmed || ImGui::IsKeyPressed(ImGuiKey_Enter))) {
+            ImGui::CloseCurrentPopup();
+            run(path);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    };
+    pathDialog("Save As", "Save", false, [this](const std::string& path) { Save(path); });
+    pathDialog("New", "Create", true, [this, &app](const std::string& path) { Guard(app, Pending::New, path); });
+
+    place(460.0f);
+    if (ImGui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::TextWrapped("%s has changes that are not saved.", m_levelPath.c_str());
+        if (ImGui::Button("Save")) {
+            ImGui::CloseCurrentPopup();
+            if (Save()) {
+                Proceed(app);
+            } else {
+                m_pending = Pending::None;
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Don't save")) {
+            ImGui::CloseCurrentPopup();
+            Proceed(app);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            ImGui::CloseCurrentPopup();
+            m_pending = Pending::None;
+        }
+        ImGui::EndPopup();
+    }
+
+    place(460.0f);
+    if (ImGui::BeginPopupModal("Recover", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::TextWrapped("The last time the editor ran, it autosaved changes to %s that were never saved. "
+                           "Recover them?",
+                           m_levelPath.c_str());
+        if (ImGui::Button("Recover")) {
+            ImGui::CloseCurrentPopup();
+            if (m_recovered) {
+                scene::Level recovered = std::move(*m_recovered);
+                m_recovered.reset();
+                Change("Recover the autosave", [&recovered](scene::Level& level) { level = std::move(recovered); });
+                m_history.Commit(m_level);
+                m_status = "Recovered the autosave: save to keep it";
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Discard")) {
+            ImGui::CloseCurrentPopup();
+            m_recovered.reset();
+            std::error_code error;
+            std::filesystem::remove(AutosaveFile(), error);
+        }
+        ImGui::EndPopup();
+    }
 }
 
 void Editor::DrawDockspace() {
@@ -486,7 +1015,7 @@ void Editor::DrawInspector() {
     }
     changed |= InspectComponents(edited);
     if (changed) {
-        Apply(edited);
+        Apply(edited, std::format("Edit {}", EntityLabel(edited)));
     }
     ImGui::End();
 }
@@ -498,14 +1027,7 @@ void Editor::DrawEnvironment() {
     }
     scene::LevelEnvironment environment = m_level.environment;
     if (InspectEnvironment(environment)) {
-        m_level.environment = environment;
-        if (m_instance != nullptr) {
-            m_instance->ApplyEnvironment(environment);
-        }
-        if (!m_dirty) {
-            m_dirty = true;
-            UpdateTitle(*m_app);
-        }
+        Change("Edit the environment", [&environment](scene::Level& level) { level.environment = environment; });
     }
     ImGui::End();
 }
@@ -518,7 +1040,7 @@ void Editor::DrawStatus(app::Application& app, const core::FrameTime& time) {
                     m_camera.position.y, m_camera.position.z, m_camera.speed);
         ImGui::TextUnformatted(m_status.c_str());
         ImGui::TextDisabled("Right mouse: fly with WASD, Q and E, the wheel sets the speed. W E R: move, rotate, "
-                            "scale. F: frame the selection.");
+                            "scale. F: frame the selection. Ctrl+Z, Ctrl+Y: undo, redo. F5: play.");
     }
     ImGui::End();
 }
@@ -696,7 +1218,7 @@ void Editor::DrawGizmo() {
         const glm::mat4 parentWorld = parent.IsNull() ? glm::mat4(1.0f) : world.Get<ecs::WorldTransform>(parent).matrix;
         scene::LevelEntity edited = *selected;
         edited.transform = Decompose(glm::inverse(parentWorld) * matrix);
-        Apply(edited);
+        Apply(edited, operation == ImGuizmo::ROTATE ? "Rotate" : operation == ImGuizmo::SCALE ? "Scale" : "Move");
     }
     m_gizmoUsing = ImGuizmo::IsUsing();
 }

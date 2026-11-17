@@ -1041,4 +1041,39 @@ std::vector<std::string> LevelModels(const Level& level, std::string_view levelP
     return models;
 }
 
+void Relocate(Level& level, std::string_view fromLevelPath, std::string_view toLevelPath) {
+    const std::filesystem::path from = std::filesystem::path(fromLevelPath).parent_path();
+    std::filesystem::path to = std::filesystem::path(toLevelPath).parent_path();
+    if (to.empty()) {
+        to = ".";
+    }
+    if (from.lexically_normal() == to.lexically_normal()) {
+        return;
+    }
+    const auto move = [&](std::string& path) {
+        if (!path.empty()) {
+            path = (from / path).lexically_normal().lexically_relative(to).generic_string();
+        }
+    };
+    move(level.environment.skyFaces);
+    for (LevelEntity& entity : level.entities) {
+        move(entity.model);
+        if (entity.particles) {
+            move(entity.particles->effect);
+        }
+        if (entity.attractor) {
+            move(entity.attractor->effect);
+        }
+        if (entity.weather) {
+            move(entity.weather->effect);
+        }
+        if (entity.ribbon) {
+            move(entity.ribbon->effect);
+        }
+        if (entity.lightning) {
+            move(entity.lightning->bolt);
+        }
+    }
+}
+
 } // namespace daidalos::scene

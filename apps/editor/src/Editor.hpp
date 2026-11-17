@@ -5,6 +5,7 @@
 #pragma once
 
 #include <daidalos/app/Application.hpp>
+#include <daidalos/platform/Process.hpp>
 #include <daidalos/scene/Level.hpp>
 #include <daidalos/scene/Scene.hpp>
 
@@ -12,12 +13,16 @@
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
+#include "History.hpp"
 #include "Picking.hpp"
 
 namespace editor {
@@ -46,20 +51,52 @@ public:
     daidalos::core::Result<void> OnStart(daidalos::app::Application& app) override;
     void OnUpdate(daidalos::app::Application& app, const daidalos::core::FrameTime& time) override;
     void OnRender(daidalos::app::Application& app, daidalos::renderer::SceneView& view) override;
+    bool OnCloseRequested(daidalos::app::Application& app) override;
+    void OnStop(daidalos::app::Application& app) override;
 
 private:
+    /// What waits for an answer about unsaved changes.
+    enum class Pending { None, Open, New, Reload, Quit };
+
     // The document.
     daidalos::core::Result<void> Open(daidalos::app::Application& app, const std::string& levelPath);
-    void Save();
-    /// Puts an edited entity in the level and in the scene: a change of transform moves the entity, any other
-    /// change makes it again.
-    void Apply(const daidalos::scene::LevelEntity& after);
+    /// Saves to the level's file, or to another path (Save As), whose paths are then rewritten to name the same
+    /// files. Returns false if it failed; the status says why.
+    bool Save(const std::string& levelPath = {});
+    [[nodiscard]] bool Dirty() const { return m_history.Current() != m_savedRevision; }
+    /// Changes the level through edit, as one step of the history labelled label, and makes the scene follow.
+    /// Edits made while the mouse holds a widget or a gizmo join the step they started.
+    void Change(std::string_view label, const std::function<void(daidalos::scene::Level&)>& edit);
+    /// Puts an edited entity in the level, through Change.
+    void Apply(const daidalos::scene::LevelEntity& after, std::string_view label);
+    /// Goes to a level given by the history, and makes the scene follow.
+    void GoTo(daidalos::scene::Level level);
+    void Undo();
+    void Redo();
+    /// Creates an entity a few meters in front of the camera, and selects it.
+    void Create(std::string_view label, daidalos::scene::LevelEntity entity);
+    void DeleteSelected();
     [[nodiscard]] daidalos::scene::LevelEntity* Selected();
     void Select(std::uint64_t id);
     void UpdateTitle(daidalos::app::Application& app);
+    /// Runs what was waiting once unsaved changes are saved or dropped.
+    void Proceed(daidalos::app::Application& app);
+    /// Asks about unsaved changes before doing what, unless there are none.
+    void Guard(daidalos::app::Application& app, Pending what, std::string path = {});
+
+    // Autosave and play.
+    void Autosave(float seconds);
+    [[nodiscard]] std::filesystem::path AutosaveFile() const;
+    /// Offers the autosave of the level just opened, if it is newer than the file.
+    void CheckAutosave();
+    /// Starts the sandbox on the level as it is, saved or not; from the camera if fromCamera.
+    void Play(bool fromCamera);
 
     // The interface.
     void DrawMenu(daidalos::app::Application& app);
+    void DrawDialogs(daidalos::app::Application& app);
+    void HandleShortcuts(daidalos::app::Application& app);
+    void FrameSelection();
     void DrawDockspace();
     void DrawHierarchy();
     void DrawHierarchyNode(std::uint64_t id, const std::vector<std::vector<std::uint64_t>>& children,
@@ -88,8 +125,28 @@ private:
     EditorCamera m_camera;
     MeshPicker m_picker;
     std::uint64_t m_selected = 0;
-    bool m_dirty = false;
     std::string m_status;
+
+    History m_history;
+    History::Revision m_savedRevision = 0;
+    /// The window's title, given again only when it changes.
+    std::string m_shownTitle;
+
+    float m_autosaveSeconds = 120.0f;
+    float m_sinceAutosave = 0.0f;
+    History::Revision m_autosavedRevision = 0;
+    std::optional<daidalos::scene::Level> m_recovered;
+
+    daidalos::platform::ChildProcess m_play;
+    std::filesystem::path m_playFile;
+
+    // Dialogs: which to open this frame, what waits for the answer about unsaved changes, and their fields.
+    std::string m_openPopup;
+    Pending m_pending = Pending::None;
+    std::string m_pendingPath;
+    std::vector<std::string> m_levelFiles;
+    std::string m_filter;
+    std::string m_pathField;
 
     /// The central node of the dockspace, in interface coordinates: where the scene is drawn.
     glm::vec2 m_viewportMin{0.0f};

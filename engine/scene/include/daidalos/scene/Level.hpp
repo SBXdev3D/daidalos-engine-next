@@ -178,6 +178,21 @@ inline constexpr std::uint32_t kLevelVersion = 1;
 /// levelPath is the level file's path under the asset root.
 [[nodiscard]] std::vector<std::string> LevelModels(const Level& level, std::string_view levelPath);
 
+/// Rewrites the paths a level holds (models, effects, the sky) so that they name the same files once the level
+/// is saved under toLevelPath instead of fromLevelPath, both under the asset root.
+void Relocate(Level& level, std::string_view fromLevelPath, std::string_view toLevelPath);
+
+/// What LevelInstance::Sync did.
+struct LevelSync {
+    /// Entities made, new or again, and destroyed.
+    std::size_t created = 0;
+    std::size_t destroyed = 0;
+    /// Entities whose transform alone changed, moved in place.
+    std::size_t moved = 0;
+    /// Whether any entity made or destroyed places a model: what an editor's picking must learn again.
+    bool models = false;
+};
+
 /// The entities of a level in a scene. Models and effects come from the scene's assets, by paths relative to
 /// the level's directory; a model loaded already (LevelModels) is not read again. What fails to load is
 /// logged and left out, so that one missing effect does not lose the level.
@@ -191,8 +206,13 @@ public:
     /// Creates one entity, or replaces the one of the same id; its children stay, under the new one. Its
     /// parent must exist first.
     void Create(const Level& level, const LevelEntity& entity);
-    /// Destroys an entity and its descendants.
+    /// Destroys an entity and its descendants, and the emitters they placed on other entities' surfaces.
     void Destroy(std::uint64_t id);
+    /// Brings the scene from one state of the level to the next: destroys the entities that went, moves those
+    /// whose transform alone changed, makes again those that changed otherwise (and the emitters on their
+    /// surfaces), creates the new ones, and applies the environment if it changed. Undo, redo and every edit of
+    /// the level editor go through it.
+    LevelSync Sync(const Level& from, const Level& to);
     /// Applies the environment to the scene: sky, fog, wind and exposure.
     void ApplyEnvironment(const LevelEnvironment& environment);
 
@@ -204,11 +224,17 @@ public:
     [[nodiscard]] std::string Resolve(std::string_view relative) const;
 
 private:
+    /// Creates or replaces one entity, without linking the ribbons and lightning to their targets.
+    void Make(const LevelEntity& entity);
     void Link(const Level& level);
+    /// The entities of a level in an order that creates parents, and the models emitters sit on, first.
+    [[nodiscard]] static std::vector<const LevelEntity*> CreationOrder(const Level& level);
 
     Scene* m_scene;
     std::string m_directory;
     std::unordered_map<std::uint64_t, ecs::Entity> m_entities;
+    /// The entity an emitter on another model's surface was put on, by the id of the level entity it belongs to.
+    std::unordered_map<std::uint64_t, ecs::Entity> m_surfaceEmitters;
 };
 
 } // namespace daidalos::scene

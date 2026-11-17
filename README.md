@@ -101,7 +101,7 @@ build/windows-msvc/apps/editor/Release/editor.exe   # Windows, development build
 build/linux-clang-debug/apps/editor/editor          # Linux
 ```
 
-It opens `Factory/Factory.level.json`, or the level given with `+editor.level <path under assets/>` (ADR-0055). Hold the right mouse button to fly with WASD, Q and E; click to select; W, E and R choose the move, rotate and scale gizmos; F frames the selection; Ctrl+S saves the level file.
+It opens `Factory/Factory.level.json`, or the level given with `+editor.level <path under assets/>` (ADR-0055). Hold the right mouse button to fly with WASD, Q and E; click to select; W, E and R choose the move, rotate and scale gizmos; F frames the selection; Delete removes it; Ctrl+Z and Ctrl+Y undo and redo; Ctrl+N, Ctrl+O, Ctrl+S and Ctrl+Shift+S make, open, save and save a level under another name. F5 plays the level in the sandbox as it is, saved or not, from its start; Ctrl+F5 from the editor's camera. A changed level is autosaved beside the editor every two minutes (`+editor.autosave <seconds>`, 0 for never) and offered back if the editor stopped before it was saved.
 
 In development builds, editing a file in `engine/renderer/shaders/` reloads it while the sandbox runs; a shader that does not compile leaves the previous one running and shows the error in the overlay. The sandbox writes `sandbox.log` and, on Windows, crash dumps to `crashdumps/` in the working directory.
 

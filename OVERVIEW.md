@@ -1984,8 +1984,8 @@ Deliverables:
 - An editor executable, in development builds, whose viewport is the game's renderer, ray tracing included (done, 10.2, ADR-0055: `apps/editor`, the scene drawn into the dockspace's central node).
 - Importing glTF models and sky textures into the assets.
 - Selecting by clicking in the viewport or in a hierarchy panel; move, rotate and scale gizmos; an inspector of the selected entity's components (transform, model, light) (done, 10.2: picking on the CPU, markers for entities without a mesh, every level component and the environment in the inspector).
-- Undo and redo of every edit; saving and opening levels.
-- Starting the game on the level being edited.
+- Undo and redo of every edit; saving and opening levels (done, 10.3, ADR-0055: the level before each edit, `LevelInstance::Sync` to follow; open, new, save as, autosave with recovery, a prompt before unsaved changes are lost).
+- Starting the game on the level being edited (done, 10.3: F5 from the start, Ctrl+F5 from the camera, unsaved changes included).
 - The factory's lights that are added in code today move into its level file (done, 10.1: the moon, the alarms' beams, the dust and the steam, the exposure and the sky; the flashlight and the muzzle flash stay the player's).
 
 Later phases add their own fields to the inspector (light profiles, visibility masks, porosity, triggers). Prefabs, painting tools, material, VFX and sequencer editors wait until content asks for them.

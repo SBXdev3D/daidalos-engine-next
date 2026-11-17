@@ -1,6 +1,7 @@
 dai_add_test(NAME daidalos_scene_gpu_tests
     SOURCES
         AssetLibraryTests.cpp
+        LevelInstanceTests.cpp
         SceneTests.cpp
     DEPS
         daidalos::app)
