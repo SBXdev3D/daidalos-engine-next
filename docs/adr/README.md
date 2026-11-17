@@ -67,3 +67,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0061](0061-wetness.md) | Wetness in the material function: wet volumes, porosity, a water coat, puddles in low spots rippled by rain and the game, streaks on walls, drying | Accepted |
 | [0062](0062-particles-in-rays.md) | Particles in rays: a box per pool slot in a rebuilt BLAS, discs tested in the ray loops with stochastic opacity, shadows and reflections, opt-out per effect; smoke splatted into the fog's froxels | Accepted |
 | [0063](0063-camera-effects.md) | Camera effects: grain, vignette, procedural lens dirt lit by bloom, chromatic aberration in the output pass; depth of field and motion blur in a compute pass after the resolve | Accepted |
+| [0064](0064-relief.md) | Relief: height in the mr texture's alpha, occlusion baked into red (strength from the albedo's cavities), horizons found in the G-buffer, every light shadowed in Respond; no parallax | Accepted |
