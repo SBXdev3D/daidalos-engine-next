@@ -35,9 +35,8 @@ struct PushConstants {
     std::uint32_t texture;
 };
 
-// ImGui treats texture id 0 as invalid, but 0 is a valid bindless index.
 ImTextureID ToTextureId(std::uint32_t bindlessIndex) {
-    return static_cast<ImTextureID>(bindlessIndex) + 1;
+    return static_cast<ImTextureID>(TextureId(bindlessIndex));
 }
 
 std::uint32_t ToBindlessIndex(ImTextureID id) {

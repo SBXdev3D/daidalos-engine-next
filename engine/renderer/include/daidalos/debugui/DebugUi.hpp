@@ -11,9 +11,17 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 
 namespace daidalos::debugui {
+
+/// The ImTextureID that ImGui::Image takes for a texture of the device, by its bindless index: tools show
+/// their own textures (the level editor's thumbnails) with it.
+[[nodiscard]] constexpr std::uint64_t TextureId(std::uint32_t bindlessIndex) {
+    // ImGui treats 0 as no texture, but 0 is a valid bindless index.
+    return static_cast<std::uint64_t>(bindlessIndex) + 1;
+}
 
 /// Dear ImGui overlay (ADR-0015), drawn through the RHI and fed with platform events, so it depends on
 /// neither SDL nor Vulkan. Between BeginFrame and EndFrame, code calls ImGui functions directly.

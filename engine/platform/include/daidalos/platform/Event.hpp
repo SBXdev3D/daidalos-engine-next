@@ -152,10 +152,19 @@ struct TextEntered {
     bool operator==(const TextEntered&) const = default;
 };
 
+/// A file dropped on a window from the system's file manager, one event per file.
+struct FileDropped {
+    WindowId window{};
+    std::string path;
+    /// Where it was dropped, in window coordinates.
+    glm::vec2 position{0.0f};
+    bool operator==(const FileDropped&) const = default;
+};
+
 /// Platform event, independent of SDL.
 using Event = std::variant<QuitRequested, WindowCloseRequested, WindowResized, WindowMinimized, WindowRestored,
                            WindowFocusGained, WindowFocusLost, KeyPressed, KeyReleased, MouseMoved, MouseButtonPressed,
                            MouseButtonReleased, MouseWheelScrolled, GamepadConnected, GamepadDisconnected,
-                           GamepadButtonPressed, GamepadButtonReleased, GamepadAxisMoved, TextEntered>;
+                           GamepadButtonPressed, GamepadButtonReleased, GamepadAxisMoved, TextEntered, FileDropped>;
 
 } // namespace daidalos::platform

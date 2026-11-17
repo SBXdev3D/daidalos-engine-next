@@ -83,6 +83,18 @@ TEST(EventTranslation, QuitBecomesQuitRequested) {
     EXPECT_EQ(TranslateEvent(event), std::optional<Event>(QuitRequested{}));
 }
 
+TEST(EventTranslation, DroppedFileBecomesFileDropped) {
+    char path[] = "C:/models/crate.gltf";
+    SDL_Event event{};
+    event.type = SDL_EVENT_DROP_FILE;
+    event.drop.windowID = static_cast<SDL_WindowID>(kWindow);
+    event.drop.x = 10.0f;
+    event.drop.y = 20.0f;
+    event.drop.data = path;
+    EXPECT_EQ(TranslateEvent(event),
+              std::optional<Event>(FileDropped{kWindow, "C:/models/crate.gltf", glm::vec2(10.0f, 20.0f)}));
+}
+
 TEST(EventTranslation, TextInputBecomesTextEntered) {
     SDL_Event event{};
     event.type = SDL_EVENT_TEXT_INPUT;
