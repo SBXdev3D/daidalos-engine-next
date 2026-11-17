@@ -173,8 +173,9 @@ public:
     static constexpr rhi::Format kBaseColorFormat = rhi::Format::Rgba8Srgb;
     /// Its fourth.
     static constexpr rhi::Format kEmissionFormat = rhi::Format::Rgba16Float;
-    /// The clear coat and the sheen of each pixel, packed (GBufferSurface.slangh, ADR-0056).
-    static constexpr rhi::Format kLayersFormat = rhi::Format::Rg32Uint;
+    /// The clear coat and the sheen of each pixel, packed (GBufferSurface.slangh, ADR-0056), and the horizons
+    /// of its relief (ADR-0064).
+    static constexpr rhi::Format kLayersFormat = rhi::Format::Rgba32Uint;
     /// The lighting pass's diffuse and specular light, for the denoiser (ADR-0039).
     static constexpr rhi::Format kLightFormat = rhi::Format::Rgba16Float;
 

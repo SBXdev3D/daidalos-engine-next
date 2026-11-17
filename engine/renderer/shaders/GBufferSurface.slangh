@@ -21,9 +21,59 @@ struct GBufferOutput {
     float4 baseColor : SV_Target2;
     // The emission in nits, times the frame's exposure (ADR-0043), and the material's occlusion in alpha.
     float4 emission : SV_Target3;
-    // The clear coat and the sheen (PackLayers, ADR-0056).
-    uint2 layers : SV_Target4;
+    // The clear coat and the sheen (ADR-0056), and the relief's horizons (ADR-0064).
+    uint4 layers : SV_Target4;
 };
+
+// The horizons of the relief around a point (ADR-0064): along each direction of the basis of the surface's
+// normal, the steepest rise of the height map within a few times its depth, as the sine of its elevation.
+uint ReliefHorizons(VertexOutput input, MaterialData material, float3 faceNormal, float4 tangent, float height0) {
+    if (material.heightScale <= 0.0 || material.metallicRoughnessTexture == kNoTexture || dot(tangent.xyz, tangent.xyz) <= 0.0) {
+        return 0;
+    }
+    // Meters across a unit of the texture coordinates, from the derivatives.
+    const float meters = length(ddx(input.worldPosition)) + length(ddy(input.worldPosition));
+    const float texels = length(ddx(input.uv)) + length(ddy(input.uv));
+    if (texels <= 0.0) {
+        return 0;
+    }
+    const float metersPerUv = meters / texels;
+    // Relief that spans less than a pixel does not show: far surfaces skip it.
+    const float reach = material.heightScale * 4.0;
+    if (reach < 0.5 * meters) {
+        return 0;
+    }
+    const float3 t = normalize(tangent.xyz - faceNormal * dot(faceNormal, tangent.xyz));
+    const float3 b = cross(faceNormal, t) * (tangent.w < 0.0 ? -1.0 : 1.0);
+    float3 b1;
+    float3 b2;
+    ReliefBasis(faceNormal, b1, b2);
+    // The horizons need no more detail than the relief's depth: a coarser level than the pixel's, which keeps
+    // the samples in the cache.
+    // the samples in the cache. Even both ways, so that anisotropic filtering takes one tap.
+    const float footprint = max(length(ddx(input.uv)), length(ddy(input.uv))) * 2.0;
+    const float2 gradientX = float2(footprint, 0.0);
+    const float2 gradientY = float2(0.0, footprint);
+    uint horizons = 0;
+    for (uint k = 0; k < kReliefDirections; ++k) {
+        const float angle = (float(k) + 0.5) / float(kReliefDirections) * 6.28318531;
+        const float3 along = b1 * cos(angle) + b2 * sin(angle);
+        // texture-tool flips no axis: v grows down the image, as along the bitangent.
+        const float2 uvAlong = float2(dot(along, t), dot(along, b)) / metersPerUv;
+        float steepest = 0.0;
+        for (uint i = 1; i <= 4; ++i) {
+            const float distance = reach * pow(float(i) / 4.0, 1.5);
+            const float h = g_textures[material.metallicRoughnessTexture]
+                                .SampleGrad(g_samplers[kSamplerLinearRepeat], input.uv + uvAlong * distance, gradientX, gradientY)
+                                .a;
+            steepest = max(steepest, (h - height0) * material.heightScale / distance);
+        }
+        const float sine = steepest / sqrt(1.0 + steepest * steepest);
+        horizons |= uint(round(sqrt(saturate(sine)) * 15.0)) << (k * 4);
+    }
+    // At least one direction is marked, so that relief with no horizon still reads as relief.
+    return horizons == 0 ? 1 : horizons;
+}
 
 GBufferOutput PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) {
     const FrameData frame = g_frames[g_push.frameBuffer][0];
@@ -32,6 +82,10 @@ GBufferOutput PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) {
     float3 normal = SurfaceNormal(input, isFrontFace, material, frame.normalStrength);
     // glTF: roughness in green, metalness in blue.
     const float4 metallicRoughness = SampleTexture(material.metallicRoughnessTexture, input.uv, float4(1.0, 1.0, 1.0, 1.0));
+    const float3 faceNormal = normalize(input.worldNormal) * (isFrontFace ? 1.0 : -1.0);
+    const uint horizons = ReliefHorizons(input, material, faceNormal,
+                                         float4(input.worldTangent.xyz, input.worldTangent.w * (isFrontFace ? 1.0 : -1.0)),
+                                         metallicRoughness.a);
     float metallic = saturate(material.metallicFactor * metallicRoughness.b);
     float roughness = clamp(material.roughnessFactor * metallicRoughness.g, 0.045, 1.0);
 #ifndef DAI_NO_INSTANCE_EMISSIVE_SCALE
@@ -48,7 +102,7 @@ GBufferOutput PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) {
     layers.coatRoughness = material.clearcoatRoughness;
     layers.sheen = material.sheenColor;
     layers.sheenRoughness = material.sheenRoughness;
-    ApplyWetness(frame, input.worldPosition, normalize(input.worldNormal) * (isFrontFace ? 1.0 : -1.0), material.porosity,
+    ApplyWetness(frame, input.worldPosition, faceNormal, material.porosity,
                  baseColor.rgb, roughness, normal, layers);
     const float occlusion =
         lerp(1.0, SampleTexture(material.occlusionTexture, input.uv, float4(1.0, 1.0, 1.0, 1.0)).r, material.occlusionStrength);
@@ -64,7 +118,7 @@ GBufferOutput PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) {
     output.motion = ClipToUv(input.previousClip) - ClipToUv(input.currentClip);
     output.baseColor = float4(baseColor.rgb, metallic);
     output.emission = float4(emission, occlusion);
-    output.layers = PackLayers(layers.coat, layers.coatRoughness, layers.sheen, layers.sheenRoughness);
+    output.layers = PackGBufferLayers(layers.coat, layers.coatRoughness, layers.sheen, layers.sheenRoughness, horizons);
     return output;
 }
 

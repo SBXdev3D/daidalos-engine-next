@@ -2675,3 +2675,53 @@ TEST_F(PathTracerTest, SmokeThickensTheFog) {
     RecordProperty("clear", std::to_string(clear));
     EXPECT_GT(smoky, clear * 1.05f);
 }
+
+TEST_F(PathTracerTest, ReliefShadowsGrazingLight) {
+    // A floor of ridges, from a height in the metallic-roughness texture's alpha (ADR-0064), under a lamp low at
+    // its side: the ridges shadow the grooves behind them. Without a height scale, the same floor is flat and
+    // lit all over.
+    constexpr std::uint32_t kSize = 64;
+    std::vector<std::uint8_t> texels(std::size_t{kSize} * kSize * 4);
+    for (std::uint32_t y = 0; y < kSize; ++y) {
+        for (std::uint32_t x = 0; x < kSize; ++x) {
+            const std::size_t at = (std::size_t{y} * kSize + x) * 4;
+            texels[at] = 255;     // No occlusion.
+            texels[at + 1] = 200; // Rough.
+            texels[at + 2] = 0;   // Not metal.
+            texels[at + 3] = (x % 8) < 2 ? 255 : 0;
+        }
+    }
+    const core::Result<rhi::TextureHandle> texture =
+        Device().CreateTexture({.extent = {kSize, kSize},
+                                .format = rhi::Format::Rgba8Unorm,
+                                .usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDst,
+                                .name = "Ridges"});
+    ASSERT_TRUE(texture.has_value());
+    ASSERT_TRUE(Device().UploadTexture(*texture, std::as_bytes(std::span(texels))).has_value());
+    constexpr rhi::Extent kExtent{96, 96};
+    const auto render = [&](float heightScale) {
+        SceneView view;
+        view.camera = LookAt({0.0f, 3.0f, 3.0f}, {0.0f, 0.0f, 0.0f}, 0.9f);
+        view.atmosphere = Dark();
+        view.lights.push_back({.type = renderer::LightType::Point,
+                               .position = {6.0f, 0.5f, 0.0f},
+                               .color = glm::vec3(400.0f),
+                               .range = 20.0f});
+        view.draws.push_back(
+            {.mesh = m_cube,
+             .world = glm::scale(glm::translate(glm::mat4(1.0f), {0.0f, -0.05f, 0.0f}), {8.0f, 0.1f, 8.0f}),
+             .material = Material({.baseColorFactor = glm::vec4(0.6f, 0.6f, 0.6f, 1.0f),
+                                   .metallicFactor = 1.0f,
+                                   .roughnessFactor = 1.0f,
+                                   .heightScale = heightScale,
+                                   .metallicRoughnessTexture = *texture})});
+        return Sum(Rasterize(view, kExtent, {.frames = 8}));
+    };
+    const float flat = render(0.0f);
+    const float ridged = render(0.3f);
+    RecordProperty("flat", std::to_string(flat));
+    RecordProperty("ridged", std::to_string(ridged));
+    EXPECT_LT(ridged, flat * 0.85f);
+    EXPECT_GT(ridged, flat * 0.1f);
+    Device().DestroyTexture(*texture);
+}

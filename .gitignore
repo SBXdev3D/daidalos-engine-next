@@ -30,3 +30,6 @@ sandbox.log
 # OS files
 .DS_Store
 Thumbs.db
+
+# Cached results of texture-tool relief (scripts/convert_factory_textures.py).
+assets/Factory/*.cavity

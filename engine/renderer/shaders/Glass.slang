@@ -70,6 +70,7 @@ float3 TraceLight(FrameData frame, RayDesc ray, bool lit, inout uint random) {
 // reflection ray shows them.
 float3 Highlights(FrameData frame, float3 position, float3 normal, float3 faceNormal, float3 view, inout uint random) {
     Receiver receiver;
+    receiver.relief = 0;
     receiver.position = position;
     receiver.origin = OffsetOrigin(position, faceNormal);
     receiver.faceNormal = faceNormal;

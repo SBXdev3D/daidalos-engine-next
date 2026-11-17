@@ -255,6 +255,7 @@ BouncePoint BouncePointOf(Surface surface) {
 // one shadow ray.
 float3 BounceDirectLight(FrameData frame, BouncePoint point, inout uint random) {
     Receiver receiver;
+    receiver.relief = 0;
     receiver.position = point.position;
     receiver.origin = OffsetOrigin(point.position, point.faceNormal);
     receiver.faceNormal = point.faceNormal;

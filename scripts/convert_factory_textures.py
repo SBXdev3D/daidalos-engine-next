@@ -5,9 +5,11 @@
 
 The sources are in assets/Factory/Source/, a set per surface, under the legacy names (door_d.png, but
 wall_2d.png after a digit): d is the albedo (sRGB), n the normals (OpenGL convention: green up), r the
-roughness, and optionally m the metalness and h the height, which the engine does not use yet. Each set
-becomes d, n and mr KTX2 files next to the glTF files (door_mr.ktx2). Outputs newer than their sources
-are kept.
+roughness, and optionally m the metalness and h the height. Each set becomes d, n and mr KTX2 files next to
+the glTF files (door_mr.ktx2). A set with a height map and a relief depth below becomes an mrh file instead
+(ADR-0064): texture-tool relief packs the height in alpha and the occlusion it bakes from it in red, and the
+material takes it as its occlusion texture too, with its depth in its extras {"height": meters}. Outputs
+newer than their sources are kept.
 
 The materials listed below take the new textures. Their roughness then comes from the map alone, and so
 does their metalness when the set has a map of it. Textures that no material uses any more leave the glTF
@@ -16,6 +18,8 @@ files. import_legacy_level.py writes the legacy materials back: run this script 
 
 import argparse
 import json
+import re
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -40,6 +44,22 @@ MATERIALS = {
     },
     "zombie.gltf": {"zombie_d.png": "zombie"},
 }
+# Meters from the lowest to the highest point of each set's height map (ADR-0064), guessed from what the
+# surfaces are: deep mortar, cracked concrete, planks, pressed metal. Sets not listed have no relief.
+RELIEF = {
+    "wall_2": 0.012,
+    "ground_1": 0.008,
+    "ceiling_2": 0.008,
+    "crate_1": 0.006,
+    "crate_2": 0.006,
+    "crate_3": 0.006,
+    "door": 0.005,
+    "lift": 0.005,
+    "lockers": 0.004,
+    "vent_slab": 0.006,
+}
+# Meters a texture covers in the factory, about: what turns a relief depth into texels.
+TEXTURE_METERS = 2.0
 # The red door keeps its own albedo, with the relief of the door it is a variant of.
 KEEP_BASE_COLOR = {"door_red_d.png"}
 BASISU = "KHR_texture_basisu"
@@ -61,6 +81,30 @@ def convert(tool, mode, inputs, output):
     subprocess.run([str(tool), mode, *map(str, inputs), str(output)], check=True)
 
 
+def png_width(path):
+    """The width of a PNG, from its header."""
+    with open(path, "rb") as file:
+        header = file.read(24)
+    return struct.unpack(">I", header[16:20])[0]
+
+
+def relief(tool, roughness, metallic, height, albedo, depth_meters, output):
+    """Packs a relief texture, and returns how much the albedo already darkens the cavities, from 0 to 1."""
+    inputs = [roughness, height, albedo] + ([metallic] if metallic else [])
+    report = output.with_suffix(".cavity")
+    if output.exists() and report.exists() and all(output.stat().st_mtime >= i.stat().st_mtime for i in inputs):
+        return float(report.read_text())
+    texels = depth_meters / (TEXTURE_METERS / png_width(height))
+    result = subprocess.run([str(tool), "relief", str(roughness), str(metallic) if metallic else "-", str(height),
+                             str(output), "--depth", f"{texels:.2f}", "--albedo", str(albedo)],
+                            check=True, capture_output=True, text=True)
+    print(result.stdout.strip())
+    match = re.search(r"already dark in the albedo ([0-9.]+)", result.stdout)
+    cavity = float(match.group(1)) if match else 0.0
+    report.write_text(f"{cavity}")
+    return cavity
+
+
 def file_name(name, suffix):
     """The legacy naming: wall_2d, door_d."""
     return f"{name}{suffix}" if name[-1].isdigit() else f"{name}_{suffix}"
@@ -75,11 +119,18 @@ def convert_set(tool, name):
         return path if path.exists() else None
 
     metallic = source("m", required=False)
+    height = source("h", required=False) if name in RELIEF else None
     outputs = {suffix: f"{file_name(name, suffix)}.ktx2" for suffix in ("d", "n", "mr")}
     convert(tool, "color", [source("d")], FACTORY / outputs["d"])
     convert(tool, "normal", [source("n")], FACTORY / outputs["n"])
-    convert(tool, "metallic-roughness", [source("r")] + ([metallic] if metallic else []), FACTORY / outputs["mr"])
-    return outputs | {"metallic": metallic is not None}
+    if height is None:
+        convert(tool, "metallic-roughness", [source("r")] + ([metallic] if metallic else []), FACTORY / outputs["mr"])
+        return outputs | {"metallic": metallic is not None, "relief": None}
+    outputs["mr"] = f"{file_name(name, 'mrh')}.ktx2"
+    cavity = relief(tool, source("r"), metallic, height, source("d"), RELIEF[name], FACTORY / outputs["mr"])
+    # An albedo that already paints its cavities dark takes less of the baked occlusion.
+    strength = round(min(max(1.0 - cavity, 0.3), 1.0), 2)
+    return outputs | {"metallic": metallic is not None, "relief": (RELIEF[name], strength)}
 
 
 def texture_index(gltf, uri):
@@ -125,7 +176,10 @@ def drop_unused(gltf):
 
 
 def update_gltf(path, materials, sets):
-    gltf = json.loads(path.read_text(encoding="utf-8"))
+    text = path.read_text(encoding="utf-8")
+    gltf = json.loads(text)
+    # Kept as it was written: indented by one space, or on one line.
+    indent = 1 if text.startswith("{\n") else None
     for material in gltf["materials"]:
         name = material.get("name")
         if name not in materials:
@@ -137,6 +191,16 @@ def update_gltf(path, materials, sets):
         material["normalTexture"] = {"index": texture_index(gltf, textures["n"])}
         pbr["metallicRoughnessTexture"] = {"index": texture_index(gltf, textures["mr"])}
         pbr["roughnessFactor"] = 1.0
+        extras = material.setdefault("extras", {})
+        if textures["relief"] is not None:
+            depth, strength = textures["relief"]
+            material["occlusionTexture"] = {"index": texture_index(gltf, textures["mr"]), "strength": strength}
+            extras["height"] = depth
+        else:
+            material.pop("occlusionTexture", None)
+            extras.pop("height", None)
+        if not extras:
+            material.pop("extras")
         if textures["metallic"]:
             pbr["metallicFactor"] = 1.0
     drop_unused(gltf)
@@ -144,7 +208,7 @@ def update_gltf(path, materials, sets):
         extensions = gltf.setdefault(key, [])
         if BASISU not in extensions:
             extensions.append(BASISU)
-    path.write_text(json.dumps(gltf), encoding="utf-8")
+    path.write_text(json.dumps(gltf, indent=indent) + ("\n" if text.endswith("\n") else ""), encoding="utf-8")
 
 
 def main():

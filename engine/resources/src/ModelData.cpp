@@ -41,6 +41,7 @@ struct Extras {
     std::map<std::size_t, std::string> surfaces;
     // Materials whose extras say how much water they soak up: {"porosity": 0.8} (ADR-0061).
     std::map<std::size_t, float> porosities;
+    std::map<std::size_t, float> heights;
 };
 
 // How much water a surface of a kind soaks up, when its material does not say (ADR-0061).
@@ -76,6 +77,10 @@ void ReadExtras(simdjson::dom::object* extras, std::size_t objectIndex, fastgltf
     double porosity = 0.0;
     if ((*extras)["porosity"].get_double().get(porosity) == simdjson::SUCCESS) {
         static_cast<Extras*>(userPointer)->porosities[objectIndex] = static_cast<float>(porosity);
+    }
+    double height = 0.0;
+    if ((*extras)["height"].get_double().get(height) == simdjson::SUCCESS) {
+        static_cast<Extras*>(userPointer)->heights[objectIndex] = static_cast<float>(height);
     }
 }
 
@@ -183,6 +188,9 @@ core::Result<void> ModelBuilder::AddMaterials() {
         }
         const auto porosity = m_extras.porosities.find(index);
         data.porosity = porosity != m_extras.porosities.end() ? porosity->second : PorosityOf(data.surface);
+        if (const auto height = m_extras.heights.find(index); height != m_extras.heights.end()) {
+            data.heightScale = height->second;
+        }
         const auto& pbr = material.pbrData;
         data.baseColorFactor = {pbr.baseColorFactor[0], pbr.baseColorFactor[1], pbr.baseColorFactor[2],
                                 pbr.baseColorFactor[3]};
