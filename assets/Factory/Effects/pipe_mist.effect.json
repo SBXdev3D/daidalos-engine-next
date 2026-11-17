@@ -1,5 +1,6 @@
 {
     "comment": "Mist where the spray breaks on a surface.",
+    "fog_density": 0.4,
     "texture": "../particles.png",
     "columns": 4,
     "cell": 0,

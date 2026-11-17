@@ -1,5 +1,6 @@
 {
     "comment": "Spores and toxic gas specks hanging over something rotten.",
+    "traced": false,
     "texture": "sprites.png",
     "columns": 4,
     "cell": 3,

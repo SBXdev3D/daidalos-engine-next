@@ -48,7 +48,7 @@ bool OnScreen(FrameData frame, float3 position, out int2 pixel) {
 // or the sky. Emissive lights show: glass is a mirror, whose highlights leave them out (ADR-0044).
 float3 TraceLight(FrameData frame, RayDesc ray, bool lit, inout uint random) {
     const Hit hit =
-        TraceClosest(ray, frame.accelerationStructure, g_push.instanceBuffer, g_push.materialBuffer, kMaskReflection);
+        TraceClosest(ray, frame, g_push.instanceBuffer, g_push.materialBuffer, kMaskReflection);
     if (!hit.found) {
         return SkyRadiance(frame, ray.Direction);
     }
@@ -96,7 +96,7 @@ float3 ThroughVolume(FrameData frame, MaterialData material, float3 position, fl
     float3 absorbed = float3(1.0, 1.0, 1.0);
     // Light that a side reflects back in, past the critical angle, goes round a few more times.
     for (uint side = 0; side < kInsideBounces; ++side) {
-        const Hit exit = TraceClosest(ray, frame.accelerationStructure, g_push.instanceBuffer, g_push.materialBuffer, kMaskGlass);
+        const Hit exit = TraceClosest(ray, frame, g_push.instanceBuffer, g_push.materialBuffer, kMaskGlass);
         if (!exit.found) {
             return float3(-1.0, -1.0, -1.0);
         }

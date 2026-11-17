@@ -20,6 +20,13 @@ static const uint kMaskIndirect = 0x08;
 // Only the glass pass and the path tracer see glass (ADR-0042).
 static const uint kMaskGlass = 0x10;
 static const uint kMaskCollision = 0x20;
+// Particles' shadows (ADR-0062): shadow rays see them, but for the particles' own, cast while they move.
+static const uint kMaskParticleShadow = 0x40;
+#ifdef DAI_SHADOWS_SKIP_PARTICLES
+static const uint kMaskShadows = kMaskShadow;
+#else
+static const uint kMaskShadows = kMaskShadow | kMaskParticleShadow;
+#endif
 // What rays of bounced light and reflections see, but for glass.
 static const uint kMaskSurfaces = kMaskReflection | kMaskIndirect;
 static const uint kMaskAll = 0xFF;
@@ -85,46 +92,162 @@ bool PassesAlphaTest(uint instanceBuffer, uint materialBuffer, uint instanceInde
     return alpha >= material.alphaCutoff;
 }
 
-// The first surface a ray meets, alpha-tested surfaces included.
+// Particles in the frame's structure (ADR-0062): a box around each, which rays that enter test themselves. A
+// ray meets a particle as a disc facing it, at its center, or a spark's streak as a segment along its motion,
+// whatever way it comes from, with the particle's image, color and opacity as the screen shows them. Its
+// opacity is a chance of stopping the ray: smoke's shadows and reflections are dithered, and the denoisers and
+// the temporal resolve smooth them.
+#include "ParticleTypes.slangh"
+
+[[vk::binding(2, 0)]] StructuredBuffer<Particle> g_tracedParticles[];
+[[vk::binding(2, 0)]] StructuredBuffer<ParticleEffectData> g_tracedEffects[];
+[[vk::binding(2, 0)]] StructuredBuffer<float4> g_tracedCurves[];
+
+// The instance of the particles in the frame's structure: its custom index.
+static const uint kParticleInstance = 0xFFFFFF;
+
+uint ParticleHash(uint value) {
+    value ^= value >> 16;
+    value *= 0x7feb352d;
+    value ^= value >> 15;
+    value *= 0x846ca68b;
+    value ^= value >> 16;
+    return value;
+}
+
+// Where a ray meets a particle, and what it sees there: the light it sends back, and its opacity.
+struct ParticleCrossing {
+    bool found;
+    float distance;
+    float4 look;
+};
+
+// Whether the ray from origin along the unit direction meets the particle of that index between tMin and tMax.
+// Shadow rays pass through what gives off light (additive particles); other rays pass through mesh particles,
+// which are drawn in the G-buffer but only cast shadows here, as balls of their size.
+ParticleCrossing CrossParticle(FrameData frame, float3 origin, float3 direction, uint index, float tMin, float tMax,
+                               bool shadow) {
+    ParticleCrossing crossing;
+    crossing.found = false;
+    crossing.distance = 0.0;
+    crossing.look = float4(0.0, 0.0, 0.0, 0.0);
+    const Particle particle = g_tracedParticles[frame.particleData][index];
+    const ParticleEffectData effect = g_tracedEffects[frame.particleEffects][particle.effect];
+    const bool mesh = effect.meshSlot != kNoEffect;
+    if ((effect.flags & kEffectTraced) == 0 || (shadow ? (effect.flags & kEffectAdditive) != 0 : mesh)) {
+        return crossing;
+    }
+    const float life = saturate(particle.age / particle.lifetime);
+    const float4 scales = SampleCurveFrom(g_tracedCurves[frame.particleCurves], particle.effect, kCurveScales, life);
+    const float halfSize = max(particle.size * scales.x * 0.5, 1e-4);
+    const float t = dot(particle.position - origin, direction);
+    if (t < tMin || t > tMax) {
+        return crossing;
+    }
+    const float3 offset = origin + direction * t - particle.position;
+    float2 corner;
+    const float3 velocity = particle.velocity * scales.z;
+    const float speed = length(velocity);
+    if (mesh) {
+        corner = float2(length(offset) / halfSize, 0.0);
+    } else if (effect.orientation == kOrientVelocity && speed > 1.0e-4) {
+        const float3 along = velocity / speed;
+        const float a = dot(offset, along);
+        corner = float2(length(offset - along * a) / halfSize, a / (halfSize + 0.5 * speed * effect.stretch));
+    } else {
+        const float3 helper = abs(direction.y) < 0.99 ? float3(0.0, 1.0, 0.0) : float3(1.0, 0.0, 0.0);
+        const float3 right = normalize(cross(helper, direction));
+        const float3 up = cross(direction, right);
+        corner = float2(dot(offset, right), dot(offset, up)) / halfSize;
+    }
+    if (any(abs(corner) > 1.0)) {
+        return crossing;
+    }
+    float4 look = float4(1.0, 1.0, 1.0, 1.0);
+    if (!mesh) {
+        look = SampleCurveFrom(g_tracedCurves[frame.particleCurves], particle.effect, kCurveColor, life);
+        look.rgb *= scales.y;
+        look.a *= effect.fadeIn > 0.0 ? saturate(life / effect.fadeIn) : 1.0;
+        if (effect.texture != kNoTexture) {
+            const Flipbook flipbook = FlipbookAt(effect, particle, life);
+            look *= g_textures[effect.texture].SampleLevel(g_samplers[kSamplerLinearClamp],
+                                                           CellUv(effect, effect.cell + flipbook.current, corner), 0.0);
+        }
+        if ((effect.flags & kEffectLit) != 0) {
+            // The light the simulation found at the particle (ADR-0044), as the screen shows it.
+            look.rgb *= particle.light;
+        }
+    }
+    // A chance of stopping the ray as its opacity, drawn anew as the ray moves.
+    const uint seed =
+        ParticleHash(asuint(origin.x) ^ ParticleHash(asuint(origin.y) ^ ParticleHash(asuint(origin.z) + index)));
+    crossing.found = look.a > float(seed & 0xFFFF) / 65536.0;
+    crossing.distance = t;
+    crossing.look = look;
+    return crossing;
+}
+
+// The first surface a ray meets, alpha-tested surfaces included, or a particle.
 struct Hit {
     bool found;
     uint instance;
     uint primitive;
     float2 barycentrics;
     float distance;
+    bool particle;        // The ray met a particle (ADR-0062): primitive is its index; instance is not one.
+    float3 particleLight; // What the ray sees of the particle.
 };
 
-Hit TraceClosest(RayDesc ray, uint structure, uint instanceBuffer, uint materialBuffer, uint mask = kMaskSurfaces) {
+Hit TraceClosest(RayDesc ray, FrameData frame, uint instanceBuffer, uint materialBuffer, uint mask = kMaskSurfaces) {
     RayQuery<RAY_FLAG_NONE> query;
-    query.TraceRayInline(g_accelerationStructures[structure], RAY_FLAG_NONE, mask, ray);
+    query.TraceRayInline(g_accelerationStructures[frame.accelerationStructure], RAY_FLAG_NONE, mask, ray);
+    float3 particleLight = float3(0.0, 0.0, 0.0);
     while (query.Proceed()) {
-        if (query.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
-            PassesAlphaTest(instanceBuffer, materialBuffer, query.CandidateInstanceID(), query.CandidatePrimitiveIndex(),
-                            query.CandidateTriangleBarycentrics())) {
-            query.CommitNonOpaqueTriangleHit();
+        if (query.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE) {
+            if (PassesAlphaTest(instanceBuffer, materialBuffer, query.CandidateInstanceID(), query.CandidatePrimitiveIndex(),
+                                query.CandidateTriangleBarycentrics())) {
+                query.CommitNonOpaqueTriangleHit();
+            }
+        } else if (query.CandidateType() == CANDIDATE_PROCEDURAL_PRIMITIVE) {
+            const float limit = query.CommittedStatus() != COMMITTED_NOTHING ? query.CommittedRayT() : ray.TMax;
+            const ParticleCrossing crossing =
+                CrossParticle(frame, ray.Origin, ray.Direction, query.CandidatePrimitiveIndex(), ray.TMin, limit, false);
+            if (crossing.found) {
+                particleLight = crossing.look.rgb;
+                query.CommitProceduralPrimitiveHit(crossing.distance);
+            }
         }
     }
     Hit hit;
-    hit.found = query.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
+    hit.found = query.CommittedStatus() != COMMITTED_NOTHING;
+    hit.particle = query.CommittedStatus() == COMMITTED_PROCEDURAL_PRIMITIVE_HIT;
     hit.instance = query.CommittedInstanceID();
     hit.primitive = query.CommittedPrimitiveIndex();
-    hit.barycentrics = query.CommittedTriangleBarycentrics();
+    hit.barycentrics = hit.particle ? float2(0.0, 0.0) : query.CommittedTriangleBarycentrics();
     hit.distance = query.CommittedRayT();
+    hit.particleLight = particleLight;
     return hit;
 }
 
 // Whether anything that casts shadows lies on the ray.
-bool Occluded(RayDesc ray, uint structure, uint instanceBuffer, uint materialBuffer) {
+bool Occluded(RayDesc ray, FrameData frame, uint instanceBuffer, uint materialBuffer) {
     RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> query;
-    query.TraceRayInline(g_accelerationStructures[structure], RAY_FLAG_NONE, kMaskShadow, ray);
+    query.TraceRayInline(g_accelerationStructures[frame.accelerationStructure], RAY_FLAG_NONE, kMaskShadows, ray);
     while (query.Proceed()) {
-        if (query.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
-            PassesAlphaTest(instanceBuffer, materialBuffer, query.CandidateInstanceID(), query.CandidatePrimitiveIndex(),
-                            query.CandidateTriangleBarycentrics())) {
-            query.CommitNonOpaqueTriangleHit();
+        if (query.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE) {
+            if (PassesAlphaTest(instanceBuffer, materialBuffer, query.CandidateInstanceID(), query.CandidatePrimitiveIndex(),
+                                query.CandidateTriangleBarycentrics())) {
+                query.CommitNonOpaqueTriangleHit();
+            }
+        } else if (query.CandidateType() == CANDIDATE_PROCEDURAL_PRIMITIVE) {
+            const ParticleCrossing crossing =
+                CrossParticle(frame, ray.Origin, ray.Direction, query.CandidatePrimitiveIndex(), ray.TMin, ray.TMax, true);
+            if (crossing.found) {
+                query.CommitProceduralPrimitiveHit(crossing.distance);
+            }
         }
     }
-    return query.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
+    return query.CommittedStatus() != COMMITTED_NOTHING;
 }
 
 // The surface at a hit, as the G-buffer holds it: its material, read at full detail, and its normal,
@@ -152,7 +275,34 @@ struct Surface {
     Layers layers; // The clear coat and the sheen (ADR-0056).
 };
 
+// A particle a ray met: only the light it sends back, as the screen shows it, facing the ray.
+Surface ParticleSurface(Hit hit, float3 rayDirection, FrameData frame) {
+    Surface surface;
+    surface.position = g_tracedParticles[frame.particleData][hit.primitive].position;
+    surface.faceNormal = -rayDirection;
+    surface.normal = -rayDirection;
+    surface.diffuseColor = float3(0.0, 0.0, 0.0);
+    surface.f0 = float3(0.0, 0.0, 0.0);
+    surface.roughness = 1.0;
+    surface.emission = hit.particleLight;
+    surface.emissiveLight = false;
+    surface.transmission = 0.0;
+    surface.ior = 1.0;
+    surface.thin = false;
+    surface.absorption = float3(0.0, 0.0, 0.0);
+    surface.tint = float3(0.0, 0.0, 0.0);
+    surface.entering = true;
+    surface.layers.coat = 0.0;
+    surface.layers.coatRoughness = 0.0;
+    surface.layers.sheen = float3(0.0, 0.0, 0.0);
+    surface.layers.sheenRoughness = 0.0;
+    return surface;
+}
+
 Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame, uint instanceBuffer, uint materialBuffer) {
+    if (hit.particle) {
+        return ParticleSurface(hit, rayDirection, frame);
+    }
     const InstanceData instance = g_instances[instanceBuffer][hit.instance];
     const MaterialData material = g_materials[materialBuffer][instance.material];
     const Vertex vertex = Interpolate(instance, hit.primitive, hit.barycentrics);
@@ -235,13 +385,13 @@ float3 SampleLightPoint(float3 lightPosition, float radius, float3 position, flo
 // Whether the light at distanceToLight along the unit vector toLight reaches position, on a surface whose
 // face points along faceNormal. The ray stops kShadowNearPlane short of the light (ADR-0035).
 bool LightReaches(float3 position, float3 faceNormal, float3 toLight, float distanceToLight, float lightRange,
-                  uint structure, uint instanceBuffer, uint materialBuffer) {
+                  FrameData frame, uint instanceBuffer, uint materialBuffer) {
     RayDesc ray;
     ray.Origin = OffsetOrigin(position, faceNormal);
     ray.Direction = toLight;
     ray.TMin = 0.0;
     ray.TMax = max(distanceToLight - min(kShadowNearPlane, lightRange * 0.5), 0.0);
-    return !Occluded(ray, structure, instanceBuffer, materialBuffer);
+    return !Occluded(ray, frame, instanceBuffer, materialBuffer);
 }
 
 #endif

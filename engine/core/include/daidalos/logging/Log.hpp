@@ -55,6 +55,9 @@ struct LogConfig {
 /// Flushes and stops logging. Safe to call when logging is not initialized.
 void Shutdown() noexcept;
 
+/// Writes what is buffered to the sinks now: for messages that must outlive a process killed from outside.
+void Flush() noexcept;
+
 /// True if a message of this level would be written.
 [[nodiscard]] bool IsEnabled(Level level) noexcept;
 

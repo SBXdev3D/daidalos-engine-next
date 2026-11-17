@@ -97,6 +97,37 @@ public:
     /// The particles alive after that same simulation.
     [[nodiscard]] std::uint32_t AliveCount() const { return m_aliveCount; }
 
+    /// The particles' bottom-level structure (ADR-0062): a box per slot of the pool, which the simulation
+    /// writes for the next frame. RayTracingScene builds it and puts it in the frame's structure.
+    struct Traced {
+        rhi::AccelerationStructureHandle structure;
+        rhi::BufferHandle boxes;
+        /// The storage indices rays read the particles by (FrameData).
+        std::uint32_t particles = 0;
+        std::uint32_t effects = 0;
+        std::uint32_t curves = 0;
+        /// The particles that add to the volumetric fog, which the simulation lists (VolumetricFogInputs).
+        rhi::BufferHandle smoke;
+        /// The boxes to build (TracedBoxes).
+        std::uint32_t boxCount = 0;
+    };
+    [[nodiscard]] Traced TracedParticles() const {
+        return {m_structure,
+                m_boxes,
+                m_device->StorageIndex(m_particles),
+                m_device->StorageIndex(m_effectTable),
+                m_device->StorageIndex(m_curveTable),
+                m_smoke,
+                TracedBoxes()};
+    }
+    /// The boxes to build: past the highest slot a traced particle was in, as the GPU last reported it a frame
+    /// or two ago, with room for the slots taken since.
+    [[nodiscard]] std::uint32_t TracedBoxes() const {
+        return m_tracedSlots == 0 ? 0 : std::min(kMaxParticles, m_tracedSlots + m_tracedSlots / 4 + 1024);
+    }
+    /// Particles of a frame that add to the fog; more are left out of it.
+    static constexpr std::uint32_t kMaxSmokeParticles = 1024;
+
     /// What the particles leave in their second target, the reactive mask of temporal antialiasing
     /// (ADR-0037): how much they cover each pixel, where the history is not to be trusted.
     static constexpr rhi::Format kReactiveFormat = rhi::Format::R8Unorm;
@@ -200,6 +231,14 @@ private:
     std::uint32_t m_aliveCount = 0;
     /// The indices of the effects that bend the frame.
     std::unordered_set<std::uint32_t> m_distorting;
+    /// Six floats a slot: its box's lowest corner, then its highest.
+    static constexpr std::uint64_t kBoxSize = 24;
+    rhi::BufferHandle m_boxes;
+    rhi::AccelerationStructureHandle m_structure;
+    /// How many particles add to the fog this frame, then their indices.
+    rhi::BufferHandle m_smoke;
+    /// One past the highest slot of a traced particle, as last read back.
+    std::uint32_t m_tracedSlots = 0;
 };
 
 } // namespace daidalos::renderer

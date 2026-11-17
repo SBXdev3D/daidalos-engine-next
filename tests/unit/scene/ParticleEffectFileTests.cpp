@@ -41,6 +41,7 @@ TEST(ParseParticleEffect, ReadsEveryKey) {
         "additive": true, "lit": false, "collision": "stick", "bounce": 0.6, "reportHits": true,
         "onDeath": {"effect": "smoke.effect.json", "count": 2}, "onHit": {"effect": "../splash.effect.json", "count": 5},
         "turbulence": 1.5, "turbulenceScale": 0.25, "anisotropy": 0.5, "distortion": 0.01,
+        "traced": false, "fog_density": 1.5,
         "light": {"color": [1, 0.5, 0.2], "temperature": 1800, "intensity": 40, "range": 6, "radius": 0.3,
                   "offset": [0, 0.4, 0], "fade": 0.2, "flickerRate": 9, "flickerDepth": 0.3},
         "lifetime": [1, 2], "size": 0.5,
@@ -80,6 +81,8 @@ TEST(ParseParticleEffect, ReadsEveryKey) {
     EXPECT_FLOAT_EQ(desc.turbulenceScale, 0.25f);
     EXPECT_FLOAT_EQ(desc.anisotropy, 0.5f);
     EXPECT_FLOAT_EQ(desc.distortion, 0.01f);
+    EXPECT_FALSE(desc.traced);
+    EXPECT_FLOAT_EQ(desc.fogDensity, 1.5f);
     ASSERT_TRUE(parsed->emission.light.has_value());
     const scene::EmitterLight& light = *parsed->emission.light;
     EXPECT_EQ(light.color, glm::vec3(1.0f, 0.5f, 0.2f));
@@ -124,6 +127,8 @@ TEST(ParseParticleEffect, KeysLeftOutKeepTheirDefaults) {
     EXPECT_EQ(parsed->desc.columns, defaults.columns);
     EXPECT_EQ(parsed->desc.color.size(), defaults.color.size());
     EXPECT_EQ(parsed->desc.lit, defaults.lit);
+    EXPECT_TRUE(parsed->desc.traced);
+    EXPECT_EQ(parsed->desc.fogDensity, 0.0f);
     EXPECT_FLOAT_EQ(parsed->emission.rate, scene::ParticleEmission{}.rate);
 }
 

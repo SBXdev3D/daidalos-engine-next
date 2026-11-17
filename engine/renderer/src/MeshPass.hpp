@@ -66,6 +66,11 @@ struct FrameTargets {
     float sharpReflections = 0.0f;
     /// Tints of the lit scene: what decals cover (1, ADR-0060), how wet surfaces are (2, ADR-0061).
     std::uint32_t debugFlags = 0;
+    /// The storage indices of the particles rays meet (ADR-0062, ParticlePass::TracedParticles); unused when
+    /// the frame's structure holds none.
+    std::uint32_t particleData = 0;
+    std::uint32_t particleEffects = 0;
+    std::uint32_t particleCurves = 0;
 };
 
 /// What the G-buffer holds of the material, and what the lighting pass writes (ADR-0039, ADR-0044), which

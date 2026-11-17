@@ -1,5 +1,6 @@
 {
     "comment": "Snow falling through a broken roof; it stays where it lands. Placed by weather zones.",
+    "traced": false,
     "texture": "sprites.png",
     "columns": 4,
     "cell": 4,

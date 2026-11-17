@@ -1,5 +1,6 @@
 {
     "comment": "A column of thick smoke, lit as a medium by its six-way light maps.",
+    "fog_density": 1.5,
     "texture": "smoke.ktx2",
     "columns": 8,
     "rows": 8,

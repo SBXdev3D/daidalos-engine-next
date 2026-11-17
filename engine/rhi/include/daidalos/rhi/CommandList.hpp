@@ -133,6 +133,9 @@ public:
     /// Builds a bottom-level structure from the geometry it was created with, outside any rendering scope.
     /// Declare the structure as AccelerationStructureWrite and its buffers as AccelerationStructureRead.
     void BuildAccelerationStructure(AccelerationStructureHandle structure);
+    /// Builds a bottom-level structure of boxes from its first count boxes only, at most those it was created
+    /// with: the rest are left out of it.
+    void BuildAccelerationStructure(AccelerationStructureHandle structure, std::uint32_t boxes);
     /// Builds several bottom-level structures in one command, which the GPU can run side by side.
     void BuildAccelerationStructures(std::span<const AccelerationStructureHandle> structures);
     /// Builds a top-level structure from count instances written in a buffer (Device::WriteInstances).

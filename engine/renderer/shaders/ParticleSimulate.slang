@@ -16,6 +16,8 @@
 // sort last, out of the quads' draw.
 
 #include "Particles.slangh"
+// The particles move while this pass reads them: their shadow rays pass through particles (ADR-0062).
+#define DAI_SHADOWS_SKIP_PARTICLES
 #include "RayQueries.slangh"
 #include "Lights.slangh"
 
@@ -247,8 +249,28 @@ void Settle(inout Particle particle, ParticleEffectData effect, float3 normal, f
     particle.rotationSpeed = 0.0;
 }
 
+[[vk::binding(2, 0)]] RWStructuredBuffer<float> g_particleBoxes[];
+
+// The particle's box in the frame's structure (ADR-0062): the next frame's rays meet it there.
+void SetBox(uint index, float3 low, float3 high) {
+    const uint boxes = g_particleFrames[g_particles.parameters][0].boxes;
+    g_particleBoxes[boxes][index * 6 + 0] = low.x;
+    g_particleBoxes[boxes][index * 6 + 1] = low.y;
+    g_particleBoxes[boxes][index * 6 + 2] = low.z;
+    g_particleBoxes[boxes][index * 6 + 3] = high.x;
+    g_particleBoxes[boxes][index * 6 + 4] = high.y;
+    g_particleBoxes[boxes][index * 6 + 5] = high.z;
+}
+
+// No box: a NaN makes it inactive.
+void ClearBox(uint index) {
+    const float none = asfloat(0x7FC00000);
+    SetBox(index, float3(none, none, none), float3(none, none, none));
+}
+
 // Puts a particle back in the dead list.
 void Kill(uint index) {
+    ClearBox(index);
     uint dead;
     InterlockedAdd(g_particleLists[g_particles.counters][kDeadCounter], 1, dead);
     g_particleLists[g_particles.dead][dead] = index;
@@ -299,7 +321,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             ray.Direction = motion / distance;
             ray.TMin = 0.0;
             ray.TMax = distance;
-            hit = TraceClosest(ray, frame.accelerationStructure, g_particles.instanceBuffer, g_particles.materialBuffer,
+            hit = TraceClosest(ray, frame, g_particles.instanceBuffer, g_particles.materialBuffer,
                                kMaskCollision | kMaskGlass);
         }
         if (hit.found) {
@@ -358,6 +380,27 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         particle.lightSamples = min(particle.lightSamples + 1.0, 1.0 / kLightBlend);
     }
     g_particleData[g_particles.particles][index] = particle;
+    if ((effect.flags & kEffectTraced) != 0 && effect.distortion <= 0.0) {
+        // Where it will be when the next frame's rays meet it, with room for how far it may stray.
+        const float3 drawnVelocity = particle.velocity * scales.z;
+        float reach = particle.size * scales.x * 0.5;
+        if (effect.orientation == kOrientVelocity && !mesh) {
+            reach += 0.5 * length(drawnVelocity) * effect.stretch;
+        }
+        reach += length(particle.velocity) * g_particles.timeStep * 0.5 + 0.01;
+        const float3 center = particle.position + particle.velocity * g_particles.timeStep;
+        SetBox(index, center - reach, center + reach);
+        InterlockedMax(g_particleLists[air.hits][2], index + 1);
+    } else {
+        ClearBox(index);
+    }
+    if (effect.fogDensity > 0.0 && !mesh) {
+        uint listed;
+        InterlockedAdd(g_particleLists[air.smoke][0], 1, listed);
+        if (listed < kMaxSmokeParticles) {
+            g_particleLists[air.smoke][1 + listed] = index;
+        }
+    }
 
     uint slot;
     InterlockedAdd(g_particleLists[g_particles.counters][kNextAliveCounter], 1, slot);

@@ -107,6 +107,17 @@ core::Result<void> Initialize(const LogConfig& config) {
     return {};
 }
 
+void Flush() noexcept {
+    const std::scoped_lock lock(g_mutex);
+    if (g_state && g_state->logger) {
+        try {
+            g_state->logger->flush();
+        } catch (...) {
+            // Nothing can be reported: the logger itself failed.
+        }
+    }
+}
+
 void Shutdown() noexcept {
     const std::scoped_lock lock(g_mutex);
     g_minimumLevel.store(Level::Off);

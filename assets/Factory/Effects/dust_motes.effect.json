@@ -1,5 +1,6 @@
 {
     "comment": "Dust hanging in the air, which shows where a lamp's cone or a flashlight crosses it.",
+    "traced": false,
     "texture": "sprites.png",
     "columns": 4,
     "cell": 3,

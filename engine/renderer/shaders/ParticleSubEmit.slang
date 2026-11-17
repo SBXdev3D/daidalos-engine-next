@@ -14,6 +14,8 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     const ParticleFrame frame = g_particleFrames[g_particles.parameters][0];
     if (id.x == 0) {
         g_particleLists[frame.hits][0] = 0; // The simulation reports this frame's hits next.
+        g_particleLists[frame.smoke][0] = 0; // And lists its smoke,
+        g_particleLists[frame.hits][2] = 0;  // and the highest slot of a particle rays meet.
     }
     const uint requests = min(g_particleLists[g_particles.counters][frame.subCounterIn], kMaxSubSpawns);
     if (id.x >= requests) {

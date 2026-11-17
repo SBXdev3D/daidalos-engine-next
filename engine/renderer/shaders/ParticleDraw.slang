@@ -28,35 +28,6 @@ struct VertexOutput {
     [[vk::location(8)]] nointerpolation uint ribbon : RIBBON; // A ribbon's segment's, if effect is kNoEffect.
 };
 
-// The frames of the flipbook a particle is between, and how far it is from the first to the second. At a
-// frame rate, the flipbook loops or holds its last frame, as the effect says; over the life, it plays once,
-// or wraps around from a particle's own start frame.
-struct Flipbook {
-    uint current;
-    uint next;
-    float blend;
-};
-Flipbook FlipbookAt(ParticleEffectData effect, Particle particle, float life) {
-    const uint count = max(effect.frames, 1);
-    const float frames = float(count);
-    const bool loops = effect.frameRate > 0.0 ? (effect.flags & kEffectLoop) != 0 : particle.startFrame > 0.0;
-    float frame = particle.startFrame + (effect.frameRate > 0.0 ? particle.age * effect.frameRate : life * frames);
-    frame = loops ? frame - frames * floor(frame / frames) : min(frame, frames - 1.0);
-    Flipbook flipbook;
-    flipbook.current = min(uint(frame), count - 1);
-    flipbook.next = loops ? (flipbook.current + 1) % count : min(flipbook.current + 1, count - 1);
-    flipbook.blend = frame - floor(frame);
-    return flipbook;
-}
-
-// The corner of a cell of the grid, as texture coordinates; rows of the image go down.
-float2 CellUv(ParticleEffectData effect, uint cell, float2 corner) {
-    const uint columns = max(effect.columns, 1);
-    const uint rows = effect.rows > 0 ? effect.rows : columns;
-    const float2 grid = float2(float(columns), float(rows));
-    return (float2(float(cell % columns), float((cell / columns) % rows)) + (corner * float2(0.5, -0.5) + 0.5)) / grid;
-}
-
 // Two triangles: corners from -1 to 1.
 static const float2 kCorners[6] = {float2(-1, -1), float2(1, -1), float2(1, 1),
                                    float2(-1, -1), float2(1, 1), float2(-1, 1)};

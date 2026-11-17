@@ -38,6 +38,9 @@ struct QualitySettings {
     std::int64_t fogTile = 16;
     /// renderer.particle_density: multiplies what emitters and weather emit (ADR-0053).
     double particleDensity = 1.0;
+    /// renderer.traced_particles: particles in the frame's acceleration structure, their shadows and
+    /// reflections (ADR-0062).
+    bool tracedParticles = true;
 
     bool operator==(const QualitySettings&) const = default;
 };

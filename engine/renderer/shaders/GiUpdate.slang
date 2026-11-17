@@ -42,7 +42,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     uint vertices = 0;
     float3 tail = float3(0.0, 0.0, 0.0); // The light that reaches the last surface along the path.
     for (uint bounce = 0; bounce <= kVertices; ++bounce) {
-        const Hit hit = TraceClosest(ray, frame.accelerationStructure, g_gi.instanceBuffer, g_gi.materialBuffer, kMaskIndirect);
+        const Hit hit = TraceClosest(ray, frame, g_gi.instanceBuffer, g_gi.materialBuffer, kMaskIndirect);
         if (!hit.found) {
             tail = bounce == 0 ? float3(0.0, 0.0, 0.0) : SkyRadiance(frame, ray.Direction);
             break;

@@ -145,6 +145,8 @@ struct RendererConfig {
     /// Volumetric fog (ADR-0051): the atmosphere's fog and the view's fog volumes, lit by the frame's lights.
     /// Off, the air is clear.
     bool volumetricFog = true;
+    /// Particles in the frame's acceleration structure (ADR-0062): smoke's shadows, sparks in mirrors.
+    bool tracedParticles = true;
     /// Froxels of the fog in depth, from the near plane to the far plane, from 16 to 256.
     std::uint32_t fogSlices = 64;
     /// Pixels of the output across a froxel, from 8 to 32: finer fog for its cost (ADR-0052).
@@ -251,6 +253,8 @@ public:
     void SetReflectionRoughness(float roughness);
     /// See RendererConfig::volumetricFog, fogSlices and fogTile.
     void SetVolumetricFog(bool enabled, std::uint32_t slices, std::uint32_t tile);
+    /// Particles in the frame's acceleration structure (ADR-0062); off, rays pass through them.
+    void SetTracedParticles(bool enabled);
     /// See RendererConfig::restirSpatial and restirUnbiased.
     void SetRestir(bool spatial, bool unbiased);
     void SetIndirectLightConfig(const IndirectLightConfig& config);

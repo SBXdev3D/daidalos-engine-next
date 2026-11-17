@@ -137,7 +137,7 @@ float3 DirectLight(Surface surface, float3 view, FrameData frame, float majorant
         const float distanceToPoint = length(toPoint);
         const float3 direction = toPoint / max(distanceToPoint, 0.0001);
         if (LightReaches(surface.position, surface.faceNormal, direction, distanceToPoint, light.range,
-                         frame.accelerationStructure, g_path.instanceBuffer, g_path.materialBuffer)) {
+                         frame, g_path.instanceBuffer, g_path.materialBuffer)) {
             total += reflected * FogTransmittance(frame, surface.position, direction, 0.0, distanceToPoint, majorant, random);
         }
     }
@@ -165,7 +165,7 @@ float3 FogDirectLight(float3 position, float3 direction, FrameData frame, float 
         const float3 toPoint = SampleLightPoint(light.position, light.radius, position, u) - position;
         const float distanceToPoint = length(toPoint);
         const float3 towards = toPoint / max(distanceToPoint, 0.0001);
-        if (LightReaches(position, towards, towards, distanceToPoint, light.range, frame.accelerationStructure,
+        if (LightReaches(position, towards, towards, distanceToPoint, light.range, frame,
                          g_path.instanceBuffer, g_path.materialBuffer)) {
             total += scattered * FogTransmittance(frame, position, towards, 0.0, distanceToPoint, majorant, random);
         }
@@ -204,7 +204,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     uint mask = kMaskCamera | kMaskGlass;
     for (uint bounce = 0; bounce < g_path.maxBounces; ++bounce) {
         const Hit hit =
-            TraceClosest(ray, frame.accelerationStructure, g_path.instanceBuffer, g_path.materialBuffer, mask);
+            TraceClosest(ray, frame, g_path.instanceBuffer, g_path.materialBuffer, mask);
         // The fog in front of what the ray hits may scatter or absorb the light first.
         const float collision = FogCollision(frame, ray.Origin, ray.Direction, ray.TMin,
                                              hit.found ? hit.distance : ray.TMax, majorant, random);

@@ -73,7 +73,11 @@ struct FrameData {
     uint wetVolumeCount;
     uint rippleBuffer;
     uint rippleCount;
-    uint framePadding;
+    uint particleData;    // The particles rays meet (ADR-0062, RayQueries.slangh): their pool, effects and curves.
+    uint particleEffects;
+    uint particleCurves;
+    uint framePadding0;
+    uint framePadding1;
 };
 
 // From texture coordinates of the frame, over the corner it draws into, to those of its targets, for

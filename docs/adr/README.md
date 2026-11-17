@@ -65,3 +65,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0059](0059-ray-visibility.md) | Which rays see what: a mask bit per kind of ray, draw flags for the camera, reflections and bounced light, `RayVisibility` on an entity for what is under it | Accepted |
 | [0060](0060-decals.md) | Decals in the material function: boxes that project images, applied in the G-buffer and at ray hits, 64 per frame with a mask per draw, level decals and impacts that fade | Accepted |
 | [0061](0061-wetness.md) | Wetness in the material function: wet volumes, porosity, a water coat, puddles in low spots rippled by rain and the game, streaks on walls, drying | Accepted |
+| [0062](0062-particles-in-rays.md) | Particles in rays: a box per pool slot in a rebuilt BLAS, discs tested in the ray loops with stochastic opacity, shadows and reflections, opt-out per effect; smoke splatted into the fog's froxels | Accepted |

@@ -65,9 +65,10 @@ core::Result<RayTracingScene> RayTracingScene::Create(rhi::Device& device, rhi::
 core::Result<std::uint32_t> RayTracingScene::Reserve(std::uint32_t slot, std::size_t draws) {
     m_slot = slot;
     Slot& target = m_slots[slot];
-    if (!target.structure || target.capacity < draws) {
-        const auto capacity =
-            static_cast<std::uint32_t>(std::max<std::size_t>({kInitialInstanceCapacity, draws, target.capacity * 2U}));
+    // One more instance: the particles.
+    if (!target.structure || target.capacity < draws + 1) {
+        const auto capacity = static_cast<std::uint32_t>(
+            std::max<std::size_t>({kInitialInstanceCapacity, draws + 1, target.capacity * 2U}));
         DAI_TRY_ASSIGN(rhi::AccelerationStructureHandle structure,
                        m_device->CreateAccelerationStructure({.level = rhi::AccelerationStructureLevel::Top,
                                                               .maxInstances = capacity,
@@ -90,10 +91,11 @@ core::Result<std::uint32_t> RayTracingScene::Reserve(std::uint32_t slot, std::si
     return m_device->AccelerationStructureIndex(target.structure);
 }
 
-core::Result<void> RayTracingScene::Prepare(std::span<const TracedDraw> draws) {
+core::Result<void> RayTracingScene::Prepare(std::span<const TracedDraw> draws, const TracedParticles& particles) {
     DAI_PROFILE_SCOPE("renderer::RayTracingScene::Prepare");
     const Slot& slot = m_slots[m_slot];
-    DAI_ASSERT(slot.capacity >= draws.size(), "Reserve was not called for this many draws");
+    DAI_ASSERT(slot.capacity >= draws.size() + 1, "Reserve was not called for this many draws");
+    m_particles = particles;
     m_instances.clear();
     m_bottomLevel.clear();
     m_skinnedCount = 0;
@@ -138,6 +140,14 @@ core::Result<void> RayTracingScene::Prepare(std::span<const TracedDraw> draws) {
     });
     const auto [first, last] = std::ranges::unique(m_bottomLevel, {}, &rhi::AccelerationStructureUse::structure);
     m_bottomLevel.erase(first, last);
+    if (m_particles.structure && m_particles.count > 0) {
+        // Rays test their boxes themselves (RayQueries.slangh): the instance is not opaque.
+        m_bottomLevel.push_back({m_particles.structure, rhi::Access::AccelerationStructureRead});
+        m_instances.push_back({.customIndex = kParticleInstance,
+                               .mask = kMaskParticleShadow | kMaskReflection,
+                               .opaque = false,
+                               .structure = m_particles.structure});
+    }
 
     m_device->WriteInstances(slot.instances, 0, m_instances);
     m_instanceCount = static_cast<std::uint32_t>(m_instances.size());
@@ -163,6 +173,15 @@ void RayTracingScene::AddBuild(RenderGraph& graph) {
             }
             commands.BuildAccelerationStructures(m_skinnedHandles);
         });
+    }
+    if (m_particles.structure && m_particles.count > 0) {
+        graph.AddPass({.name = "Particle structure",
+                       .group = "Acceleration structures",
+                       .buffers = {{m_particles.boxes, rhi::Access::AccelerationStructureRead}},
+                       .structures = {{m_particles.structure, rhi::Access::AccelerationStructureWrite}}},
+                      [particles = m_particles](rhi::CommandList& commands) {
+                          commands.BuildAccelerationStructure(particles.structure, particles.count);
+                      });
     }
     PassDesc desc{.name = "Scene structure",
                   .group = "Acceleration structures",

@@ -1,5 +1,6 @@
 {
     "comment": "A drop's splash, which leaves a ripple behind.",
+    "traced": false,
     "texture": "sprites.png",
     "columns": 4,
     "cell": 2,

@@ -26,11 +26,14 @@ struct FogPushConstants {
     float historyWeight;
     uint lightMap;
     uint previousLightCount;
+    uint smoke;     // Storage image of the smoke's density (FogSmoke.slang), or kNoTexture.
+    uint smokeList;
     uint padding;
 };
 
 [[vk::push_constant]] FogPushConstants g_fog;
 [[vk::binding(4, 0)]] [[vk::image_format("rgba16f")]] RWTexture3D<float4> g_volumeImages[];
+[[vk::binding(4, 0)]] [[vk::image_format("r32ui")]] RWTexture3D<uint> g_smokeImages[];
 
 [numthreads(8, 8, 1)]
 void CSMain(uint3 id : SV_DispatchThreadID) {
@@ -56,5 +59,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         scattered += transmittance * inSlice;
         transmittance *= crossing;
         g_volumeImages[g_fog.integrated][uint3(id.xy, slice)] = float4(scattered, transmittance);
+        if (g_fog.smoke != kNoTexture) {
+            // The smoke is added anew each frame.
+            g_smokeImages[g_fog.smoke][uint3(id.xy, slice)] = 0;
+        }
     }
 }

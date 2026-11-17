@@ -28,6 +28,19 @@ inline constexpr std::uint8_t kMaskIndirect = 0x08;
 inline constexpr std::uint8_t kMaskGlass = 0x10;
 /// What particles collide with: what casts shadows, the level's solid geometry, not the player's weapons.
 inline constexpr std::uint8_t kMaskCollision = 0x20;
+/// Particles' shadows (ADR-0062): every shadow ray but those of the particles' own lighting sees them.
+inline constexpr std::uint8_t kMaskParticleShadow = 0x40;
+/// The custom index of the particles' instance, by which rays know they met a particle.
+inline constexpr std::uint32_t kParticleInstance = 0xFFFFFF;
+
+/// The particles' structure the frame's holds (ADR-0062): a box per slot of the pool, rebuilt each frame
+/// from the boxes the last simulation wrote.
+struct TracedParticles {
+    rhi::AccelerationStructureHandle structure;
+    rhi::BufferHandle boxes;
+    /// The boxes built: the slots of the pool up to the highest a particle may be in.
+    std::uint32_t count = 0;
+};
 
 /// The frame's draws as rays see them (ADR-0033): a top-level acceleration structure built each frame
 /// over the meshes' bottom-level structures, and a bottom-level structure per skinned draw, refitted each
@@ -43,12 +56,12 @@ public:
     RayTracingScene& operator=(const RayTracingScene&) = delete;
     ~RayTracingScene();
 
-    /// Makes room for this many draws in the structure of a frame slot, and returns the index shaders trace
-    /// it by, for FrameData. Call before MeshPass::Prepare.
+    /// Makes room for this many draws, and the particles, in the structure of a frame slot, and returns the
+    /// index shaders trace it by, for FrameData. Call before MeshPass::Prepare.
     [[nodiscard]] core::Result<std::uint32_t> Reserve(std::uint32_t slot, std::size_t draws);
     /// Writes the instances of the frame and makes the skinned draws' structures. Call after
-    /// MeshPass::Prepare, with its traced draws.
-    [[nodiscard]] core::Result<void> Prepare(std::span<const TracedDraw> draws);
+    /// MeshPass::Prepare, with its traced draws, and the particles, if any.
+    [[nodiscard]] core::Result<void> Prepare(std::span<const TracedDraw> draws, const TracedParticles& particles = {});
     /// Adds the passes that refit the skinned draws' structures and build the frame's top-level structure, in the
     /// group "Acceleration structures". They must come after MeshPass::AddSkinning and before any pass that
     /// traces rays.
@@ -89,6 +102,7 @@ private:
     /// What the build passes use, for the prepared frame.
     std::uint32_t m_instanceCount = 0;
     std::uint32_t m_skinnedCount = 0;
+    TracedParticles m_particles;
     std::vector<rhi::AccelerationStructureUse> m_bottomLevel;
     std::vector<rhi::AccelerationStructureHandle> m_skinnedHandles;
     std::vector<rhi::AccelerationStructureInstance> m_instances;
