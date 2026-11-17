@@ -62,6 +62,7 @@ enum class Format {
     R32Uint,
     /// Two unsigned integers: data packed bit by bit, such as the G-buffer's material layers.
     Rg32Uint,
+    Rgba32Uint,
     D32Float,
     /// Block-compressed formats, with blocks of 4x4 pixels.
     Bc5Unorm,
