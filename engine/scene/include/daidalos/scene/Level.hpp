@@ -123,6 +123,8 @@ struct LevelEntity {
     std::optional<RayVisibility> visibility;
     /// A decal its box projects (ADR-0060).
     std::optional<Decal> decal;
+    /// Wet air in its box (ADR-0061).
+    std::optional<WetVolume> wet;
     std::optional<Tags> game;
     [[nodiscard]] bool operator==(const LevelEntity&) const;
 };

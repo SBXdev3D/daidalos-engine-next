@@ -283,6 +283,19 @@ core::Result<Light> ReadLight(Reader reader) {
     return light;
 }
 
+core::Result<WetVolume> ReadWet(Reader reader) {
+    WetVolume wet;
+    DAI_LEVEL_TRY(reader.Number("wetness", wet.wetness));
+    DAI_LEVEL_TRY(reader.Number("puddles", wet.puddles));
+    DAI_LEVEL_TRY(reader.Number("puddle_height", wet.puddleHeight));
+    DAI_LEVEL_TRY(reader.Number("rain", wet.rain));
+    DAI_LEVEL_TRY(reader.Number("streaks", wet.streaks));
+    DAI_LEVEL_TRY(reader.Number("drying_rate", wet.dryingRate));
+    DAI_LEVEL_TRY(reader.Flag("enabled", wet.enabled));
+    DAI_LEVEL_TRY(reader.Finish());
+    return wet;
+}
+
 core::Result<Decal> ReadDecal(Reader reader) {
     Decal decal;
     DAI_LEVEL_TRY(reader.Text("texture", decal.texture));
@@ -488,6 +501,7 @@ core::Result<LevelEntity> ReadEntity(const JsonObject& object, std::size_t index
     DAI_LEVEL_TRY(component("light", entity.light, &ReadLight));
     DAI_LEVEL_TRY(component("visibility", entity.visibility, &ReadVisibility));
     DAI_LEVEL_TRY(component("decal", entity.decal, &ReadDecal));
+    DAI_LEVEL_TRY(component("wet", entity.wet, &ReadWet));
     DAI_LEVEL_TRY(component("fog", entity.fog, &ReadFog));
     DAI_LEVEL_TRY(component("wind", entity.wind, &ReadWind));
     DAI_LEVEL_TRY(component("particles", entity.particles, &ReadParticles));
@@ -746,6 +760,18 @@ Json WriteEntity(const LevelEntity& entity) {
     if (entity.light) {
         object.emplace("light", WriteLight(*entity.light));
     }
+    if (entity.wet) {
+        const WetVolume fallback;
+        JsonObject wet;
+        Put(wet, "wetness", entity.wet->wetness, fallback.wetness);
+        Put(wet, "puddles", entity.wet->puddles, fallback.puddles);
+        Put(wet, "puddle_height", entity.wet->puddleHeight, fallback.puddleHeight);
+        Put(wet, "rain", entity.wet->rain, fallback.rain);
+        Put(wet, "streaks", entity.wet->streaks, fallback.streaks);
+        Put(wet, "drying_rate", entity.wet->dryingRate, fallback.dryingRate);
+        Put(wet, "enabled", entity.wet->enabled, fallback.enabled);
+        object.emplace("wet", Json{std::move(wet)});
+    }
     if (entity.decal) {
         const Decal fallback;
         JsonObject decal;
@@ -971,7 +997,7 @@ bool LevelEntity::operator==(const LevelEntity& other) const {
            model == other.model && light == other.light && fog == other.fog && wind == other.wind &&
            particles == other.particles && attractor == other.attractor && weather == other.weather &&
            ribbon == other.ribbon && lightning == other.lightning && game == other.game &&
-           visibility == other.visibility && decal == other.decal;
+           visibility == other.visibility && decal == other.decal && wet == other.wet;
 }
 
 const LevelEntity* Level::Find(std::uint64_t id) const {

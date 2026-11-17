@@ -82,6 +82,8 @@ struct MaterialData {
     float transmission = 0.0f;
     /// KHR_materials_ior: the index of refraction.
     float ior = 1.5f;
+    /// How much water it soaks up, from the extras {"porosity": 0.8} or from its surface (ADR-0061).
+    float porosity = 0.5f;
     /// KHR_materials_clearcoat: a clear varnish over the material, how much of it and how rough.
     float clearcoat = 0.0f;
     float clearcoatRoughness = 0.0f;

@@ -58,6 +58,8 @@ enum class DebugView {
     Layers,
     /// The lit scene, with what decals cover in magenta (ADR-0060).
     Decals,
+    /// The lit scene, tinted blue as wet as surfaces are (ADR-0061).
+    Wetness,
 };
 
 /// How indirect light is traced (ADR-0045).

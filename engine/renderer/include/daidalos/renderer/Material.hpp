@@ -52,6 +52,9 @@ struct MaterialDesc {
     /// roughness.
     glm::vec3 sheenColor{0.0f};
     float sheenRoughness = 0.0f;
+    /// How much water the surface soaks up (ADR-0061): wet, a porous surface (concrete, cloth, wood) darkens
+    /// much, a sealed one (metal, glazed tile) little. From the material's glTF extras {"porosity": 0.7}.
+    float porosity = 0.5f;
     rhi::TextureHandle baseColorTexture;
     rhi::TextureHandle metallicRoughnessTexture;
     rhi::TextureHandle normalTexture;

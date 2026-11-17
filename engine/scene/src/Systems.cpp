@@ -126,6 +126,22 @@ void AnimateLights(ecs::World& world, double seconds, const PowerCircuits& circu
 
 namespace {
 
+void ExtractWetVolumes(ecs::World& world, renderer::SceneView& view) {
+    world.Each<ecs::WorldTransform, WetVolume>(
+        [&](ecs::Entity, const ecs::WorldTransform& transform, const WetVolume& volume) {
+            if (!volume.enabled || (volume.wetness <= 0.0f && volume.puddles <= 0.0f)) {
+                return;
+            }
+            // Drying, the puddles shrink with the wetness.
+            view.wetVolumes.push_back({.world = transform.matrix,
+                                       .wetness = volume.wetness,
+                                       .puddles = volume.puddles * std::min(volume.wetness * 2.0f, 1.0f),
+                                       .puddleHeight = volume.puddleHeight,
+                                       .rain = volume.rain,
+                                       .streaks = volume.streaks * volume.wetness});
+        });
+}
+
 void ExtractDecals(ecs::World& world, renderer::SceneView& view) {
     world.Each<ecs::WorldTransform, Decal>(
         [&](ecs::Entity entity, const ecs::WorldTransform& transform, const Decal& decal) {
@@ -233,6 +249,7 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
     view.ribbons.clear();
     view.fogVolumes.clear();
     view.decals.clear();
+    view.wetVolumes.clear();
     view.windVolumes.clear();
     view.particleAttractors.clear();
     DrawnTransforms drawn(world);
@@ -297,6 +314,7 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
     ExtractLights(world, view);
     ExtractFogVolumes(world, view);
     ExtractDecals(world, view);
+    ExtractWetVolumes(world, view);
     ExtractParticleForces(world, view);
 }
 

@@ -39,7 +39,26 @@ struct Extras {
     std::set<std::size_t> unlitMaterials;
     // Materials whose extras name what they are made of: {"surface": "metal"} (ADR-0053).
     std::map<std::size_t, std::string> surfaces;
+    // Materials whose extras say how much water they soak up: {"porosity": 0.8} (ADR-0061).
+    std::map<std::size_t, float> porosities;
 };
+
+// How much water a surface of a kind soaks up, when its material does not say (ADR-0061).
+float PorosityOf(std::string_view surface) {
+    if (surface == "concrete" || surface == "stone" || surface == "plaster") {
+        return 0.8f;
+    }
+    if (surface == "wood" || surface == "cloth" || surface == "flesh") {
+        return 0.7f;
+    }
+    if (surface == "metal" || surface == "glass") {
+        return 0.05f;
+    }
+    if (surface == "tile") {
+        return 0.2f;
+    }
+    return 0.5f;
+}
 
 void ReadExtras(simdjson::dom::object* extras, std::size_t objectIndex, fastgltf::Category objectType,
                 void* userPointer) {
@@ -53,6 +72,10 @@ void ReadExtras(simdjson::dom::object* extras, std::size_t objectIndex, fastgltf
     std::string_view surface;
     if ((*extras)["surface"].get_string().get(surface) == simdjson::SUCCESS) {
         static_cast<Extras*>(userPointer)->surfaces[objectIndex] = std::string(surface);
+    }
+    double porosity = 0.0;
+    if ((*extras)["porosity"].get_double().get(porosity) == simdjson::SUCCESS) {
+        static_cast<Extras*>(userPointer)->porosities[objectIndex] = static_cast<float>(porosity);
     }
 }
 
@@ -158,6 +181,8 @@ core::Result<void> ModelBuilder::AddMaterials() {
         if (const auto surface = m_extras.surfaces.find(index); surface != m_extras.surfaces.end()) {
             data.surface = surface->second;
         }
+        const auto porosity = m_extras.porosities.find(index);
+        data.porosity = porosity != m_extras.porosities.end() ? porosity->second : PorosityOf(data.surface);
         const auto& pbr = material.pbrData;
         data.baseColorFactor = {pbr.baseColorFactor[0], pbr.baseColorFactor[1], pbr.baseColorFactor[2],
                                 pbr.baseColorFactor[3]};

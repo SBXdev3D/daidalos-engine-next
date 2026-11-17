@@ -131,6 +131,7 @@ bool Occluded(RayDesc ray, uint structure, uint instanceBuffer, uint materialBuf
 // with the normal map, turned towards the ray as the G-buffer does for the back of double-sided surfaces.
 import Bsdf;
 #include "Decals.slangh"
+#include "Wetness.slangh"
 
 struct Surface {
     float3 position;
@@ -185,6 +186,12 @@ Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame, uint instanceBuf
     // Decals show in reflections and bounced light as on screen (ADR-0060), at a detail the hit's distance allows.
     ApplyDecals(frame, instance.decalMask, surface.position, hit.distance * 0.002, baseColor.rgb, metallic,
                 surface.roughness, surface.normal);
+    surface.layers.coat = material.clearcoat;
+    surface.layers.coatRoughness = material.clearcoatRoughness;
+    surface.layers.sheen = material.sheenColor;
+    surface.layers.sheenRoughness = material.sheenRoughness;
+    ApplyWetness(frame, surface.position, surface.faceNormal, material.porosity, baseColor.rgb, surface.roughness,
+                 surface.normal, surface.layers);
     surface.diffuseColor = baseColor.rgb * (1.0 - metallic);
     surface.f0 = lerp(float3(0.04, 0.04, 0.04), baseColor.rgb, metallic);
     // Nits, times the frame's exposure (ADR-0043).
@@ -198,10 +205,6 @@ Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame, uint instanceBuf
     surface.thin = material.thin != 0;
     surface.absorption = material.absorption;
     surface.tint = baseColor.rgb;
-    surface.layers.coat = material.clearcoat;
-    surface.layers.coatRoughness = material.clearcoatRoughness;
-    surface.layers.sheen = material.sheenColor;
-    surface.layers.sheenRoughness = material.sheenRoughness;
     return surface;
 }
 

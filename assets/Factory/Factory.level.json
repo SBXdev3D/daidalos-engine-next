@@ -302,7 +302,7 @@
       "name": "Lamp 27 light",
       "parent": 24,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -326,7 +326,7 @@
       "name": "Lamp 28 light",
       "parent": 26,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -350,7 +350,7 @@
       "name": "Lamp 29 light",
       "parent": 28,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -375,7 +375,7 @@
       "name": "Lamp 30 light",
       "parent": 30,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -407,7 +407,7 @@
       "model": "fan.gltf",
       "name": "Fan 37",
       "transform": {
-        "rotation": [0, 0, 0.70710677, 0.70710677],
+        "rotation": [0, 0, 0.7071068, 0.7071068],
         "translation": [-42.7, -7, -42]
       }
     },
@@ -419,7 +419,7 @@
       "model": "fan.gltf",
       "name": "Fan 38",
       "transform": {
-        "rotation": [0, 0, 0.70710677, 0.70710677],
+        "rotation": [0, 0, 0.7071068, 0.7071068],
         "translation": [-42.7, -7, -52.5]
       }
     },
@@ -456,7 +456,7 @@
       "name": "Lamp 44 light",
       "parent": 37,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -470,7 +470,7 @@
       "model": "zombie.gltf",
       "name": "Zombie 45",
       "transform": {
-        "rotation": [0, -0.70710677, 0, 0.70710677],
+        "rotation": [0, -0.7071068, 0, 0.7071068],
         "translation": [-21, 3.5, -77]
       }
     },
@@ -494,7 +494,7 @@
       "name": "Lamp 46 light",
       "parent": 40,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -518,7 +518,7 @@
       "name": "Lamp 47 light",
       "parent": 42,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -554,7 +554,7 @@
       "name": "Lamp 51 light",
       "parent": 46,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -579,7 +579,7 @@
       "name": "Lamp 52 light",
       "parent": 48,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -604,7 +604,7 @@
       "name": "Lamp 53 light",
       "parent": 50,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -629,7 +629,7 @@
       "name": "Lamp 54 light",
       "parent": 52,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -654,7 +654,7 @@
       "name": "Lamp 55 light",
       "parent": 54,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -679,7 +679,7 @@
       "name": "Lamp 56 light",
       "parent": 56,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -704,7 +704,7 @@
       "name": "Lamp 57 light",
       "parent": 58,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -729,7 +729,7 @@
       "name": "Lamp 58 light",
       "parent": 60,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -754,7 +754,7 @@
       "name": "Lamp 59 light",
       "parent": 62,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -779,7 +779,7 @@
       "name": "Lamp 60 light",
       "parent": 64,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -804,7 +804,7 @@
       "name": "Lamp 61 light",
       "parent": 66,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -829,7 +829,7 @@
       "name": "Lamp 62 light",
       "parent": 68,
       "transform": {
-        "rotation": [-0.70710677, 0, 0, 0.70710677],
+        "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
       }
     },
@@ -971,7 +971,7 @@
         "effect": "Effects/cable_sparks.effect.json"
       },
       "transform": {
-        "rotation": [0, 0, 0.70710677, 0.70710677],
+        "rotation": [0, 0, 0.7071068, 0.7071068],
         "translation": [1.7, 2.45, -10]
       }
     },
@@ -1241,6 +1241,21 @@
       "name": "Moon",
       "transform": {
         "rotation": [-0.18690945, -0.16191952, -0.031249907, 0.96843714]
+      }
+    },
+    {
+      "id": 105,
+      "name": "Wet rain room",
+      "transform": {
+        "scale": [17.2, 11.4, 17.7],
+        "translation": [0, 4.2, -39.25]
+      },
+      "wet": {
+        "puddle_height": 1.53,
+        "puddles": 0.45,
+        "rain": 60,
+        "streaks": 0.6,
+        "wetness": 0.8
       }
     }
   ],

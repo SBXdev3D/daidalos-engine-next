@@ -73,6 +73,14 @@ void Scene::RunFrame(core::Seconds delta, float fixedAlpha) {
         decal.age += m_frameDelta;
     }
     std::erase_if(m_transientDecals, [](const TransientDecal& decal) { return decal.age >= decal.lifetime; });
+    for (renderer::Ripple& ripple : m_ripples) {
+        ripple.age += m_frameDelta;
+    }
+    std::erase_if(m_ripples, [](const renderer::Ripple& ripple) { return ripple.age > 2.0f; });
+    // Wet places dry (ADR-0061).
+    m_world.Each<WetVolume>([this](ecs::Entity, WetVolume& volume) {
+        volume.wetness = std::max(volume.wetness - volume.dryingRate * m_frameDelta / 60.0f, 0.0f);
+    });
     m_frameSystems.Run(m_world, delta);
     animation::UpdateAnimators(m_world, static_cast<float>(delta.count()));
 }
@@ -116,6 +124,7 @@ void Scene::Extract(renderer::SceneView& view) {
     EmitParticles(m_world, m_frameDelta, view.particleSpawns, emission);
     EmitWeather(m_world, m_frameDelta, view.particleSpawns, emission);
     ExtractEmitterLights(m_world, view);
+    view.ripples.assign(m_ripples.begin(), m_ripples.end());
     // Decals that come and go, fading at the end of their lives (ADR-0060).
     for (const TransientDecal& transient : m_transientDecals) {
         renderer::Decal decal = transient.decal;
@@ -167,6 +176,13 @@ void Scene::SpawnDecal(const DecalSpawn& spawn) {
                                            .angleFade = 0.2f},
                                  .lifetime = spawn.lifetime,
                                  .fade = spawn.fade});
+}
+
+void Scene::AddRipple(const glm::vec3& position, float strength) {
+    if (m_ripples.size() >= 16) {
+        m_ripples.pop_front();
+    }
+    m_ripples.push_back({.position = position, .age = 0.0f, .strength = strength});
 }
 
 } // namespace daidalos::scene

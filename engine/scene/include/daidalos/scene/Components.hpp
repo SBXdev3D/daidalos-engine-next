@@ -120,6 +120,25 @@ struct Light {
     [[nodiscard]] bool operator==(const Light&) const = default;
 };
 
+/// ECS component: wet air (ADR-0061). The entity's box, from -0.5 to 0.5 scaled by its transform, makes what is
+/// inside it wet: porous surfaces darken, water films everything, pools on floors and runs down walls.
+struct WetVolume {
+    /// 0 dry, 1 soaked; it falls by dryingRate.
+    float wetness = 1.0f;
+    /// The fraction of the floor under still water.
+    float puddles = 0.0f;
+    /// Meters above the box's bottom up to which water pools.
+    float puddleHeight = 0.05f;
+    /// Rain drops per square meter per second, which ripple the puddles.
+    float rain = 0.0f;
+    /// How much water runs down walls.
+    float streaks = 0.0f;
+    /// Wetness lost per minute, as the place dries; 0 stays wet.
+    float dryingRate = 0.0f;
+    bool enabled = true;
+    [[nodiscard]] bool operator==(const WetVolume&) const = default;
+};
+
 /// ECS component: a decal (ADR-0060). The entity's box, from -0.5 to 0.5 scaled by its transform, projects an
 /// image along its -Z onto what is inside it: blood on a wall, mold in a corner, grime on a floor.
 struct Decal {

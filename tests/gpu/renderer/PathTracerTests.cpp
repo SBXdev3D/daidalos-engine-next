@@ -187,6 +187,8 @@ protected:
         bool fsr = false;
         /// Volumetric fog in a grid of this size (ADR-0051); none without.
         std::optional<renderer::FroxelGrid> fog;
+        /// Tints of the lit scene (MeshPass::FrameTargets::debugFlags): decals 1, wetness 2.
+        std::uint32_t debugFlags = 0;
     };
 
     // What the G-buffer and the lighting draw of the view, in linear HDR. The view is drawn frames times, each with the
@@ -288,7 +290,8 @@ protected:
                                      .exposure = renderer::ExposureScale(animated.atmosphere.ev100),
                                      .fog = fogTexture,
                                      .sharpReflections =
-                                         reflections ? renderer::GlobalIllumination::kSharpRoughness : 0.0f})
+                                         reflections ? renderer::GlobalIllumination::kSharpRoughness : 0.0f,
+                                     .debugFlags = options.debugFlags})
                                 .has_value());
                         ASSERT_TRUE(m_scene->Prepare(m_pass->TracedDraws()).has_value());
                         renderer::RenderGraph graph;
@@ -2494,4 +2497,40 @@ TEST_F(PathTracerTest, DecalsShowInReflections) {
     EXPECT_GT(green, 50U);
     EXPECT_NEAR(static_cast<double>(green), static_cast<double>(tracedGreen), 0.35 * static_cast<double>(tracedGreen));
     Device().DestroyTexture(image);
+}
+
+TEST_F(PathTracerTest, AWetFloorMatchesThePathTracer) {
+    // The grey floor in a box of wet air with puddles (ADR-0061): darker where the water soaks in, a film of
+    // water over it, standing water in its low spots. The G-buffer and the path tracer's hits make it wet in the
+    // same function; dry, the image is far from the path tracer's.
+    const auto material = [this](const MaterialDesc& desc) { return Material(desc); };
+    SceneView view = BlockOnAFloor(m_cube, material, 0.8f);
+    view.wetVolumes.push_back({.world = glm::scale(glm::mat4(1.0f), {8.0f, 2.0f, 8.0f}),
+                               .wetness = 1.0f,
+                               .puddles = 0.5f,
+                               .puddleHeight = 1.05f});
+    SceneView dry = BlockOnAFloor(m_cube, material, 0.8f);
+    constexpr rhi::Extent kExtent{96, 96};
+    const Image traced = Trace(view, kExtent, {.maxBounces = 1, .seed = 61, .jitter = false}, 1);
+    const Image raster = Rasterize(view, kExtent);
+    const Image dryRaster = Rasterize(dry, kExtent);
+    const float flip = Flip(traced, raster, kExtent);
+    const float flipDry = Flip(traced, dryRaster, kExtent);
+    RecordProperty("flip", std::to_string(flip));
+    RecordProperty("flipDry", std::to_string(flipDry));
+    EXPECT_LT(flip, 0.03f);
+    EXPECT_GT(flipDry, 2.0f * flip);
+
+    // The debug view shows standing water in cyan: some of the floor, not all of it.
+    const Image tinted = Rasterize(view, kExtent, {.debugFlags = 2});
+    std::size_t cyan = 0;
+    for (std::size_t y = kExtent.height / 2; y < kExtent.height; ++y) {
+        for (std::size_t x = 0; x < kExtent.width; ++x) {
+            const glm::vec4& pixel = tinted[y * kExtent.width + x];
+            cyan += pixel.g > 1.5f * pixel.r && pixel.b > 1.5f * pixel.r ? 1 : 0;
+        }
+    }
+    RecordProperty("puddlePixels", std::to_string(cyan));
+    EXPECT_GT(cyan, kExtent.width * kExtent.height / 20);
+    EXPECT_LT(cyan, kExtent.width * kExtent.height / 2);
 }

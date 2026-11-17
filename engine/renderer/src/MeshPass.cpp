@@ -149,10 +149,36 @@ struct FrameData {
     std::uint32_t fogAliasBuffer;
     std::uint32_t decalBuffer; // The frame's decals (ADR-0060), and how many.
     std::uint32_t decalCount;
-    std::uint32_t debugFlags; // kDebugDecals shows what decals cover.
+    std::uint32_t debugFlags;      // Tints of the lit scene (FrameTargets::debugFlags).
+    std::uint32_t wetVolumeBuffer; // The boxes of wet air (ADR-0061), and the ripples on their water.
+    std::uint32_t wetVolumeCount;
+    std::uint32_t rippleBuffer;
+    std::uint32_t rippleCount;
     std::uint32_t framePadding;
 };
-static_assert(sizeof(FrameData) == 464);
+static_assert(sizeof(FrameData) == 480);
+
+/// A box of wet air (ADR-0061). Matches its twin in shaders/Wetness.slangh.
+struct WetVolumeData {
+    glm::mat4 worldToBox;
+    float wetness;
+    float puddles;
+    float puddleHeight;
+    float rain;
+    float streaks;
+    float bottom;
+    glm::vec2 padding;
+};
+static_assert(sizeof(WetVolumeData) == 96);
+
+/// A ripple the game started (ADR-0061). Matches its twin in shaders/Wetness.slangh.
+struct RippleData {
+    glm::vec3 position;
+    float start;
+    float strength;
+    glm::vec3 padding;
+};
+static_assert(sizeof(RippleData) == 32);
 
 /// A decal as shaders read it (ADR-0060). Matches its twin in shaders/Decals.slangh.
 struct DecalData {
@@ -287,7 +313,7 @@ struct GpuMaterial {
     float clearcoat;
     float clearcoatRoughness;
     float sheenRoughness;
-    std::uint32_t layerPadding;
+    float porosity; // How much it darkens when wet (ADR-0061).
     glm::vec3 sheenColor;
     float layerPadding2;
 };
@@ -308,6 +334,9 @@ constexpr std::uint64_t kInitialLightCapacity = 64;
 constexpr std::uint64_t kInitialFogVolumeCapacity = 8;
 /// Decals drawn in a frame, the nearest to the camera: a draw's mask has a bit for each (ADR-0060).
 constexpr std::size_t kMaxDecals = 64;
+/// Wet volumes and ripples a frame draws: the first ones of the view (ADR-0061).
+constexpr std::size_t kMaxWetVolumes = 16;
+constexpr std::size_t kMaxRipples = 16;
 
 /// A decal's box in world space, to test draws against.
 struct DecalBox {
@@ -425,6 +454,8 @@ MeshPass::~MeshPass() {
         m_device->DestroyBuffer(slot.emissiveTriangles);
         m_device->DestroyBuffer(slot.fogVolumes);
         m_device->DestroyBuffer(slot.decals);
+        m_device->DestroyBuffer(slot.wetVolumes);
+        m_device->DestroyBuffer(slot.ripples);
     }
 }
 
@@ -695,7 +726,7 @@ core::Result<MaterialHandle> MeshPass::CreateMaterial(const MaterialDesc& desc) 
         .clearcoat = std::clamp(desc.clearcoat, 0.0f, 1.0f),
         .clearcoatRoughness = std::clamp(desc.clearcoatRoughness, 0.0f, 1.0f),
         .sheenRoughness = std::clamp(desc.sheenRoughness, 0.0f, 1.0f),
-        .layerPadding = 0,
+        .porosity = std::clamp(desc.porosity, 0.0f, 1.0f),
         .sheenColor = glm::clamp(desc.sheenColor, glm::vec3(0.0f), glm::vec3(1.0f)),
         .layerPadding2 = 0.0f,
     };
@@ -745,6 +776,9 @@ core::Result<void> MeshPass::PrepareFrameSlot(FrameSlot& slot, const SceneView& 
     DAI_TRY(reserve(slot.fogVolumes, slot.fogVolumeCapacity, view.fogVolumes.size(), kInitialFogVolumeCapacity,
                     sizeof(FogVolumeData), "Fog volumes"));
     DAI_TRY(reserve(slot.decals, slot.decalCapacity, kMaxDecals, kMaxDecals, sizeof(DecalData), "Decals"));
+    DAI_TRY(reserve(slot.wetVolumes, slot.wetVolumeCapacity, kMaxWetVolumes, kMaxWetVolumes, sizeof(WetVolumeData),
+                    "Wet volumes"));
+    DAI_TRY(reserve(slot.ripples, slot.rippleCapacity, kMaxRipples, kMaxRipples, sizeof(RippleData), "Ripples"));
     return {};
 }
 
@@ -1105,7 +1139,42 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     }
     frame.decalBuffer = m_device->StorageIndex(slot.decals);
     frame.decalCount = static_cast<std::uint32_t>(nearDecals.size());
-    frame.debugFlags = targets.showDecals ? 1U : 0U;
+    frame.debugFlags = targets.debugFlags;
+
+    // Wet air, and ripples on its water (ADR-0061).
+    auto* wetVolumes = reinterpret_cast<WetVolumeData*>(m_device->Mapped(slot.wetVolumes).data());
+    const std::size_t wetCount = std::min(view.wetVolumes.size(), kMaxWetVolumes);
+    for (std::size_t index = 0; index < wetCount; ++index) {
+        const WetVolume& volume = view.wetVolumes[index];
+        // The box's lowest point, where water pools.
+        float bottom = 1e30f;
+        for (int corner = 0; corner < 8; ++corner) {
+            const glm::vec3 local((corner & 1) != 0 ? 0.5f : -0.5f, (corner & 2) != 0 ? 0.5f : -0.5f,
+                                  (corner & 4) != 0 ? 0.5f : -0.5f);
+            bottom = std::min(bottom, (volume.world * glm::vec4(local, 1.0f)).y);
+        }
+        wetVolumes[index] = {.worldToBox = glm::inverse(volume.world),
+                             .wetness = std::clamp(volume.wetness, 0.0f, 1.0f),
+                             .puddles = std::clamp(volume.puddles, 0.0f, 1.0f),
+                             .puddleHeight = std::max(volume.puddleHeight, 0.0f),
+                             .rain = std::max(volume.rain, 0.0f),
+                             .streaks = std::clamp(volume.streaks, 0.0f, 1.0f),
+                             .bottom = bottom,
+                             .padding = {}};
+    }
+    auto* ripples = reinterpret_cast<RippleData*>(m_device->Mapped(slot.ripples).data());
+    const std::size_t rippleCount = std::min(view.ripples.size(), kMaxRipples);
+    for (std::size_t index = 0; index < rippleCount; ++index) {
+        const Ripple& ripple = view.ripples[index];
+        ripples[index] = {.position = ripple.position,
+                          .start = targets.time - ripple.age,
+                          .strength = ripple.strength,
+                          .padding = {}};
+    }
+    frame.wetVolumeBuffer = m_device->StorageIndex(slot.wetVolumes);
+    frame.wetVolumeCount = static_cast<std::uint32_t>(wetCount);
+    frame.rippleBuffer = m_device->StorageIndex(slot.ripples);
+    frame.rippleCount = static_cast<std::uint32_t>(rippleCount);
 
     if (!view.jointMatrices.empty()) {
         // Without previous joints, they stood still.
