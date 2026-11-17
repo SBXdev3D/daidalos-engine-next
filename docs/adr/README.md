@@ -64,3 +64,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0058](0058-flashlight.md) | The flashlight: a profile and a lens for its beam, held in the left hand, a spring that trails the camera's turns and a walking sway, a battery, a failure hook | Accepted |
 | [0059](0059-ray-visibility.md) | Which rays see what: a mask bit per kind of ray, draw flags for the camera, reflections and bounced light, `RayVisibility` on an entity for what is under it | Accepted |
 | [0060](0060-decals.md) | Decals in the material function: boxes that project images, applied in the G-buffer and at ray hits, 64 per frame with a mask per draw, level decals and impacts that fade | Accepted |
+| [0061](0061-wetness.md) | Wetness in the material function: wet volumes, porosity, a water coat, puddles in low spots rippled by rain and the game, streaks on walls, drying | Accepted |
