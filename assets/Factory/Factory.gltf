@@ -635,14 +635,19 @@
     "metallicFactor": 0.0,
     "roughnessFactor": 1.0,
     "metallicRoughnessTexture": {
-     "index": 41
+     "index": 59
     }
    },
    "normalTexture": {
     "index": 40
    },
    "extras": {
-    "surface": "metal"
+    "surface": "metal",
+    "height": 0.005
+   },
+   "occlusionTexture": {
+    "index": 59,
+    "strength": 0.8
    }
   },
   {
@@ -654,14 +659,19 @@
     "metallicFactor": 0.0,
     "roughnessFactor": 1.0,
     "metallicRoughnessTexture": {
-     "index": 41
+     "index": 59
     }
    },
    "normalTexture": {
     "index": 40
    },
    "extras": {
-    "surface": "metal"
+    "surface": "metal",
+    "height": 0.005
+   },
+   "occlusionTexture": {
+    "index": 59,
+    "strength": 0.8
    }
   },
   {
@@ -857,23 +867,52 @@
    "name": "ceiling_2d.png",
    "pbrMetallicRoughness": {
     "baseColorTexture": {
-     "index": 42
+     "index": 41
     },
     "metallicFactor": 0.0,
     "roughnessFactor": 1.0,
     "metallicRoughnessTexture": {
-     "index": 44
+     "index": 60
     }
    },
    "normalTexture": {
-    "index": 43
+    "index": 42
    },
    "extras": {
-    "surface": "concrete"
+    "surface": "concrete",
+    "height": 0.008
+   },
+   "occlusionTexture": {
+    "index": 60,
+    "strength": 0.55
    }
   },
   {
    "name": "crate_1d.png",
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 43
+    },
+    "metallicFactor": 0.0,
+    "roughnessFactor": 1.0,
+    "metallicRoughnessTexture": {
+     "index": 61
+    }
+   },
+   "normalTexture": {
+    "index": 44
+   },
+   "extras": {
+    "surface": "wood",
+    "height": 0.006
+   },
+   "occlusionTexture": {
+    "index": 61,
+    "strength": 0.81
+   }
+  },
+  {
+   "name": "crate_2d.png",
    "pbrMetallicRoughness": {
     "baseColorTexture": {
      "index": 45
@@ -881,52 +920,43 @@
     "metallicFactor": 0.0,
     "roughnessFactor": 1.0,
     "metallicRoughnessTexture": {
-     "index": 47
+     "index": 62
     }
    },
    "normalTexture": {
     "index": 46
    },
    "extras": {
-    "surface": "wood"
-   }
-  },
-  {
-   "name": "crate_2d.png",
-   "pbrMetallicRoughness": {
-    "baseColorTexture": {
-     "index": 48
-    },
-    "metallicFactor": 0.0,
-    "roughnessFactor": 1.0,
-    "metallicRoughnessTexture": {
-     "index": 50
-    }
+    "surface": "metal",
+    "height": 0.006
    },
-   "normalTexture": {
-    "index": 49
-   },
-   "extras": {
-    "surface": "metal"
+   "occlusionTexture": {
+    "index": 62,
+    "strength": 0.91
    }
   },
   {
    "name": "crate_3d.png",
    "pbrMetallicRoughness": {
     "baseColorTexture": {
-     "index": 51
+     "index": 47
     },
     "metallicFactor": 0.0,
     "roughnessFactor": 1.0,
     "metallicRoughnessTexture": {
-     "index": 53
+     "index": 63
     }
    },
    "normalTexture": {
-    "index": 52
+    "index": 48
    },
    "extras": {
-    "surface": "wood"
+    "surface": "wood",
+    "height": 0.006
+   },
+   "occlusionTexture": {
+    "index": 63,
+    "strength": 0.59
    }
   },
   {
@@ -1044,57 +1074,72 @@
    "name": "ground_1d.png",
    "pbrMetallicRoughness": {
     "baseColorTexture": {
-     "index": 54
+     "index": 49
     },
     "metallicFactor": 0.0,
     "roughnessFactor": 1.0,
     "metallicRoughnessTexture": {
-     "index": 56
+     "index": 64
     }
    },
    "normalTexture": {
-    "index": 55
+    "index": 50
    },
    "extras": {
-    "surface": "concrete"
+    "surface": "concrete",
+    "height": 0.008
+   },
+   "occlusionTexture": {
+    "index": 64,
+    "strength": 0.73
    }
   },
   {
    "name": "lift_d.png",
    "pbrMetallicRoughness": {
     "baseColorTexture": {
-     "index": 57
+     "index": 51
     },
     "metallicFactor": 1.0,
     "roughnessFactor": 1.0,
     "metallicRoughnessTexture": {
-     "index": 59
+     "index": 65
     }
    },
    "normalTexture": {
-    "index": 58
+    "index": 52
    },
    "extras": {
-    "surface": "metal"
+    "surface": "metal",
+    "height": 0.005
+   },
+   "occlusionTexture": {
+    "index": 65,
+    "strength": 0.87
    }
   },
   {
    "name": "lockers_d.png",
    "pbrMetallicRoughness": {
     "baseColorTexture": {
-     "index": 60
+     "index": 53
     },
     "metallicFactor": 0.8,
     "roughnessFactor": 1.0,
     "metallicRoughnessTexture": {
-     "index": 62
+     "index": 66
     }
    },
    "normalTexture": {
-    "index": 61
+    "index": 54
    },
    "extras": {
-    "surface": "metal"
+    "surface": "metal",
+    "height": 0.004
+   },
+   "occlusionTexture": {
+    "index": 66,
+    "strength": 0.83
    }
   },
   {
@@ -1149,19 +1194,24 @@
    "name": "vent_slab_d.png",
    "pbrMetallicRoughness": {
     "baseColorTexture": {
-     "index": 63
+     "index": 55
     },
     "metallicFactor": 0.0,
     "roughnessFactor": 1.0,
     "metallicRoughnessTexture": {
-     "index": 65
+     "index": 67
     }
    },
    "normalTexture": {
-    "index": 64
+    "index": 56
    },
    "extras": {
-    "surface": "metal"
+    "surface": "metal",
+    "height": 0.006
+   },
+   "occlusionTexture": {
+    "index": 67,
+    "strength": 1.0
    }
   },
   {
@@ -1184,7 +1234,7 @@
    "name": "wall_2d.png",
    "pbrMetallicRoughness": {
     "baseColorTexture": {
-     "index": 66
+     "index": 57
     },
     "metallicFactor": 0.0,
     "roughnessFactor": 1.0,
@@ -1193,10 +1243,15 @@
     }
    },
    "normalTexture": {
-    "index": 67
+    "index": 58
    },
    "extras": {
-    "surface": "concrete"
+    "surface": "concrete",
+    "height": 0.012
+   },
+   "occlusionTexture": {
+    "index": 68,
+    "strength": 0.32
    }
   },
   {
@@ -4314,19 +4369,11 @@
    "mimeType": "image/ktx2"
   },
   {
-   "uri": "door_mr.ktx2",
-   "mimeType": "image/ktx2"
-  },
-  {
    "uri": "ceiling_2d.ktx2",
    "mimeType": "image/ktx2"
   },
   {
    "uri": "ceiling_2n.ktx2",
-   "mimeType": "image/ktx2"
-  },
-  {
-   "uri": "ceiling_2mr.ktx2",
    "mimeType": "image/ktx2"
   },
   {
@@ -4338,19 +4385,11 @@
    "mimeType": "image/ktx2"
   },
   {
-   "uri": "crate_1mr.ktx2",
-   "mimeType": "image/ktx2"
-  },
-  {
    "uri": "crate_2d.ktx2",
    "mimeType": "image/ktx2"
   },
   {
    "uri": "crate_2n.ktx2",
-   "mimeType": "image/ktx2"
-  },
-  {
-   "uri": "crate_2mr.ktx2",
    "mimeType": "image/ktx2"
   },
   {
@@ -4362,19 +4401,11 @@
    "mimeType": "image/ktx2"
   },
   {
-   "uri": "crate_3mr.ktx2",
-   "mimeType": "image/ktx2"
-  },
-  {
    "uri": "ground_1d.ktx2",
    "mimeType": "image/ktx2"
   },
   {
    "uri": "ground_1n.ktx2",
-   "mimeType": "image/ktx2"
-  },
-  {
-   "uri": "ground_1mr.ktx2",
    "mimeType": "image/ktx2"
   },
   {
@@ -4386,19 +4417,11 @@
    "mimeType": "image/ktx2"
   },
   {
-   "uri": "lift_mr.ktx2",
-   "mimeType": "image/ktx2"
-  },
-  {
    "uri": "lockers_d.ktx2",
    "mimeType": "image/ktx2"
   },
   {
    "uri": "lockers_n.ktx2",
-   "mimeType": "image/ktx2"
-  },
-  {
-   "uri": "lockers_mr.ktx2",
    "mimeType": "image/ktx2"
   },
   {
@@ -4410,10 +4433,6 @@
    "mimeType": "image/ktx2"
   },
   {
-   "uri": "vent_slab_mr.ktx2",
-   "mimeType": "image/ktx2"
-  },
-  {
    "uri": "wall_2d.ktx2",
    "mimeType": "image/ktx2"
   },
@@ -4422,7 +4441,43 @@
    "mimeType": "image/ktx2"
   },
   {
-   "uri": "wall_2mr.ktx2",
+   "uri": "door_mrh.ktx2",
+   "mimeType": "image/ktx2"
+  },
+  {
+   "uri": "ceiling_2mrh.ktx2",
+   "mimeType": "image/ktx2"
+  },
+  {
+   "uri": "crate_1mrh.ktx2",
+   "mimeType": "image/ktx2"
+  },
+  {
+   "uri": "crate_2mrh.ktx2",
+   "mimeType": "image/ktx2"
+  },
+  {
+   "uri": "crate_3mrh.ktx2",
+   "mimeType": "image/ktx2"
+  },
+  {
+   "uri": "ground_1mrh.ktx2",
+   "mimeType": "image/ktx2"
+  },
+  {
+   "uri": "lift_mrh.ktx2",
+   "mimeType": "image/ktx2"
+  },
+  {
+   "uri": "lockers_mrh.ktx2",
+   "mimeType": "image/ktx2"
+  },
+  {
+   "uri": "vent_slab_mrh.ktx2",
+   "mimeType": "image/ktx2"
+  },
+  {
+   "uri": "wall_2mrh.ktx2",
    "mimeType": "image/ktx2"
   }
  ],
