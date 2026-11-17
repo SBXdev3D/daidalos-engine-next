@@ -15,6 +15,13 @@
 // metallic-roughness packs grayscale maps the way glTF reads them: roughness in green, metalness in blue.
 // Without a metalness map, blue is full, so that the material's metallicFactor alone decides.
 //
+//     texture-tool relief <roughness.png> <metallic.png|-> <height.png> <out.ktx2> [--depth N] [--albedo d.png]
+//
+// packs the same, with the height in alpha and the occlusion baked from it in red (ADR-0064): at each texel,
+// how much of the sky above it the relief around leaves open, over 16 directions, the height spanning N
+// texels (8 by default). With an albedo, it prints how much the albedo already darkens where the relief
+// occludes, from 0 (not at all) to 1 (as much), so that a material does not darken its cavities twice.
+//
 //     texture-tool flipbook fire|smoke|explosion <out> [--frames N] [--size N] [--grid N] [--seed N]
 //                  [--preview 1]
 //
@@ -57,6 +64,7 @@ namespace {
 constexpr std::string_view kUsage =
     "usage: texture-tool [--compare] color|normal|data <input> <file.ktx2>\n"
     "       texture-tool [--compare] metallic-roughness <roughness> [<metallic>] <file.ktx2>\n"
+    "       texture-tool relief <roughness> <metallic|-> <height> <file.ktx2> [--depth N] [--albedo <albedo>]\n"
     "       texture-tool flipbook fire|smoke|explosion <out> [--frames N] [--size N] [--grid N] [--seed N]\n"
     "                    [--preview 1]\n";
 
@@ -86,6 +94,164 @@ core::Result<ImageData> Load(std::span<char* const> arguments, bool packing, Tex
         return PackMetallicRoughness(roughness, &metallic);
     }
     return resources::LoadImageFile(arguments[0], use);
+}
+
+// The first level of an image, alone.
+ImageData FirstLevel(const ImageData& image) {
+    ImageData level;
+    level.width = image.width;
+    level.height = image.height;
+    level.format = image.format;
+    level.pixels.assign(image.pixels.begin(), image.pixels.begin() + static_cast<std::ptrdiff_t>(
+                                                                         std::size_t{image.width} * image.height * 4));
+    return level;
+}
+
+// The occlusion of a height map (ADR-0064), from 0 (closed) to 1 (open): at each texel, the share of the
+// sky above it that the relief around leaves open, over 16 directions, each to the highest horizon within
+// four depths. The map tiles. depth is the texels the height spans from 0 to 1.
+std::vector<float> BakeOcclusion(const ImageData& height, float depth) {
+    const int width = static_cast<int>(height.width);
+    const int rows = static_cast<int>(height.height);
+    const auto at = [&](int x, int y) {
+        x = ((x % width) + width) % width;
+        y = ((y % rows) + rows) % rows;
+        return static_cast<float>(height.pixels[(static_cast<std::size_t>(y) * width + x) * 4]) / 255.0f;
+    };
+    constexpr int kDirections = 16;
+    constexpr int kSteps = 12;
+    const float reach = depth * 4.0f;
+    std::vector<float> occlusion(static_cast<std::size_t>(width) * rows);
+    for (int y = 0; y < rows; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const float here = at(x, y);
+            float open = 0.0f;
+            for (int d = 0; d < kDirections; ++d) {
+                const float angle = (static_cast<float>(d) + 0.5f) * 2.0f * std::numbers::pi_v<float> / kDirections;
+                float steepest = 0.0f;
+                for (int step = 1; step <= kSteps; ++step) {
+                    const float distance = reach * std::pow(static_cast<float>(step) / kSteps, 1.5f);
+                    const float rise = (at(x + static_cast<int>(std::lround(std::cos(angle) * distance)),
+                                           y + static_cast<int>(std::lround(std::sin(angle) * distance))) -
+                                        here) *
+                                       depth;
+                    steepest = std::max(steepest, rise / std::max(distance, 1.0f));
+                }
+                // The sky above the horizon, weighed by the cosine: 1 - sin² of its elevation.
+                const float sine = steepest / std::sqrt(1.0f + steepest * steepest);
+                open += 1.0f - sine * sine;
+            }
+            occlusion[static_cast<std::size_t>(y) * width + x] = open / kDirections;
+        }
+    }
+    return occlusion;
+}
+
+// Roughness in green, metalness in blue, the occlusion baked from the height in red, the height in alpha.
+core::Result<ImageData> PackRelief(const ImageData& roughness, const ImageData* metallic, const ImageData& height,
+                                   float depth, const std::vector<float>& occlusion) {
+    if (height.width != roughness.width || height.height != roughness.height ||
+        (metallic != nullptr && (metallic->width != roughness.width || metallic->height != roughness.height))) {
+        return core::MakeError(core::ErrorCode::InvalidArgument, "texture-tool",
+                               "The roughness, metalness and height maps differ in size");
+    }
+    (void)depth;
+    ImageData packed = FirstLevel(roughness);
+    for (std::size_t texel = 0; texel < occlusion.size(); ++texel) {
+        const std::size_t at = texel * 4;
+        packed.pixels[at] = static_cast<std::byte>(std::lround(std::clamp(occlusion[texel], 0.0f, 1.0f) * 255.0f));
+        packed.pixels[at + 1] = roughness.pixels[at];
+        packed.pixels[at + 2] = (metallic != nullptr) ? metallic->pixels[at] : std::byte{255};
+        packed.pixels[at + 3] = height.pixels[at];
+    }
+    return resources::GenerateMips(std::move(packed));
+}
+
+// How much the albedo darkens where the relief occludes: the correlation of its luminance with the
+// occlusion, from 0 (none, or the other way) to 1.
+double CavityCorrelation(const ImageData& albedo, const std::vector<float>& occlusion) {
+    double sumA = 0.0;
+    double sumO = 0.0;
+    double sumAA = 0.0;
+    double sumOO = 0.0;
+    double sumAO = 0.0;
+    const double count = static_cast<double>(occlusion.size());
+    for (std::size_t texel = 0; texel < occlusion.size(); ++texel) {
+        const std::size_t at = texel * 4;
+        const double a =
+            (0.2126 * static_cast<double>(albedo.pixels[at]) + 0.7152 * static_cast<double>(albedo.pixels[at + 1]) +
+             0.0722 * static_cast<double>(albedo.pixels[at + 2])) /
+            255.0;
+        const double o = occlusion[texel];
+        sumA += a;
+        sumO += o;
+        sumAA += a * a;
+        sumOO += o * o;
+        sumAO += a * o;
+    }
+    const double covariance = sumAO / count - (sumA / count) * (sumO / count);
+    const double spread = std::sqrt(std::max(
+        (sumAA / count - (sumA / count) * (sumA / count)) * (sumOO / count - (sumO / count) * (sumO / count)), 1e-12));
+    return std::clamp(covariance / spread, 0.0, 1.0);
+}
+
+core::Result<void> Write(const std::filesystem::path& path, std::span<const std::byte> bytes);
+
+int MakeRelief(std::span<char* const> arguments) {
+    if (arguments.size() < 4) {
+        std::fputs(kUsage.data(), stderr);
+        return 2;
+    }
+    float depth = 8.0f;
+    const char* albedoPath = nullptr;
+    for (std::size_t index = 4; index + 1 < arguments.size(); index += 2) {
+        const std::string_view option = arguments[index];
+        if (option == "--depth") {
+            depth = std::max(std::stof(arguments[index + 1]), 0.1f);
+        } else if (option == "--albedo") {
+            albedoPath = arguments[index + 1];
+        } else {
+            std::fputs(kUsage.data(), stderr);
+            return 2;
+        }
+    }
+    const auto start = std::chrono::steady_clock::now();
+    const std::string_view metallicPath = arguments[1];
+    const core::Result<ImageData> roughness = resources::LoadImageFile(arguments[0], TextureUse::Data);
+    const core::Result<ImageData> height = resources::LoadImageFile(arguments[2], TextureUse::Data);
+    std::optional<core::Result<ImageData>> metallic;
+    if (metallicPath != "-") {
+        metallic = resources::LoadImageFile(arguments[1], TextureUse::Data);
+    }
+    if (!roughness || !height || (metallic.has_value() && !metallic->has_value())) {
+        const core::Error& error = !roughness ? roughness.error() : (!height ? height.error() : metallic->error());
+        std::fputs(std::format("{}\n", core::Format(error)).c_str(), stderr);
+        return 1;
+    }
+    const std::vector<float> occlusion = BakeOcclusion(*height, depth);
+    const core::Result<void> written =
+        PackRelief(*roughness, metallic.has_value() ? &**metallic : nullptr, *height, depth, occlusion)
+            .and_then([](const ImageData& image) { return resources::EncodeKtx2(image, TextureUse::Data); })
+            .and_then([&](const std::vector<std::byte>& bytes) { return Write(arguments[3], bytes); });
+    if (!written) {
+        std::fputs(std::format("{}\n", core::Format(written.error())).c_str(), stderr);
+        return 1;
+    }
+    double mean = 0.0;
+    for (const float value : occlusion) {
+        mean += value / static_cast<double>(occlusion.size());
+    }
+    std::string report = std::format("{}: occlusion {:.3f} on average", arguments[3], mean);
+    if (albedoPath != nullptr) {
+        const core::Result<ImageData> albedo = resources::LoadImageFile(albedoPath, TextureUse::Color);
+        if (albedo && albedo->width == height->width && albedo->height == height->height) {
+            report +=
+                std::format(", cavities already dark in the albedo {:.2f}", CavityCorrelation(*albedo, occlusion));
+        }
+    }
+    const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - start;
+    std::fputs(std::format("{}, in {:.1f} s\n", report, elapsed.count()).c_str(), stdout);
+    return 0;
 }
 
 // A normal of a normal map, rebuilt from red and green as the shaders do.
@@ -250,6 +416,9 @@ int main(int argc, char** argv) {
     std::span<char* const> arguments(argv, static_cast<std::size_t>(argc));
     if (argc > 1 && std::string_view(arguments[1]) == "flipbook") {
         return MakeFlipbookFiles(arguments.subspan(2));
+    }
+    if (argc > 1 && std::string_view(arguments[1]) == "relief") {
+        return MakeRelief(arguments.subspan(2));
     }
     const bool comparing = argc > 1 && std::string_view(arguments[1]) == "--compare";
     if (comparing) {
