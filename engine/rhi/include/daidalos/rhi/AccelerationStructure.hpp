@@ -27,6 +27,18 @@ struct TriangleGeometry {
     bool operator==(const TriangleGeometry&) const = default;
 };
 
+/// Boxes for a bottom-level structure, each six floats, its lowest corner then its highest: a ray that enters
+/// one stops the query for a candidate, which the shader tests itself. A box whose first float is NaN is
+/// inactive. The buffer needs BufferUsage::AccelerationStructureInput.
+struct AabbGeometry {
+    BufferHandle boxes;
+    std::uint64_t offset = 0;
+    std::uint32_t stride = 24;
+    std::uint32_t count = 0;
+
+    bool operator==(const AabbGeometry&) const = default;
+};
+
 enum class AccelerationStructureLevel {
     /// The triangles of one mesh.
     Bottom,
@@ -36,8 +48,9 @@ enum class AccelerationStructureLevel {
 
 struct AccelerationStructureDesc {
     AccelerationStructureLevel level = AccelerationStructureLevel::Bottom;
-    /// Bottom level only.
+    /// Bottom level only: its triangles, or its boxes when it has some.
     TriangleGeometry geometry;
+    AabbGeometry boxes;
     /// Top level only: the most instances a build can hold.
     std::uint32_t maxInstances = 0;
     /// Built again every frame: favors build speed over tracing speed.

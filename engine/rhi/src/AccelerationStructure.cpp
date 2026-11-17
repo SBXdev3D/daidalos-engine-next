@@ -55,6 +55,25 @@ BuildGeometry Triangles(Device::Impl& device, const TriangleGeometry& triangles)
     return result;
 }
 
+BuildGeometry Boxes(Device::Impl& device, const AabbGeometry& boxes) {
+    BuildGeometry result;
+    result.geometry.geometryType = VK_GEOMETRY_TYPE_AABBS_KHR;
+    result.geometry.flags = 0;
+    result.geometry.geometry.aabbs = {.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_AABBS_DATA_KHR,
+                                      .stride = boxes.stride};
+    if (boxes.boxes) {
+        result.geometry.geometry.aabbs.data.deviceAddress =
+            AddressOf(device.device, device.buffers.Get(boxes.boxes).buffer) + boxes.offset;
+    }
+    result.primitives = boxes.count;
+    return result;
+}
+
+// A bottom-level structure's geometry: its boxes, or else its triangles.
+BuildGeometry BottomGeometry(Device::Impl& device, const AccelerationStructureDesc& desc) {
+    return desc.boxes.count > 0 ? Boxes(device, desc.boxes) : Triangles(device, desc.geometry);
+}
+
 BuildGeometry Instances(Device::Impl& device, BufferHandle instances, std::uint32_t count) {
     BuildGeometry result;
     result.geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
@@ -108,8 +127,8 @@ void RecordBuild(VkCommandBuffer commands, const AccelerationStructureData& data
 core::Result<AccelerationStructureHandle> Device::CreateAccelerationStructure(const AccelerationStructureDesc& desc) {
     Impl& impl = *m_impl;
     const bool top = desc.level == AccelerationStructureLevel::Top;
-    DAI_ASSERT(top ? desc.maxInstances > 0 : desc.geometry.indexCount >= 3,
-               "A structure needs instances or at least one triangle");
+    DAI_ASSERT(top ? desc.maxInstances > 0 : desc.geometry.indexCount >= 3 || desc.boxes.count > 0,
+               "A structure needs instances, at least one triangle or a box");
     if (top && impl.freeAccelerationStructureIndices.empty()) {
         return core::MakeError(core::ErrorCode::OutOfMemory, kModule,
                                std::format("Acceleration structure '{}': all {} slots are in use", desc.name,
@@ -117,7 +136,7 @@ core::Result<AccelerationStructureHandle> Device::CreateAccelerationStructure(co
     }
 
     const BuildGeometry geometry =
-        top ? Instances(impl, BufferHandle{}, desc.maxInstances) : Triangles(impl, desc.geometry);
+        top ? Instances(impl, BufferHandle{}, desc.maxInstances) : BottomGeometry(impl, desc);
     const VkAccelerationStructureBuildGeometryInfoKHR info = BuildInfo(desc, geometry.geometry);
     VkAccelerationStructureBuildSizesInfoKHR sizes{.sType =
                                                        VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR};
@@ -280,6 +299,20 @@ void CommandList::BuildAccelerationStructure(AccelerationStructureHandle structu
     BuildAccelerationStructures({&structure, 1});
 }
 
+void CommandList::BuildAccelerationStructure(AccelerationStructureHandle structure, std::uint32_t boxes) {
+    Device::Impl& device = *m_recording->device;
+    AccelerationStructureData& data = device.accelerationStructures.Get(structure);
+    DAI_ASSERT(data.desc.level == AccelerationStructureLevel::Bottom && data.desc.boxes.count > 0 && !data.desc.refit,
+               "Only a structure of boxes, rebuilt each time, builds part of them");
+    DAI_ASSERT(data.scratch != VK_NULL_HANDLE, "This structure was built with the uploads and cannot be built again");
+    DAI_ASSERT(CurrentAccess(data.access) == Access::AccelerationStructureWrite,
+               "Declare the structure as AccelerationStructureWrite first");
+    BuildGeometry geometry = BottomGeometry(device, data.desc);
+    geometry.primitives = std::min(boxes, data.desc.boxes.count);
+    data.built = true;
+    RecordBuild(m_recording->commands, data, geometry);
+}
+
 void CommandList::BuildAccelerationStructures(std::span<const AccelerationStructureHandle> structures) {
     Device::Impl& device = *m_recording->device;
     std::vector<BuildGeometry> geometries;
@@ -293,7 +326,7 @@ void CommandList::BuildAccelerationStructures(std::span<const AccelerationStruct
                    "This structure was built with the uploads and cannot be built again");
         DAI_ASSERT(CurrentAccess(data.access) == Access::AccelerationStructureWrite,
                    "Declare the structure as AccelerationStructureWrite first");
-        geometries.push_back(Triangles(device, data.desc.geometry));
+        geometries.push_back(BottomGeometry(device, data.desc));
     }
     // The geometries are all stored before any info points to one.
     for (std::size_t index = 0; index < structures.size(); ++index) {
