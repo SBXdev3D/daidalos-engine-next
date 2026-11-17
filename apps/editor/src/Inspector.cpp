@@ -73,6 +73,33 @@ bool InspectLight(scene::Light& light) {
     if (directional) {
         changed |= Degrees("Angular radius", light.angularRadius, 0.05f, 0.0f, 10.0f);
     }
+    if (!directional) {
+        changed |= InputString("Profile (IES)", light.profile);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(
+                "How a real lamp sends its light around its axis, -Z: an IES file, relative to the level");
+        }
+    }
+    if (light.type == renderer::LightType::Spot) {
+        changed |= InputString("Cookie", light.cookie);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("A grey image the light shines through, relative to the level; its up is +Y");
+        }
+    }
+    // What changes its brightness, and its lamp's glow with it (ADR-0057).
+    int pattern = static_cast<int>(light.animation.pattern);
+    if (ImGui::Combo("Animation", &pattern, "Steady\0Flicker\0Buzz\0Failing\0Strobe\0Pulse\0")) {
+        light.animation.pattern = static_cast<scene::LightPattern>(pattern);
+        changed = true;
+    }
+    if (light.animation.pattern != scene::LightPattern::Steady) {
+        changed |= ImGui::DragFloat("Rate", &light.animation.rate, 0.01f, 0.0f, 20.0f, "%.2f");
+        changed |= ImGui::SliderFloat("Depth", &light.animation.depth, 0.0f, 1.0f);
+    }
+    changed |= InputString("Power circuit", light.animation.circuit);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Game code can cut a circuit: its lights stutter out, and blink back on");
+    }
     return changed;
 }
 

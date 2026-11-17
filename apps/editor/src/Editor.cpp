@@ -1054,6 +1054,69 @@ void Editor::DrawMenu(app::Application& app) {
             entity.light = scene::Light{.type = renderer::LightType::Spot, .intensity = 200.0f, .range = 12.0f};
             Create("Spot light", std::move(entity));
         }
+        // Presets: lights a horror level keeps asking for (ADR-0057).
+        if (ImGui::BeginMenu("Light presets")) {
+            const auto preset = [this](const char* name, scene::Light light) {
+                scene::LevelEntity entity;
+                entity.light = std::move(light);
+                Create(name, std::move(entity));
+            };
+            if (ImGui::MenuItem("Candle")) {
+                preset("Candle", {.intensity = 1.0f,
+                                  .temperature = 1850.0f,
+                                  .range = 4.0f,
+                                  .radius = 0.01f,
+                                  .animation = {.pattern = scene::LightPattern::Flicker}});
+            }
+            if (ImGui::MenuItem("Lighter")) {
+                preset("Lighter", {.intensity = 0.6f,
+                                   .temperature = 1900.0f,
+                                   .range = 3.0f,
+                                   .radius = 0.008f,
+                                   .animation = {.pattern = scene::LightPattern::Flicker, .rate = 1.6f}});
+            }
+            if (ImGui::MenuItem("Buzzing tube")) {
+                preset("Buzzing tube", {.intensity = 120.0f,
+                                        .temperature = 5200.0f,
+                                        .range = 9.0f,
+                                        .radius = 0.3f,
+                                        .profile = "Lights/downlight.ies",
+                                        .animation = {.pattern = scene::LightPattern::Buzz}});
+            }
+            if (ImGui::MenuItem("Failing lamp")) {
+                preset("Failing lamp", {.intensity = 80.0f,
+                                        .temperature = 2900.0f,
+                                        .range = 8.0f,
+                                        .profile = "Lights/bare_bulb.ies",
+                                        .animation = {.pattern = scene::LightPattern::Failing}});
+            }
+            if (ImGui::MenuItem("Emergency light")) {
+                preset("Emergency light",
+                       {.type = renderer::LightType::Spot,
+                        .color = {1.0f, 0.08f, 0.04f},
+                        .intensity = 400.0f,
+                        .range = 14.0f,
+                        .innerAngle = glm::radians(15.0f),
+                        .outerAngle = glm::radians(30.0f),
+                        .animation = {.pattern = scene::LightPattern::Pulse, .rate = 0.8f, .circuit = "emergency"}});
+            }
+            if (ImGui::MenuItem("Hazard strobe")) {
+                preset("Hazard strobe", {.color = {1.0f, 0.55f, 0.1f},
+                                         .intensity = 300.0f,
+                                         .range = 10.0f,
+                                         .animation = {.pattern = scene::LightPattern::Strobe, .rate = 1.5f}});
+            }
+            if (ImGui::MenuItem("Lamp behind a fan")) {
+                preset("Lamp behind a fan", {.type = renderer::LightType::Spot,
+                                             .intensity = 600.0f,
+                                             .temperature = 3200.0f,
+                                             .range = 16.0f,
+                                             .innerAngle = glm::radians(30.0f),
+                                             .outerAngle = glm::radians(40.0f),
+                                             .cookie = "Lights/fan_cookie.png"});
+            }
+            ImGui::EndMenu();
+        }
         ImGui::Separator();
         if (ImGui::MenuItem("Fog volume")) {
             scene::LevelEntity entity;
