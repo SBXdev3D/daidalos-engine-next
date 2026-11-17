@@ -125,6 +125,8 @@ bool Occluded(RayDesc ray, uint structure, uint instanceBuffer, uint materialBuf
 
 // The surface at a hit, as the G-buffer holds it: its material, read at full detail, and its normal,
 // with the normal map, turned towards the ray as the G-buffer does for the back of double-sided surfaces.
+import Bsdf;
+
 struct Surface {
     float3 position;
     float3 faceNormal;
@@ -141,6 +143,7 @@ struct Surface {
     float3 absorption;
     float3 tint; // The base color, which tints the light that goes through.
     bool entering;
+    Layers layers; // The clear coat and the sheen (ADR-0056).
 };
 
 Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame, uint instanceBuffer, uint materialBuffer) {
@@ -186,6 +189,10 @@ Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame, uint instanceBuf
     surface.thin = material.thin != 0;
     surface.absorption = material.absorption;
     surface.tint = baseColor.rgb;
+    surface.layers.coat = material.clearcoat;
+    surface.layers.coatRoughness = material.clearcoatRoughness;
+    surface.layers.sheen = material.sheenColor;
+    surface.layers.sheenRoughness = material.sheenRoughness;
     return surface;
 }
 

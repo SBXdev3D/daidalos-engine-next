@@ -12,4 +12,8 @@ namespace daidalos::renderer {
 /// Each face holds the whole texture.
 [[nodiscard]] resources::MeshData MakeCube();
 
+/// A sphere of radius 0.5 around the origin, smooth, with counter-clockwise front faces: segments around its
+/// axis (+Y) and rings from pole to pole. The texture wraps once around it; the tangent follows u.
+[[nodiscard]] resources::MeshData MakeSphere(std::uint32_t segments = 48, std::uint32_t rings = 24);
+
 } // namespace daidalos::renderer

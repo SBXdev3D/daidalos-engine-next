@@ -136,6 +136,10 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
         desc.thin = material.thickness <= 0.0f;
         desc.attenuationColor = material.attenuationColor;
         desc.attenuationDistance = material.attenuationDistance;
+        desc.clearcoat = material.clearcoat;
+        desc.clearcoatRoughness = material.clearcoatRoughness;
+        desc.sheenColor = material.sheenColor;
+        desc.sheenRoughness = material.sheenRoughness;
         desc.baseColorTexture = textureOf(material.baseColorImage);
         desc.metallicRoughnessTexture = textureOf(material.metallicRoughnessImage);
         desc.normalTexture = textureOf(material.normalImage);

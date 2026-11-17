@@ -44,6 +44,14 @@ struct MaterialDesc {
     /// Thick glass: the color white light takes after attenuationDistance meters inside it.
     glm::vec3 attenuationColor{1.0f};
     float attenuationDistance = std::numeric_limits<float>::infinity();
+    /// A clear varnish over the material (KHR_materials_clearcoat): how much of it, from 0 to 1, and its own
+    /// roughness. Its reflection sits over the base, which it dims by what it reflects (ADR-0056).
+    float clearcoat = 0.0f;
+    float clearcoatRoughness = 0.0f;
+    /// The soft rim of light of cloth, felt and dust (KHR_materials_sheen): its color, black for none, and its
+    /// roughness.
+    glm::vec3 sheenColor{0.0f};
+    float sheenRoughness = 0.0f;
     rhi::TextureHandle baseColorTexture;
     rhi::TextureHandle metallicRoughnessTexture;
     rhi::TextureHandle normalTexture;

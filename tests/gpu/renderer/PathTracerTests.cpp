@@ -324,6 +324,7 @@ protected:
                                          .motion = motion,
                                          .baseColor = shading->baseColor,
                                          .emission = shading->emission,
+                                         .layers = shading->layers,
                                          .indirect = indirect != nullptr ? indirect->Output() : rhi::TextureHandle{},
                                          .reflections = reflections,
                                          .diffuse = shading->diffuse,
@@ -1052,6 +1053,7 @@ TEST_F(PathTracerTest, DISABLED_TimeTheDirectLightOfAThousandLightsAt1080p) {
                          .motion = motion,
                          .baseColor = shading->baseColor,
                          .emission = shading->emission,
+                         .layers = shading->layers,
                          .diffuse = shading->diffuse,
                          .specular = shading->specular,
                          .lightMap = m_pass->LightMapIndex(),
@@ -2156,4 +2158,72 @@ TEST_F(PathTracerTest, FogAmongAThousandLightsMatchesThePathTracer) {
     EXPECT_LT(averagedFlip, 0.11f);
     EXPECT_LT(oneFrameFlip, 0.13f);
     EXPECT_NEAR(total / reference, 1.0, 0.05);
+}
+
+TEST_F(PathTracerTest, ClearCoatAndSheenMatchThePathTracer) {
+    // Two spheres on a grey floor under a point light (ADR-0056): a dull red one under a smooth clear coat,
+    // whose sharp highlight sits over the base's broad one, and a dark cloth with a pale sheen, whose rim
+    // lights up against the light. The lighting and one bounce of the path tracer evaluate the same layered
+    // BSDF; without its layers, the image is far from the path tracer's.
+    const core::Result<renderer::MeshHandle> sphereMesh = m_pass->CreateMesh(renderer::MakeSphere(), "Sphere");
+    ASSERT_TRUE(sphereMesh.has_value());
+    const auto scene = [&](bool layered) {
+        SceneView view;
+        view.camera = LookAt({0.0f, 1.2f, 3.2f}, {0.0f, 0.5f, 0.0f}, 0.8f);
+        view.atmosphere = Dark();
+        view.lights.push_back({.type = renderer::LightType::Point,
+                               .position = {0.6f, 2.4f, 1.6f},
+                               .color = glm::vec3(60.0f),
+                               .range = 12.0f});
+        view.draws.push_back(
+            {.mesh = m_cube,
+             .world = glm::scale(glm::translate(glm::mat4(1.0f), {0.0f, -0.05f, 0.0f}), {6.0f, 0.1f, 6.0f}),
+             .material = Material({.baseColorFactor = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f),
+                                   .metallicFactor = 0.0f,
+                                   .roughnessFactor = 0.8f})});
+        MaterialDesc coated{
+            .baseColorFactor = glm::vec4(0.5f, 0.05f, 0.04f, 1.0f), .metallicFactor = 0.0f, .roughnessFactor = 0.6f};
+        MaterialDesc cloth{
+            .baseColorFactor = glm::vec4(0.05f, 0.06f, 0.2f, 1.0f), .metallicFactor = 0.0f, .roughnessFactor = 0.9f};
+        if (layered) {
+            coated.clearcoat = 1.0f;
+            coated.clearcoatRoughness = 0.15f;
+            cloth.sheenColor = glm::vec3(0.8f, 0.8f, 0.75f);
+            cloth.sheenRoughness = 0.35f;
+        }
+        view.draws.push_back({.mesh = *sphereMesh,
+                              .world = glm::translate(glm::mat4(1.0f), {-0.6f, 0.5f, 0.0f}),
+                              .material = Material(coated)});
+        view.draws.push_back({.mesh = *sphereMesh,
+                              .world = glm::translate(glm::mat4(1.0f), {0.6f, 0.5f, 0.0f}),
+                              .material = Material(cloth)});
+        return view;
+    };
+    constexpr rhi::Extent kExtent{96, 96};
+    const SceneView layered = scene(true);
+    const Image traced = Trace(layered, kExtent, {.maxBounces = 1, .seed = 23, .jitter = false}, 1);
+    const Image raster = Rasterize(layered, kExtent);
+    const Image bare = Rasterize(scene(false), kExtent);
+    const float flip = Flip(traced, raster, kExtent);
+    const float flipBare = Flip(traced, bare, kExtent);
+    RecordProperty("flip", std::to_string(flip));
+    RecordProperty("flipWithoutLayers", std::to_string(flipBare));
+    // Measured on an RTX 3090: 0.014, and 0.116 without the layers.
+    EXPECT_LT(flip, 0.03f);
+    EXPECT_GT(flipBare, 2.0f * flip);
+    // The coat adds light, and the sheen too.
+    EXPECT_GT(TotalLuminance(raster), TotalLuminance(bare));
+}
+
+TEST_F(PathTracerTest, ClearCoatKeepsItsEnergyInAWhiteSky) {
+    // A white matte cube under a clear coat in a white sky (ADR-0056): what the coat reflects, the base below
+    // loses, so the cube neither glows brighter than the sky nor loses much of it.
+    MaterialDesc coated;
+    coated.metallicFactor = 0.0f;
+    coated.roughnessFactor = 1.0f;
+    coated.clearcoat = 1.0f;
+    coated.clearcoatRoughness = 0.1f;
+    const Image image =
+        Trace(CubeInFront(Material(coated)), kSmall, {.maxBounces = 8, .background = glm::vec3(1.0f), .seed = 31}, 256);
+    ExpectFurnace(image, 0.85f);
 }

@@ -18,6 +18,8 @@ struct GBufferOutput {
     float4 baseColor : SV_Target2;
     // The emission in nits, times the frame's exposure (ADR-0043), and the material's occlusion in alpha.
     float4 emission : SV_Target3;
+    // The clear coat and the sheen (PackLayers, ADR-0056).
+    uint2 layers : SV_Target4;
 };
 
 GBufferOutput PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) {
@@ -39,6 +41,7 @@ GBufferOutput PSMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) {
     output.motion = ClipToUv(input.previousClip) - ClipToUv(input.currentClip);
     output.baseColor = float4(baseColor.rgb, metallic);
     output.emission = float4(emission, occlusion);
+    output.layers = PackLayers(material);
     return output;
 }
 

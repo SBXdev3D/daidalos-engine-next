@@ -39,6 +39,7 @@ struct RestirPushConstants {
     uint seed;   // Changes every frame.
     uint flags;  // kRestir*.
     uint currentGuides; // This frame's guides, sampled, once the candidates have written them.
+    uint layers;        // The G-buffer's clear coat and sheen (ADR-0056).
 };
 
 [[vk::push_constant]] RestirPushConstants g_restir;
@@ -59,6 +60,7 @@ GBufferTextures Textures() {
     textures.normals = g_restir.normals;
     textures.baseColor = g_restir.baseColor;
     textures.emission = g_restir.emission;
+    textures.layers = g_restir.layers;
     textures.size = int2(g_restir.width, g_restir.height);
     return textures;
 }

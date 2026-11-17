@@ -31,3 +31,21 @@ TEST(MakeCube, NormalsPointAwayFromTheCenter) {
         EXPECT_FLOAT_EQ(glm::dot(vertex.position, vertex.normal), 0.5f);
     }
 }
+
+TEST(MakeSphere, IsClosedAroundItsCenterWithOutwardTriangles) {
+    const resources::MeshData sphere = renderer::MakeSphere(16, 8);
+    ASSERT_EQ(sphere.indices.size(), 16U * 8U * 6U);
+    for (const resources::Vertex& vertex : sphere.vertices) {
+        EXPECT_NEAR(glm::length(vertex.position), 0.5f, 1e-5f);
+    }
+    // Every triangle with an area faces away from the center.
+    for (std::size_t index = 0; index + 2 < sphere.indices.size(); index += 3) {
+        const glm::vec3 a = sphere.vertices[sphere.indices[index]].position;
+        const glm::vec3 b = sphere.vertices[sphere.indices[index + 1]].position;
+        const glm::vec3 c = sphere.vertices[sphere.indices[index + 2]].position;
+        const glm::vec3 normal = glm::cross(b - a, c - a);
+        if (glm::length(normal) > 1e-6f) {
+            EXPECT_GT(glm::dot(normal, a + b + c), 0.0f);
+        }
+    }
+}

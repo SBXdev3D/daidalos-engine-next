@@ -127,7 +127,8 @@ float3 DirectLight(Surface surface, float3 view, FrameData frame, float majorant
             continue;
         }
         const float3 reflected = light.color * attenuation *
-                                 EvaluateBsdf(surface.normal, view, toLight, surface.diffuseColor, surface.f0, surface.roughness);
+                                 EvaluateLayeredBsdf(surface.normal, view, toLight, surface.diffuseColor, surface.f0,
+                                                     surface.roughness, surface.layers);
         if (all(reflected <= 0.0)) {
             continue;
         }
@@ -272,8 +273,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         if (bounce + 1 >= g_path.maxBounces) {
             break;
         }
-        const BsdfSample next = SampleBsdf(surface.normal, view, surface.diffuseColor, surface.f0, surface.roughness,
-                                           float3(Random(random), Random(random), Random(random)));
+        const BsdfSample next =
+            SampleLayeredBsdf(surface.normal, view, surface.diffuseColor, surface.f0, surface.roughness, surface.layers,
+                              float4(Random(random), Random(random), Random(random), Random(random)));
         // A direction below the surface's face goes nowhere.
         if (all(next.weight <= 0.0) || dot(next.direction, surface.faceNormal) <= 0.0) {
             break;

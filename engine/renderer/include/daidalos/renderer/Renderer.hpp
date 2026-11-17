@@ -54,6 +54,8 @@ enum class DebugView {
     Bloom,
     /// The light the volumetric fog scatters towards the camera alone, over black (ADR-0051).
     Fog,
+    /// The material layers of the G-buffer (ADR-0056): the clear coat in red, the sheen in green.
+    Layers,
 };
 
 /// How indirect light is traced (ADR-0045).

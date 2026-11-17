@@ -73,6 +73,8 @@ struct ShadingTargets {
     rhi::TextureHandle baseColor;
     /// The emission in nits times the exposure, and the occlusion in alpha (MeshPass::kEmissionFormat).
     rhi::TextureHandle emission;
+    /// The clear coat and the sheen, packed (MeshPass::kLayersFormat, ADR-0056).
+    rhi::TextureHandle layers;
     /// Storage images: the diffuse light, direct and indirect, per unit of diffuse color, and the specular
     /// light per unit of specular albedo, with the albedo in alpha (MeshPass::kLightFormat).
     rhi::TextureHandle diffuse;
@@ -162,6 +164,8 @@ public:
     static constexpr rhi::Format kBaseColorFormat = rhi::Format::Rgba8Srgb;
     /// Its fourth.
     static constexpr rhi::Format kEmissionFormat = rhi::Format::Rgba16Float;
+    /// The clear coat and the sheen of each pixel, packed (GBufferSurface.slangh, ADR-0056).
+    static constexpr rhi::Format kLayersFormat = rhi::Format::Rg32Uint;
     /// The lighting pass's diffuse and specular light, for the denoiser (ADR-0039).
     static constexpr rhi::Format kLightFormat = rhi::Format::Rgba16Float;
 

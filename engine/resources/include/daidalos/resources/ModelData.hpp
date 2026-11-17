@@ -82,6 +82,12 @@ struct MaterialData {
     float transmission = 0.0f;
     /// KHR_materials_ior: the index of refraction.
     float ior = 1.5f;
+    /// KHR_materials_clearcoat: a clear varnish over the material, how much of it and how rough.
+    float clearcoat = 0.0f;
+    float clearcoatRoughness = 0.0f;
+    /// KHR_materials_sheen: the soft rim of light on cloth and dust, its color and roughness.
+    glm::vec3 sheenColor{0.0f};
+    float sheenRoughness = 0.0f;
     /// KHR_materials_volume: meters through the glass, in the mesh's space. Zero is thin glass, which bends
     /// nothing; otherwise the mesh is a closed volume, and light bends where it enters and leaves it.
     float thickness = 0.0f;
