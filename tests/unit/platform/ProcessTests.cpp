@@ -6,7 +6,9 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace daidalos;
@@ -48,4 +50,36 @@ TEST(RunProcess, FailsWhenTheProgramDoesNotExist) {
     const core::Result<platform::ProcessResult> result = platform::RunProcess(arguments);
     ASSERT_FALSE(result.has_value());
     EXPECT_EQ(result.error().code, core::ErrorCode::IoError);
+}
+
+TEST(StartProcess, ReturnsAtOnceAndSeesTheProgramEnd) {
+#ifdef _WIN32
+    const std::vector<std::string> arguments{"cmd.exe", "/c", "ping -n 2 127.0.0.1 > nul & exit 4"};
+#else
+    const std::vector<std::string> arguments{"/bin/sh", "-c", "sleep 1; exit 4"};
+#endif
+    core::Result<platform::ChildProcess> child = platform::StartProcess(arguments);
+    ASSERT_TRUE(child.has_value());
+    EXPECT_TRUE(child->Running()) << "The program waits about a second";
+    while (child->Running()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_EQ(child->ExitCode(), 4);
+}
+
+TEST(StartProcess, KillEndsTheProgram) {
+#ifdef _WIN32
+    const std::vector<std::string> arguments{"cmd.exe", "/c", "ping -n 30 127.0.0.1 > nul"};
+#else
+    const std::vector<std::string> arguments{"/bin/sh", "-c", "sleep 30"};
+#endif
+    core::Result<platform::ChildProcess> child = platform::StartProcess(arguments);
+    ASSERT_TRUE(child.has_value());
+    child->Kill();
+    EXPECT_FALSE(child->Running());
+}
+
+TEST(StartProcess, FailsWhenTheProgramDoesNotExist) {
+    const std::vector<std::string> arguments{"daidalos-this-program-does-not-exist"};
+    EXPECT_FALSE(platform::StartProcess(arguments).has_value());
 }

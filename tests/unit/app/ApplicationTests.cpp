@@ -64,10 +64,17 @@ public:
 
     void OnStop(Application& /*app*/) override { calls.emplace_back("stop"); }
 
+    bool OnCloseRequested(Application& /*app*/) override {
+        ++closeRequests;
+        return allowClose;
+    }
+
     std::vector<std::string> calls;
     std::vector<std::uint64_t> frameIndices;
     std::vector<platform::Event> events;
     int fixedUpdates = 0;
+    int closeRequests = 0;
+    bool allowClose = true;
     platform::Extent windowSize;
     std::uint64_t quitAfterFrames = 3;
     std::optional<core::Error> startError;
@@ -172,6 +179,22 @@ TEST_F(ApplicationTest, ClosingTheMainWindowEndsTheLoop) {
 
     EXPECT_EQ(m_handler.frameIndices.size(), 2u) << "No update runs after the close request";
     EXPECT_EQ(m_handler.calls.back(), "stop");
+}
+
+TEST_F(ApplicationTest, TheHandlerCanKeepTheApplicationOpen) {
+    m_handler.quitAfterFrames = 4;
+    m_handler.allowClose = false;
+    m_handler.onUpdate = [](Application& app, const core::FrameTime& time) {
+        if (time.frameIndex == 1) {
+            PushEvent(SDL_EVENT_WINDOW_CLOSE_REQUESTED, app.MainWindow().Id());
+        }
+    };
+    Application app(m_config);
+
+    ASSERT_TRUE(app.Run(m_handler).has_value());
+
+    EXPECT_EQ(m_handler.closeRequests, 1);
+    EXPECT_EQ(m_handler.frameIndices.size(), 4u) << "The close was refused: the loop went on until RequestQuit";
 }
 
 TEST_F(ApplicationTest, SystemQuitEndsTheLoop) {

@@ -177,3 +177,24 @@ TEST(LevelFileTest, MakesALevelOfABareModel) {
     EXPECT_EQ(level.entities[0].model, "Lantern.gltf");
     EXPECT_EQ(scene::LevelModels(level, "Lantern/Lantern.gltf"), (std::vector<std::string>{"Lantern/Lantern.gltf"}));
 }
+
+TEST(LevelFileTest, RelocateKeepsPathsOnTheSameFiles) {
+    Level level;
+    level.environment.skyFaces = "Sky/sky1";
+    LevelEntity entity{.id = 1, .model = "Factory.gltf"};
+    entity.particles = scene::LevelParticles{.effect = "Effects/dust.effect.json"};
+    level.entities.push_back(entity);
+
+    Level moved = level;
+    scene::Relocate(moved, "Factory/Factory.level.json", "Levels/Test/Copy.level.json");
+    EXPECT_EQ(moved.environment.skyFaces, "../../Factory/Sky/sky1");
+    EXPECT_EQ(moved.entities[0].model, "../../Factory/Factory.gltf");
+    EXPECT_EQ(moved.entities[0].particles->effect, "../../Factory/Effects/dust.effect.json");
+
+    scene::Relocate(moved, "Levels/Test/Copy.level.json", "Root.level.json");
+    EXPECT_EQ(moved.entities[0].model, "Factory/Factory.gltf");
+
+    Level same = level;
+    scene::Relocate(same, "Factory/Factory.level.json", "Factory/Other.level.json");
+    EXPECT_EQ(same, level);
+}

@@ -98,7 +98,30 @@ void LevelInstance::ApplyEnvironment(const LevelEnvironment& environment) {
 
 void LevelInstance::Build(const Level& level) {
     ApplyEnvironment(level.environment);
-    // Parents first, whatever the file's order.
+    for (const LevelEntity* entity : CreationOrder(level)) {
+        Make(*entity);
+    }
+    Link(level);
+}
+
+std::vector<const LevelEntity*> LevelInstance::CreationOrder(const Level& level) {
+    // Parents first, and the models that emitters sit on, whatever the file's order.
+    std::set<std::uint64_t> ids;
+    for (const LevelEntity& entity : level.entities) {
+        ids.insert(entity.id);
+    }
+    const auto waitsFor = [&ids](const LevelEntity& entity, const std::set<std::uint64_t>& created) {
+        if (entity.parent != 0 && !created.contains(entity.parent)) {
+            return true;
+        }
+        if (entity.particles && entity.particles->surface) {
+            const std::uint64_t owner = entity.particles->surface->entity;
+            return owner != entity.id && ids.contains(owner) && !created.contains(owner);
+        }
+        return false;
+    };
+    std::vector<const LevelEntity*> order;
+    order.reserve(level.entities.size());
     std::set<std::uint64_t> created;
     std::vector<const LevelEntity*> waiting;
     for (const LevelEntity& entity : level.entities) {
@@ -107,10 +130,10 @@ void LevelInstance::Build(const Level& level) {
     while (!waiting.empty()) {
         const std::size_t before = waiting.size();
         std::erase_if(waiting, [&](const LevelEntity* entity) {
-            if (entity->parent != 0 && !created.contains(entity->parent)) {
+            if (waitsFor(*entity, created)) {
                 return false;
             }
-            Create(level, *entity);
+            order.push_back(entity);
             created.insert(entity->id);
             return true;
         });
@@ -120,10 +143,70 @@ void LevelInstance::Build(const Level& level) {
             break;
         }
     }
-    Link(level);
+    return order;
+}
+
+LevelSync LevelInstance::Sync(const Level& from, const Level& to) {
+    if (!(from.environment == to.environment)) {
+        ApplyEnvironment(to.environment);
+    }
+    std::unordered_map<std::uint64_t, const LevelEntity*> previous;
+    for (const LevelEntity& entity : from.entities) {
+        previous.emplace(entity.id, &entity);
+    }
+    std::set<std::uint64_t> next;
+    for (const LevelEntity& entity : to.entities) {
+        next.insert(entity.id);
+    }
+    LevelSync sync;
+    for (const LevelEntity& entity : from.entities) {
+        if (!next.contains(entity.id)) {
+            Destroy(entity.id);
+            ++sync.destroyed;
+            sync.models |= !entity.model.empty();
+        }
+    }
+    ecs::World& world = m_scene->World();
+    std::set<std::uint64_t> remade;
+    for (const LevelEntity* entity : CreationOrder(to)) {
+        const auto old = previous.find(entity->id);
+        const ecs::Entity existing = Find(entity->id);
+        if (old != previous.end() && !existing.IsNull()) {
+            if (*old->second == *entity) {
+                continue;
+            }
+            LevelEntity moved = *old->second;
+            moved.transform = entity->transform;
+            if (moved == *entity) {
+                // Only the transform: move what is there.
+                static_cast<math::Transform&>(world.Get<ecs::LocalTransform>(existing)) = entity->transform;
+                ++sync.moved;
+                continue;
+            }
+        }
+        Make(*entity);
+        remade.insert(entity->id);
+        ++sync.created;
+        sync.models |= !entity->model.empty() || (old != previous.end() && !old->second->model.empty());
+    }
+    // An emitter on the surface of a model made again went with the old model: it is put back.
+    for (const LevelEntity& entity : to.entities) {
+        if (entity.particles && entity.particles->surface && remade.contains(entity.particles->surface->entity) &&
+            !remade.contains(entity.id)) {
+            Make(entity);
+            ++sync.created;
+        }
+    }
+    Link(to);
+    return sync;
 }
 
 void LevelInstance::Create(const Level& level, const LevelEntity& entity) {
+    Make(entity);
+    Link(level);
+}
+
+void LevelInstance::Make(const LevelEntity& entity) {
     ecs::World& world = m_scene->World();
     AssetLibrary& assets = m_scene->Assets();
 
@@ -202,6 +285,7 @@ void LevelInstance::Create(const Level& level, const LevelEntity& entity) {
                     emitter.surface = nullptr;
                 } else {
                     holder = node;
+                    m_surfaceEmitters[entity.id] = node;
                 }
             }
             world.Add<ParticleEmitter>(holder, std::move(emitter));
@@ -259,7 +343,6 @@ void LevelInstance::Create(const Level& level, const LevelEntity& entity) {
     if (entity.game) {
         world.Add<Tags>(created, *entity.game);
     }
-    Link(level);
 }
 
 void LevelInstance::Link(const Level& level) {
@@ -289,8 +372,17 @@ void LevelInstance::Destroy(std::uint64_t id) {
         return;
     }
     world.Destroy(entity);
-    // Its descendants made from the level went with it.
-    std::erase_if(m_entities, [&world](const auto& pair) { return !world.IsAlive(pair.second); });
+    // Its descendants made from the level went with it, and so do the emitters they put on other surfaces.
+    std::erase_if(m_entities, [&](const auto& pair) {
+        if (world.IsAlive(pair.second)) {
+            return false;
+        }
+        if (const auto emitter = m_surfaceEmitters.find(pair.first); emitter != m_surfaceEmitters.end()) {
+            world.Remove<ParticleEmitter>(emitter->second);
+            m_surfaceEmitters.erase(emitter);
+        }
+        return true;
+    });
 }
 
 ecs::Entity LevelInstance::Find(std::uint64_t id) const {

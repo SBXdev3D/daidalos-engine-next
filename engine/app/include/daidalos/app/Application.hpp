@@ -53,6 +53,10 @@ public:
     /// Called zero or more times per frame, with a constant step (60 Hz by default), before OnUpdate.
     virtual void OnFixedUpdate(Application& /*app*/, core::Seconds /*step*/) {}
 
+    /// Called when the main window is closed or the system asks to quit. Returning false keeps the application
+    /// running, to ask about unsaved work first; RequestQuit then ends it.
+    virtual bool OnCloseRequested(Application& /*app*/) { return true; }
+
     /// Called once per frame.
     virtual void OnUpdate(Application& /*app*/, const core::FrameTime& /*time*/) {}
 
@@ -195,7 +199,7 @@ private:
     void RenderFrame(IApplicationHandler& handler);
     void ReportConfigurationProblems();
     void MainLoop(IApplicationHandler& handler);
-    void HandleEvent(const platform::Event& event);
+    void HandleEvent(IApplicationHandler& handler, const platform::Event& event);
     void ApplyPendingScene();
     /// After a frame with a scene: locks pipeline creation, and measures the frame for the first launch's
     /// choice of preset.

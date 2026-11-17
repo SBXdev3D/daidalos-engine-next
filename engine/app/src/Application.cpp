@@ -815,7 +815,7 @@ void Application::MainLoop(IApplicationHandler& handler) {
 #else
                 m_input.Process(event);
 #endif
-                HandleEvent(event);
+                HandleEvent(handler, event);
 #if DAI_DEV_TOOLS
                 if (m_debugUi.has_value()) {
                     m_debugUi->ProcessEvent(event);
@@ -896,14 +896,18 @@ void Application::SetToolsOpen(bool open) {
 }
 #endif
 
-void Application::HandleEvent(const platform::Event& event) {
+void Application::HandleEvent(IApplicationHandler& handler, const platform::Event& event) {
     if (std::holds_alternative<platform::QuitRequested>(event)) {
         DAI_LOG_INFO(kModule, "Quit requested by the system");
-        RequestQuit();
+        if (handler.OnCloseRequested(*this)) {
+            RequestQuit();
+        }
     } else if (const auto* close = std::get_if<platform::WindowCloseRequested>(&event);
                close != nullptr && close->window == m_window->Id()) {
         DAI_LOG_INFO(kModule, "Main window closed");
-        RequestQuit();
+        if (handler.OnCloseRequested(*this)) {
+            RequestQuit();
+        }
     }
 }
 
