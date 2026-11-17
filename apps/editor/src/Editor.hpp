@@ -13,10 +13,12 @@
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -85,13 +87,32 @@ private:
     /// A path under the asset root, relative to the level's directory, as level files name them.
     [[nodiscard]] std::string RelativeToLevel(const std::string& path) const;
     void DeleteSelected();
+    /// Copies the selection, with what is under it, next to itself, and selects the copies.
+    void Duplicate();
+    /// Puts the selection on the system's clipboard, as level text that another editor can paste.
+    void CopySelection();
+    void Paste();
+    void SelectAll();
+    /// Moves an entity under another, or to the root with 0, where it stays in the world.
+    void Reparent(std::uint64_t child, std::uint64_t parent);
     [[nodiscard]] daidalos::scene::LevelEntity* Selected();
+    /// Selects one entity alone, or nothing with 0.
     void Select(std::uint64_t id);
+    /// Adds an entity to the selection, or takes it out (Ctrl+click).
+    void ToggleSelect(std::uint64_t id);
+    [[nodiscard]] bool IsSelected(std::uint64_t id) const;
+    /// The selected entities that no other selected entity holds: what a gizmo, a copy or a delete moves.
+    [[nodiscard]] std::vector<std::uint64_t> SelectionRoots() const;
     void UpdateTitle(daidalos::app::Application& app);
     /// Runs what was waiting once unsaved changes are saved or dropped.
     void Proceed(daidalos::app::Application& app);
     /// Asks about unsaved changes before doing what, unless there are none.
     void Guard(daidalos::app::Application& app, Pending what, std::string path = {});
+
+    // Camera bookmarks, nine per level, kept beside the editor.
+    void LoadBookmarks();
+    void SaveBookmarks() const;
+    void Bookmark(int slot, bool store);
 
     // Autosave and play.
     void Autosave(float seconds);
@@ -118,6 +139,9 @@ private:
     void UpdateCamera(daidalos::app::Application& app, float seconds);
     void DrawGizmo();
     void DrawMarkers();
+    /// Lines every meter on the ground, brighter every ten, fading with distance.
+    void DrawGrid();
+    void DrawHelp();
     void Pick(daidalos::app::Application& app);
     /// The world ray through a point of the viewport, in interface coordinates: origin and direction.
     [[nodiscard]] std::pair<glm::vec3, glm::vec3> RayAt(const glm::vec2& point) const;
@@ -138,8 +162,20 @@ private:
     EditorCamera m_camera;
     MeshPicker m_picker;
     std::unique_ptr<AssetBrowser> m_browser;
+    /// The primary selection, which the inspector and the gizmo follow: the last one selected.
     std::uint64_t m_selected = 0;
+    /// Everything selected, the primary last.
+    std::vector<std::uint64_t> m_selection;
     std::string m_status;
+    std::string m_hierarchyFilter;
+    /// The hierarchy opens the selection's parents and scrolls to it, once, after a pick in the view.
+    bool m_scrollToSelection = false;
+    bool m_grid = true;
+    bool m_snap = false;
+    /// Meters, degrees and scale.
+    glm::vec3 m_snapSteps{0.25f, 15.0f, 0.1f};
+    bool m_showHelp = false;
+    std::map<std::string, std::array<std::optional<EditorCamera>, 9>> m_bookmarks;
 
     History m_history;
     History::Revision m_savedRevision = 0;
