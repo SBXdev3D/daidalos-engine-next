@@ -2003,7 +2003,7 @@ Completion criteria:
 
 Deliverables, each its own pull request:
 
-1. Layered materials on the OpenPBR model, read from glTF's `KHR_materials_*` extensions: clear coat, sheen, anisotropy, transmission (thin diffuse for lampshades and paper, frosted and tinted glass), thin film, emissive strength. Each lobe comes with a use in the factory or a test scene.
+1. Layered materials on the OpenPBR model, read from glTF's `KHR_materials_*` extensions: clear coat, sheen, anisotropy, transmission (thin diffuse for lampshades and paper, frosted and tinted glass), thin film, emissive strength. Each lobe comes with a use in the factory or a test scene. (Done for clear coat and sheen, 11.1, ADR-0056; their textures, anisotropy and thin film wait for an asset that needs them.)
 2. Lights: IES profiles, cookie textures, rectangle and disk area lights. One parameter drives a light and its emissive mesh together, with scriptable flicker, buzz, slow failure and power cuts. Candles, lighters, emergency lights and screens as presets.
 3. The flashlight: an IES or cookie beam, sway tied to the camera's motion, a small offset from the eye so its shadows read, hooks for battery, flicker and failure.
 4. Ray visibility masks: per entity, whether the camera, shadow, reflection and indirect rays see it, set in the editor and by the game's code. A figure seen only in a mirror, a shadow with no caster.
