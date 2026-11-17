@@ -9,6 +9,7 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 using namespace daidalos;
 using resources::ModelData;
@@ -18,6 +19,14 @@ namespace {
 const std::filesystem::path kAssets = DAI_TEST_ASSET_DIR;
 
 } // namespace
+
+TEST(ModelFiles, ListsTheFilesBesideTheModelButNotEmbeddedData) {
+    const core::Result<std::vector<std::filesystem::path>> files = resources::ModelFiles(kAssets / "quad.gltf");
+    ASSERT_TRUE(files.has_value()) << core::Format(files.error());
+    ASSERT_EQ(files->size(), 1U);
+    EXPECT_EQ((*files)[0], std::filesystem::path("checker.png"));
+    EXPECT_FALSE(resources::ModelFiles(kAssets / "no-such-model.gltf").has_value());
+}
 
 TEST(LoadModelFile, ReadsTheGeometry) {
     const core::Result<ModelData> model = resources::LoadModelFile(kAssets / "quad.gltf");

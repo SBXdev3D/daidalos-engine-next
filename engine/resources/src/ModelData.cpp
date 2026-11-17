@@ -585,4 +585,41 @@ core::Result<ModelData> LoadModelFile(const std::filesystem::path& path) {
     return ModelBuilder(asset.get(), path.parent_path(), fileName, std::move(extras)).Build();
 }
 
+core::Result<std::vector<std::filesystem::path>> ModelFiles(const std::filesystem::path& path) {
+    const std::string fileName = ToUtf8(path);
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(path, error)) {
+        return core::MakeError(core::ErrorCode::NotFound, kModule, std::format("Model file '{}' not found", fileName));
+    }
+    fastgltf::GltfFileStream stream(path);
+    if (!stream.isOpen()) {
+        return core::MakeError(core::ErrorCode::IoError, kModule, std::format("Cannot open model file '{}'", fileName));
+    }
+    fastgltf::Parser parser(
+        fastgltf::Extensions::KHR_texture_basisu | fastgltf::Extensions::KHR_materials_transmission |
+        fastgltf::Extensions::KHR_materials_volume | fastgltf::Extensions::KHR_materials_ior |
+        fastgltf::Extensions::KHR_materials_emissive_strength | fastgltf::Extensions::KHR_lights_punctual);
+    fastgltf::Expected<fastgltf::Asset> asset = parser.loadGltf(stream, path.parent_path(), fastgltf::Options::None);
+    if (asset.error() != fastgltf::Error::None) {
+        return core::MakeError(core::ErrorCode::ParseError, kModule,
+                               std::format("Model '{}': {}", fileName, fastgltf::getErrorMessage(asset.error())));
+    }
+    std::vector<std::filesystem::path> files;
+    const auto add = [&files](const fastgltf::DataSource& source) {
+        if (const auto* uri = std::get_if<fastgltf::sources::URI>(&source); uri != nullptr && uri->uri.isLocalPath()) {
+            std::filesystem::path file = uri->uri.fspath().lexically_normal();
+            if (std::ranges::find(files, file) == files.end()) {
+                files.push_back(std::move(file));
+            }
+        }
+    };
+    for (const fastgltf::Buffer& buffer : asset->buffers) {
+        add(buffer.data);
+    }
+    for (const fastgltf::Image& image : asset->images) {
+        add(image.data);
+    }
+    return files;
+}
+
 } // namespace daidalos::resources

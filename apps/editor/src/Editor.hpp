@@ -20,8 +20,10 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "AssetBrowser.hpp"
 #include "History.hpp"
 #include "Picking.hpp"
 
@@ -52,6 +54,7 @@ public:
     void OnUpdate(daidalos::app::Application& app, const daidalos::core::FrameTime& time) override;
     void OnRender(daidalos::app::Application& app, daidalos::renderer::SceneView& view) override;
     bool OnCloseRequested(daidalos::app::Application& app) override;
+    void OnEvent(daidalos::app::Application& app, const daidalos::platform::Event& event) override;
     void OnStop(daidalos::app::Application& app) override;
 
 private:
@@ -73,8 +76,14 @@ private:
     void GoTo(daidalos::scene::Level level);
     void Undo();
     void Redo();
-    /// Creates an entity a few meters in front of the camera, and selects it.
-    void Create(std::string_view label, daidalos::scene::LevelEntity entity);
+    /// Creates an entity at a point, or a few meters in front of the camera, and selects it.
+    void Create(std::string_view label, daidalos::scene::LevelEntity entity,
+                std::optional<glm::vec3> position = std::nullopt);
+    /// Places an asset of the browser: a model, an effect or a ribbon becomes an entity, at what the view shows
+    /// under the point if one is given; a sky becomes the level's; a level opens.
+    void PlaceAsset(daidalos::app::Application& app, const AssetEntry& asset, std::optional<glm::vec2> at);
+    /// A path under the asset root, relative to the level's directory, as level files name them.
+    [[nodiscard]] std::string RelativeToLevel(const std::string& path) const;
     void DeleteSelected();
     [[nodiscard]] daidalos::scene::LevelEntity* Selected();
     void Select(std::uint64_t id);
@@ -110,6 +119,10 @@ private:
     void DrawGizmo();
     void DrawMarkers();
     void Pick(daidalos::app::Application& app);
+    /// The world ray through a point of the viewport, in interface coordinates: origin and direction.
+    [[nodiscard]] std::pair<glm::vec3, glm::vec3> RayAt(const glm::vec2& point) const;
+    /// Where a placed asset goes: what the view shows under the point, or a few meters along the ray.
+    [[nodiscard]] glm::vec3 PlaceAt(const glm::vec2& point);
     [[nodiscard]] glm::mat4 Projection() const;
     /// Where a world point lands in the viewport, in interface coordinates, if in front of the camera.
     [[nodiscard]] std::optional<glm::vec2> Project(const glm::vec3& point) const;
@@ -124,6 +137,7 @@ private:
     daidalos::ecs::Entity m_cameraEntity;
     EditorCamera m_camera;
     MeshPicker m_picker;
+    std::unique_ptr<AssetBrowser> m_browser;
     std::uint64_t m_selected = 0;
     std::string m_status;
 

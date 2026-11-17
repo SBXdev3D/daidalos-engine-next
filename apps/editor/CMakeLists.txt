@@ -3,15 +3,21 @@ find_package(imguizmo CONFIG REQUIRED)
 
 dai_add_app(NAME editor
     SOURCES
+        src/AssetBrowser.cpp
+        src/AssetBrowser.hpp
         src/Editor.cpp
         src/Editor.hpp
         src/History.cpp
         src/History.hpp
+        src/Import.cpp
+        src/Import.hpp
         src/Inspector.cpp
         src/Inspector.hpp
         src/Main.cpp
         src/Picking.cpp
         src/Picking.hpp
+        src/Thumbnail.cpp
+        src/Thumbnail.hpp
     DEPS
         daidalos::app
         daidalos::scene

@@ -168,6 +168,13 @@ std::optional<Event> TranslateEvent(const SDL_Event& event) {
         }
         return TextEntered{static_cast<WindowId>(event.text.windowID), std::string(event.text.text)};
 
+    case SDL_EVENT_DROP_FILE:
+        if (event.drop.data == nullptr) {
+            return std::nullopt;
+        }
+        return FileDropped{static_cast<WindowId>(event.drop.windowID), std::string(event.drop.data),
+                           glm::vec2(event.drop.x, event.drop.y)};
+
     case SDL_EVENT_MOUSE_MOTION:
         return MouseMoved{static_cast<WindowId>(event.motion.windowID), glm::vec2(event.motion.x, event.motion.y),
                           glm::vec2(event.motion.xrel, event.motion.yrel)};

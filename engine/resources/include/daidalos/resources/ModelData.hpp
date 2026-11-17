@@ -183,6 +183,10 @@ struct ModelData {
 /// are ignored.
 [[nodiscard]] core::Result<ModelData> LoadModelFile(const std::filesystem::path& path);
 
+/// The files a glTF model reads besides itself, its buffers and images, as its URIs give them: relative to the
+/// model's directory. Embedded data is not listed. What an import copies with the model.
+[[nodiscard]] core::Result<std::vector<std::filesystem::path>> ModelFiles(const std::filesystem::path& path);
+
 /// Fills the tangents of a mesh with MikkTSpace, the standard of glTF and of the tools that bake normal
 /// maps. Vertices whose triangles disagree, along UV seams, are split, so the mesh can gain vertices.
 /// LoadModelFile does it for normal-mapped primitives that come without tangents.
