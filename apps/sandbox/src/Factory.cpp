@@ -419,7 +419,10 @@ void LookAround(ecs::Entity entity, scene::Scene& scene, const input::InputState
         player.pitch += stick(GamepadAxis::RightY) * kStickLookSpeed * delta;
     }
     player.pitch = std::clamp(player.pitch, -kMaxPitch, kMaxPitch);
-    transform.rotation = math::FromYawPitchRoll(player.yaw, player.pitch, 0.0f);
+    // A shot kicks the view up, and it springs back over a quarter of a second (ADR-0085).
+    player.recoil *= std::exp(-delta * 9.0f);
+    transform.rotation =
+        math::FromYawPitchRoll(player.yaw, std::clamp(player.pitch + player.recoil, -kMaxPitch, kMaxPitch), 0.0f);
 
     const float targetEye = player.dead ? kDeadEyeHeight : (player.crouching ? kCrouchEyeHeight : kEyeHeight);
     const float eyeStep = kEyeSpeed * delta;

@@ -103,7 +103,10 @@ constexpr float kGravity = 7.0f;
 constexpr float kFloorSearch = 0.5f; // Meters above a zombie where its floor is looked for.
 constexpr float kFloorDrop = 20.0f;  // Meters below it.
 
-constexpr float kHurtFlash = 0.35f; // Seconds.
+constexpr float kHurtFlash = 0.35f;   // Seconds.
+constexpr float kHurtMarker = 1.2f;   // Seconds the direction of a wound shows.
+constexpr float kHitMarker = 0.18f;   // Seconds a hit's marker shows.
+constexpr float kZombieFlinch = 0.3f; // Seconds a wound stops a zombie.
 constexpr float kDeadMessageTime = 3600.0f;
 
 // What a zombie is doing (ADR-0070). Waiting and patrolling, it knows nothing; the others, it hunts.
@@ -141,6 +144,8 @@ struct Zombie {
     float groanTime = 0.0f;
     /// Seconds spent walking without getting anywhere.
     float stuck = 0.0f;
+    /// Seconds left of the stagger of a wound, when it does not walk (ADR-0085).
+    float flinch = 0.0f;
     /// The way to where it goes (ADR-0069): the corners left, where it leads, and when to look again.
     std::vector<glm::vec3> path;
     glm::vec3 pathGoal{0.0f};
@@ -240,7 +245,7 @@ std::vector<glm::vec3> ParsePatrol(std::string_view text, const glm::vec3& origi
     return points;
 }
 
-void HurtPlayer(scene::Scene& scene, ecs::Entity playerEntity, int damage) {
+void HurtPlayer(scene::Scene& scene, ecs::Entity playerEntity, int damage, std::optional<glm::vec3> from) {
     ecs::World& world = scene.World();
     Player& player = world.Get<Player>(playerEntity);
     if (player.dead) {
@@ -252,6 +257,11 @@ void HurtPlayer(scene::Scene& scene, ecs::Entity playerEntity, int damage) {
     player.armor -= absorbed;
     player.health -= damage - absorbed;
     player.hurtTime = kHurtFlash;
+    if (from) {
+        player.hurtFrom = *from;
+        player.hurtFromKnown = true;
+        player.hurtMarker = kHurtMarker;
+    }
     Kick(player, 0.9f, 0.4f, 0.35f);
     if (player.health > 0) {
         if (arsenal != nullptr) {
@@ -375,6 +385,8 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
     --weapon.magazine;
     player.weaponBusy = spec.fireDelay;
     player.muzzleFlashTime = kMuzzleFlashTime;
+    // The view kicks up, the shotgun much more (ADR-0085).
+    player.recoil += glm::radians(player.weapon == WeaponKind::Shotgun ? 4.5f : 1.6f);
     // The shotgun's blast in the heavy motor, the handgun's crack in the light one.
     if (player.weapon == WeaponKind::Shotgun) {
         Kick(player, 0.75f, 0.55f, 0.25f);
@@ -444,11 +456,16 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
         }
         if (damage > 0) {
             zombie.health -= damage;
+            // A marker around the crosshair says the shot hit, red when it killed (ADR-0085).
+            player.hitTime = kHitMarker;
+            player.hitKilled = zombie.health <= 0;
             if (zombie.health <= 0) {
                 Kill(scene, zombie, arsenal);
                 ++player.kills;
                 return;
             }
+            // A wound staggers it: it stops for a moment.
+            zombie.flinch = kZombieFlinch;
         }
         // A wound brings it; the shot's noise brings the others that hear it (ADR-0070).
         if (damage > 0) {
@@ -579,7 +596,7 @@ void Think(scene::Scene& scene, ecs::Entity playerEntity, Zombie& zombie, float 
         if (!zombie.struck && zombie.swing >= kZombieSwing * kZombieStrikeAt) {
             zombie.struck = true;
             if (distance < kZombieReach + kZombieReachMargin) {
-                HurtPlayer(scene, playerEntity, kZombieDamage);
+                HurtPlayer(scene, playerEntity, kZombieDamage, zombie.feet);
             }
         }
         if (zombie.swing >= kZombieSwing) {
@@ -742,7 +759,8 @@ void Think(scene::Scene& scene, ecs::Entity playerEntity, Zombie& zombie, float 
             zombie.yaw += std::clamp(turn, -kZombieTurnSpeed * step, kZombieTurnSpeed * step);
         }
     }
-    const bool walking = target.has_value() && std::abs(turn) < glm::radians(45.0f);
+    zombie.flinch = std::max(zombie.flinch - step, 0.0f);
+    const bool walking = target.has_value() && std::abs(turn) < glm::radians(45.0f) && zombie.flinch <= 0.0f;
     glm::vec3 velocity{0.0f};
     if (walking) {
         velocity = glm::vec3(-std::sin(zombie.yaw), 0.0f, -std::cos(zombie.yaw)) * kZombieSpeed * speed;
@@ -897,6 +915,8 @@ void UpdateWeapons(scene::Scene& scene, ecs::Entity playerEntity, const input::I
     player.weaponBusy = std::max(player.weaponBusy - delta, 0.0f);
     player.switching = std::min(player.switching + delta, kSwitchTime);
     player.hurtTime = std::max(player.hurtTime - delta, 0.0f);
+    player.hurtMarker = std::max(player.hurtMarker - delta, 0.0f);
+    player.hitTime = std::max(player.hitTime - delta, 0.0f);
     player.barrelHeat = std::max(player.barrelHeat - delta, 0.0f);
 
     if (!player.dead) {
