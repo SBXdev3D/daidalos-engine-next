@@ -29,6 +29,7 @@
 #include <cstring>
 #include <format>
 #include <numbers>
+#include <numeric>
 #include <utility>
 
 #include "RayTracingScene.hpp"
@@ -423,8 +424,8 @@ MeshPass::MeshPass(MeshPass&& other) noexcept
       m_frameSlots(std::exchange(other.m_frameSlots, {})), m_nextFrameSlot(other.m_nextFrameSlot),
       m_emissiveSources(std::exchange(other.m_emissiveSources, {})),
       m_emissiveAverage(std::exchange(other.m_emissiveAverage, {})),
-      m_emissiveTriangles(std::exchange(other.m_emissiveTriangles, {})),
-      m_skinned(std::exchange(other.m_skinned, {})), m_previousSkinned(std::exchange(other.m_previousSkinned, {})),
+      m_emissiveTriangles(std::exchange(other.m_emissiveTriangles, {})), m_skinned(std::exchange(other.m_skinned, {})),
+      m_previousSkinned(std::exchange(other.m_previousSkinned, {})),
       m_skinnedCapacity(std::exchange(other.m_skinnedCapacity, 0)),
       m_skinningPipeline(std::exchange(other.m_skinningPipeline, {})) {}
 
@@ -1147,11 +1148,20 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     frame.particleEffects = targets.particleEffects;
     frame.particleCurves = targets.particleCurves;
 
-    // Wet air, and ripples on its water (ADR-0061).
+    // Wet air, and ripples on its water (ADR-0061): the volumes nearest to the camera when there are more, as a
+    // level with painted wet patches has (ADR-0078).
+    std::vector<std::size_t> nearWet(view.wetVolumes.size());
+    std::iota(nearWet.begin(), nearWet.end(), std::size_t{0});
+    if (nearWet.size() > kMaxWetVolumes) {
+        std::ranges::partial_sort(nearWet, nearWet.begin() + kMaxWetVolumes, {}, [&](std::size_t index) {
+            return glm::distance(glm::vec3(view.wetVolumes[index].world[3]), cameraPosition);
+        });
+        nearWet.resize(kMaxWetVolumes);
+    }
     auto* wetVolumes = reinterpret_cast<WetVolumeData*>(m_device->Mapped(slot.wetVolumes).data());
-    const std::size_t wetCount = std::min(view.wetVolumes.size(), kMaxWetVolumes);
+    const std::size_t wetCount = nearWet.size();
     for (std::size_t index = 0; index < wetCount; ++index) {
-        const WetVolume& volume = view.wetVolumes[index];
+        const WetVolume& volume = view.wetVolumes[nearWet[index]];
         // The box's lowest point, where water pools.
         float bottom = 1e30f;
         for (int corner = 0; corner < 8; ++corner) {

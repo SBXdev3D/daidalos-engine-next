@@ -43,6 +43,10 @@ const char* KindName(AssetKind kind) {
         return "Ribbon";
     case AssetKind::Level:
         return "Level";
+    case AssetKind::Prefab:
+        return "Prefab";
+    case AssetKind::Decal:
+        return "Decal";
     case AssetKind::Other:
         break;
     }
@@ -63,6 +67,10 @@ ImU32 KindColor(AssetKind kind) {
         return IM_COL32(230, 110, 200, 255);
     case AssetKind::Level:
         return IM_COL32(120, 210, 120, 255);
+    case AssetKind::Prefab:
+        return IM_COL32(90, 200, 210, 255);
+    case AssetKind::Decal:
+        return IM_COL32(200, 80, 80, 255);
     case AssetKind::Other:
         break;
     }
@@ -123,7 +131,7 @@ core::Result<AssetEntry> AssetBrowser::Import(const std::filesystem::path& file)
 }
 
 const AssetBrowser::Thumbnail* AssetBrowser::ThumbnailOf(const AssetEntry& entry) {
-    if (entry.kind != AssetKind::Model && entry.kind != AssetKind::Sky) {
+    if (entry.kind != AssetKind::Model && entry.kind != AssetKind::Sky && entry.kind != AssetKind::Decal) {
         return nullptr;
     }
     if (const auto found = m_thumbnails.find(entry.path); found != m_thumbnails.end()) {
@@ -140,7 +148,7 @@ const AssetBrowser::Thumbnail* AssetBrowser::ThumbnailOf(const AssetEntry& entry
     const AssetKind kind = entry.kind;
     m_workers->Submit(
         [file, kind]() -> std::vector<std::uint8_t> {
-            if (kind == AssetKind::Sky) {
+            if (kind == AssetKind::Sky || kind == AssetKind::Decal) {
                 core::Result<resources::ImageData> image = resources::LoadImageFile(file, resources::TextureUse::Color);
                 return image ? Shrink(*image, kThumbnailSize) : std::vector<std::uint8_t>{};
             }
@@ -301,6 +309,7 @@ void AssetBrowser::DrawTile(const AssetEntry& entry, std::optional<AssetEntry>& 
                           entry.kind == AssetKind::Folder  ? "Double-click to open"
                           : entry.kind == AssetKind::Level ? "Double-click to open the level"
                           : entry.kind == AssetKind::Sky   ? "Double-click to use as the sky, or drag into the view"
+                          : entry.kind == AssetKind::Decal ? "Double-click to paint with it, or drag onto a surface"
                                                            : "Double-click to place in front of the camera, or drag "
                                                              "into the view");
     }

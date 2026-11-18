@@ -209,7 +209,7 @@ struct LevelSync {
     std::size_t destroyed = 0;
     /// Entities whose transform alone changed, moved in place.
     std::size_t moved = 0;
-    /// Whether any entity made or destroyed places a model: what an editor's picking must learn again.
+    /// Whether any entity made or destroyed places a model or a prefab: what an editor's picking must learn again.
     bool models = false;
 };
 

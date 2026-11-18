@@ -1032,9 +1032,9 @@ bool LevelParticles::operator==(const LevelParticles& other) const {
 
 bool LevelEntity::operator==(const LevelEntity& other) const {
     return id == other.id && name == other.name && parent == other.parent && transform == other.transform &&
-           model == other.model && prefab == other.prefab && light == other.light && fog == other.fog && wind == other.wind &&
-           particles == other.particles && attractor == other.attractor && weather == other.weather &&
-           ribbon == other.ribbon && lightning == other.lightning && game == other.game &&
+           model == other.model && prefab == other.prefab && light == other.light && fog == other.fog &&
+           wind == other.wind && particles == other.particles && attractor == other.attractor &&
+           weather == other.weather && ribbon == other.ribbon && lightning == other.lightning && game == other.game &&
            visibility == other.visibility && decal == other.decal && wet == other.wet && trigger == other.trigger &&
            body == other.body;
 }

@@ -46,6 +46,9 @@ TEST(AssetKinds, AreKnownByTheirNames) {
     EXPECT_EQ(editor::KindOf("Factory.play.level.json"), AssetKind::Other);
     EXPECT_EQ(editor::KindOf("sky1_front.png"), AssetKind::Sky);
     EXPECT_EQ(editor::KindOf("brick.png"), AssetKind::Other);
+    EXPECT_EQ(editor::KindOf("alarm_beams.prefab.json"), AssetKind::Prefab);
+    EXPECT_EQ(editor::KindOf("Factory/Decals/grime.png"), AssetKind::Decal);
+    EXPECT_EQ(editor::KindOf("Factory/Decals/bullet_hole_normal.png"), AssetKind::Other);
     EXPECT_EQ(editor::SkyPrefix("night_sky_down.png"), "night_sky");
     EXPECT_FALSE(editor::SkyPrefix("_down.png").has_value());
     EXPECT_FALSE(editor::SkyPrefix("brick.png").has_value());

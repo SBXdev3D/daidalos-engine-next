@@ -21,12 +21,14 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <random>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "AssetBrowser.hpp"
 #include "History.hpp"
+#include "Paint.hpp"
 #include "Picking.hpp"
 
 namespace editor {
@@ -95,6 +97,29 @@ private:
     void SelectAll();
     /// Moves an entity under another, or to the root with 0, where it stays in the world.
     void Reparent(std::uint64_t child, std::uint64_t parent);
+
+    // Prefabs (ADR-0078).
+    /// Saves the selection, with what is under it, as a prefab file under the asset root, and puts one entity
+    /// placing it where the selection was. Returns false if it could not; the status says why.
+    bool MakePrefab(const std::string& path);
+    /// Replaces the prefab an entity places by copies of its entities, under it, which are then the level's.
+    void UnpackPrefab(std::uint64_t id);
+    /// Reads the prefabs again, after one was saved in another editor.
+    void ReloadPrefabs();
+
+    // Painting (ADR-0078).
+    /// Strokes of the paint tool in the view: stamps where the mouse drags over surfaces, one step of history
+    /// per stroke, under an entity of their own.
+    void PaintStrokes(daidalos::app::Application& app);
+    void DrawPaint();
+    /// The circle the next stamp covers, on the surface under the mouse.
+    void DrawBrush();
+    /// The surface under a point of the viewport, if any.
+    [[nodiscard]] std::optional<PickHit> SurfaceAt(const glm::vec2& point);
+    /// Places one stamp of the brush in the stroke's entity.
+    void PlaceStamp(const glm::vec3& position, const glm::vec3& normal);
+    /// The decal images beside the level, in its directory's Decals folder, relative to the level.
+    void FindDecalImages();
     [[nodiscard]] daidalos::scene::LevelEntity* Selected();
     /// Selects one entity alone, or nothing with 0.
     void Select(std::uint64_t id);
@@ -177,6 +202,19 @@ private:
     bool m_showHelp = false;
     std::map<std::string, std::array<std::optional<EditorCamera>, 9>> m_bookmarks;
 
+    // The paint tool: on while m_painting; a stroke lasts while the left button is held in the view.
+    bool m_painting = false;
+    PaintBrush m_brush;
+    std::vector<std::string> m_decalImages;
+    bool m_stroking = false;
+    std::uint64_t m_strokeEntity = 0;
+    glm::vec3 m_lastStamp{0.0f};
+    glm::vec3 m_lastNormal{0.0f, 1.0f, 0.0f};
+    std::size_t m_strokeStamps = 0;
+    /// What the inspector's buttons asked for, done after it is drawn.
+    std::string m_pendingOpenPrefab;
+    std::uint64_t m_pendingUnpack = 0;
+    std::mt19937 m_random{0x5eed};
     History m_history;
     History::Revision m_savedRevision = 0;
     /// The window's title, given again only when it changes.

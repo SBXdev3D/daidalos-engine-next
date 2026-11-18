@@ -16,6 +16,8 @@ dai_add_app(NAME editor
         src/Inspector.cpp
         src/Inspector.hpp
         src/Main.cpp
+        src/Paint.cpp
+        src/Paint.hpp
         src/Picking.cpp
         src/Picking.hpp
         src/Thumbnail.cpp

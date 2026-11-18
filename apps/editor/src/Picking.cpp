@@ -10,6 +10,7 @@
 #include <daidalos/scene/Level.hpp>
 
 #include <glm/geometric.hpp>
+#include <glm/mat3x3.hpp>
 #include <glm/matrix.hpp>
 
 #include <algorithm>
@@ -128,12 +129,24 @@ std::optional<PickHit> MeshPicker::Cast(ecs::World& world, const glm::vec3& orig
         }
         const std::vector<glm::vec3>& positions = mesh->part->positions;
         const std::vector<std::uint32_t>& indices = mesh->part->indices;
+        std::size_t nearestTriangle = indices.size();
         for (std::size_t index = 0; index + 2 < indices.size(); index += 3) {
             const std::optional<float> hit = HitTriangle(localOrigin, localDirection, positions[indices[index]],
                                                          positions[indices[index + 1]], positions[indices[index + 2]]);
             if (hit && (!nearest || *hit < nearest->distance)) {
                 nearest = PickHit{.entity = entity, .distance = *hit, .position = origin + direction * *hit};
+                nearestTriangle = index;
             }
+        }
+        if (nearestTriangle < indices.size()) {
+            // Normals go to the world by the inverse transpose, which keeps them square to scaled surfaces.
+            const glm::vec3 a = positions[indices[nearestTriangle]];
+            const glm::vec3 local =
+                glm::cross(positions[indices[nearestTriangle + 1]] - a, positions[indices[nearestTriangle + 2]] - a);
+            glm::vec3 normal = glm::transpose(glm::mat3(toLocal)) * local;
+            const float length = glm::length(normal);
+            normal = length > 0.0f ? normal / length : glm::vec3(0.0f, 1.0f, 0.0f);
+            nearest->normal = glm::dot(normal, direction) > 0.0f ? -normal : normal;
         }
     });
     return nearest;

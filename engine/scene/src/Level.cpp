@@ -206,7 +206,7 @@ LevelSync LevelInstance::Sync(const Level& from, const Level& to) {
         if (!next.contains(entity.id)) {
             Destroy(entity.id);
             ++sync.destroyed;
-            sync.models |= !entity.model.empty();
+            sync.models |= !entity.model.empty() || !entity.prefab.empty();
         }
     }
     ecs::World& world = m_scene->World();
@@ -230,7 +230,8 @@ LevelSync LevelInstance::Sync(const Level& from, const Level& to) {
         Make(*entity);
         remade.insert(entity->id);
         ++sync.created;
-        sync.models |= !entity->model.empty() || (old != previous.end() && !old->second->model.empty());
+        sync.models |= !entity->model.empty() || !entity->prefab.empty() ||
+                       (old != previous.end() && (!old->second->model.empty() || !old->second->prefab.empty()));
     }
     // An emitter on the surface of a model made again went with the old model: it is put back.
     for (const LevelEntity& entity : to.entities) {

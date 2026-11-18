@@ -272,7 +272,7 @@ struct SceneView {
     std::vector<FogVolume> fogVolumes;
     /// Decals, the nearest kMaxDecals of which are drawn (ADR-0060).
     std::vector<Decal> decals;
-    /// Boxes of wet air, kMaxWetVolumes of them at most, and ripples on their water (ADR-0061).
+    /// Boxes of wet air, of which the 16 nearest the camera are drawn, and ripples on their water (ADR-0061).
     std::vector<WetVolume> wetVolumes;
     std::vector<Ripple> ripples;
     /// New particles of the frame (ADR-0025).
