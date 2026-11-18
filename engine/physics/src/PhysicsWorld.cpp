@@ -149,7 +149,9 @@ struct PhysicsWorld::State {
 
     State() : temp(kTempMemory), jobs(JPH::cMaxPhysicsJobs) {
         system.Init(kMaxBodies, 0, kMaxBodyPairs, kMaxContacts, layers, objectVsBroadPhase, objectPairs);
-        system.SetGravity(JPH::Vec3::sZero()); // The game applies its own to characters.
+        // Loose objects fall at the Earth's gravity (ADR-0073); characters are virtual, and the game applies its
+        // own gravity to them.
+        system.SetGravity(JPH::Vec3(0.0f, -9.81f, 0.0f));
     }
 
     [[nodiscard]] Character& Find(CharacterHandle character) { return characters.Get(character); }
@@ -242,6 +244,65 @@ core::Result<BodyId> PhysicsWorld::AddKinematicBox(const glm::vec3& halfExtents,
         return tl::unexpected(core::Error{core::ErrorCode::InvalidArgument, kModule, "Too many bodies"});
     }
     return BodyId{id.GetIndexAndSequenceNumber()};
+}
+
+core::Result<BodyId> PhysicsWorld::AddDynamicBox(const glm::vec3& halfExtents, float mass,
+                                                 const math::Transform& transform, const glm::vec3& center) {
+    const float convexRadius = std::min({JPH::cDefaultConvexRadius, halfExtents.x, halfExtents.y, halfExtents.z});
+    JPH::RefConst<JPH::Shape> box = new JPH::BoxShape(ToJolt(halfExtents), convexRadius);
+    const JPH::ShapeSettings::ShapeResult shape =
+        JPH::RotatedTranslatedShapeSettings(ToJolt(center), JPH::Quat::sIdentity(), box).Create();
+    if (shape.HasError()) {
+        return tl::unexpected(core::Error{core::ErrorCode::InvalidArgument, kModule,
+                                          std::format("Box cannot collide: {}", shape.GetError().c_str())});
+    }
+    JPH::BodyCreationSettings body(shape.Get(), JPH::RVec3(ToJolt(transform.translation)), ToJolt(transform.rotation),
+                                   JPH::EMotionType::Dynamic, kMovingLayer);
+    body.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
+    body.mMassPropertiesOverride.mMass = std::max(mass, 0.01f);
+    body.mFriction = 0.6f;
+    body.mRestitution = 0.1f;
+    const JPH::BodyID id = m_state->system.GetBodyInterface().CreateAndAddBody(body, JPH::EActivation::Activate);
+    if (id.IsInvalid()) {
+        return tl::unexpected(core::Error{core::ErrorCode::InvalidArgument, kModule, "Too many bodies"});
+    }
+    return BodyId{id.GetIndexAndSequenceNumber()};
+}
+
+glm::quat PhysicsWorld::BodyRotation(BodyId body) const {
+    const JPH::Quat rotation = m_state->system.GetBodyInterface().GetRotation(JPH::BodyID(body.value));
+    return glm::quat(rotation.GetW(), rotation.GetX(), rotation.GetY(), rotation.GetZ());
+}
+
+glm::vec3 PhysicsWorld::BodyVelocity(BodyId body) const {
+    return ToGlm(m_state->system.GetBodyInterface().GetLinearVelocity(JPH::BodyID(body.value)));
+}
+
+void PhysicsWorld::SetBodyVelocity(BodyId body, const glm::vec3& linear, const glm::vec3& angular) {
+    m_state->system.GetBodyInterface().SetLinearAndAngularVelocity(JPH::BodyID(body.value), ToJolt(linear),
+                                                                   ToJolt(angular));
+    m_state->system.GetBodyInterface().ActivateBody(JPH::BodyID(body.value));
+}
+
+void PhysicsWorld::SetBodyTransform(BodyId body, const glm::vec3& position, const glm::quat& rotation) {
+    m_state->system.GetBodyInterface().SetPositionAndRotation(JPH::BodyID(body.value), JPH::RVec3(ToJolt(position)),
+                                                              ToJolt(rotation), JPH::EActivation::Activate);
+}
+
+void PhysicsWorld::AddImpulse(BodyId body, const glm::vec3& impulse) {
+    m_state->system.GetBodyInterface().AddImpulse(JPH::BodyID(body.value), ToJolt(impulse));
+}
+
+bool PhysicsWorld::IsDynamic(BodyId body) const {
+    return m_state->system.GetBodyInterface().GetMotionType(JPH::BodyID(body.value)) == JPH::EMotionType::Dynamic;
+}
+
+float PhysicsWorld::BodyMass(BodyId body) const {
+    const JPH::BodyLockRead lock(m_state->system.GetBodyLockInterface(), JPH::BodyID(body.value));
+    if (!lock.Succeeded() || lock.GetBody().GetMotionProperties() == nullptr) {
+        return 0.0f;
+    }
+    return 1.0f / std::max(lock.GetBody().GetMotionProperties()->GetInverseMass(), 1e-6f);
 }
 
 void PhysicsWorld::RemoveBody(BodyId body) {

@@ -195,3 +195,21 @@ TEST_F(LevelInstanceTest, SpawnedDecalsFadeAndKeepToTheirNumber) {
     m_scene->RunFrame(core::Seconds(3.0));
     EXPECT_EQ(m_scene->TransientDecalCount(), 0U);
 }
+
+TEST_F(LevelInstanceTest, ALooseObjectFallsAndGoesWithItsEntity) {
+    Level level;
+    LevelEntity crate{.id = 1, .name = "Crate"};
+    crate.transform.translation = {0.0f, 10.0f, 0.0f};
+    crate.body = scene::Body{.size = glm::vec3(0.6f), .mass = 15.0f};
+    level.entities.push_back(crate);
+    m_instance->Build(level);
+    const std::size_t bodies = m_scene->Physics().BodyCount();
+    for (int step = 0; step < 30; ++step) {
+        m_scene->RunFixedStep(core::Seconds(1.0 / 60.0));
+    }
+    const ecs::Entity made = m_instance->Find(1);
+    ASSERT_FALSE(made.IsNull());
+    EXPECT_LT(m_scene->World().Get<ecs::LocalTransform>(made).translation.y, 9.0f);
+    m_instance->Sync(level, Level{});
+    EXPECT_EQ(m_scene->Physics().BodyCount(), bodies - 1);
+}

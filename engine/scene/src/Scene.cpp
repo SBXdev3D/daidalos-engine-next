@@ -59,6 +59,12 @@ void Scene::RunFixedStep(core::Seconds step) {
     const auto seconds = static_cast<float>(step.count());
     SyncKinematicBodies(m_world, m_physics, seconds);
     m_physics.Step(seconds);
+    // Loose objects go where physics put them (ADR-0073).
+    m_world.Each<RigidBody, ecs::LocalTransform>(
+        [this](ecs::Entity, const RigidBody& body, ecs::LocalTransform& transform) {
+            transform.translation = m_physics.BodyPosition(body.body);
+            transform.rotation = m_physics.BodyRotation(body.body);
+        });
 }
 
 void Scene::SpawnParticles(renderer::ParticleEffectHandle effect, const glm::vec3& position, const glm::vec3& direction,

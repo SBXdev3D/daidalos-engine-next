@@ -284,6 +284,20 @@ void LevelInstance::Make(const LevelEntity& entity) {
     if (entity.wet) {
         world.Add<WetVolume>(created, *entity.wet);
     }
+    if (entity.body) {
+        // A loose object (ADR-0073): physics moves it from where the level puts it.
+        const math::Transform& placed = entity.transform;
+        const glm::vec3 half = glm::max(entity.body->size * placed.scale * 0.5f, glm::vec3(0.02f));
+        math::Transform at = placed;
+        at.scale = glm::vec3(1.0f);
+        if (core::Result<physics::BodyId> body =
+                m_scene->Physics().AddDynamicBox(half, entity.body->mass, at, entity.body->center * placed.scale)) {
+            world.Add<Body>(created, *entity.body);
+            world.Add<RigidBody>(created, *body);
+        } else {
+            DAI_LOG_WARNING(kModule, "Level entity {} '{}': {}", entity.id, entity.name, core::Format(body.error()));
+        }
+    }
     if (entity.trigger) {
         // Its sequence, from the level's directory to the asset root's (ADR-0071).
         Trigger trigger = *entity.trigger;
@@ -420,6 +434,9 @@ void LevelInstance::Destroy(std::uint64_t id) {
     const ecs::Entity entity = Find(id);
     if (entity.IsNull()) {
         return;
+    }
+    if (const RigidBody* body = world.TryGet<RigidBody>(entity)) {
+        m_scene->Physics().RemoveBody(body->body);
     }
     world.Destroy(entity);
     // Its descendants made from the level went with it, and so do the emitters they put on other surfaces.

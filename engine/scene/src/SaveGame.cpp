@@ -259,6 +259,11 @@ void LoadScene(Scene& scene, const SaveData& data) {
         ecs::LocalTransform& transform = world.Get<ecs::LocalTransform>(entity);
         transform.translation = data.Vector(*key + ".position").value_or(transform.translation);
         transform.rotation = data.Rotation(*key + ".rotation").value_or(transform.rotation);
+        // A loose object's body goes with it (ADR-0073).
+        if (const RigidBody* body = world.TryGet<RigidBody>(entity)) {
+            scene.Physics().SetBodyTransform(body->body, transform.translation, transform.rotation);
+            scene.Physics().SetBodyVelocity(body->body, glm::vec3(0.0f));
+        }
         if (Light* light = world.TryGet<Light>(entity)) {
             light->enabled = data.Flag(*key + ".light").value_or(light->enabled);
         }

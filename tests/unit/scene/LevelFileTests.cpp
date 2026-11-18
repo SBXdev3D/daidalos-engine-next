@@ -270,3 +270,13 @@ TEST(LevelFileTest, TriggersKeepTheirSequence) {
     ASSERT_TRUE(read.has_value()) << core::Format(read.error());
     EXPECT_EQ(*read, level);
 }
+
+TEST(LevelFileTest, LooseObjectsKeepTheirBody) {
+    Level level;
+    LevelEntity entity{.id = 1, .name = "Crate", .model = "Props/crate.gltf"};
+    entity.body = scene::Body{.size = {0.6f, 0.6f, 0.6f}, .center = {0.0f, 0.3f, 0.0f}, .mass = 15.0f};
+    level.entities.push_back(entity);
+    const core::Result<Level> read = ParseLevel(WriteLevel(level));
+    ASSERT_TRUE(read.has_value()) << core::Format(read.error());
+    EXPECT_EQ(*read, level);
+}

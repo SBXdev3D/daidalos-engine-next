@@ -466,6 +466,21 @@ struct Trigger {
     [[nodiscard]] bool operator==(const Trigger&) const = default;
 };
 
+/// What a loose object is (ADR-0073): a box of this size, in meters, around a center in the entity's frame, and
+/// its mass in kilograms. A level entity with one falls, tumbles, and can be pushed, picked up and thrown.
+struct Body {
+    glm::vec3 size{0.5f};
+    glm::vec3 center{0.0f};
+    float mass = 10.0f;
+    [[nodiscard]] bool operator==(const Body&) const = default;
+};
+
+/// ECS component: the physics body that moves a loose object; the scene puts the entity where it is after each
+/// step. The entity must have no parent.
+struct RigidBody {
+    physics::BodyId body;
+};
+
 /// ECS component: what sets off triggers, as the player.
 struct TriggerActivator {};
 
