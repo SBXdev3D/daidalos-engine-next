@@ -767,6 +767,22 @@ void UpdateZombies(scene::Scene& scene, ecs::Entity playerEntity, float step) {
     }
 }
 
+Threat ZombieThreat(scene::Scene& scene, const glm::vec3& feet) {
+    Threat threat;
+    scene.World().Each<Zombie>([&](ecs::Entity /*entity*/, const Zombie& zombie) {
+        const float distance = glm::distance(zombie.feet, feet);
+        float tension = 0.0f;
+        if (zombie.state == ZombieState::Chasing || zombie.state == ZombieState::Attacking) {
+            ++threat.hunting;
+            tension = 0.55f + 0.45f * (1.0f - std::clamp(distance / 20.0f, 0.0f, 1.0f));
+        } else if (zombie.state != ZombieState::Dying) {
+            tension = 0.3f * (1.0f - std::clamp(distance / 15.0f, 0.0f, 1.0f));
+        }
+        threat.tension = std::max(threat.tension, tension);
+    });
+    return threat;
+}
+
 void PlaceZombies(scene::Scene& scene) {
     const float alpha = scene.FixedAlpha();
     scene.World().Each<Zombie, ecs::LocalTransform>(

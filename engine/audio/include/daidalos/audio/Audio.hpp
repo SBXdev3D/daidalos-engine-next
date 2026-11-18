@@ -18,6 +18,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <vector>
 
 namespace daidalos::audio {
 
@@ -99,6 +100,9 @@ struct PlayOptions {
     /// While it plays, music and ambience drop by this share, so that it is heard over them (ADR-0067): a
     /// stinger, a voice, a scream.
     float ducking = 0.0f;
+    /// Seconds before it starts, counted on the mixer's clock: voices played with the same delay in one frame
+    /// start on the same sample, as the layers of a score must.
+    float delay = 0.0f;
 };
 
 /// How a surface treats sound (ADR-0065), in three bands, low (around 400 Hz), middle (2.5 kHz) and high
@@ -150,6 +154,20 @@ public:
     /// A voice that ended, or a null one, is ignored.
     void Stop(VoiceHandle voice);
     void SetPosition(VoiceHandle voice, const glm::vec3& position);
+    /// The voice's own volume, as PlayOptions::volume set it.
+    void SetVolume(VoiceHandle voice, float volume);
+    [[nodiscard]] float Volume(VoiceHandle voice) const;
+
+    /// A score in layers (ADR-0068): every clip loops on the music bus, started on the same sample. The first
+    /// always plays; each next one fades in as the tension rises past its share, so that at full tension all
+    /// play. Replaces the layers playing.
+    void PlayLayers(std::span<const ClipHandle> layers, float volume = 1.0f);
+    void StopLayers();
+    /// From 0, calm, to 1; layers follow it over a second or two.
+    void SetTension(float tension);
+    [[nodiscard]] float Tension() const;
+    /// Each layer's volume now, over the layers' volume.
+    [[nodiscard]] std::vector<float> LayerLevels() const;
     [[nodiscard]] bool IsPlaying(VoiceHandle voice) const;
     [[nodiscard]] std::size_t VoiceCount() const;
 

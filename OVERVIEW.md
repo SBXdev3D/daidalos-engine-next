@@ -2032,6 +2032,8 @@ Deliverables:
 - Buses, snapshots and ducking on miniaudio's sound groups.
 - Dynamic music in layers driven by a tension value, stingers for scares; sources that follow a light's flicker.
 
+Done in four steps (2026-11-18): 12.1 Steam Audio's HRTF, occlusion and transmission (ADR-0065); 12.2 reverb and paths on a worker thread (ADR-0066); 12.3 buses, snapshots, ducking, steps and impacts by surface (ADR-0067); 12.4 the layered score, stingers and lamps that hum (ADR-0068). The sounds are synthesized by scripts.
+
 Completion criteria:
 
 - A source behind a closed door sounds muffled, and comes from the door once it opens.

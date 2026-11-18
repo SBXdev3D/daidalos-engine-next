@@ -250,6 +250,7 @@ struct SoundWorld::State {
         float minDistance = 1.0f;
         float maxDistance = 35.0f;
         float ducking = 0.0f;
+        float volume = 1.0f;
     };
 
     State(AudioEngine* owner, std::filesystem::path assetRoot) : engine(owner), root(std::move(assetRoot)) {}
@@ -294,6 +295,11 @@ struct SoundWorld::State {
     float mixElapsed = 0.0f;
     float ducking = 0.0f;
     std::chrono::steady_clock::time_point lastUpdate = std::chrono::steady_clock::now();
+    // The score's layers (ADR-0068), their levels now and the tension they follow.
+    std::vector<VoiceHandle> layers;
+    std::vector<float> layerLevels;
+    float layerVolume = 1.0f;
+    float tension = 0.0f;
     // The acoustic scene outlives the voices, whose sources it holds.
     std::unique_ptr<steam::Scene> scene;
     double simulationMilliseconds = 0.0;
@@ -395,6 +401,14 @@ VoiceHandle SoundWorld::Play(ClipHandle clip, const PlayOptions& options) {
         ma_sound_set_max_distance(sound, options.maxDistance);
     }
     playing.ducking = std::clamp(options.ducking, 0.0f, 1.0f);
+    playing.volume = options.volume;
+    if (options.delay > 0.0f) {
+        // On the mixer's clock, so that voices played together start together.
+        const ma_uint64 now = ma_engine_get_time_in_pcm_frames(engine);
+        ma_sound_set_start_time_in_pcm_frames(
+            voice->Get(),
+            now + static_cast<ma_uint64>(options.delay * static_cast<float>(ma_engine_get_sample_rate(engine))));
+    }
     playing.sound = std::move(voice);
     const VoiceHandle handle = state.voices.Insert(std::move(playing));
     if (steamed) {
@@ -428,6 +442,52 @@ void SoundWorld::SetPosition(VoiceHandle voice, const glm::vec3& position) {
                                {found->source.source, position, found->minDistance, found->maxDistance, found->node});
         }
     }
+}
+
+void SoundWorld::SetVolume(VoiceHandle voice, float volume) {
+    if (State::Voice* found = m_state->voices.TryGet(voice)) {
+        found->volume = volume;
+        ma_sound_set_volume(found->sound->Get(), volume);
+    }
+}
+
+float SoundWorld::Volume(VoiceHandle voice) const {
+    const State::Voice* found = m_state->voices.TryGet(voice);
+    return found != nullptr ? found->volume : 0.0f;
+}
+
+void SoundWorld::PlayLayers(std::span<const ClipHandle> layers, float volume) {
+    StopLayers();
+    State& state = *m_state;
+    state.layerVolume = volume;
+    for (std::size_t index = 0; index < layers.size(); ++index) {
+        // The first is heard at once; the others wait for tension.
+        const float level = index == 0 ? 1.0f : 0.0f;
+        state.layers.push_back(
+            Play(layers[index], {.volume = volume * level, .loop = true, .bus = Bus::Music, .delay = 0.05f}));
+        state.layerLevels.push_back(level);
+    }
+}
+
+void SoundWorld::StopLayers() {
+    State& state = *m_state;
+    for (const VoiceHandle voice : state.layers) {
+        Stop(voice);
+    }
+    state.layers.clear();
+    state.layerLevels.clear();
+}
+
+void SoundWorld::SetTension(float tension) {
+    m_state->tension = std::clamp(tension, 0.0f, 1.0f);
+}
+
+float SoundWorld::Tension() const {
+    return m_state->tension;
+}
+
+std::vector<float> SoundWorld::LayerLevels() const {
+    return m_state->layerLevels;
 }
 
 bool SoundWorld::IsPlaying(VoiceHandle voice) const {
@@ -498,6 +558,18 @@ void SoundWorld::Update() {
         }
         const float rate = ducked > state.ducking ? 8.0f : 1.5f;
         state.ducking += (ducked - state.ducking) * std::min(seconds * rate, 1.0f);
+        // Each layer past the first comes in over its share of the tension: in faster than out.
+        const auto count = static_cast<float>(state.layers.size());
+        for (std::size_t index = 1; index < state.layers.size(); ++index) {
+            const float wanted = std::clamp(state.tension * count - static_cast<float>(index) + 0.5f, 0.0f, 1.0f);
+            float& level = state.layerLevels[index];
+            const float step = seconds * (wanted > level ? 0.7f : 0.3f);
+            level = wanted > level ? std::min(level + step, wanted) : std::max(level - step, wanted);
+            if (State::Voice* voice = state.voices.TryGet(state.layers[index])) {
+                voice->volume = state.layerVolume * level;
+                ma_sound_set_volume(voice->sound->Get(), voice->volume);
+            }
+        }
     }
     if (state.engine != nullptr) {
         AudioEngine::Impl& impl = state.engine->Internals();

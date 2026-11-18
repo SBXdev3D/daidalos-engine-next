@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -505,4 +506,45 @@ TEST_F(AudioTest, AStingerDucksTheMusic) {
     EXPECT_GT(m_sounds->Ducking(), 0.5f);
     EXPECT_LT(ducked, alone * 0.5f);
     m_sounds->Stop(stinger);
+}
+
+TEST_F(AudioTest, LayersComeInAsTensionRises) {
+    // A score of three layers (ADR-0068): calm, only the first; at full tension, all three.
+    const ClipHandle clip = Clip("long.wav");
+    const std::array<ClipHandle, 3> layers{clip, clip, clip};
+    m_sounds->PlayLayers(layers);
+    m_sounds->Update();
+    EXPECT_EQ(m_sounds->LayerLevels(), (std::vector<float>{1.0f, 0.0f, 0.0f}));
+    m_sounds->SetTension(1.0f);
+    for (int frame = 0; frame < 25; ++frame) {
+        m_sounds->Update();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    for (const float level : m_sounds->LayerLevels()) {
+        EXPECT_FLOAT_EQ(level, 1.0f);
+    }
+    m_sounds->SetTension(0.4f);
+    for (int frame = 0; frame < 40; ++frame) {
+        m_sounds->Update();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    const std::vector<float> levels = m_sounds->LayerLevels();
+    EXPECT_FLOAT_EQ(levels[1], 0.7f);
+    EXPECT_FLOAT_EQ(levels[2], 0.0f);
+}
+
+TEST_F(AudioTest, AHumDiesWithItsLight) {
+    // An emitter that follows its entity's light (ADR-0068) sounds as bright as it shines.
+    ecs::World world;
+    const ecs::Entity entity = world.Create();
+    world.Add<ecs::LocalTransform>(entity);
+    ecs::PropagateTransforms(world);
+    const audio::VoiceHandle voice = m_sounds->Play(Clip("long.wav"), {.position = glm::vec3(0.0f), .volume = 0.5f});
+    world.Add<scene::SoundEmitter>(entity, voice, 0.5f, true);
+    world.Add<scene::LightState>(entity).factor = 0.2f;
+    scene::SyncSoundEmitters(world, *m_sounds);
+    EXPECT_FLOAT_EQ(m_sounds->Volume(voice), 0.1f);
+    world.Get<scene::LightState>(entity).factor = 0.0f;
+    scene::SyncSoundEmitters(world, *m_sounds);
+    EXPECT_FLOAT_EQ(m_sounds->Volume(voice), 0.0f);
 }

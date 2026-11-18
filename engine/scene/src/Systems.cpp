@@ -830,8 +830,12 @@ void SyncKinematicBodies(ecs::World& world, physics::PhysicsWorld& physics, floa
 
 void SyncSoundEmitters(ecs::World& world, audio::SoundWorld& sounds) {
     world.Each<SoundEmitter, ecs::WorldTransform>(
-        [&sounds](ecs::Entity /*entity*/, const SoundEmitter& emitter, const ecs::WorldTransform& transform) {
+        [&sounds, &world](ecs::Entity entity, const SoundEmitter& emitter, const ecs::WorldTransform& transform) {
             sounds.SetPosition(emitter.voice, glm::vec3(transform.matrix[3]));
+            if (emitter.followsLight) {
+                const LightState* light = world.TryGet<LightState>(entity);
+                sounds.SetVolume(emitter.voice, emitter.volume * (light != nullptr ? light->factor : 1.0f));
+            }
         });
 }
 
