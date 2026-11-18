@@ -27,6 +27,7 @@ dai_add_module(NAME scene
     PUBLIC_DEPS
         daidalos::audio
         daidalos::core
+        daidalos::navigation
         daidalos::physics
         daidalos::renderer
         daidalos::resources

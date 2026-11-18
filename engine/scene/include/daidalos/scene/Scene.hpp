@@ -8,6 +8,7 @@
 #include <daidalos/core/FrameTimer.hpp>
 #include <daidalos/ecs/Schedule.hpp>
 #include <daidalos/ecs/World.hpp>
+#include <daidalos/navigation/NavMesh.hpp>
 #include <daidalos/physics/PhysicsWorld.hpp>
 #include <daidalos/renderer/Renderer.hpp>
 #include <daidalos/renderer/SceneView.hpp>
@@ -40,6 +41,9 @@ public:
     [[nodiscard]] ecs::World& World() { return m_world; }
     [[nodiscard]] AssetLibrary& Assets() { return m_assets; }
     [[nodiscard]] physics::PhysicsWorld& Physics() { return m_physics; }
+    /// Where walkers can go (ADR-0069), once the game has built it from the level; null before.
+    [[nodiscard]] navigation::NavMesh* Navigation() { return m_navigation.has_value() ? &*m_navigation : nullptr; }
+    void SetNavigation(navigation::NavMesh mesh) { m_navigation.emplace(std::move(mesh)); }
     [[nodiscard]] audio::SoundWorld& Sounds() { return m_sounds; }
 
     /// Runs on every fixed step (60 Hz by default), for what must not depend on the frame rate.
@@ -127,6 +131,7 @@ private:
     AssetLibrary m_assets;
     ecs::World m_world;
     physics::PhysicsWorld m_physics;
+    std::optional<navigation::NavMesh> m_navigation;
     audio::SoundWorld m_sounds;
     ecs::Schedule m_fixedSystems;
     ecs::Schedule m_frameSystems;
