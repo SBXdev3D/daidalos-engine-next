@@ -3,9 +3,13 @@ dai_add_module(NAME audio
         include/daidalos/audio/Audio.hpp
         src/Audio.cpp
         src/Miniaudio.cpp
+        src/SteamAudio.cpp
+        src/SteamAudio.hpp
     PUBLIC_DEPS
         daidalos::core
+        glm::glm
     PRIVATE_DEPS
+        unofficial::steam-audio::phonon
         Threads::Threads
         ${CMAKE_DL_LIBS})
 
