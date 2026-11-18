@@ -524,6 +524,10 @@ core::Result<MaterialHandle> Renderer::CreateMaterial(const MaterialDesc& desc) 
     return m_impl->meshPass->CreateMaterial(desc);
 }
 
+bool Renderer::UpdateMaterial(MaterialHandle material, const MaterialDesc& desc) {
+    return m_impl->meshPass->UpdateMaterial(material, desc);
+}
+
 void Renderer::DestroyMaterial(MaterialHandle material) {
     m_impl->meshPass->DestroyMaterial(material);
 }

@@ -35,9 +35,19 @@ namespace daidalos::scene {
 
 /// A model on the GPU, owned by an AssetLibrary.
 struct Model {
+    /// A material of the glTF file, as read, and as the editor's material panel changes it (ADR-0079).
+    struct Material {
+        renderer::MaterialHandle handle;
+        /// Its values, as glTF and its extras give them.
+        resources::MaterialData values;
+        /// What the renderer was given: the values and the textures.
+        renderer::MaterialDesc desc;
+    };
     struct Part {
         renderer::MeshHandle mesh;
         renderer::MaterialHandle material;
+        /// Index into materials, or none for the default material.
+        std::optional<std::uint32_t> materialIndex;
         /// What its material is made of (resources::MaterialData::surface), or empty.
         std::string surface;
         /// The triangles, also kept on the CPU for collisions and queries. Skinned ones are in their
@@ -63,6 +73,9 @@ struct Model {
     };
     /// One per glTF primitive, each stored once.
     std::vector<Part> parts;
+    /// One per glTF material, in the file's order. Mutable: AssetLibrary::UpdateMaterial changes them in place,
+    /// for every entity placing the model.
+    mutable std::vector<Material> materials;
     /// Parents come before their children.
     std::vector<Node> nodes;
     std::vector<Skin> skins;
@@ -133,6 +146,10 @@ public:
     /// Creating the GPU objects still happens on the main thread, in that Deliver.
     void LoadModelAsync(std::string_view path, core::WorkerPool& workers,
                         std::function<void(core::Result<const Model*>)> done);
+
+    /// Gives a material of a model new values (ADR-0079), keeping its textures: every entity placing the model
+    /// shows them from the next frame. False if there is no such material.
+    bool UpdateMaterial(const Model& model, std::uint32_t index, const resources::MaterialData& values);
 
     /// Returns a prefab's level (ADR-0078), read again when its file changed since it was read, so that a prefab
     /// saved by the editor shows where it is placed. A missing or invalid file is an error that names it.

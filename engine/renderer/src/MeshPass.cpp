@@ -708,7 +708,7 @@ core::Result<void> MeshPass::ReserveMaterialSlot(std::uint32_t index) {
     return {};
 }
 
-core::Result<MaterialHandle> MeshPass::CreateMaterial(const MaterialDesc& desc) {
+void MeshPass::WriteMaterial(std::uint32_t slot, const MaterialDesc& desc) {
     const GpuMaterial data{
         .baseColorFactor = desc.baseColorFactor,
         .emissiveFactor = desc.emissiveFactor,
@@ -734,20 +734,44 @@ core::Result<MaterialHandle> MeshPass::CreateMaterial(const MaterialDesc& desc) 
         .sheenColor = glm::clamp(desc.sheenColor, glm::vec3(0.0f), glm::vec3(1.0f)),
         .heightScale = desc.metallicRoughnessTexture ? std::max(desc.heightScale, 0.0f) : 0.0f,
     };
+    // A slot may still be read by a frame in flight: that frame shows the new values, and nothing worse.
+    std::memcpy(m_device->Mapped(m_materialTable).data() + std::size_t{slot} * sizeof(GpuMaterial), &data,
+                sizeof(data));
+}
 
-    const bool glass = desc.transmission > 0.0f;
-    const MaterialHandle material = m_materials.Insert(
-        {desc.doubleSided, desc.alphaCutoff > 0.0f, glass,
-         desc.emissiveLight && !glass && glm::any(glm::greaterThan(desc.emissiveFactor, glm::vec3(0.0f)))});
+core::Result<MaterialHandle> MeshPass::CreateMaterial(const MaterialDesc& desc) {
+    const MaterialHandle material = m_materials.Insert(Flags(desc));
     if (core::Result<void> reserved = ReserveMaterialSlot(material.Index()); !reserved) {
         m_materials.Remove(material);
         return tl::unexpected(std::move(reserved.error()));
     }
-    // A slot reused here may still be read by a frame in flight, which draws a destroyed material:
-    // that frame shows the new values, and nothing worse.
-    std::memcpy(m_device->Mapped(m_materialTable).data() + std::size_t{material.Index()} * sizeof(GpuMaterial), &data,
-                sizeof(data));
+    WriteMaterial(material.Index(), desc);
     return material;
+}
+
+MeshPass::Material MeshPass::Flags(const MaterialDesc& desc) {
+    const bool glass = desc.transmission > 0.0f;
+    return {desc.doubleSided, desc.alphaCutoff > 0.0f, glass,
+            desc.emissiveLight && !glass && glm::any(glm::greaterThan(desc.emissiveFactor, glm::vec3(0.0f)))};
+}
+
+bool MeshPass::UpdateMaterial(MaterialHandle material, const MaterialDesc& desc) {
+    Material* found = m_materials.TryGet(material);
+    if (found == nullptr || material == m_defaultMaterial) {
+        return false;
+    }
+    *found = Flags(desc);
+    WriteMaterial(material.Index(), desc);
+    // Emissive triangles averaged with the old emission are averaged again when next drawn (ADR-0044).
+    const std::uint64_t packed = Packed(material.Index(), material.Generation());
+    std::erase_if(m_emissiveSources, [&](auto& entry) {
+        if (entry.first.second != packed) {
+            return false;
+        }
+        DestroyEmissiveSource(entry.second);
+        return true;
+    });
+    return true;
 }
 
 void MeshPass::DestroyMaterial(MaterialHandle material) {

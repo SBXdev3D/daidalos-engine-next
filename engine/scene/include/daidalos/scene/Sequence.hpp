@@ -25,6 +25,7 @@ struct CameraKey {
     /// f-number, 0 for everything sharp, and meters in focus: a focus pull moves them between keys.
     float aperture = 0.0f;
     float focus = 3.0f;
+    [[nodiscard]] bool operator==(const CameraKey&) const = default;
 };
 
 /// One thing a sequence does at a time (ADR-0071). Entities are named as in the level (NodeName); paths are
@@ -58,19 +59,29 @@ struct Cue {
     float strength = 0.0f;
     std::vector<CameraKey> keys;
     audio::MixSnapshot mix;
+    [[nodiscard]] bool operator==(const Cue&) const = default;
 };
+
+/// The name of a kind of cue as its file writes it ("power", "sound"...).
+[[nodiscard]] std::string_view CueKindName(Cue::Kind kind);
 
 /// A timeline of cues, from a .sequence.json file: {"cues": [{"at": 0.5, "sound": {...}}, ...]}. Each cue is
 /// its time and one kind, named by its key: power, light, sound, particles, move, visible, shake, camera,
 /// mix, event or subtitle.
 struct Sequence {
     std::vector<Cue> cues;
+    /// What the sequence is for, for people: the file's "comment".
+    std::string comment;
     /// Seconds to its last cue, and to the end of its last camera move.
     [[nodiscard]] float Length() const;
+    [[nodiscard]] bool operator==(const Sequence&) const = default;
 };
 
 /// Parses a sequence. Unknown keys and kinds are errors that name them.
 [[nodiscard]] core::Result<Sequence> ParseSequence(std::string_view json, std::string_view name = "sequence");
+
+/// Writes a sequence as its file (ADR-0079): cues in time order, each with the fields its kind uses, keys sorted.
+[[nodiscard]] std::string WriteSequence(const Sequence& sequence);
 
 /// Where a cinematic camera is at a time, between its keys.
 [[nodiscard]] CameraKey CameraAt(const std::vector<CameraKey>& keys, float time);

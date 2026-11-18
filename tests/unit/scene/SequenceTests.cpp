@@ -68,3 +68,31 @@ TEST(SequenceTest, TheCameraEasesBetweenItsKeys) {
     EXPECT_LT(scene::CameraAt(keys, 0.5f).position.x, 2.5f);
     EXPECT_EQ(scene::CameraAt(keys, 3.0f).position, glm::vec3(10.0f, 0.0f, 0.0f));
 }
+
+TEST(SequenceTest, WritingAndReadingBackGivesTheSameSequence) {
+    const core::Result<scene::Sequence> sequence = scene::ParseSequence(R"({
+        "comment": "Each kind once.",
+        "cues": [
+            {"at": 2.0, "event": "boo"},
+            {"at": 0.0, "power": {"circuit": "hall", "on": false}},
+            {"at": 0.1, "light": {"entity": "Lamp", "on": false}},
+            {"at": 0.2, "sound": {"clip": "a.wav", "entity": "Door", "volume": 0.5, "ducking": 0.3, "caption": "c"}},
+            {"at": 0.25, "sound": {"clip": "b.wav"}},
+            {"at": 0.3, "particles": {"effect": "sparks.effect.json", "entity": "Cable", "count": 20}},
+            {"at": 0.4, "move": {"entity": "Body", "to": [1, 2, 3], "seconds": 1.5}},
+            {"at": 0.5, "visible": {"entity": "Ghost", "on": true}},
+            {"at": 0.6, "shake": {"strength": 0.8, "seconds": 0.4}},
+            {"at": 0.7, "mix": {"music": 0.2, "lowpass": 800, "seconds": 1}},
+            {"at": 0.75, "subtitle": {"speaker": "speaker.you", "text": "subtitle.x"}},
+            {"at": 0.8, "camera": {"keys": [{"at": 1, "position": [0, 2, 0], "target": [0, 1, -5], "focus": 5},
+                                            {"at": 0, "position": [0, 2, 3], "target": [0, 1, -5], "aperture": 2}]}}
+        ]
+    })");
+    ASSERT_TRUE(sequence.has_value()) << core::Format(sequence.error());
+    EXPECT_EQ(sequence->comment, "Each kind once.");
+    const std::string written = scene::WriteSequence(*sequence);
+    const core::Result<scene::Sequence> read = scene::ParseSequence(written);
+    ASSERT_TRUE(read.has_value()) << core::Format(read.error()) << "\n" << written;
+    EXPECT_EQ(*read, *sequence) << written;
+    EXPECT_EQ(scene::WriteSequence(*read), written) << "Written twice, the same text";
+}

@@ -40,6 +40,30 @@ std::string_view ToString(resources::TextureUse use) {
     return "";
 }
 
+/// The values of a material for the renderer, without its textures.
+void ApplyValues(renderer::MaterialDesc& desc, const resources::MaterialData& material) {
+    desc.baseColorFactor = material.baseColorFactor;
+    desc.emissiveFactor = material.emissiveFactor;
+    desc.emissiveLight = material.emissiveLight;
+    desc.metallicFactor = material.metallicFactor;
+    desc.roughnessFactor = material.roughnessFactor;
+    desc.normalScale = material.normalScale;
+    desc.occlusionStrength = material.occlusionStrength;
+    desc.alphaCutoff = material.alphaCutoff;
+    desc.doubleSided = material.doubleSided;
+    desc.transmission = material.transmission;
+    desc.ior = material.ior;
+    desc.thin = material.thickness <= 0.0f;
+    desc.attenuationColor = material.attenuationColor;
+    desc.attenuationDistance = material.attenuationDistance;
+    desc.clearcoat = material.clearcoat;
+    desc.clearcoatRoughness = material.clearcoatRoughness;
+    desc.sheenColor = material.sheenColor;
+    desc.sheenRoughness = material.sheenRoughness;
+    desc.porosity = material.porosity;
+    desc.heightScale = material.heightScale;
+}
+
 } // namespace
 
 AssetLibrary::AssetLibrary(renderer::Renderer& renderer, std::filesystem::path root)
@@ -121,30 +145,12 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
     };
 
     // What is created on the way stays in the library, also if a later step fails.
+    Model model;
     std::vector<renderer::MaterialHandle> materials;
     materials.reserve(data.materials.size());
     for (const resources::MaterialData& material : data.materials) {
         renderer::MaterialDesc desc;
-        desc.baseColorFactor = material.baseColorFactor;
-        desc.emissiveFactor = material.emissiveFactor;
-        desc.emissiveLight = material.emissiveLight;
-        desc.metallicFactor = material.metallicFactor;
-        desc.roughnessFactor = material.roughnessFactor;
-        desc.normalScale = material.normalScale;
-        desc.occlusionStrength = material.occlusionStrength;
-        desc.alphaCutoff = material.alphaCutoff;
-        desc.doubleSided = material.doubleSided;
-        desc.transmission = material.transmission;
-        desc.ior = material.ior;
-        desc.thin = material.thickness <= 0.0f;
-        desc.attenuationColor = material.attenuationColor;
-        desc.attenuationDistance = material.attenuationDistance;
-        desc.clearcoat = material.clearcoat;
-        desc.clearcoatRoughness = material.clearcoatRoughness;
-        desc.sheenColor = material.sheenColor;
-        desc.sheenRoughness = material.sheenRoughness;
-        desc.porosity = material.porosity;
-        desc.heightScale = material.heightScale;
+        ApplyValues(desc, material);
         desc.baseColorTexture = textureOf(material.baseColorImage);
         desc.metallicRoughnessTexture = textureOf(material.metallicRoughnessImage);
         desc.normalTexture = textureOf(material.normalImage);
@@ -153,9 +159,9 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
         DAI_TRY_ASSIGN(renderer::MaterialHandle created, m_renderer->CreateMaterial(desc));
         m_materials.push_back(created);
         materials.push_back(created);
+        model.materials.push_back({.handle = created, .values = material, .desc = desc});
     }
 
-    Model model;
     std::vector<Model::Part>& parts = model.parts;
     parts.reserve(data.primitives.size());
     for (std::size_t index = 0; index < data.primitives.size(); ++index) {
@@ -167,6 +173,7 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
         part.mesh = mesh;
         part.material = primitive.material.has_value() ? materials[*primitive.material] : renderer::MaterialHandle{};
         if (primitive.material.has_value()) {
+            part.materialIndex = static_cast<std::uint32_t>(*primitive.material);
             part.surface = data.materials[*primitive.material].surface;
         }
         part.positions.reserve(primitive.mesh.vertices.size());
@@ -323,6 +330,16 @@ core::Result<ParticleEffectAsset> AssetLibrary::LoadParticleEffect(std::string_v
     const ParticleEffectAsset asset{effect, std::move(read.emission)};
     m_effectFiles.emplace(std::move(identity), EffectFile{asset, std::move(file), written});
     return asset;
+}
+
+bool AssetLibrary::UpdateMaterial(const Model& model, std::uint32_t index, const resources::MaterialData& values) {
+    if (index >= model.materials.size()) {
+        return false;
+    }
+    Model::Material& material = model.materials[index];
+    material.values = values;
+    ApplyValues(material.desc, values);
+    return m_renderer->UpdateMaterial(material.handle, material.desc);
 }
 
 core::Result<std::shared_ptr<const Level>> AssetLibrary::LoadPrefab(std::string_view path) {
