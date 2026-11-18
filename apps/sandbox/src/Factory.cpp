@@ -524,6 +524,8 @@ void PlayMovementSounds(scene::Scene& scene, ecs::Entity entity, bool climbing, 
                 scene.Sounds().Play(steps->second[bank->lastStep % steps->second.size()], {.volume = 0.7f});
             }
             scene.Sounds().Play(bank->steps[bank->lastStep], {.volume = 0.5f});
+            // A step carries a few meters, less crouching (ADR-0070).
+            scene.MakeNoise({.position = player.feet, .reach = player.crouching ? 1.5f : 6.0f, .maker = entity});
             // In a puddle, the step rings the water (ADR-0061); elsewhere the ring shows on nothing.
             scene.AddRipple(player.feet, 1.5f);
         }

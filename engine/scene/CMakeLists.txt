@@ -10,12 +10,14 @@ dai_add_module(NAME scene
         include/daidalos/scene/AssetLibrary.hpp
         include/daidalos/scene/Components.hpp
         include/daidalos/scene/Level.hpp
+        include/daidalos/scene/Perception.hpp
         include/daidalos/scene/ParticleEffectFile.hpp
         include/daidalos/scene/Scene.hpp
         include/daidalos/scene/Systems.hpp
         src/Animation.cpp
         src/AssetLibrary.cpp
         src/Level.cpp
+        src/Perception.cpp
         src/LevelFile.cpp
         src/LightAnimation.cpp
         src/ParticleEffectFile.cpp

@@ -70,7 +70,7 @@ constexpr std::array<WeaponSpec, kWeaponKinds> kWeapons{{
 constexpr float kWeaponRange = 100.0f * kLegacyUnit;
 constexpr float kSwitchTime = 0.4f;    // Seconds for the new weapon to come up.
 constexpr float kWeaponDrop = 0.6f;    // Meters below its place, where a weapon is out of view.
-constexpr float kGunshotAlert = 20.0f; // Meters: zombies this close hear a shot and come.
+constexpr float kGunshotNoise = 30.0f; // Meters a shot carries, walked around walls (ADR-0070).
 // Smoke from a hot barrel (ADR-0053): wisps per second while it has this many seconds of smoke or more, fewer
 // as it cools, and no more than this many seconds of it however fast the shots come.
 constexpr float kBarrelSmokeRate = 30.0f;
@@ -106,7 +106,19 @@ constexpr float kFloorDrop = 20.0f;  // Meters below it.
 constexpr float kHurtFlash = 0.35f; // Seconds.
 constexpr float kDeadMessageTime = 3600.0f;
 
-enum class ZombieState : std::uint8_t { Waiting, Patrolling, Chasing, Attacking, Dying };
+// What a zombie is doing (ADR-0070). Waiting and patrolling, it knows nothing; the others, it hunts.
+enum class ZombieState : std::uint8_t {
+    Waiting,
+    Patrolling,
+    Investigating, // Going to a noise it heard.
+    Searching,     // Looking around where it lost the player.
+    Stalking,      // Watched from afar: it stands still, and creeps closer when the player looks away.
+    Chasing,
+    Attacking,
+    Ambushing, // Waiting at the last corner before a noise, for the player to come through.
+    Hiding,    // Badly hurt: it backs away into the dark.
+    Dying,
+};
 
 /// ECS component on a zombie's level node, whose child is the model.
 struct Zombie {
@@ -133,7 +145,32 @@ struct Zombie {
     std::vector<glm::vec3> path;
     glm::vec3 pathGoal{0.0f};
     float repath = 0.0f;
+    /// Its choice among behaviours (ADR-0070), where it goes for the one it does, and how long it has
+    /// remembered the player.
+    scene::UtilityChooser chooser;
+    glm::vec3 goal{0.0f};
+    float memory = 0.0f;
+    std::optional<glm::vec3> heard;
+    float goalTime = 0.0f;
+    std::uint32_t seed = 0;
 };
+
+// The utility AI's behaviours, in the order of their scores.
+enum Behaviour : std::size_t { kIdle, kInvestigate, kSearch, kStalk, kChase, kAmbush, kHide, kBehaviours };
+constexpr std::array<ZombieState, kBehaviours> kBehaviourStates{
+    ZombieState::Waiting, ZombieState::Investigating, ZombieState::Searching, ZombieState::Stalking,
+    ZombieState::Chasing, ZombieState::Ambushing,     ZombieState::Hiding};
+// Speeds of each behaviour, over a zombie's walk.
+constexpr std::array<float, kBehaviours> kBehaviourSpeeds{1.0f, 0.9f, 0.7f, 0.6f, 1.0f, 1.0f, 1.1f};
+// Seconds a zombie remembers a player it lost, and stays at an ambush.
+constexpr float kZombieMemory = 12.0f;
+constexpr float kAmbushTime = 10.0f;
+// Below this health it hides.
+constexpr int kHideHealth = 15;
+
+[[nodiscard]] bool Hunting(ZombieState state) {
+    return state == ZombieState::Chasing || state == ZombieState::Attacking || state == ZombieState::Stalking;
+}
 
 /// ECS component on the player: the sounds of the fight, and the weapons held in view.
 struct Arsenal {
@@ -238,6 +275,7 @@ void Alert(Zombie& zombie, const glm::vec3& playerFeet) {
     }
     zombie.state = ZombieState::Chasing;
     zombie.lastSeen = playerFeet;
+    zombie.memory = kZombieMemory;
     zombie.timer = kZombieSearch;
 }
 
@@ -340,6 +378,7 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
     std::minstd_rand& random = arsenal != nullptr ? arsenal->random : fallback;
     if (arsenal != nullptr) {
         scene.Sounds().Play(arsenal->fire[static_cast<std::size_t>(player.weapon)]);
+        scene.MakeNoise({.position = player.feet, .reach = kGunshotNoise, .maker = playerEntity});
         const ecs::Entity model = arsenal->models[static_cast<std::size_t>(player.weapon)];
         // The clip must end before the next shot.
         const float speed = std::max(1.0f, ClipLength(world, model, "fire") / spec.fireDelay);
@@ -402,8 +441,8 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
                 return;
             }
         }
-        // A wound, or a shot close enough to be heard, brings it.
-        if (damage > 0 || glm::distance(zombie.feet, player.feet) < kGunshotAlert) {
+        // A wound brings it; the shot's noise brings the others that hear it (ADR-0070).
+        if (damage > 0) {
             Alert(zombie, player.feet);
         }
     });
@@ -450,14 +489,15 @@ void PlaceWeapons(ecs::World& world, const Player& player, const Arsenal& arsena
 /// Whether the zombie sees the player's eyes: close enough, in front of it unless it already hunts,
 /// and with nothing in between.
 bool Sees(const physics::PhysicsWorld& physics, const Zombie& zombie, const glm::vec3& playerEye,
-          physics::BodyId playerBody) {
+          physics::BodyId playerBody, float exposure) {
     const glm::vec3 eye = zombie.feet + math::kUp * kZombieEye;
     const glm::vec3 toPlayer = playerEye - eye;
     const float distance = glm::length(toPlayer);
-    if (distance > kZombieSight || distance < 0.01f) {
+    // In the dark, a player is seen only up close (ADR-0070).
+    if (distance > kZombieSight * std::lerp(0.3f, 1.0f, exposure) || distance < 0.01f) {
         return false;
     }
-    const bool hunting = zombie.state == ZombieState::Chasing || zombie.state == ZombieState::Attacking;
+    const bool hunting = Hunting(zombie.state);
     if (!hunting) {
         const glm::vec3 facing(-std::sin(zombie.yaw), 0.0f, -std::cos(zombie.yaw));
         const glm::vec3 flat = Flat(toPlayer);
@@ -479,68 +519,51 @@ void Groan(scene::Scene& scene, Zombie& zombie, Arsenal* arsenal, float step) {
     scene.Sounds().Play(arsenal->groans[which], {.position = zombie.feet, .minDistance = 2.0f, .maxDistance = 25.0f});
 }
 
-void Think(scene::Scene& scene, ecs::Entity playerEntity, Zombie& zombie, float step) {
+// A point of the navigation mesh within a radius of a center, or the center.
+glm::vec3 PointNear(const scene::Scene& scene, const glm::vec3& center, float radius, std::uint32_t& seed) {
+    seed = seed * 1664525u + 1013904223u;
+    const float angle = static_cast<float>(seed % 6283u) / 1000.0f;
+    seed = seed * 1664525u + 1013904223u;
+    const float distance = radius * static_cast<float>(seed % 1000u) / 1000.0f;
+    const glm::vec3 point = center + glm::vec3(std::cos(angle), 0.0f, std::sin(angle)) * distance;
+    if (const navigation::NavMesh* mesh = const_cast<scene::Scene&>(scene).Navigation()) {
+        return mesh->NearestPoint(point).value_or(center);
+    }
+    return center;
+}
+
+void Think(scene::Scene& scene, ecs::Entity playerEntity, Zombie& zombie, float step, float exposure) {
     ecs::World& world = scene.World();
     physics::PhysicsWorld& physics = scene.Physics();
     Player& player = world.Get<Player>(playerEntity);
     Arsenal* arsenal = world.TryGet<Arsenal>(playerEntity);
 
     const glm::vec3 playerEye = player.feet + math::kUp * player.eyeHeight;
-    const bool sees = !player.dead && Sees(physics, zombie, playerEye, physics.CharacterBody(player.character));
+    const bool sees =
+        !player.dead && Sees(physics, zombie, playerEye, physics.CharacterBody(player.character), exposure);
     const float distance = glm::length(Flat(player.feet - zombie.feet));
     std::optional<glm::vec3> target;
     bool facePlayer = false;
+    float speed = 1.0f;
 
-    switch (zombie.state) {
-    case ZombieState::Waiting:
-    case ZombieState::Patrolling:
-        if (sees) {
-            zombie.state = ZombieState::Chasing;
-            zombie.lastSeen = player.feet;
-            zombie.timer = kZombieSearch;
-            if (arsenal != nullptr) {
-                scene.Sounds().Play(arsenal->moan,
-                                    {.position = zombie.feet, .minDistance = 2.0f, .maxDistance = 25.0f});
-            }
-            break;
+    if (zombie.state == ZombieState::Dying) {
+        return;
+    }
+    // What it senses (ADR-0070): the player in sight, and the player's noises it hears along the way.
+    if (sees) {
+        zombie.lastSeen = player.feet;
+        zombie.memory = kZombieMemory;
+    } else {
+        zombie.memory = std::max(zombie.memory - step, 0.0f);
+    }
+    for (const scene::Noise& noise : scene.Noises()) {
+        if (noise.maker == playerEntity && scene::Hears(scene.Navigation(), zombie.feet, noise)) {
+            zombie.heard = noise.position;
         }
-        if (zombie.state == ZombieState::Waiting) {
-            zombie.timer -= step;
-            if (zombie.timer <= 0.0f && !zombie.patrol.empty()) {
-                zombie.state = ZombieState::Patrolling;
-            }
-        } else if (glm::length(Flat(zombie.patrol[zombie.nextPoint] - zombie.feet)) < 0.4f) {
-            zombie.nextPoint = (zombie.nextPoint + 1) % zombie.patrol.size();
-            zombie.state = ZombieState::Waiting;
-            zombie.timer = kZombieWait;
-        } else {
-            target = zombie.patrol[zombie.nextPoint];
-        }
-        break;
-    case ZombieState::Chasing:
-        if (sees) {
-            zombie.lastSeen = player.feet;
-            zombie.timer = kZombieSearch;
-        } else {
-            zombie.timer -= step;
-        }
-        if (zombie.timer <= 0.0f || player.dead) {
-            zombie.state = ZombieState::Waiting;
-            zombie.timer = kZombieWait;
-        } else if (sees && distance < kZombieReach) {
-            zombie.state = ZombieState::Attacking;
-            zombie.swing = 0.0f;
-            zombie.struck = false;
-            const float speed = std::max(ClipLength(world, zombie.model, "attack") / kZombieSwing, 0.01f);
-            Play(world, zombie.model, "attack", {.loop = false, .speed = speed, .fade = 0.1f, .restart = true});
-        } else if (glm::length(Flat(zombie.lastSeen - zombie.feet)) > 0.5f) {
-            target = zombie.lastSeen;
-        } else {
-            facePlayer = sees;
-        }
-        Groan(scene, zombie, arsenal, step);
-        break;
-    case ZombieState::Attacking:
+    }
+    const bool wasIdle = zombie.state == ZombieState::Waiting || zombie.state == ZombieState::Patrolling;
+
+    if (zombie.state == ZombieState::Attacking) {
         facePlayer = true;
         zombie.swing += step;
         if (!zombie.struck && zombie.swing >= kZombieSwing * kZombieStrikeAt) {
@@ -551,12 +574,131 @@ void Think(scene::Scene& scene, ecs::Entity playerEntity, Zombie& zombie, float 
         }
         if (zombie.swing >= kZombieSwing) {
             zombie.state = ZombieState::Chasing;
-            zombie.timer = kZombieSearch;
             zombie.lastSeen = player.feet;
         }
-        break;
-    case ZombieState::Dying:
-        return;
+    } else {
+        // Is the player looking at it? Then, from afar, it holds still.
+        const glm::vec3 forward = glm::vec3(-std::sin(player.yaw), 0.0f, -std::cos(player.yaw));
+        const glm::vec3 toZombie = Flat(zombie.feet - player.feet);
+        const bool watched = sees && glm::length(toZombie) > 0.01f &&
+                             glm::dot(forward, glm::normalize(toZombie)) > std::cos(glm::radians(35.0f));
+        const bool remembers = zombie.memory > 0.0f && !player.dead;
+        std::array<float, kBehaviours> scores{};
+        scores[kIdle] = 0.1f;
+        scores[kInvestigate] = zombie.heard.has_value() && !sees ? 0.6f : 0.0f;
+        scores[kSearch] = remembers && !sees ? 0.4f * zombie.memory / kZombieMemory + 0.2f : 0.0f;
+        scores[kStalk] = sees && watched && distance > 6.0f ? 0.85f : 0.0f;
+        scores[kChase] = sees ? 0.8f : 0.0f;
+        // One zombie in three would rather wait for a noise to come to it.
+        scores[kAmbush] = zombie.heard.has_value() && !sees && zombie.seed % 3 == 0 &&
+                                  glm::distance(*zombie.heard, zombie.feet) > 10.0f
+                              ? 0.65f
+                              : (zombie.state == ZombieState::Ambushing && zombie.goalTime > 0.0f ? 0.62f : 0.0f);
+        scores[kHide] = zombie.health <= kHideHealth && (sees || remembers) ? 0.9f : 0.0f;
+        if (player.dead) {
+            scores.fill(0.0f);
+            scores[kIdle] = 1.0f;
+        }
+        const std::size_t chosen = zombie.chooser.Choose(scores);
+        const ZombieState next = kBehaviourStates[chosen];
+        const bool changed = next != zombie.state && !(chosen == kIdle && wasIdle);
+        if (changed) {
+            zombie.state = next;
+            zombie.goalTime = 0.0f;
+            if (next == ZombieState::Chasing && wasIdle && arsenal != nullptr) {
+                scene.Sounds().Play(arsenal->moan,
+                                    {.position = zombie.feet, .minDistance = 2.0f, .maxDistance = 25.0f});
+            }
+        }
+        speed = kBehaviourSpeeds[chosen];
+        zombie.goalTime -= step;
+        switch (zombie.state) {
+        case ZombieState::Waiting:
+        case ZombieState::Patrolling:
+            if (zombie.state == ZombieState::Waiting) {
+                zombie.timer -= step;
+                if (zombie.timer <= 0.0f && !zombie.patrol.empty()) {
+                    zombie.state = ZombieState::Patrolling;
+                }
+            } else if (glm::length(Flat(zombie.patrol[zombie.nextPoint] - zombie.feet)) < 0.4f) {
+                zombie.nextPoint = (zombie.nextPoint + 1) % zombie.patrol.size();
+                zombie.state = ZombieState::Waiting;
+                zombie.timer = kZombieWait;
+            } else {
+                target = zombie.patrol[zombie.nextPoint];
+            }
+            break;
+        case ZombieState::Investigating:
+            if (zombie.heard.has_value() && glm::length(Flat(*zombie.heard - zombie.feet)) > 0.8f) {
+                target = zombie.heard;
+            } else {
+                // Nothing there: it looks around.
+                zombie.heard.reset();
+                zombie.lastSeen = zombie.feet;
+                zombie.memory = std::max(zombie.memory, kZombieMemory * 0.5f);
+            }
+            break;
+        case ZombieState::Searching:
+            if (zombie.goalTime <= 0.0f || glm::length(Flat(zombie.goal - zombie.feet)) < 0.6f) {
+                zombie.goal = PointNear(scene, zombie.lastSeen, 6.0f, zombie.seed);
+                zombie.goalTime = 4.0f;
+            }
+            target = zombie.goal;
+            break;
+        case ZombieState::Stalking:
+            // Still while watched, closer while not.
+            facePlayer = true;
+            if (!watched) {
+                target = player.feet;
+            }
+            break;
+        case ZombieState::Chasing:
+            if (sees && distance < kZombieReach) {
+                zombie.state = ZombieState::Attacking;
+                zombie.swing = 0.0f;
+                zombie.struck = false;
+                const float rate = std::max(ClipLength(world, zombie.model, "attack") / kZombieSwing, 0.01f);
+                Play(world, zombie.model, "attack", {.loop = false, .speed = rate, .fade = 0.1f, .restart = true});
+            } else if (glm::length(Flat(zombie.lastSeen - zombie.feet)) > 0.5f) {
+                target = zombie.lastSeen;
+            } else {
+                facePlayer = sees;
+            }
+            break;
+        case ZombieState::Ambushing:
+            if (changed && zombie.heard.has_value()) {
+                // The last corner on the way to the noise: a doorway, a turn, where the player comes from.
+                std::vector<glm::vec3> way;
+                if (const navigation::NavMesh* mesh = scene.Navigation()) {
+                    way = mesh->FindPath(zombie.feet, *zombie.heard);
+                }
+                zombie.goal = way.size() >= 3 ? way[way.size() - 2] : *zombie.heard;
+                zombie.goalTime = kAmbushTime;
+                zombie.heard.reset();
+            }
+            if (glm::length(Flat(zombie.goal - zombie.feet)) > 0.6f) {
+                target = zombie.goal;
+            }
+            break;
+        case ZombieState::Hiding:
+            if (changed || zombie.goalTime <= 0.0f) {
+                // Away from the player, as far as the mesh goes.
+                const glm::vec3 away = Flat(zombie.feet - player.feet);
+                const glm::vec3 direction =
+                    glm::length(away) > 0.01f ? glm::normalize(away) : glm::vec3(1.0f, 0.0f, 0.0f);
+                zombie.goal = PointNear(scene, zombie.feet + direction * 10.0f, 3.0f, zombie.seed);
+                zombie.goalTime = 6.0f;
+            }
+            if (glm::length(Flat(zombie.goal - zombie.feet)) > 0.6f) {
+                target = zombie.goal;
+            }
+            break;
+        default:
+            break;
+        }
+        if (Hunting(zombie.state) || zombie.state == ZombieState::Searching) {
+            Groan(scene, zombie, arsenal, step);
+        }
     }
 
     // It goes the way the navigation mesh finds (ADR-0069), corner by corner; straight without one.
@@ -591,7 +733,7 @@ void Think(scene::Scene& scene, ecs::Entity playerEntity, Zombie& zombie, float 
     const bool walking = target.has_value() && std::abs(turn) < glm::radians(45.0f);
     glm::vec3 velocity{0.0f};
     if (walking) {
-        velocity = glm::vec3(-std::sin(zombie.yaw), 0.0f, -std::cos(zombie.yaw)) * kZombieSpeed;
+        velocity = glm::vec3(-std::sin(zombie.yaw), 0.0f, -std::cos(zombie.yaw)) * kZombieSpeed * speed;
     }
     if (physics.IsOnGround(zombie.character) && zombie.verticalSpeed <= 0.0f) {
         zombie.verticalSpeed = 0.0f;
@@ -615,6 +757,10 @@ void Think(scene::Scene& scene, ecs::Entity playerEntity, Zombie& zombie, float 
         } else if (zombie.state == ZombieState::Chasing) {
             // Where it saw the player last is out of reach: it waits there for the player to show.
             zombie.lastSeen = zombie.feet;
+        } else {
+            // A goal out of reach: another one.
+            zombie.goalTime = 0.0f;
+            zombie.heard.reset();
         }
     }
 
@@ -692,6 +838,8 @@ void AddZombie(scene::Scene& scene, ecs::Entity node, ecs::Entity model, std::st
 
     Zombie zombie;
     zombie.model = model;
+    // Each zombie its own: its choices, where it searches.
+    zombie.seed = static_cast<std::uint32_t>(node.Index()) * 2654435761u + 7u;
     physics::CharacterConfig config;
     config.radius = kZombieRadius;
     config.height = kZombieHeight;
@@ -783,11 +931,18 @@ void UpdateWeapons(scene::Scene& scene, ecs::Entity playerEntity, const input::I
 }
 
 void UpdateZombies(scene::Scene& scene, ecs::Entity playerEntity, float step) {
+    // How lit the player is (ADR-0070): the lamps around, and their own flashlight, which shows them.
+    const Player& player = scene.World().Get<Player>(playerEntity);
+    const glm::vec3 chest = player.feet + math::kUp * (player.eyeHeight * 0.7f);
+    float exposure = scene::Exposure(scene::Illuminance(scene.World(), &scene.Physics(), chest, player.flashlight));
+    if (player.flashlightOn) {
+        exposure = std::max(exposure, 0.8f);
+    }
     std::vector<ecs::Entity> zombies;
     scene.World().Each<Zombie>([&zombies](ecs::Entity entity, const Zombie& /*zombie*/) { zombies.push_back(entity); });
     // Not inside Each: a zombie that hurts the player touches other components.
     for (const ecs::Entity entity : zombies) {
-        Think(scene, playerEntity, scene.World().Get<Zombie>(entity), step);
+        Think(scene, playerEntity, scene.World().Get<Zombie>(entity), step, exposure);
     }
 }
 
@@ -796,7 +951,7 @@ Threat ZombieThreat(scene::Scene& scene, const glm::vec3& feet) {
     scene.World().Each<Zombie>([&](ecs::Entity /*entity*/, const Zombie& zombie) {
         const float distance = glm::distance(zombie.feet, feet);
         float tension = 0.0f;
-        if (zombie.state == ZombieState::Chasing || zombie.state == ZombieState::Attacking) {
+        if (Hunting(zombie.state)) {
             ++threat.hunting;
             tension = 0.55f + 0.45f * (1.0f - std::clamp(distance / 20.0f, 0.0f, 1.0f));
         } else if (zombie.state != ZombieState::Dying) {

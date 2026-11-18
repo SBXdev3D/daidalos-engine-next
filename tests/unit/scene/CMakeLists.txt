@@ -3,6 +3,7 @@ dai_add_test(NAME daidalos_scene_tests
         AnimationTests.cpp
         AssertCapture.hpp
         EntityTests.cpp
+        PerceptionTests.cpp
         HierarchyTests.cpp
         LevelFileTests.cpp
         LightAnimationTests.cpp
