@@ -12,7 +12,7 @@ The project is at an early stage. Phases 0 to 5 of the roadmap in [OVERVIEW.md](
 | `rhi` | Vulkan 1.4 device with ray queries, swapchain, buffers, textures with mip levels and BC compression, pipelines, command lists, batched uploads, deferred destruction |
 | `renderer` | HDR rendering with PBR materials, normal maps, point, spot and directional lights and emissive surfaces sampled by ReSTIR DI over a G-buffer, ray-traced shadows, indirect light and reflections, glass, a sky, a reference path tracer, a denoiser, temporal antialiasing, particles simulated on the GPU, auto-exposure, bloom, AgX and HDR10 output, skinning, GPU timings, shader hot reload, and the Dear ImGui overlay in development builds |
 | `physics` | Jolt behind a small API: static meshes, kinematic boxes, raycasts, character movement |
-| `audio` | miniaudio behind a small API: clips, voices, 3D sounds, buses, silent without an output |
+| `audio` | miniaudio and Steam Audio behind a small API: clips, voices, 3D sounds heard through an HRTF and through walls and doors, buses, silent without an output |
 | `scene` | Entities with sparse-set components and a hierarchy, skeletal animation, the asset library, and the scene that ties them to the renderer, physics and sounds |
 | `app` | Startup and shutdown in order, main loop, current scene |
 
