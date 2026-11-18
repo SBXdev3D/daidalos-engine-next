@@ -4,13 +4,16 @@ dai_add_module(NAME resources
         include/daidalos/resources/Cache.hpp
         include/daidalos/resources/FontData.hpp
         include/daidalos/resources/ImageData.hpp
+        include/daidalos/resources/ImageFile.hpp
         include/daidalos/resources/ModelData.hpp
         src/AssetPath.cpp
         src/FontData.cpp
         src/ImageData.cpp
+        src/ImageFile.cpp
         src/LightProfile.cpp
         src/ModelData.cpp
         src/StbImage.cpp
+        src/StbImageWrite.cpp
         src/StbTrueType.cpp
         src/Tangents.cpp
     PUBLIC_DEPS

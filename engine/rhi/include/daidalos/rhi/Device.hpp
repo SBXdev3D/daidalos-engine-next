@@ -140,6 +140,7 @@ public:
     [[nodiscard]] std::uint32_t BindlessIndex(TextureHandle texture) const;
     /// The size of a texture's largest level.
     [[nodiscard]] Extent TextureExtent(TextureHandle texture) const;
+    [[nodiscard]] Format TextureFormat(TextureHandle texture) const;
     /// Index of a BufferUsage::Storage buffer in the storage buffer arrays of shaders.
     [[nodiscard]] std::uint32_t StorageIndex(BufferHandle buffer) const;
 

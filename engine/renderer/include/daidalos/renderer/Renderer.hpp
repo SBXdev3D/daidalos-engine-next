@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -226,6 +227,20 @@ struct FrameStats {
     std::size_t particleEffects = 0;
 };
 
+/// A frame read back for a photo (ADR-0077).
+struct CapturedFrame {
+    /// The image as displayed, without the interface, in SDR: RGBA8 in sRGB, rows from the top, at the window's
+    /// size. Bloom, the display transform and the lens are in it.
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    std::vector<std::uint8_t> display;
+    /// The scene's light it was made from: linear RGB floats, rows from the top, exposed as displayed but
+    /// before bloom and the display transform. Empty in debug views other than the path tracer's.
+    std::uint32_t sceneWidth = 0;
+    std::uint32_t sceneHeight = 0;
+    std::vector<float> scene;
+};
+
 /// How long a pass took on the GPU.
 struct PassTime {
     std::string_view name;
@@ -286,6 +301,12 @@ public:
     void SetDebugView(DebugView view);
     /// The path tracer starts over when they change; see RendererConfig.
     void SetPathTracer(std::uint32_t bounces, std::uint32_t samples);
+
+    /// Reads the next frame drawn back (ADR-0077), which TakeCapture returns once the GPU has finished it, a
+    /// frame or two later.
+    void RequestCapture();
+    /// The frame captured, once.
+    [[nodiscard]] std::optional<CapturedFrame> TakeCapture();
 
     /// GPU time of each pass of a recent frame, which the GPU finished a frame or two ago. Empty on a
     /// device without timestamps, and for the first frames.

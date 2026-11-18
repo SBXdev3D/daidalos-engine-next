@@ -33,6 +33,7 @@
 #include "DirectLighting.hpp"
 #include "DynamicResolution.hpp"
 #include "Exposure.hpp"
+#include "FrameCapture.hpp"
 #include "Fsr3Upscaler.hpp"
 #include "GlobalIllumination.hpp"
 #include "MeshPass.hpp"
@@ -118,6 +119,7 @@ struct Renderer::Impl {
         pathTracer.reset();
         volumetricFog.reset();
         exposureMeter.reset();
+        capture.reset();
         bloom.reset();
         cameraEffects.reset();
         temporalResolve.reset();
@@ -194,6 +196,7 @@ struct Renderer::Impl {
     /// The upscaler of the last frame resolved.
     Upscaler upscaledBy = Upscaler::Engine;
     std::optional<ExposureMeter> exposureMeter;
+    std::optional<FrameCapture> capture;
     std::optional<Bloom> bloom;
     std::optional<CameraEffects> cameraEffects;
     /// The eye's exposure, the last metering and histogram, and the range of the last frame (ADR-0048).
@@ -469,6 +472,7 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     impl->fsr3.emplace(std::move(fsr3));
     DAI_TRY_ASSIGN(ExposureMeter exposureMeter, ExposureMeter::Create(impl->device));
     impl->exposureMeter.emplace(std::move(exposureMeter));
+    impl->capture.emplace(impl->device);
     DAI_TRY_ASSIGN(Bloom bloom, Bloom::Create(impl->device));
     impl->bloom.emplace(std::move(bloom));
     DAI_TRY_ASSIGN(CameraEffects cameraEffects, CameraEffects::Create(impl->device));
@@ -600,6 +604,14 @@ void Renderer::SetPathTracer(std::uint32_t bounces, std::uint32_t samples) {
     m_impl->pathSettings.maxSamples = samples;
 }
 
+void Renderer::RequestCapture() {
+    m_impl->capture->Request();
+}
+
+std::optional<CapturedFrame> Renderer::TakeCapture() {
+    return m_impl->capture->Take();
+}
+
 void Renderer::SetVolumetricFog(bool enabled, std::uint32_t slices, std::uint32_t tile) {
     m_impl->fog = enabled;
     m_impl->fogGrid.slices = std::clamp(slices, 16U, 256U);
@@ -682,6 +694,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     }
     rhi::Frame& frame = *begun;
     impl.ReadGpuTimes(frame.slot);
+    impl.capture->Read(frame.slot);
 
     // Exposure (ADR-0048). The GPU's light is exposed once for the level, at the middle of its range, so
     // that no history goes stale when the eye adapts: the eye and the brightness setting scale the image
@@ -1168,6 +1181,40 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         }
         if (blooms) {
             reads.push_back({impl.bloom->Output(), rhi::Access::FragmentShaderRead});
+        }
+        // A photo (ADR-0077): the same image without the interface, in SDR, and the scene's light it comes from.
+        if (impl.capture->Requested()) {
+            core::Result<rhi::PipelineHandle> capturePipeline = impl.OutputPipeline(rhi::Format::Rgba8Srgb);
+            core::Result<rhi::TextureHandle> target = impl.capture->DisplayTarget(frame.extent);
+            if (capturePipeline && target) {
+                OutputPushConstants photo = push;
+                photo.layer = kNoTexture;
+                photo.hdr10 = 0;
+                photo.headroom = 1.0f;
+                std::vector<rhi::TextureUse> photoReads{{*target, rhi::Access::ColorTarget, true},
+                                                        {source, rhi::Access::FragmentShaderRead}};
+                if (blooms) {
+                    photoReads.push_back({impl.bloom->Output(), rhi::Access::FragmentShaderRead});
+                }
+                graph.AddPass({.name = "Capture",
+                               .rendering = rhi::RenderingDesc{.colorTarget = *target},
+                               .textures = std::move(photoReads)},
+                              [pipeline = *capturePipeline, photo](rhi::CommandList& commands) {
+                                  commands.BindPipeline(pipeline);
+                                  commands.Push(photo);
+                                  commands.Draw(3);
+                              });
+                // The light is the lit scene's, or the path tracer's; other debug views have none worth keeping.
+                const bool lit = impl.debugView == DebugView::Off || path;
+                if (core::Result<void> copied = impl.capture->AddCopies(
+                        graph, frame.slot, lit ? std::optional(source) : std::nullopt, sceneExtent, displayScale);
+                    !copied) {
+                    DAI_LOG_WARNING(kModule, "Cannot capture the frame: {}", core::Format(copied.error()));
+                }
+            } else {
+                DAI_LOG_WARNING(kModule, "Cannot capture the frame: {}",
+                                core::Format(capturePipeline ? target.error() : capturePipeline.error()));
+            }
         }
         graph.AddPass({.name = "Output",
                        .rendering = rhi::RenderingDesc{.colorTarget = frame.backBuffer},

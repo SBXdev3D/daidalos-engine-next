@@ -18,6 +18,7 @@
 #include "Factory.hpp"
 #include "Hud.hpp"
 #include "Menus.hpp"
+#include "PhotoMode.hpp"
 
 #if DAI_DEV_TOOLS
 #include <imgui.h>
@@ -189,6 +190,14 @@ public:
                     m_mouseCaptured = !m_mouseCaptured;
                     app.MainWindow().SetMouseCaptured(m_mouseCaptured);
                 }
+                // Photo mode (ADR-0077): the game stops and the camera leaves the player.
+                if (m_actions.WasPressed(input, sandbox::Photograph) && app.CurrentScene() != nullptr &&
+                    FindPlayer(app) != nullptr && !FindPlayer(app)->dead) {
+                    OpenScreen(app, sandbox::Screen::Photo);
+                    m_photo.Enter(app, *app.CurrentScene(), FindPlayerEntity(app));
+                    m_mouseCaptured = true;
+                    app.MainWindow().SetMouseCaptured(true);
+                }
                 if (m_actions.WasPressed(input, sandbox::Restart)) {
                     m_settings.loadSave.clear();
                     Restart(app);
@@ -213,6 +222,16 @@ public:
                 }
                 m_playSeconds += delta;
                 WatchTheEnd(app, delta);
+            }
+        } else if (m_screen == sandbox::Screen::Photo) {
+            if (m_actions.WasPressed(input, sandbox::ToggleMouse)) {
+                m_mouseCaptured = !m_mouseCaptured;
+                app.MainWindow().SetMouseCaptured(m_mouseCaptured);
+            }
+            if (m_actions.WasPressed(input, sandbox::Menu) || m_actions.WasPressed(input, sandbox::Photograph)) {
+                LeavePhotoMode(app);
+            } else if (app.CurrentScene() != nullptr) {
+                m_photo.Update(app, *app.CurrentScene(), m_actions, m_mouseCaptured, delta);
             }
         } else if ((m_actions.WasPressed(input, sandbox::Menu) || m_actions.WasPressed(input, sandbox::MenuBack)) &&
                    !m_options.capturing.has_value()) {
@@ -366,6 +385,22 @@ private:
                 current->SetPaused(true);
             }
         }
+    }
+
+    [[nodiscard]] static ecs::Entity FindPlayerEntity(app::Application& app) {
+        ecs::Entity found;
+        if (scene::Scene* current = app.CurrentScene()) {
+            current->World().Each<sandbox::Player>(
+                [&found](ecs::Entity entity, const sandbox::Player& /*player*/) { found = entity; });
+        }
+        return found;
+    }
+
+    void LeavePhotoMode(app::Application& app) {
+        if (app.CurrentScene() != nullptr) {
+            m_photo.Leave(app, *app.CurrentScene());
+        }
+        OpenScreen(app, sandbox::Screen::None);
     }
 
     void CloseOptions(app::Application& app) {
@@ -648,6 +683,12 @@ private:
         case sandbox::Screen::Calibration:
             choice = sandbox::DrawCalibration(m_ui, canvas, m_hud, app, m_settingsChanged);
             break;
+        case sandbox::Screen::Photo:
+            if (scene::Scene* scene = app.CurrentScene();
+                scene != nullptr && m_photo.Draw(m_ui, canvas, m_hud, app, *scene)) {
+                LeavePhotoMode(app);
+            }
+            break;
         case sandbox::Screen::Dead:
             if (player != nullptr) {
                 choice = sandbox::DrawDeathScreen(m_ui, canvas, m_hud, *player);
@@ -728,6 +769,7 @@ private:
     std::optional<core::CVar<double>> m_textSize;
     std::optional<core::CVar<double>> m_cameraShake;
     sandbox::OptionsState m_options;
+    sandbox::PhotoMode m_photo;
     ui::Context m_ui;
     sandbox::Screen m_screen = sandbox::Screen::None;
     /// Where the options go back to.

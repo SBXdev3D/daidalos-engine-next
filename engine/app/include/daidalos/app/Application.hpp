@@ -136,6 +136,19 @@ public:
     /// The gamepads' motors (ADR-0076): what the game pulses and holds there is sent after each OnUpdate,
     /// scaled by input.rumble.
     [[nodiscard]] input::RumbleMixer& Rumble() noexcept { return m_rumble; }
+    /// Saves the next frame drawn (ADR-0077): base.png, the image as displayed but without the interface,
+    /// and with exr, base.exr, the scene's light before bloom and the display transform. The files are
+    /// written on a worker; TakeSavedCaptures says when. F12 saves a PNG in CaptureDirectory.
+    void CaptureFrame(std::filesystem::path base, bool exr);
+    /// Whether a capture is waiting for its frame or being written.
+    [[nodiscard]] bool Capturing() const { return m_capture.has_value() || m_capturesWriting > 0; }
+    /// The PNG of each capture written since the last call. Failures are logged instead.
+    [[nodiscard]] std::vector<std::filesystem::path> TakeSavedCaptures();
+    /// Screenshots, beside the player's settings file.
+    [[nodiscard]] std::filesystem::path CaptureDirectory() const;
+    /// A file name in CaptureDirectory for a new capture, from the time: daidalos-2026-11-18-071757, without
+    /// its extension.
+    [[nodiscard]] std::filesystem::path NewCapturePath() const;
     /// Valid between OnStart and OnStop, when ApplicationConfig::rendering is set.
     [[nodiscard]] renderer::Renderer& Renderer();
     /// The game's interface for this frame, begun again before each frame's updates and drawn over the
@@ -184,6 +197,8 @@ public:
     [[nodiscard]] const ApplicationConfig& Config() const noexcept { return m_config; }
 
 private:
+    /// Hands a captured frame to a worker to write.
+    void WriteCaptures();
     /// Starts each step in order. Stop releases what a failure left started.
     core::Result<void> Start(IApplicationHandler& handler);
     /// Stops whatever is started, in reverse order.
@@ -275,6 +290,13 @@ private:
     std::optional<core::CVar<double>> m_mouseSensitivity;
     std::optional<core::CVar<double>> m_rumbleStrength;
     input::RumbleMixer m_rumble;
+    struct PendingCapture {
+        std::filesystem::path base;
+        bool exr = false;
+    };
+    std::optional<PendingCapture> m_capture;
+    std::size_t m_capturesWriting = 0;
+    std::vector<std::filesystem::path> m_savedCaptures;
     std::optional<core::CVar<bool>> m_directInput;
     std::optional<platform::Platform> m_platform;
     std::optional<platform::Window> m_window;

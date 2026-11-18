@@ -42,6 +42,8 @@ enum Action : daidalos::input::Action {
     QuickLoad,
     /// Goes back from a menu, as Menu does, but only there: the gamepad's East.
     MenuBack,
+    /// Stops the game for a photo (ADR-0077).
+    Photograph,
 };
 
 /// What a control does to its action: presses it, or pushes its axis one way.

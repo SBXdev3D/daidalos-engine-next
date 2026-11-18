@@ -45,6 +45,9 @@ void UpdateZombies(daidalos::scene::Scene& scene, daidalos::ecs::Entity player, 
 /// Draws the zombies between their last two fixed steps.
 void PlaceZombies(daidalos::scene::Scene& scene);
 
+/// Hides the weapons in hand, for a photo (ADR-0077); the next frame of play shows them again.
+void HideWeapons(daidalos::scene::Scene& scene, daidalos::ecs::Entity player);
+
 /// How tense the moment is (ADR-0068), from 0 to 1, and how many zombies hunt the player: from the zombies
 /// chasing the player, the nearer the tenser, and those waiting nearby.
 struct Threat {
