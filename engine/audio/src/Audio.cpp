@@ -7,15 +7,20 @@
 #include <daidalos/core/Profile.hpp>
 #include <daidalos/core/SlotPool.hpp>
 
+#include <glm/geometric.hpp>
+
 #include <miniaudio.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <format>
 #include <map>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "SteamAudio.hpp"
 
 namespace daidalos::audio {
 
@@ -95,6 +100,8 @@ struct AudioEngine::Impl {
     ma_engine engine{};
     ma_sound_group effects{};
     ma_sound_group music{};
+    /// Steam Audio's context, or null when sounds are panned by miniaudio (ADR-0065).
+    std::unique_ptr<steam::Context> steam;
     bool engineReady = false;
     bool effectsReady = false;
     bool musicReady = false;
@@ -123,6 +130,9 @@ core::Result<AudioEngine> AudioEngine::Create(const AudioConfig& config) {
         return tl::unexpected(AudioError(core::ErrorCode::DeviceError, "Cannot create the music bus", result));
     }
     impl->musicReady = true;
+    if (config.steamAudio) {
+        impl->steam = steam::Context::Create(config.sampleRate);
+    }
 
     ma_engine_set_volume(&impl->engine, config.volume);
     ma_sound_group_set_volume(&impl->effects, config.effectsVolume);
@@ -155,16 +165,72 @@ struct SoundWorld::State {
         /// or when streaming, where each voice opens the file.
         std::unique_ptr<Sound> source;
     };
+    /// A voice's source in the acoustic simulation, removed with it.
+    struct Source {
+        steam::Scene* scene = nullptr;
+        IPLSource source = nullptr;
+        Source() = default;
+        Source(steam::Scene* owner, IPLSource added) : scene(owner), source(added) {}
+        Source(Source&& other) noexcept
+            : scene(std::exchange(other.scene, nullptr)), source(std::exchange(other.source, nullptr)) {}
+        Source& operator=(Source&& other) noexcept {
+            std::swap(scene, other.scene);
+            std::swap(source, other.source);
+            return *this;
+        }
+        Source(const Source&) = delete;
+        Source& operator=(const Source&) = delete;
+        ~Source() {
+            if (scene != nullptr) {
+                scene->RemoveSource(source);
+            }
+        }
+    };
     struct Voice {
+        // Destroyed last to first: the sound stops before the node it plays into goes.
+        Source source;
+        std::unique_ptr<steam::SpatialNode> node;
         std::unique_ptr<Sound> sound;
+        glm::vec3 position{0.0f};
+        float minDistance = 1.0f;
+        float maxDistance = 35.0f;
     };
 
     State(AudioEngine* owner, std::filesystem::path assetRoot) : engine(owner), root(std::move(assetRoot)) {}
 
     [[nodiscard]] ma_engine* Engine() const { return engine != nullptr ? &engine->Internals().engine : nullptr; }
 
+    [[nodiscard]] steam::Context* Steam() const {
+        return engine != nullptr ? engine->Internals().steam.get() : nullptr;
+    }
+    /// The acoustic scene, made when the first geometry or spatial voice needs it.
+    steam::Scene* AcousticScene() {
+        if (scene == nullptr && Steam() != nullptr) {
+            scene = steam::Scene::Create(*Steam());
+        }
+        return scene.get();
+    }
+    void Simulate(std::span<const VoiceHandle> handles) {
+        if (scene == nullptr) {
+            return;
+        }
+        std::vector<steam::Scene::Voice> simulated;
+        for (const VoiceHandle handle : handles) {
+            Voice& voice = voices.Get(handle);
+            if (voice.node != nullptr && voice.source.source != nullptr) {
+                simulated.push_back(
+                    {voice.source.source, voice.position, voice.minDistance, voice.maxDistance, voice.node.get()});
+            }
+        }
+        scene->Simulate(listener, simulated);
+    }
+
     AudioEngine* engine;
     std::filesystem::path root;
+    steam::Scene::Listener listener;
+    // The acoustic scene outlives the voices, whose sources it holds.
+    std::unique_ptr<steam::Scene> scene;
+    double simulationMilliseconds = 0.0;
     // Voices go first: they use the data of their clips.
     core::SlotPool<Clip, ClipTag> clips;
     std::map<std::string, ClipHandle, std::less<>> clipsByPath;
@@ -226,30 +292,52 @@ VoiceHandle SoundWorld::Play(ClipHandle clip, const PlayOptions& options) {
     }
 
     ma_sound_group* group = state.engine->Internals().Group(options.bus);
+    // With Steam Audio, a sound in the world plays into its own node, which hears it through the geometry
+    // and the HRTF (ADR-0065); miniaudio pans it otherwise.
+    State::Voice playing;
+    if (options.position.has_value() && state.AcousticScene() != nullptr) {
+        playing.node = steam::SpatialNode::Create(*state.Steam(), engine, reinterpret_cast<ma_node*>(group));
+    }
     auto voice = std::make_unique<Sound>();
-    const ma_uint32 spatial = options.position.has_value() ? 0 : MA_SOUND_FLAG_NO_SPATIALIZATION;
-    const ma_result result =
-        found->stream ? InitFromFile(engine, found->file, MA_SOUND_FLAG_STREAM | spatial, group, voice->Get())
-                      : ma_sound_init_copy(engine, found->source->Get(), spatial, group, voice->Get());
+    const bool steamed = playing.node != nullptr;
+    const ma_uint32 spatial = options.position.has_value() && !steamed ? 0 : MA_SOUND_FLAG_NO_SPATIALIZATION;
+    ma_sound_group* into = steamed ? nullptr : group;
+    const ma_result result = found->stream
+                                 ? InitFromFile(engine, found->file, MA_SOUND_FLAG_STREAM | spatial, into, voice->Get())
+                                 : ma_sound_init_copy(engine, found->source->Get(), spatial, into, voice->Get());
     if (result != MA_SUCCESS) {
         return {};
     }
     voice->MarkInitialized();
+    if (steamed) {
+        ma_node_attach_output_bus(voice->Get(), 0, playing.node->Node(), 0);
+        playing.source = State::Source(state.scene.get(), state.scene->AddSource());
+        playing.position = *options.position;
+        playing.minDistance = std::max(options.minDistance, 0.01f);
+        playing.maxDistance = options.maxDistance;
+    }
 
     ma_sound* sound = voice->Get();
     ma_sound_set_volume(sound, options.volume);
     ma_sound_set_looping(sound, options.loop ? MA_TRUE : MA_FALSE);
     ma_sound_set_doppler_factor(sound, 0.0f);
-    if (options.position.has_value()) {
+    if (options.position.has_value() && !steamed) {
         ma_sound_set_position(sound, options.position->x, options.position->y, options.position->z);
         ma_sound_set_attenuation_model(sound, ma_attenuation_model_inverse);
         ma_sound_set_min_distance(sound, options.minDistance);
         ma_sound_set_max_distance(sound, options.maxDistance);
     }
-    if (ma_sound_start(sound) != MA_SUCCESS) {
+    playing.sound = std::move(voice);
+    const VoiceHandle handle = state.voices.Insert(std::move(playing));
+    if (steamed) {
+        // Heard through the walls from its first sample.
+        const std::array<VoiceHandle, 1> just{handle};
+        state.Simulate(just);
+    }
+    if (ma_sound_start(state.voices.Get(handle).sound->Get()) != MA_SUCCESS) {
+        state.voices.Remove(handle);
         return {};
     }
-    const VoiceHandle handle = state.voices.Insert({std::move(voice)});
     state.playing.push_back(handle);
     return handle;
 }
@@ -262,8 +350,15 @@ void SoundWorld::Stop(VoiceHandle voice) {
 }
 
 void SoundWorld::SetPosition(VoiceHandle voice, const glm::vec3& position) {
-    if (State::Voice* found = m_state->voices.TryGet(voice)) {
-        ma_sound_set_position(found->sound->Get(), position.x, position.y, position.z);
+    State& state = *m_state;
+    if (State::Voice* found = state.voices.TryGet(voice)) {
+        found->position = position;
+        if (found->node == nullptr) {
+            ma_sound_set_position(found->sound->Get(), position.x, position.y, position.z);
+        } else if (state.scene != nullptr) {
+            state.scene->Place(state.listener, {found->source.source, position, found->minDistance, found->maxDistance,
+                                                found->node.get()});
+        }
     }
 }
 
@@ -297,6 +392,7 @@ bool SoundWorld::IsPaused() const {
 }
 
 void SoundWorld::SetListener(const glm::vec3& position, const glm::vec3& forward, const glm::vec3& up) {
+    m_state->listener = {position, forward, up};
     if (ma_engine* engine = m_state->Engine()) {
         ma_engine_listener_set_position(engine, 0, position.x, position.y, position.z);
         ma_engine_listener_set_direction(engine, 0, forward.x, forward.y, forward.z);
@@ -314,6 +410,75 @@ void SoundWorld::Update() {
         state.voices.Remove(handle);
         return true;
     });
+    const auto start = std::chrono::steady_clock::now();
+    state.Simulate(state.playing);
+    state.simulationMilliseconds =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+}
+
+double SoundWorld::LastSimulationMilliseconds() const {
+    return m_state->simulationMilliseconds;
+}
+
+bool SoundWorld::HearsGeometry() const {
+    return m_state->Steam() != nullptr;
+}
+
+void SoundWorld::AddAcousticMesh(std::span<const glm::vec3> positions, std::span<const std::uint32_t> indices,
+                                 const AcousticMaterial& material) {
+    if (steam::Scene* scene = m_state->AcousticScene()) {
+        scene->AddStatic(positions, indices, material);
+    }
+}
+
+std::size_t SoundWorld::AddMovableAcousticMesh(std::span<const glm::vec3> positions,
+                                               std::span<const std::uint32_t> indices, const AcousticMaterial& material,
+                                               const glm::mat4& transform) {
+    if (steam::Scene* scene = m_state->AcousticScene()) {
+        return scene->AddMovable(positions, indices, material, transform);
+    }
+    return 0;
+}
+
+void SoundWorld::MoveAcousticMesh(std::size_t mesh, const glm::mat4& transform) {
+    if (m_state->scene != nullptr) {
+        m_state->scene->Move(mesh, transform);
+    }
+}
+
+AcousticMaterial AcousticMaterialOf(std::string_view surface) {
+    // Steam Audio's presets (phonon's material table), by band: low, middle, high.
+    if (surface == "concrete") {
+        return {{0.05f, 0.07f, 0.08f}, 0.05f, {0.015f, 0.002f, 0.001f}};
+    }
+    if (surface == "metal") {
+        return {{0.20f, 0.07f, 0.06f}, 0.05f, {0.200f, 0.025f, 0.010f}};
+    }
+    if (surface == "wood") {
+        return {{0.11f, 0.07f, 0.06f}, 0.05f, {0.070f, 0.014f, 0.005f}};
+    }
+    if (surface == "glass") {
+        return {{0.06f, 0.03f, 0.02f}, 0.05f, {0.060f, 0.044f, 0.011f}};
+    }
+    if (surface == "tile" || surface == "ceramic") {
+        return {{0.01f, 0.02f, 0.02f}, 0.05f, {0.060f, 0.044f, 0.011f}};
+    }
+    if (surface == "cloth" || surface == "carpet" || surface == "flesh") {
+        return {{0.24f, 0.69f, 0.73f}, 0.05f, {0.020f, 0.005f, 0.003f}};
+    }
+    if (surface == "stone" || surface == "rock") {
+        return {{0.13f, 0.20f, 0.24f}, 0.05f, {0.015f, 0.002f, 0.001f}};
+    }
+    if (surface == "plaster") {
+        return {{0.12f, 0.06f, 0.04f}, 0.05f, {0.056f, 0.056f, 0.004f}};
+    }
+    if (surface == "brick") {
+        return {{0.03f, 0.04f, 0.07f}, 0.05f, {0.015f, 0.015f, 0.015f}};
+    }
+    if (surface == "gravel") {
+        return {{0.60f, 0.70f, 0.80f}, 0.05f, {0.031f, 0.012f, 0.008f}};
+    }
+    return {};
 }
 
 } // namespace daidalos::audio

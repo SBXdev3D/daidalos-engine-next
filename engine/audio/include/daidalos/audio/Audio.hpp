@@ -7,8 +7,10 @@
 #include <daidalos/core/Handle.hpp>
 #include <daidalos/core/Result.hpp>
 
+#include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -32,6 +34,9 @@ enum class Bus { Effects, Music };
 struct AudioConfig {
     /// False mixes on demand with AudioEngine::Read and plays nothing, for tests.
     bool useDevice = true;
+    /// Steam Audio (ADR-0065): sounds in the world are heard through a head-related transfer function, and
+    /// through the walls between them and the listener. Off, or if it cannot start, miniaudio pans them.
+    bool steamAudio = true;
     std::uint32_t sampleRate = 48000;
     std::uint32_t channels = 2;
     /// Multiplies everything, from 0 to 1.
@@ -81,6 +86,22 @@ struct PlayOptions {
     float maxDistance = 35.0f;
 };
 
+/// How a surface treats sound (ADR-0065), in three bands, low (around 400 Hz), middle (2.5 kHz) and high
+/// (15 kHz): the share of the sound it absorbs where sound reflects off it, how much of what it reflects it
+/// scatters, and the share it lets through.
+struct AcousticMaterial {
+    std::array<float, 3> absorption{0.10f, 0.20f, 0.30f};
+    float scattering = 0.05f;
+    std::array<float, 3> transmission{0.100f, 0.050f, 0.030f};
+
+    bool operator==(const AcousticMaterial&) const = default;
+};
+
+/// The material of a surface by its name, as glTF extras {"surface": ...} give it (concrete, metal, wood,
+/// glass, tile, cloth, flesh, stone, plaster, brick, gravel), from Steam Audio's measured presets; anything
+/// else is generic.
+[[nodiscard]] AcousticMaterial AcousticMaterialOf(std::string_view surface);
+
 /// The sounds of a scene: its clips, what is playing, and who is listening (ADR-0019). Destroying it
 /// stops everything, so restarting a level also restarts its sounds. Without an engine it is silent:
 /// clips still load and report missing or invalid files, and Play does nothing.
@@ -113,8 +134,22 @@ public:
     /// Direction and up must be normalized.
     void SetListener(const glm::vec3& position, const glm::vec3& forward, const glm::vec3& up);
 
-    /// Releases the voices that ended. Run it once per frame.
+    /// Geometry that stops and muffles sound (ADR-0065), in world space: the level's walls and floors. With
+    /// Steam Audio only; otherwise ignored.
+    void AddAcousticMesh(std::span<const glm::vec3> positions, std::span<const std::uint32_t> indices,
+                         const AcousticMaterial& material);
+    /// Geometry that moves, as a door: its index for MoveAcousticMesh. positions are in its own space.
+    std::size_t AddMovableAcousticMesh(std::span<const glm::vec3> positions, std::span<const std::uint32_t> indices,
+                                       const AcousticMaterial& material, const glm::mat4& transform);
+    void MoveAcousticMesh(std::size_t mesh, const glm::mat4& transform);
+    /// Whether sounds are heard through the geometry and an HRTF.
+    [[nodiscard]] bool HearsGeometry() const;
+
+    /// Releases the voices that ended, then simulates how each sound reaches the listener through the
+    /// geometry. Run it once per frame.
     void Update();
+    /// Milliseconds the last Update spent simulating, for the sound's CPU budget.
+    [[nodiscard]] double LastSimulationMilliseconds() const;
 
 private:
     struct State;

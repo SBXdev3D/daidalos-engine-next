@@ -38,6 +38,7 @@
     "shader-slang",
     "simdjson",
     "spdlog",
+    "steam-audio",
     "stb",
     "tl-expected",
     "volk",

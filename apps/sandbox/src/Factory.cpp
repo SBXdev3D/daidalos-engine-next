@@ -650,6 +650,16 @@ audio::ClipHandle LoadSound(scene::Scene& scene, std::string_view name, const au
 
 namespace {
 
+// A door's geometry in the acoustic scene (ADR-0065), moved where the door is.
+struct DoorAcoustics {
+    std::size_t mesh = 0;
+    glm::mat4 placed{1.0f};
+};
+
+} // namespace
+
+namespace {
+
 /// Plays the first clip of a model forever, from a random time, so that no two turn in step.
 void PlayForever(ecs::World& world, ecs::Entity model, std::minstd_rand& random) {
     if (animation::Animator* animator = world.TryGet<animation::Animator>(model)) {
@@ -715,6 +725,8 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
                     positions.push_back(math::TransformPoint(placement, position));
                 }
                 DAI_TRY_ASSIGN(physics::BodyId body, physics.AddStaticMesh(positions, part.indices, math::Transform{}));
+                // Sound meets the same walls and floors (ADR-0065), made of the part's surface.
+                scene.Sounds().AddAcousticMesh(positions, part.indices, audio::AcousticMaterialOf(part.surface));
                 if (!part.surface.empty()) {
                     surfaces.surfaces.emplace(body.value, part.surface);
                 }
@@ -839,12 +851,32 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
                                    physics.AddKinematicBox(halfExtents, (low + high) * 0.5f, transform));
                     world.Add<scene::KinematicBody>(entity, box);
                     // A door is made of what its first part with a surface is made of.
+                    std::string_view surface;
                     for (const std::uint32_t index : found->second.node->parts) {
                         if (!model.parts[index].surface.empty()) {
                             surfaces.surfaces.emplace(box.value, model.parts[index].surface);
+                            surface = model.parts[index].surface;
                             break;
                         }
                     }
+                    // In the acoustic scene, the door moves with its entity: closed, it muffles what is behind.
+                    std::vector<glm::vec3> positions;
+                    std::vector<std::uint32_t> indices;
+                    for (const std::uint32_t index : found->second.node->parts) {
+                        const auto first = static_cast<std::uint32_t>(positions.size());
+                        positions.insert(positions.end(), model.parts[index].positions.begin(),
+                                         model.parts[index].positions.end());
+                        for (const std::uint32_t vertex : model.parts[index].indices) {
+                            indices.push_back(first + vertex);
+                        }
+                    }
+                    const glm::mat4& doorPlacement = world.Get<ecs::WorldTransform>(entity).matrix;
+                    world.Add<DoorAcoustics>(
+                        entity, DoorAcoustics{scene.Sounds().AddMovableAcousticMesh(
+                                                  positions, indices,
+                                                  audio::AcousticMaterialOf(surface.empty() ? "metal" : surface),
+                                                  doorPlacement),
+                                              doorPlacement});
                 }
             }
         }
@@ -948,6 +980,14 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
         if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
             UpdateDoors(scene, entity, static_cast<float>(step.count()));
         }
+        // Doors that moved move in the acoustic scene too.
+        world.Each<DoorAcoustics, ecs::WorldTransform>(
+            [&scene](ecs::Entity /*door*/, DoorAcoustics& acoustics, const ecs::WorldTransform& transform) {
+                if (transform.matrix != acoustics.placed) {
+                    acoustics.placed = transform.matrix;
+                    scene.Sounds().MoveAcousticMesh(acoustics.mesh, transform.matrix);
+                }
+            });
     });
 
     ecs::Schedule& systems = scene.FrameSystems();

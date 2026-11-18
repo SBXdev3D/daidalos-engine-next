@@ -8,6 +8,7 @@
 #include <daidalos/scene/Components.hpp>
 #include <daidalos/scene/Systems.hpp>
 
+#include <glm/ext/matrix_transform.hpp>
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -180,15 +181,18 @@ TEST_F(AudioTest, LoopKeepsPlayingUntilStopped) {
 TEST_F(AudioTest, SoundOnTheRightIsLouderInTheRightEar) {
     m_sounds->SetListener({0.0f, 0.0f, 0.0f}, math::kForward, math::kUp);
     m_sounds->Play(Clip("long.wav"), {.position = glm::vec3(5.0f, 0.0f, 0.0f)});
+    Mix(); // The HRTF turns towards the sound over its first blocks.
     const Levels levels = Mix();
-    EXPECT_GT(levels.right, levels.left * 2.0f);
+    // Through the HRTF (ADR-0065), a 440 Hz tone at the side is about 1.8 times louder in the near ear.
+    EXPECT_GT(levels.right, levels.left * 1.5f);
 }
 
 TEST_F(AudioTest, TurningAroundSwapsTheEars) {
     m_sounds->SetListener({0.0f, 0.0f, 0.0f}, -math::kForward, math::kUp);
     m_sounds->Play(Clip("long.wav"), {.position = glm::vec3(5.0f, 0.0f, 0.0f)});
+    Mix(); // The HRTF turns towards the sound over its first blocks.
     const Levels levels = Mix();
-    EXPECT_GT(levels.left, levels.right * 2.0f);
+    EXPECT_GT(levels.left, levels.right * 1.5f);
 }
 
 TEST_F(AudioTest, DistantSoundIsQuieter) {
@@ -270,7 +274,7 @@ TEST_F(AudioTest, EmitterMovesItsVoiceToItsEntity) {
     scene::SyncSoundEmitters(world, *m_sounds);
     Mix(); // Panning is smoothed.
     const Levels levels = Mix();
-    EXPECT_GT(levels.right, levels.left * 2.0f);
+    EXPECT_GT(levels.right, levels.left * 1.5f);
 }
 
 TEST_F(AudioTest, DemoMusicStreamsFromOgg) {
@@ -308,4 +312,64 @@ TEST(SilentSoundWorld, StillReportsMissingFilesAndPlaysNothing) {
         EXPECT_EQ(sounds.VoiceCount(), 0u);
     }
     std::filesystem::remove_all(root);
+}
+
+namespace {
+
+// A square of wall across the z axis at z, two triangles, 4 meters wide and high.
+void AddWall(std::vector<glm::vec3>& positions, std::vector<std::uint32_t>& indices, float z) {
+    const auto first = static_cast<std::uint32_t>(positions.size());
+    positions.insert(positions.end(), {{-2.0f, -2.0f, z}, {2.0f, -2.0f, z}, {2.0f, 2.0f, z}, {-2.0f, 2.0f, z}});
+    indices.insert(indices.end(), {first, first + 1, first + 2, first, first + 2, first + 3});
+}
+
+} // namespace
+
+TEST_F(AudioTest, AWallMuffles) {
+    if (!m_sounds->HearsGeometry()) {
+        GTEST_SKIP() << "Steam Audio did not start";
+    }
+    const ClipHandle clip = Clip("long.wav");
+    const audio::VoiceHandle voice = m_sounds->Play(clip, {.position = glm::vec3(0.0f, 0.0f, -4.0f)});
+    m_sounds->Update();
+    Mix();
+    const float open = Mix().left;
+    m_sounds->Stop(voice);
+
+    std::vector<glm::vec3> positions;
+    std::vector<std::uint32_t> indices;
+    AddWall(positions, indices, -2.0f);
+    m_sounds->AddAcousticMesh(positions, indices, audio::AcousticMaterialOf("concrete"));
+    m_sounds->Play(clip, {.position = glm::vec3(0.0f, 0.0f, -4.0f)});
+    m_sounds->Update();
+    Mix();
+    const float walled = Mix().left;
+    RecordProperty("open", std::to_string(open));
+    RecordProperty("walled", std::to_string(walled));
+    EXPECT_LT(walled, open * 0.2f);
+}
+
+TEST_F(AudioTest, ASoundBehindADoorIsMuffledUntilItOpens) {
+    // The completion criterion of Phase 12 (ADR-0065): a closed metal door lets little through; swung out of
+    // the way, the sound comes through.
+    if (!m_sounds->HearsGeometry()) {
+        GTEST_SKIP() << "Steam Audio did not start";
+    }
+    std::vector<glm::vec3> positions;
+    std::vector<std::uint32_t> indices;
+    AddWall(positions, indices, 0.0f);
+    const std::size_t door = m_sounds->AddMovableAcousticMesh(positions, indices, audio::AcousticMaterialOf("metal"),
+                                                              glm::translate(glm::mat4(1.0f), {0.0f, 0.0f, -2.0f}));
+    m_sounds->Play(Clip("long.wav"), {.position = glm::vec3(0.0f, 0.0f, -4.0f), .loop = true});
+    m_sounds->Update();
+    Mix();
+    const float closed = Mix().left;
+    m_sounds->MoveAcousticMesh(door, glm::translate(glm::mat4(1.0f), {10.0f, 0.0f, -2.0f}));
+    m_sounds->Update();
+    Mix();
+    const float opened = Mix().left;
+    RecordProperty("closed", std::to_string(closed));
+    RecordProperty("opened", std::to_string(opened));
+    EXPECT_LT(closed, opened * 0.3f);
+    EXPECT_GT(closed, 0.0f);
 }

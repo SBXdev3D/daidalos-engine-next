@@ -34,7 +34,7 @@ Every module also links to `core`; the graph only shows it for the bottom row.
 | `rhi` | Vulkan 1.4 device with ray queries, swapchain, buffers, textures, pipelines, command lists, batched uploads | Vulkan, volk, VMA |
 | `renderer` | Draws a `SceneView`: G-buffer, lighting, skinning, materials, shader hot reload, the game's interface (`ui::`), and the debug overlay (`debugui::`, development builds) | Dear ImGui, stb_truetype (in `resources`) |
 | `physics` | Collisions, characters and ray queries of a scene | Jolt |
-| `audio` | Output, mixing, clips and voices of a scene, silent without an output | miniaudio, stb_vorbis |
+| `audio` | Output, mixing, clips and voices of a scene, heard through an HRTF and the scene's walls and doors, silent without an output | miniaudio, stb_vorbis, Steam Audio |
 | `scene` | Entities (`ecs::`), animation (`animation::`), the asset library, the engine's components, the systems that tie entities to the renderer, physics and sounds, and the scene itself | |
 | `app` | Startup and shutdown in order, main loop, current scene, the player's settings, the developer console and tools (development builds) | |
 
@@ -59,7 +59,7 @@ flowchart LR
 
 The configuration step reads the engine's settings from `daidalos.cfg` next to the executable, then the files a game adds, such as `sandbox.cfg`, then the player's own `user.cfg`, then the command line; later ones win (ADR-0026). The build copies `config/daidalos.cfg` next to every application the first time. Settings that the renderer and the audio can follow while running, such as antialiasing, the field of view and the volumes, are applied every frame; the others are read at startup. A game's options change settings with `Application::ChangeSetting`, and `Application::SaveSettings` writes them to `user.cfg`: the ones it held and the ones changed, never values that only came from the command line (ADR-0029). A quality preset (`renderer.quality`: low, medium, high or ultra) decides eleven rendering settings, from the render scale to the fog's cells; each follows it until something sets it, which the options show as Custom (ADR-0052). At the first launch, `auto` draws the first level at High, times 120 frames on the GPU and keeps the best preset that holds the target frame rate with a margin. The device reads its pipeline cache from `pipelines.cache` next to the executable, unless another GPU or driver wrote it, and writes it back at shutdown. After the first frame that draws a level, pipeline creation is locked: a pipeline created later is logged as an error, as it would stall a frame. Video memory in use and the budget come from `VK_EXT_memory_budget` when the device has it.
 
-The game plugs in through `app::IApplicationHandler`: `OnStart`, `OnEvent`, `OnFixedUpdate`, `OnUpdate`, `OnRender` and `OnStop`. It usually gives the application a `scene::Scene`, which the application then runs. `Stop` releases the scene before anything else, because its assets and sounds belong to the renderer and the audio engine, even if `OnStart` failed halfway. A machine with no audio output only gets a warning, and its scenes stay silent (ADR-0019).
+The game plugs in through `app::IApplicationHandler`: `OnStart`, `OnEvent`, `OnFixedUpdate`, `OnUpdate`, `OnRender` and `OnStop`. It usually gives the application a `scene::Scene`, which the application then runs. `Stop` releases the scene before anything else, because its assets and sounds belong to the renderer and the audio engine, even if `OnStart` failed halfway. A machine with no audio output only gets a warning, and its scenes stay silent (ADR-0019). Sounds in the world go through Steam Audio (ADR-0065): each voice plays into its own miniaudio node, which applies the direct path Steam Audio simulates each frame through the scene's acoustic meshes, the level's walls and floors with materials from their surfaces and doors that move, then the HRTF; without Steam Audio, miniaudio pans them.
 
 ## One frame
 
@@ -160,7 +160,7 @@ flowchart TD
     Scene --> Library["AssetLibrary<br/>releases all its assets together"]
     Scene --> World["ecs::World<br/>entities and components"]
     Scene --> Physics["physics::PhysicsWorld<br/>bodies and characters"]
-    Scene --> Sounds["audio::SoundWorld<br/>clips and voices"]
+    Scene --> Sounds["audio::SoundWorld<br/>clips, voices,<br/>acoustic meshes"]
     App --> Audio["audio::AudioEngine<br/>output and mixer"]
     Sounds -. "plays through" .-> Audio
     Library -. "handles" .-> MeshPass
