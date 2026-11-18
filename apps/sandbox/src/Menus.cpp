@@ -164,10 +164,14 @@ MenuChoice DrawDeathScreen(ui::Context& ui, ui::Canvas& canvas, const HudAssets&
 MenuChoice DrawCompleteScreen(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud, const Player& player,
                               float seconds) {
     Darken(canvas, 0.6f);
-    Title(canvas, hud, T(hud, "menu.cleared"), 330.0f, 120.0f, glm::vec4(1.0f));
+    // Out by the exit, or every zombie dead; then what it took (ADR-0084).
+    const bool escaped = player.escaped && player.kills < player.zombieCount;
+    Title(canvas, hud, T(hud, escaped ? "menu.escaped" : "menu.cleared"), 300.0f, 120.0f, glm::vec4(1.0f));
     const auto whole = static_cast<int>(std::max(seconds, 0.0f));
-    Line(canvas, hud, Tf(hud, "menu.cleared_time", player.zombieCount, whole / 60, whole % 60), 450.0f);
-    switch (Buttons<2>(ui, canvas, 560.0f, {T(hud, "menu.play_again"), T(hud, "menu.quit")}).value_or(2)) {
+    Line(canvas, hud, Tf(hud, "menu.summary_time", whole / 60, whole % 60), 420.0f);
+    Line(canvas, hud, Tf(hud, "menu.killed", player.kills, player.zombieCount), 470.0f);
+    Line(canvas, hud, Tf(hud, "menu.items", player.items, player.itemCount), 520.0f);
+    switch (Buttons<2>(ui, canvas, 620.0f, {T(hud, "menu.play_again"), T(hud, "menu.quit")}).value_or(2)) {
     case 0:
         return MenuChoice::Restart;
     case 1:

@@ -444,7 +444,7 @@ private:
             return;
         }
         const bool dead = player->dead;
-        const bool cleared = player->zombieCount > 0 && player->kills >= player->zombieCount;
+        const bool cleared = (player->zombieCount > 0 && player->kills >= player->zombieCount) || player->escaped;
         if (!dead && !cleared) {
             m_endSeconds = 0.0f;
             return;

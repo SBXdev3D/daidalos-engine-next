@@ -1,0 +1,17 @@
+{
+  "comment": "The far end of the pumps: a shaft going up, the way out. Staged by scripts/stage_showcase_scares.py (ADR-0084).",
+  "cues": [
+    {
+      "at": 0.0,
+      "subtitle": {
+        "speaker": "speaker.you",
+        "text": "subtitle.exit.you",
+        "seconds": 2.5
+      }
+    },
+    {
+      "at": 2.5,
+      "event": "exit"
+    }
+  ]
+}

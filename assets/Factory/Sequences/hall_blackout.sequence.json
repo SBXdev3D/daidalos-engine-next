@@ -1,0 +1,52 @@
+{
+  "comment": "Into the loading floor: its power dies, something groans by the crane, and comes back stuttering. Staged by scripts/stage_showcase_scares.py (ADR-0084).",
+  "cues": [
+    {
+      "at": 0.0,
+      "event": "checkpoint"
+    },
+    {
+      "at": 0.0,
+      "power": {
+        "circuit": "loading_floor",
+        "on": false
+      }
+    },
+    {
+      "at": 0.3,
+      "sound": {
+        "clip": "Factory/Sounds/zombie_groan2.wav",
+        "volume": 1.0,
+        "ducking": 0.3,
+        "entity": "Overhead crane",
+        "caption": "caption.zombie_groan"
+      }
+    },
+    {
+      "at": 0.5,
+      "shake": {
+        "strength": 0.3,
+        "seconds": 0.6
+      }
+    },
+    {
+      "at": 1.0,
+      "subtitle": {
+        "speaker": "speaker.you",
+        "text": "subtitle.hall.you",
+        "seconds": 3.5
+      }
+    },
+    {
+      "at": 1.2,
+      "event": "stinger"
+    },
+    {
+      "at": 7.5,
+      "power": {
+        "circuit": "loading_floor",
+        "on": true
+      }
+    }
+  ]
+}

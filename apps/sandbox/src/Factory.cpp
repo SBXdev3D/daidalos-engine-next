@@ -505,6 +505,7 @@ core::Result<void> SaveGame(scene::Scene& scene, const std::filesystem::path& fi
     data.Put("player.flashlight_on", player.flashlightOn);
     data.Put("player.battery", static_cast<double>(player.torch.battery));
     data.Put("player.kills", static_cast<double>(player.kills));
+    data.Put("player.items", static_cast<double>(player.items));
     // The pickups still there, and the doors as they are.
     data.Put("pickups.saved", true);
     world.Each<Pickup, scene::SaveKey>(
@@ -564,6 +565,7 @@ core::Result<void> LoadGame(scene::Scene& scene, const std::filesystem::path& fi
     player.flashlightOn = data.Flag("player.flashlight_on").value_or(player.flashlightOn);
     player.torch.battery = static_cast<float>(data.Number("player.battery").value_or(player.torch.battery));
     player.kills = static_cast<int>(data.Number("player.kills").value_or(player.kills));
+    player.items = static_cast<int>(data.Number("player.items").value_or(player.items));
     if (const std::optional<glm::vec3> feet = data.Vector("player.feet")) {
         Teleport(scene, playerEntity, *feet + math::kUp * player.eyeHeight);
     }
@@ -758,6 +760,7 @@ void UpdatePickups(scene::Scene& scene, ecs::Entity playerEntity, float delta) {
             transform.rotation = spin * transform.rotation;
             if (glm::distance(transform.translation, eye) < kPickupRadius + kEyeHeight * 0.5f) {
                 Collect(player, pickup.kind);
+                ++player.items;
                 if (bank != nullptr) {
                     scene.Sounds().Play(bank->pickups[static_cast<std::size_t>(pickup.kind)]);
                 }
@@ -1094,6 +1097,7 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
             world.Add<Ladder>(entity, Vector(tags, "min"), Vector(tags, "max"));
         } else if (const std::optional<PickupKind> pickup = PickupOf(tags.kind)) {
             world.Add<Pickup>(entity, *pickup);
+            ++world.Get<Player>(playerEntity).itemCount;
             world.Add<scene::SaveKey>(entity, keyOf(entity));
         } else if (tags.kind == "door") {
             Door door;
@@ -1397,6 +1401,14 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
                 if (const core::Result<void> saved = SaveGame(scene, settings.checkpointSave); !saved) {
                     DAI_LOG_WARNING("sandbox", "Checkpoint: {}", core::Format(saved.error()));
                 }
+            }
+            // The way out (ADR-0084): the level ends, as when the last zombie dies.
+            if (event == "exit") {
+                world.Get<Player>(entity).escaped = true;
+            }
+            // An ambush: a noise where the player is, loud enough for the zombies around to come.
+            if (event == "ambush") {
+                scene.MakeNoise({.position = state.feet, .reach = 30.0f, .maker = entity});
             }
             if (event == "stinger" && !bank->stingers.empty()) {
                 scene.Sounds().Play(bank->stingers[bank->random() % bank->stingers.size()],

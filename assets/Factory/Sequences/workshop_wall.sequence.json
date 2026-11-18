@@ -1,0 +1,45 @@
+{
+  "comment": "Into the workshop: a groan behind the wall, the lights cut, and every zombie near hears the player. Staged by scripts/stage_showcase_scares.py (ADR-0084).",
+  "cues": [
+    {
+      "at": 0.0,
+      "sound": {
+        "clip": "Factory/Sounds/zombie_groan1.wav",
+        "volume": 1.0,
+        "ducking": 0.3,
+        "entity": "Drill press 01",
+        "caption": "caption.zombie_groan"
+      }
+    },
+    {
+      "at": 0.6,
+      "power": {
+        "circuit": "workshop",
+        "on": false
+      }
+    },
+    {
+      "at": 0.8,
+      "subtitle": {
+        "speaker": "speaker.you",
+        "text": "subtitle.workshop.you",
+        "seconds": 3.5
+      }
+    },
+    {
+      "at": 1.5,
+      "event": "ambush"
+    },
+    {
+      "at": 2.0,
+      "event": "stinger"
+    },
+    {
+      "at": 4.0,
+      "power": {
+        "circuit": "workshop",
+        "on": true
+      }
+    }
+  ]
+}

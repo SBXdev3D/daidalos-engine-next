@@ -16,6 +16,9 @@
   "menu.try_again": "Try again",
   "menu.cleared": "FACTORY CLEARED",
   "menu.cleared_time": "All {} zombies killed in {}:{:02}",
+  "menu.escaped": "YOU GOT OUT",
+  "menu.summary_time": "Time: {}:{:02}",
+  "menu.items": "Items found: {} of {}",
   "menu.play_again": "Play again",
   "menu.loading": "LOADING...",
 
@@ -110,6 +113,10 @@
   "speaker.you": "You",
 
   "subtitle.rain_room.you": "Something is in here with me.",
+  "subtitle.hall.you": "The power... no, no, no.",
+  "subtitle.pumps.you": "It's pitch black down here.",
+  "subtitle.exit.you": "A shaft going up. That's my way out.",
+  "subtitle.workshop.you": "Something is behind that wall.",
 
   "caption.zombie_groan": "Groaning",
   "caption.zombie_scream": "A scream",
