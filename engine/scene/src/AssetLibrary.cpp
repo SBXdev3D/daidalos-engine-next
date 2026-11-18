@@ -325,6 +325,25 @@ core::Result<ParticleEffectAsset> AssetLibrary::LoadParticleEffect(std::string_v
     return asset;
 }
 
+core::Result<std::shared_ptr<const Level>> AssetLibrary::LoadPrefab(std::string_view path) {
+    DAI_TRY_ASSIGN(std::string identity, resources::NormalizeAssetPath(path));
+    DAI_TRY_ASSIGN(std::filesystem::path file, resources::ResolveAssetPath(m_root, identity));
+    std::error_code error;
+    const std::filesystem::file_time_type written = std::filesystem::last_write_time(file, error);
+    if (const auto found = m_prefabFiles.find(identity);
+        found != m_prefabFiles.end() && !error && found->second.written == written) {
+        return found->second.level;
+    }
+    core::Result<Level> level = LoadLevelFile(file);
+    if (!level) {
+        return core::MakeError(level.error().code, kModule,
+                               std::format("The prefab '{}': {}", identity, level.error().message));
+    }
+    auto shared = std::make_shared<const Level>(std::move(*level));
+    m_prefabFiles[identity] = PrefabFile{shared, written};
+    return shared;
+}
+
 core::Result<RibbonEffect> AssetLibrary::ReadRibbonEffect(const std::string& identity,
                                                           const std::filesystem::path& file) {
     std::ifstream stream(file, std::ios::binary);

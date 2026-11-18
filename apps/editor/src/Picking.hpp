@@ -42,6 +42,8 @@ struct PickHit {
     daidalos::ecs::Entity entity;
     float distance = 0.0f;
     glm::vec3 position{0.0f};
+    /// The triangle's normal in the world, turned toward the ray's origin.
+    glm::vec3 normal{0.0f, 1.0f, 0.0f};
 };
 
 /// Finds what a ray from the viewport hits, on the CPU (ADR-0055): the triangles that models keep for physics,

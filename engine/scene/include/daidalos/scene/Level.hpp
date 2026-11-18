@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -111,6 +112,9 @@ struct LevelEntity {
     math::Transform transform;
     /// A glTF file, relative to the level's directory, or empty.
     std::string model;
+    /// A prefab (ADR-0078): a level file, relative to the level's directory, whose entities are made under this
+    /// one, as a model's nodes are; or empty. They are not entities of this level and have no ids in it.
+    std::string prefab;
     std::optional<Light> light;
     std::optional<FogVolume> fog;
     std::optional<WindVolume> wind;
@@ -192,6 +196,12 @@ inline constexpr std::uint32_t kLevelVersion = 1;
 /// is saved under toLevelPath instead of fromLevelPath, both under the asset root.
 void Relocate(Level& level, std::string_view fromLevelPath, std::string_view toLevelPath);
 
+/// Whether a file is a prefab, by its name: "<name>.prefab.json", a level file whose entities other levels place.
+[[nodiscard]] bool IsPrefabPath(std::string_view path);
+
+/// The deepest that prefabs place prefabs, so that one placing itself, directly or not, ends.
+inline constexpr std::size_t kMaxPrefabDepth = 8;
+
 /// What LevelInstance::Sync did.
 struct LevelSync {
     /// Entities made, new or again, and destroyed.
@@ -199,7 +209,7 @@ struct LevelSync {
     std::size_t destroyed = 0;
     /// Entities whose transform alone changed, moved in place.
     std::size_t moved = 0;
-    /// Whether any entity made or destroyed places a model: what an editor's picking must learn again.
+    /// Whether any entity made or destroyed places a model or a prefab: what an editor's picking must learn again.
     bool models = false;
 };
 
@@ -225,6 +235,9 @@ public:
     LevelSync Sync(const Level& from, const Level& to);
     /// Applies the environment to the scene: sky, fog, wind and exposure.
     void ApplyEnvironment(const LevelEnvironment& environment);
+    /// Makes again the entities that place prefabs, which then read their files again: after a prefab is saved.
+    /// Returns how many.
+    std::size_t RemakePrefabs(const Level& level);
 
     [[nodiscard]] ecs::Entity Find(std::uint64_t id) const;
     /// The level id of an entity or of the nearest ancestor made from one, or 0: what was clicked.
@@ -234,6 +247,12 @@ public:
     [[nodiscard]] std::string Resolve(std::string_view relative) const;
 
 private:
+    /// The entities of a prefab, placed under an entity of the level that places it: they get no LevelEntityId,
+    /// so that what is clicked in them is the entity placing them. chain holds the prefabs placing this one.
+    LevelInstance(Scene& scene, std::string_view prefabPath, std::vector<std::string> chain);
+    /// Makes the prefab an entity places, under it.
+    void Place(const LevelEntity& entity, ecs::Entity holder);
+
     /// Creates or replaces one entity, without linking the ribbons and lightning to their targets.
     void Make(const LevelEntity& entity);
     void Link(const Level& level);
@@ -245,6 +264,12 @@ private:
     std::unordered_map<std::uint64_t, ecs::Entity> m_entities;
     /// The entity an emitter on another model's surface was put on, by the id of the level entity it belongs to.
     std::unordered_map<std::uint64_t, ecs::Entity> m_surfaceEmitters;
+    /// The prefabs placed, by the id of the entity placing each.
+    std::unordered_map<std::uint64_t, std::unique_ptr<LevelInstance>> m_prefabs;
+    /// Set in a prefab's instance: its entities are parts of the entity that places it.
+    bool m_part = false;
+    /// The prefab files placing this instance, outermost first, itself last.
+    std::vector<std::string> m_chain;
 };
 
 } // namespace daidalos::scene

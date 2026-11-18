@@ -15,7 +15,7 @@
 namespace editor {
 
 /// What a file is to the asset browser.
-enum class AssetKind { Folder, Model, Sky, Effect, Ribbon, Level, Other };
+enum class AssetKind { Folder, Model, Sky, Effect, Ribbon, Level, Prefab, Decal, Other };
 
 /// An asset of a folder, as the browser lists it.
 struct AssetEntry {
@@ -26,7 +26,8 @@ struct AssetEntry {
     std::string path;
 };
 
-/// The kind of a file, by its name. A sky is its "_front.png" face.
+/// The kind of a file, by its name. A sky is its "_front.png" face; a decal is an image in a folder named
+/// "Decals", other than a normal map ("_normal.png").
 [[nodiscard]] AssetKind KindOf(const std::filesystem::path& file);
 
 /// For a face of a sky, "sky1" of "sky1_right.png" and the other five faces; otherwise nothing.

@@ -12,7 +12,9 @@
 #include <daidalos/scene/Components.hpp>
 
 #include <glm/ext/matrix_clip_space.hpp>
+#include <glm/ext/matrix_transform.hpp>
 #include <glm/geometric.hpp>
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/matrix.hpp>
@@ -51,6 +53,7 @@ constexpr float kPickDistance = 12.0f; // How close a click must be to a marker.
 constexpr float kLookSpeed = 0.0035f;  // Radians per pixel of mouse motion.
 constexpr float kMarkerReach = 60.0f;  // Meters beyond which markers of unselected entities are hidden.
 constexpr std::string_view kLevelExtension = ".level.json";
+constexpr std::string_view kPrefabExtension = ".prefab.json";
 
 // Finds "assets" in the working directory, then beside the executable and in the directories above it.
 std::filesystem::path FindAssetRoot() {
@@ -101,14 +104,16 @@ glm::vec3 CubeCorner(int corner, const glm::vec3& min, const glm::vec3& max) {
     return {(corner & 1) != 0 ? max.x : min.x, (corner & 2) != 0 ? max.y : min.y, (corner & 4) != 0 ? max.z : min.z};
 }
 
-/// The level files under the asset root, as paths under it, sorted: what File > Open offers.
+/// The level and prefab files under the asset root, as paths under it, sorted: what File > Open offers.
 std::vector<std::string> FindLevelFiles(const std::filesystem::path& root) {
     std::vector<std::string> files;
     std::error_code error;
     for (auto entry = std::filesystem::recursive_directory_iterator(root, error);
          !error && entry != std::filesystem::recursive_directory_iterator(); entry.increment(error)) {
         const std::string name = entry->path().filename().generic_string();
-        if (entry->is_regular_file(error) && name.ends_with(kLevelExtension) && !name.ends_with(".play.level.json")) {
+        if (entry->is_regular_file(error) &&
+            ((name.ends_with(kLevelExtension) && !name.ends_with(".play.level.json")) ||
+             name.ends_with(kPrefabExtension))) {
             files.push_back(entry->path().lexically_relative(root).generic_string());
         }
     }
@@ -116,14 +121,15 @@ std::vector<std::string> FindLevelFiles(const std::filesystem::path& root) {
     return files;
 }
 
-/// A level path under the asset root, as typed, with the extension added when missing.
-std::string LevelPathOf(std::string path) {
+/// A level path under the asset root, as typed, with the extension added when missing: a level's, or a
+/// prefab's when it names one.
+std::string LevelPathOf(std::string path, std::string_view extension = kLevelExtension) {
     std::ranges::replace(path, '\\', '/');
     while (!path.empty() && (path.back() == ' ' || path.back() == '/')) {
         path.pop_back();
     }
-    if (!path.empty() && !path.ends_with(kLevelExtension)) {
-        path += kLevelExtension;
+    if (!path.empty() && !path.ends_with(extension) && !path.ends_with(kPrefabExtension)) {
+        path += extension;
     }
     return path;
 }
@@ -259,6 +265,8 @@ core::Result<void> Editor::Open(app::Application& app, const std::string& levelP
     }
     m_level = std::move(*level);
     m_levelPath = levelPath;
+    m_decalImages.clear();
+    m_stroking = false;
     Select(0);
     m_history.Clear();
     m_savedRevision = m_history.Current();
@@ -457,6 +465,33 @@ void Editor::PlaceAsset(app::Application& app, const AssetEntry& asset, std::opt
         entity.ribbon = scene::LevelRibbon{.effect = RelativeToLevel(asset.path)};
         entity.name = std::filesystem::path(name).stem().generic_string();
         break;
+    case AssetKind::Prefab:
+        entity.prefab = RelativeToLevel(asset.path);
+        entity.name = std::filesystem::path(name).stem().generic_string();
+        break;
+    case AssetKind::Decal: {
+        // A decal is painted with: the brush takes it, and a drop on a surface stamps it there.
+        m_brush.kind = PaintBrush::Kind::Decal;
+        m_brush.texture = RelativeToLevel(asset.path);
+        m_brush.normal.clear();
+        if (const std::string normal = asset.path.substr(0, asset.path.size() - 4) + "_normal.png";
+            std::filesystem::exists(m_assetRoot / std::filesystem::path(normal))) {
+            m_brush.normal = RelativeToLevel(normal);
+        }
+        if (!at) {
+            m_painting = true;
+            m_status = std::format("Painting with {}: drag over surfaces in the view", asset.name);
+            return;
+        }
+        if (const std::optional<PickHit> hit = SurfaceAt(*at)) {
+            scene::LevelEntity decal = Stamp(m_brush, hit->position, hit->normal, 0.0f);
+            decal.name = name;
+            // Create keeps the stamp's rotation and size, facing the surface.
+            const glm::vec3 onSurface = decal.transform.translation;
+            Create(name, std::move(decal), onSurface);
+        }
+        return;
+    }
     case AssetKind::Folder:
     case AssetKind::Other:
         return;
@@ -599,6 +634,275 @@ void Editor::Reparent(std::uint64_t child, std::uint64_t parent) {
     Apply(moved, std::format("Move {} under {}", EntityLabel(*entity),
                              target != nullptr ? EntityLabel(*target) : std::string("the root")));
     m_history.Commit(m_level);
+}
+
+bool Editor::MakePrefab(const std::string& path) {
+    const std::vector<std::uint64_t> roots = SelectionRoots();
+    if (roots.empty() || m_instance == nullptr) {
+        return false;
+    }
+    if (path == m_levelPath) {
+        m_status = "A prefab cannot replace the level it is made from";
+        return false;
+    }
+    // The prefab's origin is the primary selection's place in the world; its roots keep where they are around it.
+    ecs::World& world = m_scene->World();
+    ecs::PropagateTransforms(world);
+    const auto worldOf = [&](std::uint64_t id) {
+        const ecs::Entity created = m_instance->Find(id);
+        return created.IsNull() ? glm::mat4(1.0f) : world.Get<ecs::WorldTransform>(created).matrix;
+    };
+    const std::uint64_t primary = std::ranges::find(roots, m_selected) != roots.end() ? m_selected : roots.front();
+    const glm::vec3 origin(worldOf(primary)[3]);
+    scene::Level prefab = PrefabOf(m_level, m_selection, [&](const scene::LevelEntity& root) {
+        return Decompose(glm::translate(glm::mat4(1.0f), -origin) * worldOf(root.id));
+    });
+    scene::Relocate(prefab, m_levelPath, path);
+    const std::filesystem::path file = m_assetRoot / std::filesystem::path(path);
+    std::error_code error;
+    std::filesystem::create_directories(file.parent_path(), error);
+    if (core::Result<void> saved = scene::SaveLevelFile(file, prefab); !saved) {
+        m_status = core::Format(saved.error());
+        return false;
+    }
+
+    // The selection becomes one entity placing the prefab, where the primary was, under its parent.
+    const scene::LevelEntity* first = m_level.Find(primary);
+    scene::LevelEntity placed;
+    placed.id = m_level.NextId();
+    placed.name = std::filesystem::path(path).filename().generic_string();
+    placed.name = placed.name.substr(0, placed.name.size() - kPrefabExtension.size());
+    placed.prefab = RelativeToLevel(path);
+    placed.parent = first != nullptr ? first->parent : 0;
+    const ecs::Entity holder = placed.parent != 0 ? m_instance->Find(placed.parent) : ecs::Entity{};
+    const glm::mat4 parentWorld = holder.IsNull() ? glm::mat4(1.0f) : world.Get<ecs::WorldTransform>(holder).matrix;
+    placed.transform = Decompose(glm::inverse(parentWorld) * glm::translate(glm::mat4(1.0f), origin));
+    std::set<std::uint64_t> gone;
+    for (const scene::LevelEntity& copy : CopyEntities(m_level, m_selection)) {
+        gone.insert(copy.id);
+    }
+    m_history.Commit(m_level);
+    Change(std::format("Make the prefab {}", placed.name), [&](scene::Level& level) {
+        std::erase_if(level.entities, [&gone](const scene::LevelEntity& entity) { return gone.contains(entity.id); });
+        level.entities.push_back(placed);
+    });
+    m_history.Commit(m_level);
+    Select(placed.id);
+    if (m_browser != nullptr) {
+        m_browser->Open(m_browser->Folder());
+    }
+    m_status = std::format("Saved {} entities as {}", prefab.entities.size(), path);
+    return true;
+}
+
+void Editor::UnpackPrefab(std::uint64_t id) {
+    const scene::LevelEntity* entity = m_level.Find(id);
+    if (entity == nullptr || entity->prefab.empty() || m_instance == nullptr) {
+        return;
+    }
+    const std::string path = m_instance->Resolve(entity->prefab);
+    core::Result<scene::Level> prefab = scene::LoadLevelFile(m_assetRoot / std::filesystem::path(path));
+    if (!prefab) {
+        m_status = core::Format(prefab.error());
+        return;
+    }
+    scene::Relocate(*prefab, path, m_levelPath);
+    const std::string label = EntityLabel(*entity);
+    m_history.Commit(m_level);
+    Change(std::format("Unpack {}", label), [&](scene::Level& level) { Unpack(level, id, std::move(*prefab)); });
+    m_history.Commit(m_level);
+    m_status = std::format("Unpacked {}: its entities are the level's now", label);
+}
+
+void Editor::ReloadPrefabs() {
+    if (m_instance == nullptr) {
+        return;
+    }
+    const std::size_t count = m_instance->RemakePrefabs(m_level);
+    m_picker.Rebuild(m_scene->World());
+    m_status = std::format("Read {} prefabs again", count);
+}
+
+void Editor::FindDecalImages() {
+    m_decalImages.clear();
+    const std::filesystem::path directory = std::filesystem::path(m_levelPath).parent_path() / "Decals";
+    for (const AssetEntry& entry : ListFolder(m_assetRoot, directory.generic_string())) {
+        if (entry.kind == AssetKind::Decal) {
+            m_decalImages.push_back(RelativeToLevel(entry.path));
+        }
+    }
+}
+
+std::optional<PickHit> Editor::SurfaceAt(const glm::vec2& point) {
+    if (m_scene == nullptr) {
+        return std::nullopt;
+    }
+    const auto [origin, direction] = RayAt(point);
+    ecs::PropagateTransforms(m_scene->World());
+    std::optional<PickHit> hit = m_picker.Cast(m_scene->World(), origin, direction);
+    if (hit && hit->distance > 200.0f) {
+        return std::nullopt;
+    }
+    return hit;
+}
+
+void Editor::PlaceStamp(const glm::vec3& position, const glm::vec3& normal) {
+    std::uniform_real_distribution<float> unit(0.0f, 1.0f);
+    const float spin = m_brush.randomSpin ? unit(m_random) * glm::two_pi<float>() : 0.0f;
+    const float scale = 1.0f + (unit(m_random) * 2.0f - 1.0f) * std::clamp(m_brush.sizeJitter, 0.0f, 0.9f);
+    scene::LevelEntity stamp = Stamp(m_brush, position, normal, spin, scale);
+    const std::string kind = m_brush.kind == PaintBrush::Kind::Wet
+                                 ? std::string("wet")
+                                 : std::filesystem::path(m_brush.texture).stem().generic_string();
+    const bool first = m_strokeEntity == 0;
+    Change(std::format("Paint {}", kind), [&](scene::Level& level) {
+        if (m_strokeEntity == 0) {
+            // A stroke's stamps hang from an entity at its start, so that a stroke moves and goes as one.
+            scene::LevelEntity stroke{.id = level.NextId(), .name = std::format("Painted {}", kind)};
+            stroke.transform.translation = position;
+            level.entities.push_back(stroke);
+            m_strokeEntity = stroke.id;
+        }
+        stamp.id = level.NextId();
+        stamp.parent = m_strokeEntity;
+        stamp.name = std::format("{} {}", kind, m_strokeStamps + 1);
+        stamp.transform.translation -= level.Find(m_strokeEntity)->transform.translation;
+        level.entities.push_back(stamp);
+    });
+    if (first) {
+        Select(m_strokeEntity);
+    }
+    ++m_strokeStamps;
+    m_lastStamp = position;
+    m_lastNormal = normal;
+}
+
+void Editor::PaintStrokes(app::Application& app) {
+    const ImGuiIO& io = ImGui::GetIO();
+    const glm::vec2 mouse(io.MousePos.x, io.MousePos.y);
+    if (m_stroking && !app.Input().IsDown(platform::MouseButton::Left)) {
+        m_stroking = false;
+        m_history.Commit(m_level);
+        m_status = std::format("Painted {} stamps", m_strokeStamps);
+        return;
+    }
+    if (!m_stroking) {
+        if (!app.Input().WasPressed(platform::MouseButton::Left) || !MouseInViewport() || io.WantCaptureMouse ||
+            m_instance == nullptr) {
+            return;
+        }
+        const std::optional<PickHit> hit = SurfaceAt(mouse);
+        if (!hit) {
+            return;
+        }
+        m_history.Commit(m_level);
+        m_stroking = true;
+        m_strokeEntity = 0;
+        m_strokeStamps = 0;
+        PlaceStamp(hit->position, hit->normal);
+        return;
+    }
+    // While held: stamps every spacing along where the mouse went over surfaces.
+    const std::optional<PickHit> hit = SurfaceAt(mouse);
+    if (!hit) {
+        return;
+    }
+    for (int stamps = 0; stamps < 16; ++stamps) {
+        const std::optional<glm::vec3> next = NextStamp(m_lastStamp, hit->position, m_brush.spacing);
+        if (!next) {
+            break;
+        }
+        // Between stamps the surface is the one under the mouse: a stroke across a corner turns with it.
+        PlaceStamp(*next, hit->normal);
+    }
+}
+
+void Editor::DrawBrush() {
+    if (!m_painting || !MouseInViewport() || m_flying) {
+        return;
+    }
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.WantCaptureMouse && !m_stroking) {
+        return;
+    }
+    const std::optional<PickHit> hit = SurfaceAt(glm::vec2(io.MousePos.x, io.MousePos.y));
+    if (!hit) {
+        return;
+    }
+    ImDrawList* draw = ImGui::GetBackgroundDrawList();
+    draw->PushClipRect({m_viewportMin.x, m_viewportMin.y}, {m_viewportMax.x, m_viewportMax.y}, true);
+    const glm::quat rotation = SurfaceRotation(hit->normal, 0.0f);
+    const float radius = m_brush.size * 0.5f;
+    const ImU32 color =
+        m_brush.kind == PaintBrush::Kind::Wet ? IM_COL32(90, 170, 255, 230) : IM_COL32(255, 120, 90, 230);
+    constexpr int kSegments = 40;
+    std::optional<glm::vec2> previous;
+    for (int segment = 0; segment <= kSegments; ++segment) {
+        const float angle = glm::two_pi<float>() * static_cast<float>(segment) / static_cast<float>(kSegments);
+        const glm::vec3 point =
+            hit->position + hit->normal * 0.01f + rotation * glm::vec3(std::cos(angle), std::sin(angle), 0.0f) * radius;
+        const std::optional<glm::vec2> at = Project(point);
+        if (at && previous) {
+            draw->AddLine({previous->x, previous->y}, {at->x, at->y}, color, 2.0f);
+        }
+        previous = at;
+    }
+    if (const std::optional<glm::vec2> center = Project(hit->position)) {
+        if (const std::optional<glm::vec2> tip = Project(hit->position + hit->normal * radius)) {
+            draw->AddLine({center->x, center->y}, {tip->x, tip->y}, color, 1.5f);
+        }
+    }
+    draw->PopClipRect();
+}
+
+void Editor::DrawPaint() {
+    if (!m_painting) {
+        return;
+    }
+    // Small, at the view's top right, until moved or docked.
+    ImGui::SetNextWindowPos(ImVec2(m_viewportMax.x - 12.0f, m_viewportMin.y + 12.0f), ImGuiCond_FirstUseEver,
+                            ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(340.0f, 0.0f), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Paint", &m_painting)) {
+        ImGui::End();
+        return;
+    }
+    ImGui::TextWrapped("Drag over surfaces in the view to paint. Each stroke is one undo step, under an entity "
+                       "of its own. B or Esc leaves the tool.");
+    int kind = static_cast<int>(m_brush.kind);
+    ImGui::RadioButton("Decals", &kind, static_cast<int>(PaintBrush::Kind::Decal));
+    ImGui::SameLine();
+    ImGui::RadioButton("Wet patches", &kind, static_cast<int>(PaintBrush::Kind::Wet));
+    m_brush.kind = static_cast<PaintBrush::Kind>(kind);
+    ImGui::SliderFloat("Size (m)", &m_brush.size, 0.1f, 6.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+    ImGui::SliderFloat("Spacing (m)", &m_brush.spacing, 0.05f, 6.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+    ImGui::SliderFloat("Size jitter", &m_brush.sizeJitter, 0.0f, 0.9f);
+    ImGui::Checkbox("Random turn", &m_brush.randomSpin);
+    if (m_brush.kind == PaintBrush::Kind::Decal) {
+        if (m_decalImages.empty()) {
+            FindDecalImages();
+        }
+        if (ImGui::BeginCombo("Image", m_brush.texture.c_str())) {
+            for (const std::string& image : m_decalImages) {
+                if (ImGui::Selectable(image.c_str(), image == m_brush.texture)) {
+                    m_brush.texture = image;
+                    const std::string normal = image.substr(0, image.size() - 4) + "_normal.png";
+                    m_brush.normal =
+                        std::filesystem::exists(m_assetRoot / std::filesystem::path(m_instance->Resolve(normal)))
+                            ? normal
+                            : std::string{};
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SliderFloat("Opacity", &m_brush.opacity, 0.0f, 1.0f);
+        ImGui::SliderFloat("Roughness", &m_brush.roughness, 0.045f, 1.0f);
+        ImGui::TextDisabled("Images come from the level's Decals folder, or a double-click in the browser.");
+    } else {
+        ImGui::SliderFloat("Wetness", &m_brush.wetness, 0.0f, 1.0f);
+        ImGui::SliderFloat("Puddles", &m_brush.puddles, 0.0f, 1.0f);
+    }
+    ImGui::End();
 }
 
 void Editor::LoadBookmarks() {
@@ -790,6 +1094,7 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
     DrawHierarchy();
     DrawInspector();
     DrawEnvironment();
+    DrawPaint();
     DrawStatus(app, time);
     DrawDialogs(app);
     if (m_browser != nullptr) {
@@ -813,14 +1118,31 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
         UpdateCamera(app, static_cast<float>(time.unclampedDelta.count()));
         DrawGrid();
         DrawMarkers();
-        DrawGizmo();
-        Pick(app);
+        if (m_painting) {
+            DrawBrush();
+            PaintStrokes(app);
+        } else {
+            if (m_stroking) {
+                m_stroking = false;
+                m_history.Commit(m_level);
+            }
+            DrawGizmo();
+            Pick(app);
+        }
     }
     HandleShortcuts(app);
     DrawHelp();
 
+    // What the inspector asked for, once it is drawn.
+    if (!m_pendingOpenPrefab.empty()) {
+        Guard(app, Pending::Open, std::exchange(m_pendingOpenPrefab, {}));
+    }
+    if (m_pendingUnpack != 0) {
+        UnpackPrefab(std::exchange(m_pendingUnpack, 0));
+    }
+
     // An edit ends when the mouse lets go of the widget or the gizmo that made it.
-    if (m_history.IsOpen() && !ImGui::IsAnyItemActive() && !ImGuizmo::IsUsing()) {
+    if (m_history.IsOpen() && !ImGui::IsAnyItemActive() && !ImGuizmo::IsUsing() && !m_stroking) {
         m_history.Commit(m_level);
     }
     Autosave(static_cast<float>(time.unclampedDelta.count()));
@@ -913,8 +1235,15 @@ void Editor::HandleShortcuts(app::Application& /*app*/) {
     if (pressed(ImGuiKey_R)) {
         m_operation = ImGuizmo::SCALE;
     }
+    if (pressed(ImGuiKey_B)) {
+        m_painting = !m_painting;
+    }
     if (pressed(ImGuiKey_Escape)) {
-        Select(0);
+        if (m_painting) {
+            m_painting = false;
+        } else {
+            Select(0);
+        }
     }
     if (pressed(ImGuiKey_Delete)) {
         DeleteSelected();
@@ -1030,6 +1359,19 @@ void Editor::DrawMenu(app::Application& app) {
         if (ImGui::MenuItem("Select none", "Esc", false, !m_selection.empty())) {
             Select(0);
         }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Make prefab...", nullptr, false, !m_selection.empty())) {
+            const scene::LevelEntity* primary = Selected();
+            std::string name = primary != nullptr && !primary->name.empty() ? primary->name : "Prefab";
+            std::ranges::replace(name, ' ', '_');
+            const std::filesystem::path directory = std::filesystem::path(m_levelPath).parent_path();
+            m_pathField = (directory / "Prefabs" / (Lower(name) + std::string(kPrefabExtension))).generic_string();
+            m_openPopup = "Make prefab";
+        }
+        if (ImGui::MenuItem("Unpack prefab", nullptr, false, Selected() != nullptr && !Selected()->prefab.empty())) {
+            UnpackPrefab(m_selected);
+        }
+        ImGui::Separator();
         if (ImGui::MenuItem("Frame the selection", "F", false, Selected() != nullptr)) {
             FrameSelection();
         }
@@ -1188,6 +1530,9 @@ void Editor::DrawMenu(app::Application& app) {
         ImGui::SetNextItemWidth(140.0f);
         ImGui::DragFloat("Scale step", &m_snapSteps.z, 0.01f, 0.01f, 1.0f, "%.2f");
         ImGui::Separator();
+        if (ImGui::MenuItem("Read the prefabs again")) {
+            ReloadPrefabs();
+        }
         if (ImGui::MenuItem("Reset the layout")) {
             m_layoutBuilt = false;
             ImGui::ClearIniSettings();
@@ -1217,6 +1562,18 @@ void Editor::DrawMenu(app::Application& app) {
     tool("Move", ImGuizmo::TRANSLATE, "W");
     tool("Rotate", ImGuizmo::ROTATE, "E");
     tool("Scale", ImGuizmo::SCALE, "R");
+    if (m_painting) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_CheckMark));
+    }
+    if (ImGui::MenuItem("Paint")) {
+        m_painting = !m_painting;
+    }
+    if (m_painting) {
+        ImGui::PopStyleColor();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("B: paint decals and wet patches on surfaces");
+    }
     if (ImGui::MenuItem(m_local ? "Local" : "World")) {
         m_local = !m_local;
     }
@@ -1279,7 +1636,8 @@ void Editor::DrawDialogs(app::Application& app) {
 
     // Asks for a level path under assets/; mustBeNew refuses one that exists.
     const auto pathDialog = [&](const char* name, const char* action, bool mustBeNew,
-                                const std::function<void(const std::string&)>& run) {
+                                const std::function<void(const std::string&)>& run,
+                                std::string_view extension = kLevelExtension) {
         place(560.0f);
         if (!ImGui::BeginPopupModal(name, nullptr, ImGuiWindowFlags_NoSavedSettings)) {
             return;
@@ -1290,7 +1648,7 @@ void Editor::DrawDialogs(app::Application& app) {
             ImGui::SetKeyboardFocusHere();
         }
         InputString("##path", m_pathField);
-        const std::string path = LevelPathOf(m_pathField);
+        const std::string path = LevelPathOf(m_pathField, extension);
         std::error_code error;
         const bool exists = !path.empty() && std::filesystem::exists(m_assetRoot / std::filesystem::path(path), error);
         if (exists) {
@@ -1315,6 +1673,9 @@ void Editor::DrawDialogs(app::Application& app) {
     };
     pathDialog("Save As", "Save", false, [this](const std::string& path) { Save(path); });
     pathDialog("New", "Create", true, [this, &app](const std::string& path) { Guard(app, Pending::New, path); });
+    pathDialog(
+        "Make prefab", "Save the prefab", false, [this](const std::string& path) { MakePrefab(path); },
+        kPrefabExtension);
 
     place(460.0f);
     if (ImGui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
@@ -1550,6 +1911,17 @@ void Editor::DrawInspector() {
             changed = true;
         }
         changed |= ImGui::DragFloat3("Scale", &edited.transform.scale.x, 0.01f);
+    }
+    if (!edited.prefab.empty() && ImGui::CollapsingHeader("Prefab", ImGuiTreeNodeFlags_DefaultOpen)) {
+        changed |= InputString("File", edited.prefab);
+        if (ImGui::Button("Open the prefab")) {
+            m_pendingOpenPrefab = m_instance != nullptr ? m_instance->Resolve(edited.prefab) : std::string{};
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Unpack")) {
+            m_pendingUnpack = edited.id;
+        }
+        ImGui::TextDisabled("Its entities are edited in the prefab's file, and change everywhere it is placed.");
     }
     changed |= InspectComponents(edited);
     if (changed) {
@@ -1830,13 +2202,14 @@ void Editor::DrawHelp() {
         return;
     }
     if (ImGui::Begin("Shortcuts", &m_showHelp, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize)) {
-        constexpr std::array<std::array<const char*, 2>, 22> kKeys{{
+        constexpr std::array<std::array<const char*, 2>, 24> kKeys{{
             {"Right mouse + WASD, Q, E", "Fly; Shift goes faster, the wheel sets the speed"},
             {"Wheel, middle mouse", "Walk forward and back, pan"},
             {"Click, Ctrl+click", "Select, add to the selection"},
             {"W, E, R", "Move, rotate, scale"},
             {"X, or Ctrl while dragging", "Snapping on and off"},
             {"G", "The grid"},
+            {"B", "Paint decals and wet patches (drag over surfaces)"},
             {"F, double-click in the hierarchy", "Frame the selection"},
             {"Esc, Ctrl+A", "Select nothing, everything"},
             {"Del", "Delete the selection"},
@@ -1852,6 +2225,7 @@ void Editor::DrawHelp() {
             {"Drag in the hierarchy", "Move an entity under another, or to the root below"},
             {"Double-click an asset", "Place it in front of the camera"},
             {"Drag an asset into the view", "Place it where it is let go"},
+            {"Edit > Make prefab", "Save the selection as a prefab, placed where it was"},
             {"Drop files on the window", "Import glTF models and skies"},
         }};
         if (ImGui::BeginTable("keys", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {

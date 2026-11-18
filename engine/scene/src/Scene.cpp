@@ -44,7 +44,7 @@ glm::quat RotationBetween(const glm::vec3& from, const glm::vec3& to) {
 } // namespace
 
 Scene::Scene(renderer::Renderer& renderer, std::filesystem::path assetRoot, audio::AudioEngine* audio)
-    : m_assets(renderer, assetRoot), m_sounds(audio, assetRoot), m_assetRoot(std::move(assetRoot)) {}
+    : m_assets(renderer, assetRoot), m_assetRoot(assetRoot), m_sounds(audio, std::move(assetRoot)) {}
 
 void Scene::SetPaused(bool paused) {
     m_paused = paused;

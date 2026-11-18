@@ -7,6 +7,7 @@
 #include <daidalos/scene/Level.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <span>
 #include <vector>
 
@@ -27,6 +28,16 @@ namespace editor {
 /// ids of the copies' roots.
 std::vector<std::uint64_t> PasteEntities(daidalos::scene::Level& level,
                                          std::vector<daidalos::scene::LevelEntity> copies);
+
+/// A prefab of a selection (ADR-0078): each selected entity with everything under it, under new ids from 1, the
+/// selection's roots at the prefab's root, where place puts each of them (in the prefab's frame).
+[[nodiscard]] daidalos::scene::Level
+PrefabOf(const daidalos::scene::Level& level, std::span<const std::uint64_t> selection,
+         const std::function<daidalos::math::Transform(const daidalos::scene::LevelEntity&)>& place);
+
+/// Copies a prefab's entities into a level, under new ids, its roots under the entity placing it, whose prefab is
+/// cleared: what was the prefab's is the level's. Returns the new ids of the roots.
+std::vector<std::uint64_t> Unpack(daidalos::scene::Level& level, std::uint64_t placing, daidalos::scene::Level prefab);
 
 /// Whether an entity is the ancestor of another, or the same, in a level: a parent it cannot be moved under.
 [[nodiscard]] bool IsAncestor(const daidalos::scene::Level& level, std::uint64_t ancestor, std::uint64_t entity);

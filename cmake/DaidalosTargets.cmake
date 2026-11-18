@@ -4,7 +4,8 @@ include_guard(GLOBAL)
 # Third-party code is not affected: these options are applied per target.
 function(dai_configure_target target)
     if(MSVC)
-        target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8 /Zc:__cplusplus /Zc:preprocessor)
+        # C5038: members initialized in another order than declared, which once left the sounds without a root.
+        target_compile_options(${target} PRIVATE /W4 /w15038 /permissive- /utf-8 /Zc:__cplusplus /Zc:preprocessor)
         if(DAI_WARNINGS_AS_ERRORS)
             target_compile_options(${target} PRIVATE /WX)
         endif()

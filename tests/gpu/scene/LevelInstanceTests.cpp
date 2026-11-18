@@ -12,6 +12,7 @@
 
 #include <memory>
 #include <optional>
+#include <vector>
 
 using namespace daidalos;
 using scene::Level;
@@ -212,4 +213,60 @@ TEST_F(LevelInstanceTest, ALooseObjectFallsAndGoesWithItsEntity) {
     EXPECT_LT(m_scene->World().Get<ecs::LocalTransform>(made).translation.y, 9.0f);
     m_instance->Sync(level, Level{});
     EXPECT_EQ(m_scene->Physics().BodyCount(), bodies - 1);
+}
+
+TEST_F(LevelInstanceTest, APrefabPlacesItsEntitiesAsPartsOfOne) {
+    Level level;
+    level.entities.push_back(LevelEntity{.id = 5, .name = "Alarm", .prefab = "Prefabs/alarm_beams.prefab.json"});
+    m_instance->Build(level);
+    const auto lights = [this] {
+        std::vector<ecs::Entity> found;
+        m_scene->World().Each<scene::Light>([&found](ecs::Entity entity, scene::Light&) { found.push_back(entity); });
+        return found;
+    };
+    ASSERT_EQ(lights().size(), 2U) << "The prefab's two beams";
+    EXPECT_EQ(Count(), 1U) << "Its parts are not entities of the level";
+    for (const ecs::Entity beam : lights()) {
+        EXPECT_EQ(m_scene->World().Parent(beam), m_instance->Find(5));
+        EXPECT_EQ(m_instance->IdOf(beam), 5U) << "Clicking a part selects what places it";
+    }
+
+    Level moved = level;
+    moved.entities[0].transform.translation = {0.0f, 3.0f, 0.0f};
+    EXPECT_EQ(m_instance->Sync(level, moved).moved, 1U);
+    EXPECT_EQ(lights().size(), 2U);
+    EXPECT_EQ(m_instance->RemakePrefabs(moved), 1U);
+    EXPECT_EQ(lights().size(), 2U) << "Made again, not twice";
+
+    m_instance->Sync(moved, Level{});
+    EXPECT_TRUE(lights().empty());
+}
+
+TEST_F(LevelInstanceTest, AMissingPrefabLeavesTheEntityAlone) {
+    Level level;
+    level.entities.push_back(LevelEntity{.id = 1, .prefab = "Prefabs/missing.prefab.json"});
+    m_instance->Build(level);
+    EXPECT_FALSE(m_instance->Find(1).IsNull());
+}
+
+TEST_F(LevelInstanceTest, LooseObjectsUnderAnEntityGoWithIt) {
+    Level level;
+    level.entities.push_back(Light(1));
+    LevelEntity crate{.id = 2, .name = "Crate", .parent = 1};
+    crate.body = scene::Body{.size = glm::vec3(0.6f), .mass = 15.0f};
+    level.entities.push_back(crate);
+    const std::size_t bodies = m_scene->Physics().BodyCount();
+    m_instance->Build(level);
+    EXPECT_EQ(m_scene->Physics().BodyCount(), bodies + 1);
+    m_instance->Destroy(1);
+    EXPECT_EQ(m_scene->Physics().BodyCount(), bodies);
+}
+
+TEST_F(LevelInstanceTest, TheSceneFindsSoundsUnderItsAssetRoot) {
+    // The scene once gave its sounds an empty root (its members were initialized in another order than written),
+    // and the game played none.
+    const core::Result<audio::ClipHandle> clip = m_scene->Sounds().Load("Factory/Sounds/alarm.wav");
+    if (!clip) {
+        EXPECT_NE(clip.error().code, core::ErrorCode::NotFound) << core::Format(clip.error());
+    }
 }

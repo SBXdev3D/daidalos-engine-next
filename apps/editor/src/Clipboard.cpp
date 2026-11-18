@@ -117,4 +117,33 @@ bool IsAncestor(const scene::Level& level, std::uint64_t ancestor, std::uint64_t
     return false;
 }
 
+scene::Level PrefabOf(const scene::Level& level, std::span<const std::uint64_t> selection,
+                      const std::function<math::Transform(const scene::LevelEntity&)>& place) {
+    std::vector<scene::LevelEntity> copies = CopyEntities(level, selection);
+    const std::vector<std::uint64_t> roots = CopiedRoots(copies);
+    for (scene::LevelEntity& copy : copies) {
+        if (std::ranges::find(roots, copy.id) != roots.end()) {
+            copy.transform = place(copy);
+            copy.parent = 0;
+        }
+    }
+    scene::Level prefab;
+    PasteEntities(prefab, std::move(copies));
+    return prefab;
+}
+
+std::vector<std::uint64_t> Unpack(scene::Level& level, std::uint64_t placing, scene::Level prefab) {
+    scene::LevelEntity* holder = level.Find(placing);
+    if (holder == nullptr) {
+        return {};
+    }
+    holder->prefab.clear();
+    // Its roots are pasted at the root, then hung from the entity: a prefab's ids may be the level's too.
+    std::vector<std::uint64_t> roots = PasteEntities(level, std::move(prefab.entities));
+    for (const std::uint64_t root : roots) {
+        level.Find(root)->parent = placing;
+    }
+    return roots;
+}
+
 } // namespace editor

@@ -55,11 +55,18 @@ AssetKind KindOf(const std::filesystem::path& file) {
     if (name.ends_with(".ribbon.json")) {
         return AssetKind::Ribbon;
     }
+    if (name.ends_with(".prefab.json")) {
+        return AssetKind::Prefab;
+    }
     if (name.ends_with(".level.json") && !name.ends_with(".play.level.json")) {
         return AssetKind::Level;
     }
     if (name.ends_with("_front.png")) {
         return AssetKind::Sky;
+    }
+    if ((name.ends_with(".png") || name.ends_with(".ktx2")) && !name.ends_with("_normal.png") &&
+        Lower(file.parent_path().filename().generic_string()) == "decals") {
+        return AssetKind::Decal;
     }
     return AssetKind::Other;
 }
@@ -95,7 +102,7 @@ std::vector<AssetEntry> ListFolder(const std::filesystem::path& assetRoot, std::
             folders.push_back({.kind = AssetKind::Folder, .name = name, .path = under(name)});
             continue;
         }
-        const AssetKind kind = KindOf(name);
+        const AssetKind kind = KindOf(std::filesystem::path(folder) / name);
         if (kind == AssetKind::Other) {
             continue;
         }

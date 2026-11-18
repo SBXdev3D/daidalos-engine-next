@@ -12,6 +12,7 @@
 #include <daidalos/renderer/Renderer.hpp>
 #include <daidalos/resources/Cache.hpp>
 #include <daidalos/scene/Components.hpp>
+#include <daidalos/scene/Level.hpp>
 #include <daidalos/scene/ParticleEffectFile.hpp>
 #include <daidalos/ui/Font.hpp>
 
@@ -133,6 +134,10 @@ public:
     void LoadModelAsync(std::string_view path, core::WorkerPool& workers,
                         std::function<void(core::Result<const Model*>)> done);
 
+    /// Returns a prefab's level (ADR-0078), read again when its file changed since it was read, so that a prefab
+    /// saved by the editor shows where it is placed. A missing or invalid file is an error that names it.
+    [[nodiscard]] core::Result<std::shared_ptr<const Level>> LoadPrefab(std::string_view path);
+
     /// Returns a font baked into a distance field atlas (ADR-0027), loading it the first time. The
     /// pointer lives as long as the library.
     [[nodiscard]] core::Result<const ui::Font*> LoadFont(std::string_view path);
@@ -184,6 +189,10 @@ private:
         std::filesystem::path file;
         std::filesystem::file_time_type written;
     };
+    struct PrefabFile {
+        std::shared_ptr<const Level> level;
+        std::filesystem::file_time_type written;
+    };
     struct RibbonFile {
         std::shared_ptr<RibbonEffect> effect;
         std::filesystem::path file;
@@ -203,6 +212,7 @@ private:
     std::vector<renderer::ParticleEffectHandle> m_particleEffects;
     /// Effects loaded from files, by identity.
     std::unordered_map<std::string, EffectFile> m_effectFiles;
+    std::unordered_map<std::string, PrefabFile> m_prefabFiles;
     /// Ribbons loaded from files, by identity.
     std::unordered_map<std::string, RibbonFile> m_ribbonFiles;
     /// The effect files being read, each reading the next for its sub-emitters.
