@@ -252,6 +252,7 @@ void HurtPlayer(scene::Scene& scene, ecs::Entity playerEntity, int damage) {
     player.armor -= absorbed;
     player.health -= damage - absorbed;
     player.hurtTime = kHurtFlash;
+    Kick(player, 0.9f, 0.4f, 0.35f);
     if (player.health > 0) {
         if (arsenal != nullptr) {
             scene.Sounds().Play(arsenal->hurt);
@@ -260,6 +261,7 @@ void HurtPlayer(scene::Scene& scene, ecs::Entity playerEntity, int damage) {
     }
     player.health = 0;
     player.dead = true;
+    Kick(player, 1.0f, 0.8f, 0.9f);
     player.reloading = false;
     player.message = "message.dead";
     player.messageTime = kDeadMessageTime;
@@ -373,6 +375,12 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
     --weapon.magazine;
     player.weaponBusy = spec.fireDelay;
     player.muzzleFlashTime = kMuzzleFlashTime;
+    // The shotgun's blast in the heavy motor, the handgun's crack in the light one.
+    if (player.weapon == WeaponKind::Shotgun) {
+        Kick(player, 0.75f, 0.55f, 0.25f);
+    } else {
+        Kick(player, 0.15f, 0.5f, 0.12f);
+    }
     player.barrelHeat = std::min(player.barrelHeat + spec.smoke, kBarrelSmokeMost);
 
     std::minstd_rand fallback;

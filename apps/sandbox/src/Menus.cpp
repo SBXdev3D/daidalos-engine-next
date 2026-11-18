@@ -174,8 +174,109 @@ MenuChoice DrawCompleteScreen(ui::Context& ui, ui::Canvas& canvas, const HudAsse
     }
 }
 
+namespace {
+
+/// The controls (ADR-0076), in two columns of a name, its key or mouse button and its gamepad button. Using a
+/// button waits for the next press of its device, which binds it; Escape or Start leave it as it was. Returns
+/// where the rows end.
+float DrawBindings(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud, app::Application& app,
+                   OptionsState& state, bool& changed, float left, float top) {
+    using input::Device;
+    const std::span<const Control> controls = Controls();
+    const input::InputState& input = app.Input();
+
+    // The press that binds, read before the widgets, which are held meanwhile.
+    if (state.capturing.has_value()) {
+        const bool cancel = input.WasPressed(platform::Key::Escape) ||
+                            std::ranges::any_of(input.Gamepads(), [&](platform::GamepadId gamepad) {
+                                return input.WasPressed(gamepad, platform::GamepadButton::Start) ||
+                                       input.WasPressed(gamepad, platform::GamepadButton::Back);
+                            });
+        const std::optional<input::ActionMap::Button> pressed = input::FirstPressed(input, state.device);
+        if (cancel) {
+            state.capturing.reset();
+        } else if (pressed.has_value() && !IsReserved(*pressed)) {
+            for (const auto& [name, value] : Rebind(app.CVars(), controls[*state.capturing], *pressed)) {
+                Change(app, name, value, changed);
+            }
+            state.rebound = true;
+            state.capturing.reset();
+        }
+        ui.Hold(state.capturing.has_value());
+    }
+
+    constexpr float kRow = 46.0f;
+    constexpr float kColumnGap = 24.0f;
+    constexpr float kCell = 112.0f;
+    constexpr float kCellGap = 6.0f;
+    const float columnWidth = (kRowWidth - kColumnGap) * 0.5f;
+    const std::size_t perColumn = (controls.size() + 1) / 2;
+    const ui::TextStyle labelStyle{.size = 30.0f,
+                                   .color = {0.9f, 0.9f, 0.9f, 1.0f},
+                                   .horizontal = ui::Align::Start,
+                                   .vertical = ui::Align::Center,
+                                   .shadowColor = kShadow};
+    const ui::TextStyle headStyle{.size = 24.0f,
+                                  .color = {0.65f, 0.65f, 0.65f, 1.0f},
+                                  .horizontal = ui::Align::Center,
+                                  .vertical = ui::Align::Center,
+                                  .shadowColor = kShadow};
+    const float rows = top + 30.0f;
+    for (std::size_t column = 0; column < 2; ++column) {
+        const float x = left + (static_cast<float>(column) * (columnWidth + kColumnGap));
+        const float keyX = x + columnWidth - (2.0f * kCell) - kCellGap;
+        canvas.DrawText(*hud.font, T(hud, "options.keyboard"), {keyX + (kCell * 0.5f), top + 10.0f}, headStyle);
+        canvas.DrawText(*hud.font, T(hud, "options.gamepad"), {keyX + kCell + kCellGap + (kCell * 0.5f), top + 10.0f},
+                        headStyle);
+    }
+    for (std::size_t index = 0; index < controls.size(); ++index) {
+        const Control& control = controls[index];
+        const std::size_t column = index / perColumn;
+        const float x = left + (static_cast<float>(column) * (columnWidth + kColumnGap));
+        const float y = rows + (static_cast<float>(index % perColumn) * (kRow + kCellGap));
+        canvas.DrawText(*hud.font, T(hud, std::format("options.control.{}", control.id)), {x, y + (kRow * 0.5f)},
+                        labelStyle);
+        for (const Device device : {Device::KeyboardMouse, Device::Gamepad}) {
+            const float cellX =
+                x + columnWidth - (2.0f * kCell) - kCellGap + (device == Device::Gamepad ? kCell + kCellGap : 0.0f);
+            const bool waiting = state.capturing == index && state.device == device;
+            const std::optional<input::ActionMap::Button> bound = BoundButton(app.CVars(), control, device);
+            const std::string label = waiting ? std::string("...") : (bound ? ShortName(*bound) : std::string("-"));
+            if (ui.Button(label, {{cellX, y}, {kCell, kRow}}) && !state.capturing.has_value()) {
+                state.capturing = index;
+                state.device = device;
+                ui.Hold(true);
+            }
+        }
+    }
+    const float y = rows + (static_cast<float>(perColumn) * (kRow + kCellGap));
+    if (state.capturing.has_value()) {
+        canvas.DrawText(*hud.font,
+                        T(hud, state.device == Device::Gamepad ? "options.press_button" : "options.press_key"),
+                        {canvas.Size().x * 0.5f, y + 20.0f},
+                        {.size = 30.0f,
+                         .color = {1.0f, 0.85f, 0.5f, 1.0f},
+                         .horizontal = ui::Align::Center,
+                         .vertical = ui::Align::Center,
+                         .shadowColor = kShadow});
+    } else if (ui.Button(T(hud, "options.default_controls"),
+                         {{left + ((kRowWidth - kButtonWidth) * 0.5f), y}, {kButtonWidth, kRow}})) {
+        for (const Control& control : controls) {
+            for (const Device device : {Device::KeyboardMouse, Device::Gamepad}) {
+                app.ResetSetting(BindingSetting(control, device));
+                changed = true;
+            }
+        }
+        state.rebound = true;
+    }
+    return y + kRow + 8.0f;
+}
+
+} // namespace
+
 MenuChoice DrawOptions(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud, app::Application& app,
-                       OptionsPage& page, bool& changed) {
+                       OptionsState& state, bool& changed) {
+    OptionsPage& page = state.page;
     Darken(canvas, 0.75f);
     Title(canvas, hud, T(hud, "options.title"), 90.0f, 90.0f, glm::vec4(1.0f));
 
@@ -193,6 +294,11 @@ MenuChoice DrawOptions(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud
         if (static_cast<std::size_t>(page) == index) {
             canvas.FillRect({{tab.position.x, tab.position.y + tab.size.y}, {tab.size.x, 4.0f}}, kTitleRed);
         }
+    }
+
+    if (page != OptionsPage::Controls && state.capturing.has_value()) {
+        state.capturing.reset();
+        ui.Hold(false);
     }
 
     float y = 240.0f;
@@ -323,6 +429,8 @@ MenuChoice DrawOptions(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud
             "options.mouse_sensitivity", "input.mouse_sensitivity", 0.0005f, 0.008f, 0.00025f,
             [](float value) { return std::format("{:.2f}", value * 1000.0f); },
             [](float value) { return std::format("{:.5f}", value); }, 0.0025);
+        slider("options.rumble", "input.rumble", 0.0f, 1.0f, 0.1f, percent, twoDecimals, 1.0);
+        y = DrawBindings(ui, canvas, hud, app, state, changed, left, y);
         break;
     case OptionsPage::Accessibility: {
         // The language, among those there is text for, by its name in itself (ADR-0075).

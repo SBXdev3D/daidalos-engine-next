@@ -2,6 +2,8 @@ dai_add_app(NAME sandbox
     SOURCES
         src/Combat.cpp
         src/Combat.hpp
+        src/Controls.cpp
+        src/Controls.hpp
         src/Factory.cpp
         src/Factory.hpp
         src/Flashlight.cpp
