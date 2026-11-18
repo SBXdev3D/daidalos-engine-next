@@ -29,7 +29,7 @@ Every module also links to `core`; the graph only shows it for the bottom row.
 | Module | Responsibility | Third-party libraries it hides |
 |---|---|---|
 | `core` | `Result`, `Error`, `DAI_ASSERT`, `DAI_TRY`, handles, slot pool, frame timer, worker pool, cvars, profiling macros, logging (`logging::`), conventions, transforms, projections and boxes (`math::`) | spdlog; GLM, tl::expected and Tracy are public on purpose |
-| `platform` | Window, events, Vulkan surface, processes, crash dumps, and keyboard, mouse and gamepad state with actions (`input::`) | SDL3 |
+| `platform` | Window, events, Vulkan surface, processes, crash dumps and reports read from them (ADR-0080), and keyboard, mouse and gamepad state with actions (`input::`) | SDL3 |
 | `resources` | Asset paths, caches, decoding of files into plain CPU data, and encoding of KTX2 textures for `texture-tool`, which also makes flipbooks (ADR-0046, ADR-0053) | fastgltf, KTX, stb |
 | `rhi` | Vulkan 1.4 device with ray queries, swapchain, buffers, textures, pipelines, command lists, batched uploads | Vulkan, volk, VMA |
 | `renderer` | Draws a `SceneView`: G-buffer, lighting, skinning, materials, shader hot reload, the game's interface (`ui::`), and the debug overlay (`debugui::`, development builds) | Dear ImGui, stb_truetype (in `resources`) |

@@ -2097,7 +2097,7 @@ Potential deliverables:
 - Localization of text and subtitles.
 - Input: full rebinding, gamepad rumble and trigger effects tied to tension. Done (ADR-0076) but trigger effects, left until a pad that has them is at hand.
 - Diegetic UI: the game's interface drawn into textures on screens, notes and watches.
-- Crash reports from the minidumps.
+- Crash reports from the minidumps. Done (ADR-0080), on Windows.
 - Photo mode: a free camera, the path tracer converging, physical camera and image controls, high-resolution and EXR capture. The game provides its menu and rules. Done (ADR-0077) except captures larger than the window.
 - Packaging and deployment.
 - Documentation and sample projects.
