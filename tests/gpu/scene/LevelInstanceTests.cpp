@@ -290,3 +290,27 @@ TEST_F(LevelInstanceTest, AModelsMaterialChangesInPlace) {
     EXPECT_FLOAT_EQ(crate.materials[0].values.roughnessFactor, 0.123f);
     EXPECT_FALSE(m_scene->Assets().UpdateMaterial(crate, 99, values));
 }
+
+TEST_F(LevelInstanceTest, AMasslessBodyIsAStaticBoxWhereItsEntityIs) {
+    Level level;
+    LevelEntity group{.id = 1, .name = "Room"};
+    group.transform.translation = {10.0f, 0.0f, 0.0f};
+    LevelEntity crate{.id = 2, .name = "Crate", .parent = 1};
+    crate.transform.translation = {0.0f, 0.5f, 0.0f};
+    crate.body = scene::Body{.size = glm::vec3(1.0f), .mass = 0.0f};
+    level.entities = {group, crate};
+    const std::size_t bodies = m_scene->Physics().BodyCount();
+    m_instance->Build(level);
+    EXPECT_EQ(m_scene->Physics().BodyCount(), bodies + 1);
+    const std::optional<physics::RayHit> hit =
+        m_scene->Physics().CastRay(glm::vec3(10.0f, 0.5f, 5.0f), glm::vec3(0.0f, 0.0f, -1.0f), 10.0f);
+    ASSERT_TRUE(hit.has_value()) << "The box stands where its parent puts it";
+    EXPECT_NEAR(hit->position.z, 0.5f, 1e-3f);
+    for (int step = 0; step < 10; ++step) {
+        m_scene->RunFixedStep(core::Seconds(1.0 / 60.0));
+    }
+    EXPECT_EQ(m_scene->World().Get<ecs::LocalTransform>(m_instance->Find(2)).translation, glm::vec3(0.0f, 0.5f, 0.0f))
+        << "Nothing moves it";
+    m_instance->Destroy(1);
+    EXPECT_EQ(m_scene->Physics().BodyCount(), bodies);
+}

@@ -4,6 +4,7 @@
 
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/logging/Log.hpp>
+#include <daidalos/math/Transform.hpp>
 #include <daidalos/scene/AssetLibrary.hpp>
 #include <daidalos/scene/Level.hpp>
 #include <daidalos/scene/Scene.hpp>
@@ -333,7 +334,26 @@ void LevelInstance::Make(const LevelEntity& entity) {
     if (entity.wet) {
         world.Add<WetVolume>(created, *entity.wet);
     }
-    if (entity.body) {
+    if (entity.body && entity.body->mass <= 0.0f) {
+        // A static box (ADR-0083), where the entity is in the world, parents included.
+        glm::mat4 placement = math::ToMatrix(entity.transform);
+        for (ecs::Entity above = world.Parent(created); !above.IsNull(); above = world.Parent(above)) {
+            placement = math::ToMatrix(world.Get<ecs::LocalTransform>(above)) * placement;
+        }
+        StaticBox box;
+        for (std::size_t corner = 0; corner < box.corners.size(); ++corner) {
+            const glm::vec3 sign((corner & 1) != 0 ? 0.5f : -0.5f, (corner & 2) != 0 ? 0.5f : -0.5f,
+                                 (corner & 4) != 0 ? 0.5f : -0.5f);
+            box.corners[corner] = math::TransformPoint(placement, entity.body->center + sign * entity.body->size);
+        }
+        if (core::Result<physics::BodyId> body = m_scene->Physics().AddStaticMesh(box.corners, kBoxIndices)) {
+            box.body = *body;
+            world.Add<Body>(created, *entity.body);
+            world.Add<StaticBox>(created, box);
+        } else {
+            DAI_LOG_WARNING(kModule, "Level entity {} '{}': {}", entity.id, entity.name, core::Format(body.error()));
+        }
+    } else if (entity.body) {
         // A loose object (ADR-0073): physics moves it from where the level puts it.
         const math::Transform& placed = entity.transform;
         const glm::vec3 half = glm::max(entity.body->size * placed.scale * 0.5f, glm::vec3(0.02f));
@@ -491,6 +511,9 @@ void LevelInstance::Destroy(std::uint64_t id) {
         stack.pop_back();
         if (const RigidBody* body = world.TryGet<RigidBody>(current)) {
             m_scene->Physics().RemoveBody(body->body);
+        }
+        if (const StaticBox* box = world.TryGet<StaticBox>(current)) {
+            m_scene->Physics().RemoveBody(box->body);
         }
         for (ecs::Entity child = world.FirstChild(current); !child.IsNull(); child = world.NextSibling(child)) {
             stack.push_back(child);

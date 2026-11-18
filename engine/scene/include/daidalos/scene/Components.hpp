@@ -13,6 +13,7 @@
 #include <glm/mat4x4.hpp>
 #include <glm/trigonometric.hpp>
 
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -471,9 +472,22 @@ struct Trigger {
 struct Body {
     glm::vec3 size{0.5f};
     glm::vec3 center{0.0f};
+    /// Kilograms. 0 makes a static box: it never moves, and stops the player, shots and sound (ADR-0083), as
+    /// a prop of the level placed by a parent does too.
     float mass = 10.0f;
     [[nodiscard]] bool operator==(const Body&) const = default;
 };
+
+/// ECS component: the static box of a level entity whose body has no mass (ADR-0083): its world-space corners
+/// and the physics body made of them, which the game also gives to navigation and sound.
+struct StaticBox {
+    physics::BodyId body;
+    std::array<glm::vec3, 8> corners{};
+};
+
+/// The twelve triangles of a box's eight corners, as StaticBox orders them (bit 0 is +X, 1 is +Y, 2 is +Z).
+inline constexpr std::array<std::uint32_t, 36> kBoxIndices{0, 2, 1, 1, 2, 3, 4, 5, 6, 5, 7, 6, 0, 1, 4, 1, 5, 4,
+                                                           2, 6, 3, 3, 6, 7, 0, 4, 2, 2, 4, 6, 1, 3, 5, 3, 7, 5};
 
 /// ECS component: the physics body that moves a loose object; the scene puts the entity where it is after each
 /// step. The entity must have no parent.
