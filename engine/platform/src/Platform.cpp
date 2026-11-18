@@ -128,6 +128,14 @@ std::filesystem::path ExecutableDirectory() {
     return std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(directory)));
 }
 
+std::string ExecutableFileName(std::string_view program) {
+#ifdef _WIN32
+    return std::string(program) + ".exe";
+#else
+    return std::string(program);
+#endif
+}
+
 void ShowErrorMessage(const std::string& title, const std::string& message) {
     if (!SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, title.c_str(), message.c_str(), nullptr)) {
         DAI_LOG_WARNING("platform", "Cannot show an error box: {}", SDL_GetError());

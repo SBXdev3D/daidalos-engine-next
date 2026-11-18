@@ -2082,6 +2082,8 @@ Completion criteria:
 - Platform-specific differences are contained in the platform layer.
 - No test is disabled on Linux without a documented reason.
 
+Done as far as Windows can check (2026-11-18, ADR-0074): a Linux compile check against an Ubuntu 24.04 sysroot, asset paths checked for case, platform code moved into the platform layer, smoke tests of every scene, and `scripts/validate_linux.sh` for the run on Linux, which is unverified until WSL2 or a Linux machine runs it.
+
 ## Phase 15 — Content Pipeline and Production Readiness
 
 **Goal:** Make the engine practical for developing larger projects.

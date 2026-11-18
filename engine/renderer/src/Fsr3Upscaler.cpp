@@ -375,7 +375,7 @@ void Fsr3Upscaler::AddTo(RenderGraph& graph, const Fsr3Inputs& inputs) {
     std::memcpy(m_device->Mapped(buffer).data(), &data, sizeof(data));
     const Fsr3PushConstants push{m_device->StorageIndex(buffer)};
 
-    constexpr std::string_view kGroup = "FSR 3.1";
+    static constexpr std::string_view kGroup = "FSR 3.1";
     const auto clear = [&graph](rhi::TextureHandle target, glm::vec4 value) {
         graph.AddPass({.name = "FSR 3.1 clear",
                        .group = kGroup,

@@ -447,7 +447,7 @@ private:
     float m_normalStrength = 1.0f;
     /// The light sources of the last frame prepared, which name its lights (ADR-0044), and its number of
     /// lights, which the next frame maps; the number of lights the prepared frame's map holds.
-    std::vector<LightRange> m_previousRanges;
+    std::vector<LightSourceRange> m_previousRanges;
     /// Where each analytic light of the last frame prepared was, by its identity key: position and direction,
     /// to tell the lights that moved.
     /// Where a light was last frame, and how bright, to tell whether it moved.

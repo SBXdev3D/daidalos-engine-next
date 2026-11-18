@@ -130,11 +130,7 @@ std::string LevelPathOf(std::string path) {
 
 /// The sandbox, which plays levels: beside the editor once installed, else where the build put it.
 std::filesystem::path SandboxExecutable() {
-#ifdef _WIN32
-    const std::filesystem::path beside = platform::ExecutableDirectory() / "sandbox.exe";
-#else
-    const std::filesystem::path beside = platform::ExecutableDirectory() / "sandbox";
-#endif
+    const std::filesystem::path beside = platform::ExecutableDirectory() / platform::ExecutableFileName("sandbox");
 #ifdef DAI_SANDBOX_PATH
     std::error_code error;
     if (!std::filesystem::exists(beside, error)) {
