@@ -29,8 +29,12 @@ executable.
   E                         Use a door
   F                         Flashlight
   F5                        Restart
+  P, right stick click      Photo mode
+  F12                       Screenshot, into Screenshots/
   Tab                       Free the mouse
   Escape                    Pause
+
+Keys and buttons can be changed in Options > Controls.
 
 Settings
 --------
@@ -41,7 +45,10 @@ them all with +name value, for example:
 
   sandbox +window.fullscreen true
 
-The sandbox writes sandbox.log, and on Windows crash dumps to crashdumps/, in the working directory.
+The sandbox writes sandbox.log (the previous run's stays as sandbox.previous.log), and on Windows crash
+dumps to crashdumps/, in the working directory. After a crash, the next start writes a readable report beside
+the dump (crashdumps/<name>.dmp.txt) and the menu says so. Nothing is sent anywhere: attach the report to a bug
+report if you wish.
 
 Licences
 --------

@@ -17,6 +17,7 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 option(DAI_BUILD_APPS "Build the applications in apps/" ON)
 option(DAI_BUILD_TESTS "Build the unit tests in tests/" ON)
+option(DAI_BUILD_SAMPLES "Build the sample programs in samples/ (docs/GUIDE.md)" ON)
 option(DAI_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(DAI_ENABLE_ASAN "Build with AddressSanitizer (and UndefinedBehaviorSanitizer where supported)" OFF)
 option(DAI_ENABLE_PROFILER "Build with the Tracy profiler client (needs the vcpkg feature 'profiler')" OFF)
@@ -63,6 +64,10 @@ add_subdirectory(engine)
 
 if(DAI_BUILD_APPS)
     add_subdirectory(apps)
+endif()
+
+if(DAI_BUILD_SAMPLES)
+    add_subdirectory(samples)
 endif()
 
 if(DAI_BUILD_TESTS)
