@@ -24,6 +24,8 @@ dai_add_module(NAME renderer
         src/DynamicResolution.cpp
         src/DynamicResolution.hpp
         src/Exposure.cpp
+        src/FrameCapture.cpp
+        src/FrameCapture.hpp
         src/Exposure.hpp
         src/LightUnits.cpp
         src/MirrorRoom.cpp

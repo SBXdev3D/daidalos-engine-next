@@ -83,10 +83,12 @@ core::Result<void> CameraEffects::Resize(rhi::Extent extent) {
     DestroyImages();
     m_extent = extent;
     for (rhi::TextureHandle& image : m_images) {
-        DAI_TRY_ASSIGN(image, m_device->CreateTexture({.extent = extent,
-                                                       .format = rhi::Format::Rgba16Float,
-                                                       .usage = rhi::TextureUsage::Storage | rhi::TextureUsage::Sampled,
-                                                       .name = "Camera effects"}));
+        DAI_TRY_ASSIGN(image,
+                       m_device->CreateTexture({.extent = extent,
+                                                .format = rhi::Format::Rgba16Float,
+                                                .usage = rhi::TextureUsage::Storage | rhi::TextureUsage::Sampled |
+                                                         rhi::TextureUsage::TransferSrc,
+                                                .name = "Camera effects"}));
     }
     return {};
 }

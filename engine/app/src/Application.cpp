@@ -6,6 +6,7 @@
 #include <daidalos/core/Assert.hpp>
 #include <daidalos/core/Profile.hpp>
 #include <daidalos/platform/CrashHandler.hpp>
+#include <daidalos/resources/ImageFile.hpp>
 
 #include <glm/trigonometric.hpp>
 
@@ -550,6 +551,80 @@ core::Result<void> Application::SaveSettings() {
     return {};
 }
 
+void Application::CaptureFrame(std::filesystem::path base, bool exr) {
+    if (!m_renderer.has_value()) {
+        DAI_LOG_WARNING(kModule, "Nothing to capture without rendering");
+        return;
+    }
+    m_capture = PendingCapture{.base = std::move(base), .exr = exr};
+    m_renderer->RequestCapture();
+}
+
+std::vector<std::filesystem::path> Application::TakeSavedCaptures() {
+    return std::exchange(m_savedCaptures, {});
+}
+
+std::filesystem::path Application::CaptureDirectory() const {
+    return m_config.userConfigFile.parent_path() / "Screenshots";
+}
+
+std::filesystem::path Application::NewCapturePath() const {
+    const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+    const std::filesystem::path base = CaptureDirectory() / std::format("daidalos-{:%Y-%m-%d-%H%M%S}", now);
+    std::filesystem::path path = base;
+    std::error_code error;
+    for (int index = 2; std::filesystem::exists(std::filesystem::path(path).replace_extension(".png"), error);
+         ++index) {
+        path = std::filesystem::path(base.string() + std::format("-{}", index));
+    }
+    return path;
+}
+
+namespace {
+
+/// Encodes and writes a capture, on a worker. Returns the PNG's path.
+core::Result<std::filesystem::path> WriteCapture(const std::filesystem::path& base, bool exr,
+                                                 const renderer::CapturedFrame& frame) {
+    std::filesystem::path png = base;
+    png += ".png";
+    DAI_TRY_ASSIGN(const std::vector<std::byte> encoded,
+                   resources::EncodePng(frame.width, frame.height, frame.display));
+    DAI_TRY(resources::WriteFile(png, encoded));
+    if (exr && !frame.scene.empty()) {
+        std::filesystem::path light = base;
+        light += ".exr";
+        DAI_TRY_ASSIGN(const std::vector<std::byte> linear,
+                       resources::EncodeExr(frame.sceneWidth, frame.sceneHeight, frame.scene));
+        DAI_TRY(resources::WriteFile(light, linear));
+    }
+    return png;
+}
+
+} // namespace
+
+void Application::WriteCaptures() {
+    if (!m_capture.has_value() || !m_renderer.has_value()) {
+        return;
+    }
+    std::optional<renderer::CapturedFrame> frame = m_renderer->TakeCapture();
+    if (!frame.has_value()) {
+        return;
+    }
+    const PendingCapture capture = *std::exchange(m_capture, std::nullopt);
+    ++m_capturesWriting;
+    auto shared = std::make_shared<renderer::CapturedFrame>(std::move(*frame));
+    Workers().Submit([capture, shared] { return WriteCapture(capture.base, capture.exr, *shared); },
+                     [this](core::Result<std::filesystem::path> written) {
+                         --m_capturesWriting;
+                         if (written) {
+                             DAI_LOG_INFO(kModule, "Captured '{}'", written->string());
+                             m_savedCaptures.push_back(*written);
+                         } else {
+                             DAI_LOG_WARNING(kModule, "Capture: {}", core::Format(written.error()));
+                         }
+                     });
+}
+
 float Application::MouseSensitivity() const {
     return m_mouseSensitivity ? static_cast<float>(m_mouseSensitivity->Get()) : 0.0025f;
 }
@@ -912,6 +987,10 @@ void Application::MainLoop(IApplicationHandler& handler) {
                 m_input.Process(event);
 #endif
                 HandleEvent(handler, event);
+                if (const auto* key = std::get_if<platform::KeyPressed>(&event);
+                    key != nullptr && key->key == platform::Key::F12 && !key->repeat) {
+                    CaptureFrame(NewCapturePath(), false);
+                }
 #if DAI_DEV_TOOLS
                 if (m_debugUi.has_value()) {
                     m_debugUi->ProcessEvent(event);
@@ -976,6 +1055,7 @@ void Application::MainLoop(IApplicationHandler& handler) {
         if (m_renderer.has_value()) {
             DAI_PROFILE_SCOPE("Render");
             RenderFrame(handler);
+            WriteCaptures();
         }
         DAI_PROFILE_FRAME();
     }
