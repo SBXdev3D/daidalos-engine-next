@@ -39,7 +39,7 @@ flowchart LR
 | 11: Materials, lights and atmosphere | Wet floors and puddles, decals of blood and grime, a better flashlight, flickering and dying lamps, film grain | 11.1 to 11.3 done: clear coat and sheen, profiles, cookies and animated lights, the flashlight with its sway and battery |
 | 12: Sound | Doors that muffle sound, reverb that follows the rooms, music that follows the danger | |
 | 13: Gameplay systems | Security camera, opening camera flight, better zombie navigation, scripted scares, saves | |
-| 16: The showcase | The factory dressed with CC0 props by room and purpose, lamps on room circuits, scares along the route, a way out at the far end of the pumps, an end summary | 16.1 kit, 16.2 dressing, 16.3 scares and the way out, 16.4 hit markers, wound direction, recoil and flinch done |
+| 16: The showcase | The factory dressed with CC0 props by room and purpose, lamps on room circuits, scares along the route, a way out at the far end of the pumps, an end summary | 16.1 kit, 16.2 dressing, 16.3 scares and the way out, 16.4 hit markers, wound direction, recoil and flinch, 16.5 the opening flight done |
 
 Zombies come earlier than the roadmap's AI phase, because a shooter with no one to shoot is not a demo. Their state machine belongs to the game, and Phase 13 only adds what they turn out to lack.
 

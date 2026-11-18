@@ -1,0 +1,16 @@
+{
+  "comment": "The opening camera flight, as the legacy demo had one (ADR-0086): high over the loading floor past the crane, down the corridor, into the start room, ending at the player's eyes.",
+  "cues": [
+    {"at": 0.0, "mix": {"lowpass": 900, "music": 0.6, "seconds": 0.5}},
+    {"at": 0.0, "camera": {"keys": [
+      {"at": 0.0, "position": [-10, 6.0, -55], "target": [5, 3.5, -38], "aperture": 2.8, "focus": 18},
+      {"at": 6.0, "position": [-10, 5.0, -24], "target": [6, 3.0, -40], "aperture": 2.8, "focus": 16},
+      {"at": 10.0, "position": [0.5, 2.0, -21], "target": [0.5, 1.7, -14], "focus": 6},
+      {"at": 14.0, "position": [0.5, 1.7, -10], "target": [0.5, 1.6, -3], "focus": 6},
+      {"at": 16.5, "position": [0.5, 1.8, -2], "target": [2.5, 1.7, 1], "focus": 3},
+      {"at": 19.0, "position": [0, 1.9, 0.3], "target": [0, 1.8, -5], "focus": 3}
+    ]}},
+    {"at": 8.0, "sound": {"clip": "Factory/Sounds/zombie_moan.wav", "volume": 0.5, "caption": "caption.zombie_groan"}},
+    {"at": 17.0, "mix": {"lowpass": 20000, "music": 1.0, "seconds": 2.0}}
+  ]
+}

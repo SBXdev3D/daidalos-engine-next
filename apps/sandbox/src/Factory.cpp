@@ -1288,7 +1288,7 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
     ApplyAtmosphere(scene, settings);
     ecs::Schedule& fixed = scene.FixedSystems();
     fixed.Add("Movement", [&, player](ecs::World& world, core::Seconds step) {
-        if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
+        if (const ecs::Entity entity = player(); world.IsAlive(entity) && !scene.InCinematic()) {
             MovePlayer(entity, scene, input, actions, static_cast<float>(step.count()));
         }
     });
@@ -1358,8 +1358,9 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
             break;
         }
     });
+    // While a camera cue has the camera, the player waits (ADR-0086).
     systems.Add("Look", [&, player](ecs::World& world, core::Seconds delta) {
-        if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
+        if (const ecs::Entity entity = player(); world.IsAlive(entity) && !scene.InCinematic()) {
             if (scene::Camera* camera = world.TryGet<scene::Camera>(entity)) {
                 camera->aperture = settings.aperture;
                 camera->focusDistance = settings.focusDistance;
@@ -1373,7 +1374,7 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
         }
     });
     systems.Add("Weapons", [&, player](ecs::World& world, core::Seconds delta) {
-        if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
+        if (const ecs::Entity entity = player(); world.IsAlive(entity) && !scene.InCinematic()) {
             UpdateWeapons(scene, entity, input, actions, static_cast<float>(delta.count()));
         }
     });

@@ -117,6 +117,9 @@ public:
     [[nodiscard]] std::vector<std::string> TakeEvents() { return std::exchange(m_events, {}); }
     /// Whether a camera cue has the camera.
     [[nodiscard]] bool InCinematic() const { return m_cinematic.has_value(); }
+    /// Gives the camera back at once, as when a player skips a cinematic (ADR-0086). The sequence's other cues
+    /// go on.
+    void StopCinematic() { m_cinematic.reset(); }
     /// Shows a subtitle or a sound's caption (ADR-0075) for its seconds; the same text shown again starts
     /// over rather than showing twice. The game draws them, as its settings say.
     void ShowCaption(Caption caption);
