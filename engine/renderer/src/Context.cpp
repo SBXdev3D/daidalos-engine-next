@@ -25,6 +25,22 @@ Rect ValueArea(const Rect& rect) {
     return {{rect.position.x + left, rect.position.y}, {rect.size.x - left, rect.size.y}};
 }
 
+bool PadPressed(const input::InputState& input, platform::GamepadButton button) {
+    return std::ranges::any_of(input.Gamepads(),
+                               [&](platform::GamepadId gamepad) { return input.WasPressed(gamepad, button); });
+}
+
+/// Where the gamepads' left sticks lean on an axis, -1, 0 or +1, past half way: the menus take a lean as a
+/// press of the D-pad when it starts.
+int StickLean(const input::InputState& input, platform::GamepadAxis axis) {
+    constexpr float kLean = 0.6f;
+    float value = 0.0f;
+    for (const platform::GamepadId gamepad : input.Gamepads()) {
+        value += input.Axis(gamepad, axis);
+    }
+    return value > kLean ? 1 : (value < -kLean ? -1 : 0);
+}
+
 } // namespace
 
 void Context::Begin(Canvas& canvas, const input::InputState& input, glm::vec2 windowSize) {
@@ -42,13 +58,34 @@ void Context::Begin(Canvas& canvas, const input::InputState& input, glm::vec2 wi
         m_dragging = kNone;
     }
 
-    m_activate = input.WasPressed(Key::Enter) || input.WasPressed(Key::NumpadEnter) || input.WasPressed(Key::Space);
-    m_step = (input.WasPressed(Key::Right) ? 1 : 0) - (input.WasPressed(Key::Left) ? 1 : 0);
+    using platform::GamepadButton;
+    // Gamepads (ADR-0076): the D-pad or the left stick moves, South uses.
+    const int leanX = StickLean(input, platform::GamepadAxis::LeftX);
+    const int leanY = StickLean(input, platform::GamepadAxis::LeftY);
+    const bool stickRight = leanX > 0 && m_leanX <= 0;
+    const bool stickLeft = leanX < 0 && m_leanX >= 0;
+    // Sticks are +1 up.
+    const bool stickUp = leanY > 0 && m_leanY <= 0;
+    const bool stickDown = leanY < 0 && m_leanY >= 0;
+    m_leanX = leanX;
+    m_leanY = leanY;
+
+    m_activate = input.WasPressed(Key::Enter) || input.WasPressed(Key::NumpadEnter) || input.WasPressed(Key::Space) ||
+                 PadPressed(input, GamepadButton::South);
+    const bool right = input.WasPressed(Key::Right) || PadPressed(input, GamepadButton::DpadRight) || stickRight;
+    const bool left = input.WasPressed(Key::Left) || PadPressed(input, GamepadButton::DpadLeft) || stickLeft;
+    m_step = (right ? 1 : 0) - (left ? 1 : 0);
+    if (m_held) {
+        m_consumed = true;
+        m_dragging = kNone;
+        m_focus = count > 0 ? std::min(m_focus, count - 1) : 0;
+        return;
+    }
     if (count > 0) {
-        if (input.WasPressed(Key::Down)) {
+        if (input.WasPressed(Key::Down) || PadPressed(input, GamepadButton::DpadDown) || stickDown) {
             m_focus = (m_focus + 1) % count;
         }
-        if (input.WasPressed(Key::Up)) {
+        if (input.WasPressed(Key::Up) || PadPressed(input, GamepadButton::DpadUp) || stickUp) {
             m_focus = (m_focus + count - 1) % count;
         }
         m_focus = std::min(m_focus, count - 1);

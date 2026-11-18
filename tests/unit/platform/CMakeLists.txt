@@ -1,6 +1,7 @@
 dai_add_test(NAME daidalos_platform_tests
     SOURCES
         ActionMapTests.cpp
+        BindingsTests.cpp
         CrashHandlerTests.cpp
         EventTranslationTests.cpp
         InputStateTests.cpp

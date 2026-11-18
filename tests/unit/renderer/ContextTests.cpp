@@ -195,3 +195,42 @@ TEST_F(ContextTest, ChoiceWrapsBothWays) {
     m_context.Choice("Antialiasing", Row(0), index, kOptions);
     EXPECT_EQ(index, 2u);
 }
+
+TEST_F(ContextTest, AGamepadMovesWithItsDpadOrStickAndUsesWithSouth) {
+    constexpr auto kPad = static_cast<platform::GamepadId>(2);
+    using platform::GamepadButton;
+    m_input.Process(platform::GamepadConnected{kPad});
+    Frame();
+    Buttons();
+    Frame({platform::GamepadButtonPressed{kPad, GamepadButton::DpadDown}});
+    Buttons();
+    Frame({platform::GamepadButtonReleased{kPad, GamepadButton::DpadDown},
+           platform::GamepadButtonPressed{kPad, GamepadButton::South}});
+    EXPECT_EQ(Buttons(), (std::array{false, true, false}));
+    // A lean of the stick moves once, however long it is held.
+    Frame({platform::GamepadButtonReleased{kPad, GamepadButton::South},
+           platform::GamepadAxisMoved{kPad, platform::GamepadAxis::LeftY, -0.9f}});
+    Buttons();
+    Frame();
+    Buttons();
+    Frame({platform::GamepadAxisMoved{kPad, platform::GamepadAxis::LeftY, 0.0f},
+           platform::GamepadButtonPressed{kPad, GamepadButton::South}});
+    EXPECT_EQ(Buttons(), (std::array{false, false, true}));
+}
+
+TEST_F(ContextTest, HeldWidgetsReadNoInputAndKeepTheFocus) {
+    Frame();
+    Buttons();
+    Frame({Press(Key::Down)});
+    Buttons();
+    m_context.Hold(true);
+    Frame({Press(Key::Down)});
+    EXPECT_EQ(Buttons(), (std::array{false, false, false}));
+    Frame({Press(Key::Enter), Move(Inside(0)), Click(Inside(0))});
+    EXPECT_EQ(Buttons(), (std::array{false, false, false}));
+    m_context.Hold(false);
+    Frame({Release(Inside(0))});
+    Buttons();
+    Frame({Press(Key::Enter)});
+    EXPECT_EQ(Buttons(), (std::array{false, true, false})) << "The focus stayed where it was before the hold";
+}

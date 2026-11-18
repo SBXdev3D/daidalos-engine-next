@@ -6,6 +6,7 @@
 
 #include <daidalos/core/Result.hpp>
 #include <daidalos/platform/Event.hpp>
+#include <daidalos/platform/InputCodes.hpp>
 
 #include <chrono>
 #include <filesystem>
@@ -25,6 +26,10 @@ struct PlatformState;
 
 /// The file name of a program of this name on this system: "sandbox.exe" on Windows, "sandbox" elsewhere.
 [[nodiscard]] std::string ExecutableFileName(std::string_view program);
+
+/// What the keyboard's layout prints on a key, in UTF-8: "Z" for Key::W on AZERTY. Empty when the system
+/// cannot tell, as before a Platform exists.
+[[nodiscard]] std::string KeyLabel(Key key);
 
 /// Shows a modal error box, for failures a player must see, such as a GPU the engine cannot use.
 /// Works before and without a Platform. Blocks until the box is closed; logs a warning if none can be shown.
@@ -64,6 +69,9 @@ public:
     [[nodiscard]] std::string_view VideoDriver() const;
     /// False when the gamepad subsystem could not start. Keyboard and mouse work either way.
     [[nodiscard]] bool GamepadsAvailable() const;
+    /// Shakes every open gamepad that can (ADR-0076): low and high are the strengths of its heavy and light
+    /// motors, from 0 to 1, for the duration or until the next call. Pads without motors ignore it.
+    void RumbleGamepads(float low, float high, std::chrono::milliseconds duration);
 
 private:
     friend class Window;

@@ -313,6 +313,10 @@ void Application::Stop() {
     m_audio.reset();
     m_workers.reset();
     m_window.reset();
+    if (m_platform.has_value()) {
+        // A pad keeps shaking for what it was last told, after the game is gone.
+        m_platform->RumbleGamepads(0.0f, 0.0f, std::chrono::milliseconds(0));
+    }
     m_platform.reset();
     if (std::exchange(m_crashHandlerInstalled, false)) {
         platform::UninstallCrashHandler();
@@ -448,6 +452,8 @@ core::Result<void> Application::LoadConfiguration() {
         m_musicVolume = m_cvars.Register<double>("audio.music", 1.0, "Volume of music, from 0 to 1");
         m_mouseSensitivity =
             m_cvars.Register<double>("input.mouse_sensitivity", 0.0025, "Radians of turn per mouse unit");
+        m_rumbleStrength =
+            m_cvars.Register<double>("input.rumble", 1.0, "Strength of the gamepads' rumble, from 0 (off) to 1");
         m_directInput = m_cvars.Register<bool>(
             "input.directinput", false,
             "Gamepads through DirectInput, for old pads; on some machines it delays the start by tens of seconds");
@@ -952,6 +958,14 @@ void Application::MainLoop(IApplicationHandler& handler) {
             if (m_currentScene) {
                 m_currentScene->RunFrame(time.delta, static_cast<float>(time.alpha));
             }
+        }
+        if (const std::optional<input::RumbleLevel> rumble = m_rumble.Update(static_cast<float>(time.delta.count()));
+            rumble.has_value() && m_platform.has_value()) {
+            const float strength =
+                m_rumbleStrength ? std::clamp(static_cast<float>(m_rumbleStrength->Get()), 0.0f, 1.0f) : 1.0f;
+            m_platform->RumbleGamepads(
+                rumble->low * strength, rumble->high * strength,
+                std::chrono::milliseconds(static_cast<int>(input::RumbleMixer::kSentSeconds * 1000.0f)));
         }
 #if DAI_DEV_TOOLS
         if (m_devTools.has_value()) {
