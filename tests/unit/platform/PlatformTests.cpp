@@ -171,3 +171,11 @@ TEST(Platform, InputEventsArePassedThrough) {
     ASSERT_EQ(events.size(), 1u);
     EXPECT_EQ(events[0], Event(KeyPressed{WindowId{}, Key::A, false}));
 }
+
+TEST(Platform, ExecutableFileNameFollowsTheSystem) {
+#ifdef _WIN32
+    EXPECT_EQ(daidalos::platform::ExecutableFileName("sandbox"), "sandbox.exe");
+#else
+    EXPECT_EQ(daidalos::platform::ExecutableFileName("sandbox"), "sandbox");
+#endif
+}
