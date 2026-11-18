@@ -41,11 +41,14 @@ struct Cue {
         Camera,    // Take the camera along keys until the last.
         Mix,       // Fade the mix to a snapshot over seconds.
         Event,     // A name the game's code takes (Scene::TakeEvents).
+        Subtitle,  // A line someone says (ADR-0075): text and speaker, keys of the text table, for seconds.
     };
     float at = 0.0f;
     Kind kind = Kind::Event;
     std::string name; // The circuit, the entity, or the event.
     std::string path; // The clip or the effect.
+    /// A subtitle's text, or the caption of a sound; a key of the text table (ADR-0075).
+    std::string caption;
     bool on = true;
     float volume = 1.0f;
     float ducking = 0.0f;
@@ -59,7 +62,7 @@ struct Cue {
 
 /// A timeline of cues, from a .sequence.json file: {"cues": [{"at": 0.5, "sound": {...}}, ...]}. Each cue is
 /// its time and one kind, named by its key: power, light, sound, particles, move, visible, shake, camera,
-/// mix or event.
+/// mix, event or subtitle.
 struct Sequence {
     std::vector<Cue> cues;
     /// Seconds to its last cue, and to the end of its last camera move.

@@ -6,7 +6,15 @@
 
 #include <daidalos/core/Result.hpp>
 #include <daidalos/scene/AssetLibrary.hpp>
+#include <daidalos/scene/Text.hpp>
 #include <daidalos/ui/Canvas.hpp>
+
+#include <format>
+#include <span>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 #include "Factory.hpp"
 
@@ -21,7 +29,40 @@ struct HudAssets {
     daidalos::rhi::TextureHandle crosshair;
     /// The legacy loading screen's gear, which turns while a level loads.
     daidalos::rhi::TextureHandle gear;
+    /// What the interface says, in the player's language (ADR-0075); owned by the game.
+    const daidalos::scene::TextTable* text = nullptr;
+    /// The languages there is text for: their codes and their names in themselves.
+    std::vector<std::pair<std::string, std::string>> languages;
 };
+
+/// The text of a key in the player's language.
+[[nodiscard]] inline std::string_view T(const HudAssets& hud, std::string_view key) {
+    return hud.text != nullptr ? hud.text->Get(key) : key;
+}
+
+/// A text with values put in its {} places; a translation whose places do not fit shows its key.
+template <typename... Args>
+[[nodiscard]] std::string Tf(const HudAssets& hud, std::string_view key, const Args&... args) {
+    try {
+        return std::vformat(T(hud, key), std::make_format_args(args...));
+    } catch (const std::format_error&) {
+        return std::string(key);
+    }
+}
+
+/// How the player wants subtitles and captions (ADR-0075).
+struct CaptionSettings {
+    bool subtitles = true;
+    bool sounds = false;
+    /// Of the text, 1 by default.
+    float size = 1.0f;
+};
+
+/// Subtitles and sound captions at the bottom of the screen, on a dark band. A sound's caption shows only
+/// within its reach of the eye, with the side it comes from.
+void DrawCaptions(daidalos::ui::Canvas& canvas, const HudAssets& hud,
+                  std::span<const daidalos::scene::Caption> captions, const glm::vec3& eye, const glm::quat& rotation,
+                  const CaptionSettings& settings);
 
 [[nodiscard]] daidalos::core::Result<HudAssets> LoadHud(daidalos::scene::AssetLibrary& assets);
 

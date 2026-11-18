@@ -146,7 +146,7 @@ void Scene::Extract(renderer::SceneView& view) {
             // Handheld: two slow sines on each axis, fading out.
             const float left = m_shakeTime / m_shakeLength;
             const auto t = static_cast<float>(m_lightClock);
-            const float amount = m_shake * left * glm::radians(1.5f);
+            const float amount = m_shake * m_shakeScale * left * glm::radians(1.5f);
             const float pitch = amount * (std::sin(t * 17.0f) + 0.5f * std::sin(t * 29.0f));
             const float yaw = amount * (std::sin(t * 13.0f + 1.0f) + 0.5f * std::sin(t * 23.0f));
             const glm::mat4 shake = glm::rotate(glm::rotate(glm::mat4(1.0f), pitch, glm::vec3(1.0f, 0.0f, 0.0f)), yaw,
@@ -282,6 +282,25 @@ void Scene::RunSequences() {
         }
     }
     m_shakeTime = std::max(m_shakeTime - m_frameDelta, 0.0f);
+    for (Caption& caption : m_captions) {
+        caption.age += m_frameDelta;
+    }
+    std::erase_if(m_captions, [](const Caption& caption) { return caption.age >= caption.seconds; });
+}
+
+void Scene::ShowCaption(Caption caption) {
+    caption.age = 0.0f;
+    if (const auto same = std::find_if(
+            m_captions.begin(), m_captions.end(),
+            [&](const Caption& shown) { return shown.text == caption.text && shown.speaker == caption.speaker; });
+        same != m_captions.end()) {
+        *same = std::move(caption);
+        return;
+    }
+    if (m_captions.size() >= kMaxCaptions) {
+        m_captions.erase(m_captions.begin());
+    }
+    m_captions.push_back(std::move(caption));
 }
 
 void Scene::RunCue(const Cue& cue) {
@@ -308,6 +327,9 @@ void Scene::RunCue(const Cue& cue) {
         }
         const std::optional<glm::vec3> at = cue.name.empty() ? std::nullopt : entityPosition(Named(cue.name));
         m_sounds.Play(*clip, {.position = at, .volume = cue.volume, .ducking = cue.ducking});
+        if (!cue.caption.empty()) {
+            ShowCaption({.text = cue.caption, .position = at, .reach = at.has_value() ? 25.0f : 0.0f});
+        }
         break;
     }
     case Cue::Kind::Particles: {
@@ -350,6 +372,9 @@ void Scene::RunCue(const Cue& cue) {
         break;
     case Cue::Kind::Event:
         m_events.push_back(cue.name);
+        break;
+    case Cue::Kind::Subtitle:
+        ShowCaption({.text = cue.caption, .speaker = cue.name, .seconds = cue.seconds});
         break;
     }
 }

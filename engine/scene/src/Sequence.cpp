@@ -150,11 +150,19 @@ core::Result<Cue> ReadCue(std::string_view sequence, simdjson::dom::object cueOb
         DAI_TRY(reader.Flag("on", cue.on));
     } else if (kind == "sound") {
         cue.kind = Cue::Kind::Sound;
-        DAI_TRY(reader.Only({"clip", "entity", "volume", "ducking"}));
+        DAI_TRY(reader.Only({"clip", "entity", "volume", "ducking", "caption"}));
         DAI_TRY(reader.Text("clip", cue.path, true));
+        DAI_TRY(reader.Text("caption", cue.caption));
         DAI_TRY(reader.Text("entity", cue.name));
         DAI_TRY(reader.Number("volume", cue.volume));
         DAI_TRY(reader.Number("ducking", cue.ducking));
+    } else if (kind == "subtitle") {
+        cue.kind = Cue::Kind::Subtitle;
+        DAI_TRY(reader.Only({"text", "speaker", "seconds"}));
+        DAI_TRY(reader.Text("text", cue.caption, true));
+        DAI_TRY(reader.Text("speaker", cue.name, true));
+        cue.seconds = 3.0f;
+        DAI_TRY(reader.Number("seconds", cue.seconds));
     } else if (kind == "particles") {
         cue.kind = Cue::Kind::Particles;
         DAI_TRY(reader.Only({"effect", "entity", "count"}));

@@ -159,6 +159,19 @@ renderer::Upscaler UpscalerNamed(const core::CVar<std::string>& cvar) {
     return renderer::Upscaler::Engine;
 }
 
+renderer::ColorVision ColorVisionNamed(const std::string& name) {
+    if (name == "protanopia") {
+        return renderer::ColorVision::Protanopia;
+    }
+    if (name == "deuteranopia") {
+        return renderer::ColorVision::Deuteranopia;
+    }
+    if (name == "tritanopia") {
+        return renderer::ColorVision::Tritanopia;
+    }
+    return renderer::ColorVision::Normal;
+}
+
 renderer::ToneMapper ToneMapperNamed(const core::CVar<std::string>& cvar) {
     const std::string& name = cvar.Get();
     if (name == "neutral") {
@@ -334,6 +347,9 @@ core::Result<void> Application::LoadConfiguration() {
                                                          "Red and blue split towards the edges, from 0 (none) to 1");
         m_lensDirt = m_cvars.Register<double>("renderer.lens_dirt", 0.5,
                                               "Smudges on the lens that bright light lights up, from 0 (none) to 1");
+        m_colorVision = m_cvars.Register<std::string>(
+            "renderer.color_vision", "normal",
+            "Correct the image for color blindness: normal, protanopia, deuteranopia or tritanopia");
         m_motionBlur =
             m_cvars.Register<double>("renderer.motion_blur", 0.0,
                                      "Motion blur: the fraction of a frame the shutter is open, from 0 (none) to 1");
@@ -619,7 +635,8 @@ renderer::ImageConfig Application::Image() const {
             .vignette = static_cast<float>(std::clamp(m_vignette->Get(), 0.0, 1.0)),
             .chromaticAberration = static_cast<float>(std::clamp(m_chromaticAberration->Get(), 0.0, 1.0)),
             .lensDirt = static_cast<float>(std::clamp(m_lensDirt->Get(), 0.0, 1.0)),
-            .motionBlur = static_cast<float>(std::clamp(m_motionBlur->Get(), 0.0, 1.0))};
+            .motionBlur = static_cast<float>(std::clamp(m_motionBlur->Get(), 0.0, 1.0)),
+            .colorVision = ColorVisionNamed(m_colorVision->Get())};
 }
 
 renderer::ResolutionConfig Application::Resolution() const {

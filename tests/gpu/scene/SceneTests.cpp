@@ -342,6 +342,50 @@ TEST_F(ApplicationScene, ATriggerPlaysItsSequenceOnce) {
     std::filesystem::remove_all(root);
 }
 
+TEST_F(ApplicationScene, CaptionsLastTheirTimeOnceEachAndAFewAtATime) {
+    // ADR-0075: a subtitle cue shows its line; the same line again starts over rather than showing twice;
+    // past kMaxCaptions the oldest goes; each goes when its seconds are up.
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / "daidalos-caption-test";
+    std::filesystem::create_directories(root);
+    std::ofstream(root / "line.sequence.json")
+        << R"({"cues": [{"at": 0, "subtitle": {"speaker": "speaker.you", "text": "subtitle.a", "seconds": 0.5}}]})";
+    std::size_t afterCue = 0;
+    std::size_t afterRepeat = 0;
+    std::size_t afterMany = 0;
+    std::size_t afterTime = 0;
+    std::string oldestLeft;
+    FunctionHandler handler;
+    handler.start = [&](app::Application& app) -> core::Result<void> {
+        scene::Scene scene(app.Renderer(), root);
+        const auto frame = [&] { scene.RunFrame(core::Seconds(0.1), 0.0f); };
+        DAI_TRY(scene.PlaySequenceFile("line.sequence.json"));
+        frame();
+        afterCue = scene.Captions().size();
+        scene.ShowCaption({.text = "caption.x", .seconds = 2.0f});
+        scene.ShowCaption({.text = "caption.x", .seconds = 2.0f});
+        afterRepeat = scene.Captions().size();
+        for (int index = 0; index < 6; ++index) {
+            scene.ShowCaption({.text = "caption." + std::to_string(index), .seconds = 2.0f});
+        }
+        afterMany = scene.Captions().size();
+        oldestLeft = scene.Captions().front().text;
+        for (int index = 0; index < 25; ++index) {
+            frame();
+        }
+        afterTime = scene.Captions().size();
+        app.RequestQuit();
+        return {};
+    };
+    RUN_OR_SKIP(handler);
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(afterCue, 1U);
+    EXPECT_EQ(afterRepeat, 2U);
+    EXPECT_EQ(afterMany, scene::Scene::kMaxCaptions);
+    EXPECT_EQ(oldestLeft, "caption.2");
+    EXPECT_EQ(afterTime, 0U);
+    std::filesystem::remove_all(root);
+}
+
 TEST_F(ApplicationScene, ASavedGameRestoresTheWorldItLeft) {
     // A world made from the same "level" twice (ADR-0072): changes made to the first come back in the second.
     struct Made {

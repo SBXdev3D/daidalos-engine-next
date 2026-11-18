@@ -13,6 +13,7 @@ dai_add_module(NAME scene
         include/daidalos/scene/Perception.hpp
         include/daidalos/scene/SaveGame.hpp
         include/daidalos/scene/Sequence.hpp
+        include/daidalos/scene/Text.hpp
         include/daidalos/scene/ParticleEffectFile.hpp
         include/daidalos/scene/Scene.hpp
         include/daidalos/scene/Systems.hpp
@@ -22,6 +23,7 @@ dai_add_module(NAME scene
         src/Perception.cpp
         src/SaveGame.cpp
         src/Sequence.cpp
+        src/Text.cpp
         src/LevelFile.cpp
         src/LightAnimation.cpp
         src/ParticleEffectFile.cpp

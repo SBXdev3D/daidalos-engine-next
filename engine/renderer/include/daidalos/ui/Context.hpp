@@ -29,6 +29,9 @@ struct WidgetStyle {
     glm::vec4 accent{0.85f, 0.15f, 0.1f, 1.0f};
     /// Canvas units between the edges of a widget and its text.
     float padding = 24.0f;
+    /// What a toggle shows on and off, in the game's language.
+    std::string onText = "ON";
+    std::string offText = "OFF";
 };
 
 /// Buttons, toggles, sliders and choices, immediate mode like the canvas they draw on (ADR-0029): each

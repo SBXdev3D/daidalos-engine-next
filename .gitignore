@@ -17,6 +17,7 @@ sandbox.log
 /assets/*/
 !/assets/Factory/
 !/assets/Fonts/
+!/assets/Text/
 
 # vcpkg
 /vcpkg_installed/

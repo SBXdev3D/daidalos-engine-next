@@ -25,7 +25,7 @@ struct OutputPushConstants {
     float aberration;
     float lensDirt;   // Needs the bloom.
     uint frame;       // Moves the grain.
-    uint padding0;
+    uint colorVision; // 0 normal, 1 protanopia, 2 deuteranopia, 3 tritanopia (ADR-0075).
     uint padding1;
     uint padding2;
 };
@@ -36,6 +36,26 @@ static const uint kNone = 0xFFFFFFFF;
 [[vk::binding(0, 0)]] Texture2D g_textures[];
 [[vk::binding(1, 0)]] SamplerState g_samplers[4];
 static const uint kSamplerLinearClamp = 0;
+
+// Corrects linear color for a kind of color blindness (ADR-0075): what the viewer would see is simulated
+// (Machado, Oliveira and Fernandes 2009, full severity, in linear sRGB), and the difference they lose is moved
+// into channels they tell apart (Fidaner, Lin and Ozguven's daltonization).
+float3 Daltonize(float3 color, uint kind) {
+    float3x3 seen;
+    float3x3 shift;
+    if (kind == 1) {
+        seen = float3x3(0.152286, 1.052583, -0.204868, 0.114503, 0.786281, 0.099216, -0.003882, -0.048116, 1.051998);
+        shift = float3x3(0.0, 0.0, 0.0, 0.7, 1.0, 0.0, 0.7, 0.0, 1.0);
+    } else if (kind == 2) {
+        seen = float3x3(0.367322, 0.860646, -0.227968, 0.280085, 0.672501, 0.047413, -0.011820, 0.042940, 0.968881);
+        shift = float3x3(1.0, 0.7, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7, 1.0);
+    } else {
+        seen = float3x3(1.255528, -0.076749, -0.178779, -0.078411, 0.930809, 0.147602, 0.004733, 0.691367, 0.303900);
+        shift = float3x3(1.0, 0.0, 0.7, 0.0, 1.0, 0.7, 0.0, 0.0, 0.0);
+    }
+    const float3 lost = color - mul(seen, color);
+    return max(color + mul(shift, lost), 0.0);
+}
 
 float4 VSMain(uint vertexId : SV_VulkanVertexID) : SV_Position {
     // (-1, -1), (3, -1), (-1, 3): one triangle that covers the screen.
@@ -238,6 +258,9 @@ float4 PSMain(float4 position : SV_Position) : SV_Target {
     if (g_push.layer != kNone) {
         const float4 layer = g_textures[g_push.layer].Load(int3(pixel, 0));
         color = layer.rgb + color * (1.0 - layer.a);
+    }
+    if (g_push.colorVision != 0) {
+        color = Daltonize(color, g_push.colorVision);
     }
     if (g_push.hdr10 != 0) {
         return float4(PqEncode(max(Rec709ToRec2020(color), 0.0) * g_push.paperWhite), 1.0);

@@ -77,7 +77,8 @@ struct OutputPushConstants {
     float aberration;
     float lensDirt;
     std::uint32_t frame;
-    std::array<std::uint32_t, 3> padding;
+    std::uint32_t colorVision;
+    std::array<std::uint32_t, 2> padding;
 };
 constexpr std::uint32_t kNoTexture = 0xFFFFFFFF;
 /// Stops between a level's darkest and brightest exposure beyond which the GPU's fixed exposure loses
@@ -1158,6 +1159,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
             .aberration = lens ? std::clamp(impl.image.chromaticAberration, 0.0f, 1.0f) : 0.0f,
             .lensDirt = lens && blooms ? std::clamp(impl.image.lensDirt, 0.0f, 1.0f) : 0.0f,
             .frame = static_cast<std::uint32_t>(impl.frameNumber),
+            .colorVision = static_cast<std::uint32_t>(impl.image.colorVision),
             .padding = {}};
         std::vector<rhi::TextureUse> reads{{frame.backBuffer, rhi::Access::ColorTarget, true},
                                            {source, rhi::Access::FragmentShaderRead}};

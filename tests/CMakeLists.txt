@@ -20,4 +20,7 @@ find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
     add_test(NAME assets.case_matches_files
              COMMAND Python3::Interpreter -I "${PROJECT_SOURCE_DIR}/scripts/check_asset_case.py")
+    # Every text key the game names has its English string (ADR-0075).
+    add_test(NAME assets.text_keys_exist
+             COMMAND Python3::Interpreter -I "${PROJECT_SOURCE_DIR}/scripts/check_text_keys.py")
 endif()
