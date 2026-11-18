@@ -457,6 +457,10 @@ struct KinematicBody {
 /// ECS component: a voice of the scene's sounds that follows the entity.
 struct SoundEmitter {
     audio::VoiceHandle voice;
+    /// Its volume, which a light it follows scales.
+    float volume = 1.0f;
+    /// It sounds as bright as the entity's light shines (LightState, ADR-0068): a tube's hum dies with it.
+    bool followsLight = false;
 };
 
 } // namespace daidalos::scene
