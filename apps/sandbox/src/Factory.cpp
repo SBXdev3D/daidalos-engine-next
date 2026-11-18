@@ -479,6 +479,97 @@ std::string_view GroundSurface(scene::Scene& scene, ecs::Entity entity, const Pl
 
 } // namespace
 
+core::Result<void> SaveGame(scene::Scene& scene, const std::filesystem::path& file) {
+    ecs::World& world = scene.World();
+    ecs::Entity playerEntity;
+    world.Each<Player>([&playerEntity](ecs::Entity entity, const Player&) { playerEntity = entity; });
+    if (playerEntity.IsNull()) {
+        return core::MakeError(core::ErrorCode::InvalidState, "sandbox", "No player to save");
+    }
+    scene::SaveData data;
+    scene::SaveScene(scene, data);
+    const Player& player = world.Get<Player>(playerEntity);
+    data.Put("player.feet", player.feet);
+    data.Put("player.yaw", static_cast<double>(player.yaw));
+    data.Put("player.pitch", static_cast<double>(player.pitch));
+    data.Put("player.health", static_cast<double>(player.health));
+    data.Put("player.armor", static_cast<double>(player.armor));
+    data.Put("player.weapon", static_cast<double>(static_cast<int>(player.weapon)));
+    for (std::size_t kind = 0; kind < player.weapons.size(); ++kind) {
+        const std::string prefix = std::format("player.weapons.{}", kind);
+        data.Put(prefix + ".owned", player.weapons[kind].owned);
+        data.Put(prefix + ".magazine", static_cast<double>(player.weapons[kind].magazine));
+        data.Put(prefix + ".reserve", static_cast<double>(player.weapons[kind].reserve));
+    }
+    data.Put("player.flashlight", player.hasFlashlight);
+    data.Put("player.flashlight_on", player.flashlightOn);
+    data.Put("player.battery", static_cast<double>(player.torch.battery));
+    data.Put("player.kills", static_cast<double>(player.kills));
+    // The pickups still there, and the doors as they are.
+    data.Put("pickups.saved", true);
+    world.Each<Pickup, scene::SaveKey>(
+        [&data](ecs::Entity, const Pickup&, const scene::SaveKey& key) { data.Put("pickup." + key.value, true); });
+    world.Each<Door, scene::SaveKey>([&data](ecs::Entity, const Door& door, const scene::SaveKey& key) {
+        const std::string prefix = "door." + key.value;
+        data.Put(prefix + ".locked", door.locked);
+        data.Put(prefix + ".open", door.open);
+        data.Put(prefix + ".rise", static_cast<double>(door.rise));
+    });
+    SaveZombies(scene, data);
+    return scene::WriteSave(file, data);
+}
+
+core::Result<void> LoadGame(scene::Scene& scene, const std::filesystem::path& file) {
+    DAI_TRY_ASSIGN(const scene::SaveData data, scene::ReadSave(file));
+    ecs::World& world = scene.World();
+    ecs::Entity playerEntity;
+    world.Each<Player>([&playerEntity](ecs::Entity entity, const Player&) { playerEntity = entity; });
+    if (playerEntity.IsNull()) {
+        return core::MakeError(core::ErrorCode::InvalidState, "sandbox", "No player to load into");
+    }
+    scene::LoadScene(scene, data);
+    // The pickups taken are gone.
+    if (data.Flag("pickups.saved").value_or(false)) {
+        std::vector<ecs::Entity> taken;
+        world.Each<Pickup, scene::SaveKey>([&](ecs::Entity entity, const Pickup&, const scene::SaveKey& key) {
+            if (!data.Has("pickup." + key.value)) {
+                taken.push_back(entity);
+            }
+        });
+        for (const ecs::Entity entity : taken) {
+            world.Destroy(entity);
+        }
+    }
+    world.Each<Door, scene::SaveKey>([&data](ecs::Entity, Door& door, const scene::SaveKey& key) {
+        const std::string prefix = "door." + key.value;
+        door.locked = data.Flag(prefix + ".locked").value_or(door.locked);
+        door.open = data.Flag(prefix + ".open").value_or(door.open);
+        door.rise = static_cast<float>(data.Number(prefix + ".rise").value_or(door.rise));
+    });
+    LoadZombies(scene, data);
+    Player& player = world.Get<Player>(playerEntity);
+    player.yaw = static_cast<float>(data.Number("player.yaw").value_or(player.yaw));
+    player.pitch = static_cast<float>(data.Number("player.pitch").value_or(player.pitch));
+    player.health = static_cast<int>(data.Number("player.health").value_or(player.health));
+    player.armor = static_cast<int>(data.Number("player.armor").value_or(player.armor));
+    player.weapon = static_cast<WeaponKind>(data.Number("player.weapon").value_or(0.0));
+    for (std::size_t kind = 0; kind < player.weapons.size(); ++kind) {
+        const std::string prefix = std::format("player.weapons.{}", kind);
+        WeaponState& weapon = player.weapons[kind];
+        weapon.owned = data.Flag(prefix + ".owned").value_or(weapon.owned);
+        weapon.magazine = static_cast<int>(data.Number(prefix + ".magazine").value_or(weapon.magazine));
+        weapon.reserve = static_cast<int>(data.Number(prefix + ".reserve").value_or(weapon.reserve));
+    }
+    player.hasFlashlight = data.Flag("player.flashlight").value_or(player.hasFlashlight);
+    player.flashlightOn = data.Flag("player.flashlight_on").value_or(player.flashlightOn);
+    player.torch.battery = static_cast<float>(data.Number("player.battery").value_or(player.torch.battery));
+    player.kills = static_cast<int>(data.Number("player.kills").value_or(player.kills));
+    if (const std::optional<glm::vec3> feet = data.Vector("player.feet")) {
+        Teleport(scene, playerEntity, *feet + math::kUp * player.eyeHeight);
+    }
+    return {};
+}
+
 void PlayImpact(scene::Scene& scene, ecs::Entity player, std::string_view surface, const glm::vec3& position) {
     SoundBank* bank = scene.World().TryGet<SoundBank>(player);
     if (bank == nullptr) {
@@ -716,6 +807,8 @@ input::ActionMap MakeActions() {
     actions.Bind(ToggleFlashlight, Key::F);
     actions.Bind(ToggleFlashlight, GamepadButton::North);
     actions.Bind(Restart, Key::F5);
+    actions.Bind(QuickSave, Key::F6);
+    actions.Bind(QuickLoad, Key::F9);
     actions.Bind(ToggleMouse, Key::Tab);
     actions.Bind(Menu, Key::Escape);
     actions.Bind(Menu, GamepadButton::Start);
@@ -910,11 +1003,20 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
     // After the level's tags are listed: the weapons have tagged nodes too, which are not the level's.
     SetUpCombat(scene, playerEntity, directory);
     std::minstd_rand random{std::random_device{}()};
+    // What a saved game knows them by (ADR-0072): their node's name and how many came before with it, fixed now,
+    // before anything is taken or destroyed.
+    std::map<std::string, int> keyCounts;
+    const auto keyOf = [&world, &keyCounts](ecs::Entity entity) {
+        const scene::NodeName* name = world.TryGet<scene::NodeName>(entity);
+        const std::string base = name != nullptr ? name->value : "entity";
+        return std::format("{}#{}", base, keyCounts[base]++);
+    };
     for (const auto& [entity, tags] : tagged) {
         const glm::vec3 position = world.Get<ecs::WorldTransform>(entity).matrix[3];
         const scene::ModelInstance* placed = world.TryGet<scene::ModelInstance>(entity);
         if (tags.kind == "zombie" && placed != nullptr) {
             AddZombie(scene, entity, placed->root, tags.Value("patrol"));
+            world.Add<scene::SaveKey>(entity, keyOf(entity));
             ++world.Get<Player>(playerEntity).zombieCount;
         } else if (tags.kind == "fan" && placed != nullptr) {
             PlayForever(world, placed->root, random);
@@ -931,6 +1033,7 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
             world.Add<Ladder>(entity, Vector(tags, "min"), Vector(tags, "max"));
         } else if (const std::optional<PickupKind> pickup = PickupOf(tags.kind)) {
             world.Add<Pickup>(entity, *pickup);
+            world.Add<scene::SaveKey>(entity, keyOf(entity));
         } else if (tags.kind == "door") {
             Door door;
             door.id = Number(tags, "id", 0);
@@ -939,6 +1042,7 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
             door.closable = tags.Value("closable") != "false";
             door.locked = std::ranges::find(lockedDoors, door.id) != lockedDoors.end();
             world.Add<Door>(entity, door);
+            world.Add<scene::SaveKey>(entity, keyOf(entity));
 
             if (const auto found = doorShapes.find(entity.Index()); found != doorShapes.end()) {
                 const scene::Model& model = *found->second.model;
@@ -1146,6 +1250,16 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
     });
 
     ecs::Schedule& systems = scene.FrameSystems();
+    // A saved game puts the factory back as it was (ADR-0072), on the first frame, once the level is made.
+    systems.Add("Load", [&scene, &settings, done = false](ecs::World& /*world*/, core::Seconds) mutable {
+        if (done || settings.loadSave.empty()) {
+            return;
+        }
+        done = true;
+        if (const core::Result<void> loaded = LoadGame(scene, settings.loadSave); !loaded) {
+            DAI_LOG_WARNING("sandbox", "Load: {}", core::Format(loaded.error()));
+        }
+    });
     // The mix follows the player (ADR-0067): a wound muffles the world for a moment, death for good.
     systems.Add("Mix", [&scene, player](ecs::World& world, core::Seconds /*delta*/) {
         const ecs::Entity entity = player();
@@ -1204,7 +1318,7 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
                     }
                 });
     // The score follows the danger, and a stinger marks the moment a zombie starts the hunt (ADR-0068).
-    systems.Add("Tension", [&scene, player](ecs::World& world, core::Seconds delta) {
+    systems.Add("Tension", [&scene, &settings, player](ecs::World& world, core::Seconds delta) {
         const ecs::Entity entity = player();
         SoundBank* bank = world.IsAlive(entity) ? world.TryGet<SoundBank>(entity) : nullptr;
         if (bank == nullptr) {
@@ -1213,6 +1327,11 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
         const Player& state = world.Get<Player>(entity);
         // What the level's sequences ask of the game (ADR-0071).
         for (const std::string& event : scene.TakeEvents()) {
+            if (event == "checkpoint" && !settings.checkpointSave.empty()) {
+                if (const core::Result<void> saved = SaveGame(scene, settings.checkpointSave); !saved) {
+                    DAI_LOG_WARNING("sandbox", "Checkpoint: {}", core::Format(saved.error()));
+                }
+            }
             if (event == "stinger" && !bank->stingers.empty()) {
                 scene.Sounds().Play(bank->stingers[bank->random() % bank->stingers.size()],
                                     {.volume = 0.6f, .bus = audio::Bus::Interface, .ducking = 0.6f});

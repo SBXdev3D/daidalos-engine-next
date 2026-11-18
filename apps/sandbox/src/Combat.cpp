@@ -946,6 +946,46 @@ void UpdateZombies(scene::Scene& scene, ecs::Entity playerEntity, float step) {
     }
 }
 
+void SaveZombies(scene::Scene& scene, scene::SaveData& data) {
+    scene.World().Each<Zombie, scene::SaveKey>([&](ecs::Entity, const Zombie& zombie, const scene::SaveKey& key) {
+        const std::string prefix = "zombie." + key.value;
+        data.Put(prefix + ".feet", zombie.feet);
+        data.Put(prefix + ".yaw", static_cast<double>(zombie.yaw));
+        data.Put(prefix + ".health", static_cast<double>(zombie.health));
+        data.Put(prefix + ".dead", zombie.state == ZombieState::Dying);
+    });
+}
+
+void LoadZombies(scene::Scene& scene, const scene::SaveData& data) {
+    ecs::World& world = scene.World();
+    std::vector<ecs::Entity> zombies;
+    world.Each<Zombie>([&zombies](ecs::Entity entity, const Zombie&) { zombies.push_back(entity); });
+    for (const ecs::Entity entity : zombies) {
+        const scene::SaveKey* key = world.TryGet<scene::SaveKey>(entity);
+        if (key == nullptr) {
+            continue;
+        }
+        Zombie& zombie = world.Get<Zombie>(entity);
+        const std::string prefix = "zombie." + key->value;
+        if (data.Flag(prefix + ".dead").value_or(false)) {
+            // Dead where it fell: it no longer blocks the way or the shots.
+            Kill(scene, zombie, nullptr);
+        } else {
+            zombie.health = static_cast<int>(data.Number(prefix + ".health").value_or(zombie.health));
+        }
+        zombie.yaw = static_cast<float>(data.Number(prefix + ".yaw").value_or(zombie.yaw));
+        if (const std::optional<glm::vec3> feet = data.Vector(prefix + ".feet")) {
+            zombie.feet = *feet;
+            zombie.previousFeet = *feet;
+            scene.Physics().SetCharacterPosition(zombie.character, *feet);
+        }
+        zombie.state = zombie.state == ZombieState::Dying ? ZombieState::Dying : ZombieState::Waiting;
+        zombie.timer = kZombieWait;
+        zombie.memory = 0.0f;
+        zombie.path.clear();
+    }
+}
+
 Threat ZombieThreat(scene::Scene& scene, const glm::vec3& feet) {
     Threat threat;
     scene.World().Each<Zombie>([&](ecs::Entity /*entity*/, const Zombie& zombie) {

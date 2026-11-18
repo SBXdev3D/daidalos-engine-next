@@ -17,6 +17,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -47,6 +48,9 @@ enum Action : daidalos::input::Action {
     NextWeapon,
     SelectHandgun,
     SelectShotgun,
+    /// Saves the game, and loads the last save (ADR-0072).
+    QuickSave,
+    QuickLoad,
 };
 
 enum class WeaponKind : std::uint8_t { Handgun, Shotgun };
@@ -86,6 +90,12 @@ struct ParticleEffects {
 
 /// What the level's bodies are made of, by body, from their materials' surface (ADR-0053): "concrete",
 /// "metal", "wood", "glass". A body that is not here is of no known surface. A component of the camera entity.
+/// Saves the factory as it is: the engine's part, then the player, the pickups left, the doors and the zombies
+/// (ADR-0072).
+[[nodiscard]] daidalos::core::Result<void> SaveGame(daidalos::scene::Scene& scene, const std::filesystem::path& file);
+/// Puts a factory just made back to a save.
+[[nodiscard]] daidalos::core::Result<void> LoadGame(daidalos::scene::Scene& scene, const std::filesystem::path& file);
+
 /// The sound of a shot landing on a surface (ADR-0067), where it lands; the player holds the sounds.
 void PlayImpact(daidalos::scene::Scene& scene, daidalos::ecs::Entity player, std::string_view surface,
                 const glm::vec3& position);
@@ -158,6 +168,10 @@ struct Settings {
     float flashlightBattery = 900.0f;
     /// The old demo's music track instead of the layered score (ADR-0068).
     bool classicMusic = false;
+    /// A saved game to put the factory back to once it is made (ADR-0072); empty to start anew.
+    std::filesystem::path loadSave;
+    /// Where checkpoints save.
+    std::filesystem::path checkpointSave;
     /// The player's camera's lens (ADR-0063): an f-number, 0 for everything sharp, and its focus in meters.
     float aperture = 0.0f;
     float focusDistance = 3.0f;
