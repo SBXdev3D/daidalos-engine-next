@@ -207,7 +207,6 @@ core::Result<void> Editor::OnStart(app::Application& app) {
     style.TabRounding = 2.0f;
     style.Colors[ImGuiCol_WindowBg].w = 1.0f;
     app.MainWindow().SetTextInput(true);
-    m_browser = std::make_unique<AssetBrowser>(m_assetRoot, app.Renderer().Device(), app.Workers());
     if (app::DevTools* tools = app.Tools()) {
         tools->SetSummaryShown(false); // The status panel shows the same.
     }
@@ -227,6 +226,7 @@ core::Result<void> Editor::OnStart(app::Application& app) {
         app.RequestQuit();
         return {};
     }
+    m_browser = std::make_unique<AssetBrowser>(m_assetRoot, app.Renderer().Device(), app.Workers());
     LoadBookmarks();
     if (!sequence.empty()) {
         m_sequences.Open(m_assetRoot, sequence);
@@ -1170,6 +1170,10 @@ bool Editor::OnCloseRequested(app::Application& app) {
 }
 
 void Editor::OnStop(app::Application& /*app*/) {
+    // What holds GPU resources goes while the renderer is still there: the application destroys it when Run
+    // returns, before the editor itself goes.
+    m_browser.reset();
+    m_instance.reset();
     // The sandbox reads its level again when F5 starts it over: the play copy stays while it runs.
     if (!m_play.Running() && !m_playFile.empty()) {
         std::error_code error;
