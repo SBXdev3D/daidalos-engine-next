@@ -1226,6 +1226,24 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     }
     m_jointCount = static_cast<std::uint32_t>(view.jointMatrices.size());
 
+    // The sides of the view (ADR-0087): a draw wholly outside one is not rasterized. Rays still meet it, in
+    // reflections, shadows and bounced light. Rows of the matrix, combined (Gribb and Hartmann); the near and far
+    // planes are left to the distance test, as the projection is reverse-Z.
+    std::array<glm::vec4, 4> sides{};
+    {
+        const glm::vec4 x(viewProjection[0][0], viewProjection[1][0], viewProjection[2][0], viewProjection[3][0]);
+        const glm::vec4 y(viewProjection[0][1], viewProjection[1][1], viewProjection[2][1], viewProjection[3][1]);
+        const glm::vec4 w(viewProjection[0][3], viewProjection[1][3], viewProjection[2][3], viewProjection[3][3]);
+        sides = {w + x, w - x, w + y, w - y};
+        for (glm::vec4& side : sides) {
+            side /= std::max(glm::length(glm::vec3(side)), 1e-6f);
+        }
+    }
+    const auto inView = [&sides](const glm::vec3& center, float radius) {
+        return std::ranges::none_of(
+            sides, [&](const glm::vec4& side) { return glm::dot(glm::vec3(side), center) + side.w < -radius; });
+    };
+
     // Sorted, so that the pipeline and the buffers change as rarely as possible. Instance i is the i-th
     // sorted draw, for the G-buffer, glass and rays alike.
     for (std::uint32_t index = 0; index < view.draws.size(); ++index) {
@@ -1244,7 +1262,8 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         // A draw the camera does not see (ADR-0059) is left out of the G-buffer and the glass pass.
         const bool visible =
             draw.seenByCamera &&
-            (draw.firstJoint != kNoJoints || glm::distance(center, cameraPosition) - bounds.w * scale <= farPlane);
+            (draw.firstJoint != kNoJoints || (glm::distance(center, cameraPosition) - bounds.w * scale <= farPlane &&
+                                              inView(center, bounds.w * scale * 1.02f)));
         const bool glass = m_materials.Get(material).glass;
         // Glass casts no shadow: light goes through it (ADR-0042).
         m_sorted.push_back({(doubleSided << 32U) | draw.mesh.Index(), draw.mesh, material, index,

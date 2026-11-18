@@ -329,6 +329,8 @@ private:
     bool m_loggingStarted = false;
     bool m_crashHandlerInstalled = false;
     std::vector<std::filesystem::path> m_crashReports;
+    /// Frames the current scene has been played, not paused, for the first launch's measurement.
+    std::uint64_t m_playingFrames = 0;
     bool m_running = false;
 };
 

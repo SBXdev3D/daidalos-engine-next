@@ -37,10 +37,10 @@ constexpr std::array<QualitySettings, 4> kPresets{{
 
 constexpr std::array<std::string_view, 4> kNames{"low", "medium", "high", "ultra"};
 
-// A frame's GPU time at each preset over High's at full scale, measured in the factory's big room at
-// 1080p on an RTX 3090 with dynamic resolution off, averaged over two runs: 3.1 to 3.6 ms, 4.0 to 4.4,
-// 8.1 to 8.9 and 13.3 to 14.2.
-constexpr std::array<double, 4> kShareOfHigh{0.36, 0.50, 1.0, 1.65};
+// A frame's GPU time at each preset over High's at full scale, measured in the dressed factory (ADR-0087), in
+// the start room and the loading floor at 1080p on an RTX 3090: Low 3.9 and 4.9 ms, Medium 6.7 and 8.1, High
+// 13.6 and 15.1, Ultra 19.3 and 23.7.
+constexpr std::array<double, 4> kShareOfHigh{0.31, 0.52, 1.0, 1.5};
 // A preset must fit the frame with this margin: the factory's busiest views cost more than the start.
 constexpr double kMargin = 1.25;
 

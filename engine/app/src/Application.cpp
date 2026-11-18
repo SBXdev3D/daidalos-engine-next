@@ -850,7 +850,18 @@ void Application::AfterSceneFrame() {
         DAI_LOG_INFO(kModule, "Pipelines created in {:.0f} ms, {}", device.PipelineCreationSeconds() * 1000.0,
                      device.Info().pipelineCacheLoaded ? "from the cache" : "without a cache");
     }
-    if (!ChoosingQuality() || m_sceneFrames <= kProbeWarmupFrames) {
+    if (!ChoosingQuality()) {
+        return;
+    }
+    // Only frames of the game being played count: a paused scene behind a menu renders much less, and once
+    // chose Ultra for a GPU that High already kept busy (ADR-0087). After a pause, frames warm up again.
+    if (m_currentScene == nullptr || m_currentScene->IsPaused()) {
+        m_playingFrames = 0;
+        m_probeMilliseconds = 0.0;
+        m_probeFrames = 0;
+        return;
+    }
+    if (++m_playingFrames <= kProbeWarmupFrames) {
         return;
     }
     double milliseconds = 0.0;
