@@ -79,5 +79,6 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0073](0073-loose-objects.md) | Dynamic bodies and gravity, loose objects in levels, picking up and throwing; ragdolls, cloth, leaning, animation extras and portal visibility left for later with why | Accepted |
 | [0074](0074-linux-validation.md) | Linux checked from Windows (compile check against an Ubuntu sysroot, asset case, scene smoke tests); the run itself in scripts/validate_linux.sh, unverified until WSL2 or Linux | Accepted |
 | [0075](0075-accessibility-and-text.md) | Text tables per language, subtitles and directional sound captions, daltonization in the output pass, camera shake and lens sliders, options in tabs | Accepted |
-| [0077](0077-photo-mode-and-captures.md) | Frame captures (PNG without the interface, EXR of the scene's light) read back from the output pass, F12 screenshots, the sandbox's photo mode | Accepted |
 | [0076](0076-rebinding-and-rumble.md) | Bindings as settings with swaps, button names and layout labels, gamepads in menus, a rumble mixer with a heartbeat under tension | Accepted |
+| [0077](0077-photo-mode-and-captures.md) | Frame captures (PNG without the interface, EXR of the scene's light) read back from the output pass, F12 screenshots, the sandbox's photo mode | Accepted |
+| [0078](0078-prefabs-and-painting.md) | Prefabs as level files placed by entities, made as parts with no ids, unpacked rather than overridden; a paint tool that stamps decals and wet patches facing the surface; the 16 nearest wet volumes drawn | Accepted |

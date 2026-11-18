@@ -2090,7 +2090,7 @@ Done as far as Windows can check (2026-11-18, ADR-0074): a Linux compile check a
 
 Potential deliverables:
 
-- The level editor grown by need: prefabs, painting wetness and decals on surfaces, a material editor with live preview, trigger editing.
+- The level editor grown by need: prefabs, painting wetness and decals on surfaces, a material editor with live preview, trigger editing. Prefabs and painting done (ADR-0078); the material and sequence editors are step 15.5.
 - Asset pipeline: mesh optimization (meshoptimizer), BC6H for HDR textures next to BC7 and BC5.
 - Level and texture streaming, when a level no longer fits in memory or in one load.
 - Accessibility: subtitles with speakers and sound captions, colorblind modes, toggles for motion blur, camera shake, film grain and chromatic aberration.
