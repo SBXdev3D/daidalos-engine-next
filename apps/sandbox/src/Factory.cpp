@@ -734,6 +734,9 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
         }
     }
 
+    // Sound finds its way around the walls (ADR-0066): the paths bake on a worker thread while the game starts.
+    scene.Sounds().StartPathing(3.0f);
+
     ecs::Entity playerEntity = world.Create();
     glm::vec3 eye{0.0f, kEyeHeight, 3.0f};
     Player& newPlayer = world.Add<Player>(playerEntity);

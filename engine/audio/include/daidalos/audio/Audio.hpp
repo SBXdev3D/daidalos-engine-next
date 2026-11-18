@@ -97,6 +97,18 @@ struct AcousticMaterial {
     bool operator==(const AcousticMaterial&) const = default;
 };
 
+/// How far the sounds' paths around obstacles are (ADR-0066).
+enum class PathingState : std::uint8_t {
+    /// Not asked for: sounds behind a wall are muffled, whatever way around there is.
+    None,
+    /// Probes placed and paths baking, on a worker thread.
+    Baking,
+    /// Sounds go around obstacles, through open doors.
+    Ready,
+    /// The geometry has no floor to place probes on.
+    Failed,
+};
+
 /// The material of a surface by its name, as glTF extras {"surface": ...} give it (concrete, metal, wood,
 /// glass, tile, cloth, flesh, stone, plaster, brick, gravel), from Steam Audio's measured presets; anything
 /// else is generic.
@@ -142,6 +154,12 @@ public:
     std::size_t AddMovableAcousticMesh(std::span<const glm::vec3> positions, std::span<const std::uint32_t> indices,
                                        const AcousticMaterial& material, const glm::mat4& transform);
     void MoveAcousticMesh(std::size_t mesh, const glm::mat4& transform);
+    /// Once the static geometry is in: places probes over its floors, spacing meters apart, and bakes the
+    /// paths between them on a worker thread (ADR-0066). Sounds then come around corners and through open
+    /// doors, from where the way leads. Rooms also get their reverb either way, from reflections traced around
+    /// the listener.
+    void StartPathing(float spacing = 3.0f);
+    [[nodiscard]] PathingState Pathing() const;
     /// Whether sounds are heard through the geometry and an HRTF.
     [[nodiscard]] bool HearsGeometry() const;
 
@@ -150,6 +168,8 @@ public:
     void Update();
     /// Milliseconds the last Update spent simulating, for the sound's CPU budget.
     [[nodiscard]] double LastSimulationMilliseconds() const;
+    /// Milliseconds the last round of the worker thread took, every 50 ms: the reverb and the paths.
+    [[nodiscard]] double WorkerMilliseconds() const;
 
 private:
     struct State;

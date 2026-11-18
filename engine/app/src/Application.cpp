@@ -722,8 +722,9 @@ void Application::LogGpuTimes() {
         DAI_LOG_INFO(kModule, "GPU {:7.3f} ms  {}", milliseconds, name);
     }
     DAI_LOG_INFO(kModule, "GPU {:7.3f} ms  in all, over {} frames", total, kFrames);
-    DAI_LOG_INFO(kModule, "CPU {:7.3f} ms  sound simulation, {} voices", m_soundMilliseconds,
-                 m_currentScene->Sounds().VoiceCount());
+    DAI_LOG_INFO(kModule, "CPU {:7.3f} ms  sound simulation, {} voices; {:.3f} ms a round of its worker",
+                 m_soundMilliseconds, m_currentScene->Sounds().VoiceCount(),
+                 m_currentScene->Sounds().WorkerMilliseconds());
     logging::Flush();
     m_gpuTimesLogged = true;
 }

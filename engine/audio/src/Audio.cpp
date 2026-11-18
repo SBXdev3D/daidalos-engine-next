@@ -189,7 +189,7 @@ struct SoundWorld::State {
     struct Voice {
         // Destroyed last to first: the sound stops before the node it plays into goes.
         Source source;
-        std::unique_ptr<steam::SpatialNode> node;
+        std::shared_ptr<steam::SpatialNode> node;
         std::unique_ptr<Sound> sound;
         glm::vec3 position{0.0f};
         float minDistance = 1.0f;
@@ -206,7 +206,9 @@ struct SoundWorld::State {
     /// The acoustic scene, made when the first geometry or spatial voice needs it.
     steam::Scene* AcousticScene() {
         if (scene == nullptr && Steam() != nullptr) {
-            scene = steam::Scene::Create(*Steam());
+            // Its reverb plays on the effects bus.
+            scene = steam::Scene::Create(*Steam(), Engine(),
+                                         reinterpret_cast<ma_node*>(engine->Internals().Group(Bus::Effects)));
         }
         return scene.get();
     }
@@ -219,7 +221,7 @@ struct SoundWorld::State {
             Voice& voice = voices.Get(handle);
             if (voice.node != nullptr && voice.source.source != nullptr) {
                 simulated.push_back(
-                    {voice.source.source, voice.position, voice.minDistance, voice.maxDistance, voice.node.get()});
+                    {voice.source.source, voice.position, voice.minDistance, voice.maxDistance, voice.node});
             }
         }
         scene->Simulate(listener, simulated);
@@ -296,7 +298,8 @@ VoiceHandle SoundWorld::Play(ClipHandle clip, const PlayOptions& options) {
     // and the HRTF (ADR-0065); miniaudio pans it otherwise.
     State::Voice playing;
     if (options.position.has_value() && state.AcousticScene() != nullptr) {
-        playing.node = steam::SpatialNode::Create(*state.Steam(), engine, reinterpret_cast<ma_node*>(group));
+        playing.node = steam::SpatialNode::Create(*state.Steam(), engine, reinterpret_cast<ma_node*>(group),
+                                                  state.scene->Reverb());
     }
     auto voice = std::make_unique<Sound>();
     const bool steamed = playing.node != nullptr;
@@ -356,8 +359,8 @@ void SoundWorld::SetPosition(VoiceHandle voice, const glm::vec3& position) {
         if (found->node == nullptr) {
             ma_sound_set_position(found->sound->Get(), position.x, position.y, position.z);
         } else if (state.scene != nullptr) {
-            state.scene->Place(state.listener, {found->source.source, position, found->minDistance, found->maxDistance,
-                                                found->node.get()});
+            state.scene->Place(state.listener,
+                               {found->source.source, position, found->minDistance, found->maxDistance, found->node});
         }
     }
 }
@@ -420,6 +423,10 @@ double SoundWorld::LastSimulationMilliseconds() const {
     return m_state->simulationMilliseconds;
 }
 
+double SoundWorld::WorkerMilliseconds() const {
+    return m_state->scene != nullptr ? m_state->scene->RoundMilliseconds() : 0.0;
+}
+
 bool SoundWorld::HearsGeometry() const {
     return m_state->Steam() != nullptr;
 }
@@ -438,6 +445,16 @@ std::size_t SoundWorld::AddMovableAcousticMesh(std::span<const glm::vec3> positi
         return scene->AddMovable(positions, indices, material, transform);
     }
     return 0;
+}
+
+void SoundWorld::StartPathing(float spacing) {
+    if (steam::Scene* scene = m_state->AcousticScene()) {
+        scene->StartPathing(spacing);
+    }
+}
+
+PathingState SoundWorld::Pathing() const {
+    return m_state->scene != nullptr ? m_state->scene->Pathing() : PathingState::None;
 }
 
 void SoundWorld::MoveAcousticMesh(std::size_t mesh, const glm::mat4& transform) {

@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -19,6 +20,7 @@
 #include <numbers>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace daidalos;
@@ -372,4 +374,95 @@ TEST_F(AudioTest, ASoundBehindADoorIsMuffledUntilItOpens) {
     RecordProperty("opened", std::to_string(opened));
     EXPECT_LT(closed, opened * 0.3f);
     EXPECT_GT(closed, 0.0f);
+}
+
+namespace {
+
+// A quad of four corners, two triangles, facing both ways.
+void AddQuad(std::vector<glm::vec3>& positions, std::vector<std::uint32_t>& indices, glm::vec3 a, glm::vec3 b,
+             glm::vec3 c, glm::vec3 d) {
+    const auto first = static_cast<std::uint32_t>(positions.size());
+    positions.insert(positions.end(), {a, b, c, d});
+    indices.insert(indices.end(), {first, first + 1, first + 2, first, first + 2, first + 3});
+}
+
+// Six faces of a box.
+void AddRoom(std::vector<glm::vec3>& positions, std::vector<std::uint32_t>& indices, glm::vec3 low, glm::vec3 high) {
+    const auto at = [&](int x, int y, int z) {
+        return glm::vec3(x != 0 ? high.x : low.x, y != 0 ? high.y : low.y, z != 0 ? high.z : low.z);
+    };
+    AddQuad(positions, indices, at(0, 0, 0), at(1, 0, 0), at(1, 0, 1), at(0, 0, 1));
+    AddQuad(positions, indices, at(0, 1, 0), at(0, 1, 1), at(1, 1, 1), at(1, 1, 0));
+    AddQuad(positions, indices, at(0, 0, 0), at(0, 1, 0), at(1, 1, 0), at(1, 0, 0));
+    AddQuad(positions, indices, at(0, 0, 1), at(1, 0, 1), at(1, 1, 1), at(0, 1, 1));
+    AddQuad(positions, indices, at(0, 0, 0), at(0, 0, 1), at(0, 1, 1), at(0, 1, 0));
+    AddQuad(positions, indices, at(1, 0, 0), at(1, 1, 0), at(1, 1, 1), at(1, 0, 1));
+}
+
+} // namespace
+
+TEST_F(AudioTest, ARoomRingsAfterTheSoundStops) {
+    // In a closed concrete room, reflections traced around the listener give a reverb (ADR-0066): after the
+    // sound stops, its tail goes on.
+    if (!m_sounds->HearsGeometry()) {
+        GTEST_SKIP() << "Steam Audio did not start";
+    }
+    std::vector<glm::vec3> positions;
+    std::vector<std::uint32_t> indices;
+    AddRoom(positions, indices, {-6.0f, -2.0f, -8.0f}, {6.0f, 4.0f, 4.0f});
+    m_sounds->AddAcousticMesh(positions, indices, audio::AcousticMaterialOf("concrete"));
+    const audio::VoiceHandle voice =
+        m_sounds->Play(Clip("long.wav"), {.position = glm::vec3(0.0f, 0.0f, -4.0f), .loop = true});
+    // The worker traces the room in its own time.
+    for (int round = 0; round < 20; ++round) {
+        m_sounds->Update();
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    for (int block = 0; block < 5; ++block) {
+        Mix();
+    }
+    m_sounds->Stop(voice);
+    Mix(); // The voices' last block.
+    const float tail = Mix().left;
+    RecordProperty("tail", std::to_string(tail));
+    EXPECT_GT(tail, 0.001f);
+}
+
+TEST_F(AudioTest, SoundFindsTheWayAroundAWall) {
+    // A wall between the sound and the listener, with an opening to the side: muffled through the wall, the sound
+    // also comes around once the paths are baked (ADR-0066).
+    if (!m_sounds->HearsGeometry()) {
+        GTEST_SKIP() << "Steam Audio did not start";
+    }
+    std::vector<glm::vec3> positions;
+    std::vector<std::uint32_t> indices;
+    // A floor for the probes, 1.5 m below the ears; a wall across it from x = -10 to 2, leaving 2 to 10 open.
+    AddQuad(positions, indices, {-10.0f, -1.5f, -10.0f}, {10.0f, -1.5f, -10.0f}, {10.0f, -1.5f, 10.0f},
+            {-10.0f, -1.5f, 10.0f});
+    AddQuad(positions, indices, {-10.0f, -1.5f, -3.0f}, {2.0f, -1.5f, -3.0f}, {2.0f, 3.0f, -3.0f},
+            {-10.0f, 3.0f, -3.0f});
+    m_sounds->AddAcousticMesh(positions, indices, audio::AcousticMaterialOf("concrete"));
+    m_sounds->SetListener({0.0f, 0.0f, 0.0f}, math::kForward, math::kUp);
+    const ClipHandle clip = Clip("long.wav");
+    const auto level = [&] {
+        const audio::VoiceHandle voice = m_sounds->Play(clip, {.position = glm::vec3(0.0f, 0.0f, -6.0f), .loop = true});
+        for (int round = 0; round < 8; ++round) {
+            m_sounds->Update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        }
+        Mix();
+        const float heard = Mix().left;
+        m_sounds->Stop(voice);
+        return heard;
+    };
+    const float muffled = level();
+    m_sounds->StartPathing(1.0f);
+    for (int wait = 0; wait < 600 && m_sounds->Pathing() == audio::PathingState::Baking; ++wait) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    ASSERT_EQ(m_sounds->Pathing(), audio::PathingState::Ready);
+    const float around = level();
+    RecordProperty("muffled", std::to_string(muffled));
+    RecordProperty("around", std::to_string(around));
+    EXPECT_GT(around, muffled * 2.0f);
 }
