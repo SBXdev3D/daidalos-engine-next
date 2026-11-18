@@ -710,6 +710,7 @@ void Application::LogGpuTimes() {
     for (const renderer::PassTime& pass : m_renderer->GpuTimes()) {
         m_gpuTimes[std::string(pass.name)] += pass.milliseconds / kFrames;
     }
+    m_soundMilliseconds += m_currentScene->Sounds().LastSimulationMilliseconds() / kFrames;
     if (++m_gpuTimeFrames < kFrames) {
         return;
     }
@@ -721,6 +722,8 @@ void Application::LogGpuTimes() {
         DAI_LOG_INFO(kModule, "GPU {:7.3f} ms  {}", milliseconds, name);
     }
     DAI_LOG_INFO(kModule, "GPU {:7.3f} ms  in all, over {} frames", total, kFrames);
+    DAI_LOG_INFO(kModule, "CPU {:7.3f} ms  sound simulation, {} voices", m_soundMilliseconds,
+                 m_currentScene->Sounds().VoiceCount());
     logging::Flush();
     m_gpuTimesLogged = true;
 }

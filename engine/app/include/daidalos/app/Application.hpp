@@ -225,6 +225,7 @@ private:
     std::optional<core::CVar<std::int64_t>> m_logGpuTimes;
     std::map<std::string, double> m_gpuTimes;
     std::uint32_t m_gpuTimeFrames = 0;
+    double m_soundMilliseconds = 0.0;
     bool m_gpuTimesLogged = false;
     std::optional<core::CVar<std::string>> m_upscaler;
     std::optional<core::CVar<std::string>> m_toneMapper;
