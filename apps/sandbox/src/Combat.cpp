@@ -1022,6 +1022,20 @@ Threat ZombieThreat(scene::Scene& scene, const glm::vec3& feet) {
     return threat;
 }
 
+void HideWeapons(scene::Scene& scene, ecs::Entity playerEntity) {
+    ecs::World& world = scene.World();
+    const Arsenal* arsenal = world.TryGet<Arsenal>(playerEntity);
+    if (arsenal == nullptr) {
+        return;
+    }
+    for (const ecs::Entity model : arsenal->models) {
+        if (auto* transform = world.TryGet<ecs::LocalTransform>(model)) {
+            transform->scale = glm::vec3(0.0f);
+        }
+    }
+    ecs::PropagateTransforms(world);
+}
+
 void PlaceZombies(scene::Scene& scene) {
     const float alpha = scene.FixedAlpha();
     scene.World().Each<Zombie, ecs::LocalTransform>(

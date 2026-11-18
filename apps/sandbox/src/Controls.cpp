@@ -41,6 +41,7 @@ constexpr std::array kControls{
     Control{"shotgun",      SelectShotgun,    ControlRole::Button,   "Digit2",    "PadDpadRight"},
     Control{"quick_save",   QuickSave,        ControlRole::Button,   "F6",        ""},
     Control{"quick_load",   QuickLoad,        ControlRole::Button,   "F9",        ""},
+    Control{"photo_mode",   Photograph,       ControlRole::Button,   "P",         "PadRightStick"},
 };
 // clang-format on
 
@@ -91,7 +92,8 @@ std::optional<ActionMap::Button> BoundButton(const core::CVarRegistry& cvars, co
 
 bool IsReserved(const ActionMap::Button& button) {
     if (const auto* key = std::get_if<Key>(&button)) {
-        return *key == Key::Escape || *key == Key::Tab || *key == Key::F5 || *key == Key::Grave || *key == Key::Unknown;
+        return *key == Key::Escape || *key == Key::Tab || *key == Key::F5 || *key == Key::F12 || *key == Key::Grave ||
+               *key == Key::H || *key == Key::Unknown;
     }
     if (const auto* pad = std::get_if<GamepadButton>(&button)) {
         return *pad == GamepadButton::Start || *pad == GamepadButton::Back || *pad == GamepadButton::Guide;

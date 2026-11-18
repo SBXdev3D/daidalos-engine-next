@@ -13,6 +13,8 @@ dai_add_app(NAME sandbox
         src/Main.cpp
         src/Menus.cpp
         src/Menus.hpp
+        src/PhotoMode.cpp
+        src/PhotoMode.hpp
     DEPS
         daidalos::app
         daidalos::scene

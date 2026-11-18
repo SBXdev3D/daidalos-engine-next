@@ -5,7 +5,7 @@
 
 A key the code or a sequence names but assets/Text/en.json lacks shows as the key itself on screen. This
 collects the string literals of the apps' sources and the sequences' text and caption fields that look like
-keys (menu., options., hud., message., caption., subtitle., speaker., language.) and reports the missing ones.
+keys (menu., options., hud., message., caption., subtitle., speaker., language., photo.) and reports the missing ones.
 Exits 1 when it finds any.
 """
 
@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-KEY = re.compile(r'"((?:menu|options|hud|message|caption|subtitle|speaker|language)\.[a-z0-9_.]+)"')
+KEY = re.compile(r'"((?:menu|options|hud|message|caption|subtitle|speaker|language|photo)\.[a-z0-9_.]+)"')
 
 
 def main():

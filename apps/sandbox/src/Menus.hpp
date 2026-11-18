@@ -18,7 +18,7 @@
 namespace sandbox {
 
 /// The screens drawn over the game. None is playing.
-enum class Screen : std::uint8_t { None, Main, Pause, Options, Calibration, Dead, Complete };
+enum class Screen : std::uint8_t { None, Main, Pause, Options, Calibration, Dead, Complete, Photo };
 
 /// The pages of the options screen, as tabs.
 enum class OptionsPage : std::uint8_t { Video, Sound, Controls, Accessibility };
