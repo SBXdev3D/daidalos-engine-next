@@ -587,6 +587,59 @@ void PlayImpact(scene::Scene& scene, ecs::Entity player, std::string_view surfac
 
 namespace {
 
+// Picking things up (ADR-0073): how far, how heavy, where they are carried, how hard they are thrown.
+constexpr float kReach = 2.2f;
+constexpr float kMaxCarried = 40.0f;
+constexpr float kCarryDistance = 1.3f;
+constexpr float kThrowSpeed = 9.0f;
+
+/// The player's hands: interact picks up the loose object in front, or drops the one held; firing throws it. A
+/// held object follows a point in front of the eyes, pulled there by its velocity, so that walls stop it.
+void UpdateHands(scene::Scene& scene, ecs::Entity entity, float step) {
+    ecs::World& world = scene.World();
+    physics::PhysicsWorld& physics = scene.Physics();
+    Player& player = world.Get<Player>(entity);
+    const ecs::LocalTransform& eye = world.Get<ecs::LocalTransform>(entity);
+    const glm::vec3 look = eye.rotation * math::kForward;
+    if (player.dead && player.held.IsValid()) {
+        player.held = {};
+    }
+    if (player.interactPressed) {
+        if (player.held.IsValid()) {
+            player.held = {};
+            player.interactPressed = false;
+        } else if (const std::optional<physics::RayHit> hit =
+                       physics.CastRay(eye.translation, look, kReach, physics.CharacterBody(player.character));
+                   hit.has_value() && physics.IsDynamic(hit->body) && physics.BodyMass(hit->body) <= kMaxCarried) {
+            player.held = hit->body;
+            // The hands are full: the door behind waits.
+            player.interactPressed = false;
+        }
+    }
+    if (!player.held.IsValid()) {
+        return;
+    }
+    if (player.throwPressed) {
+        physics.SetBodyVelocity(player.held, look * kThrowSpeed + glm::vec3(0.0f, 1.0f, 0.0f));
+        player.held = {};
+        scene.MakeNoise({.position = eye.translation, .reach = 8.0f, .maker = entity});
+        return;
+    }
+    const glm::vec3 target = eye.translation + look * kCarryDistance;
+    const glm::vec3 offset = target - physics.BodyPosition(player.held);
+    // Too far from the hands, as behind a wall it caught on: it drops.
+    if (glm::length(offset) > kReach) {
+        player.held = {};
+        return;
+    }
+    glm::vec3 velocity = offset / std::max(step, 1e-3f) * 0.4f;
+    const float speed = glm::length(velocity);
+    if (speed > 8.0f) {
+        velocity *= 8.0f / speed;
+    }
+    physics.SetBodyVelocity(player.held, velocity, glm::vec3(0.0f));
+}
+
 /// Footsteps go by the distance walked, so that they follow the speed of the player.
 void PlayMovementSounds(scene::Scene& scene, ecs::Entity entity, bool climbing, bool grounded) {
     ecs::World& world = scene.World();
@@ -1222,6 +1275,11 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
     fixed.Add("Movement", [&, player](ecs::World& world, core::Seconds step) {
         if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
             MovePlayer(entity, scene, input, actions, static_cast<float>(step.count()));
+        }
+    });
+    fixed.Add("Hands", [&scene, player](ecs::World& world, core::Seconds step) {
+        if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
+            UpdateHands(scene, entity, static_cast<float>(step.count()));
         }
     });
     fixed.Add("Doors", [&scene, player](ecs::World& world, core::Seconds step) {

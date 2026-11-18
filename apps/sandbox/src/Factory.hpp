@@ -142,6 +142,10 @@ struct Player {
     bool flashlightOn = false;
     /// Its sway, battery and faults (ADR-0058).
     FlashlightState torch;
+    /// The loose object in the player's hands (ADR-0073), carried in front of the eyes; firing throws it.
+    daidalos::physics::BodyId held;
+    /// Fire was pressed while holding: the object is thrown, and the weapon waits for the next press.
+    bool throwPressed = false;
     /// Where the camera looked last frame, from which the beam's lag follows a turn.
     glm::vec2 lastLook{0.0f};
     /// Lights that follow the camera, as its children.

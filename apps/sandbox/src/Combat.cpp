@@ -915,7 +915,15 @@ void UpdateWeapons(scene::Scene& scene, ecs::Entity playerEntity, const input::I
             weapon.reserve -= moved;
             player.reloading = false;
         }
-        const bool fire = actions.IsDown(input, Fire) || actions.Value(input, FireTrigger) > 0.5f;
+        bool fire = actions.IsDown(input, Fire) || actions.Value(input, FireTrigger) > 0.5f;
+        // Hands full: firing throws what they hold (ADR-0073), and the gun waits for the trigger to come up.
+        if (player.held.IsValid() || player.throwPressed) {
+            player.throwPressed = player.throwPressed || (fire && player.held.IsValid());
+            if (!fire) {
+                player.throwPressed = false;
+            }
+            fire = false;
+        }
         const bool reload = actions.WasPressed(input, Reload) || (fire && weapon.magazine == 0);
         if (player.weaponBusy <= 0.0f && !player.reloading) {
             if (fire && weapon.magazine > 0) {

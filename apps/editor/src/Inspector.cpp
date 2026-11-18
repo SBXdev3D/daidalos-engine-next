@@ -117,6 +117,16 @@ bool InspectWet(scene::WetVolume& wet) {
     return changed;
 }
 
+bool InspectBody(scene::Body& body) {
+    bool changed = ImGui::DragFloat3("Size (m)", &body.size.x, 0.01f, 0.02f, 20.0f, "%.2f");
+    changed |= ImGui::DragFloat3("Center (m)", &body.center.x, 0.01f, -20.0f, 20.0f, "%.2f");
+    changed |= ImGui::DragFloat("Mass (kg)", &body.mass, 0.5f, 0.1f, 5000.0f, "%.1f");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Up to 40 kg, the player can pick it up and throw it");
+    }
+    return changed;
+}
+
 bool InspectDecal(scene::Decal& decal) {
     bool changed = ImGui::Checkbox("Enabled", &decal.enabled);
     changed |= InputString("Texture", decal.texture);
@@ -357,12 +367,17 @@ bool InspectComponents(scene::LevelEntity& entity) {
     changed |= Section("Decal", entity.decal, InspectDecal);
     changed |= Section("Wet", entity.wet, InspectWet);
     changed |= Section("Trigger", entity.trigger, InspectTrigger);
+    changed |= Section("Loose object", entity.body, InspectBody);
 
     ImGui::Separator();
     if (ImGui::Button("Add a component")) {
         ImGui::OpenPopup("add component");
     }
     if (ImGui::BeginPopup("add component")) {
+        if (!entity.body && ImGui::MenuItem("Loose object")) {
+            entity.body = scene::Body{};
+            changed = true;
+        }
         if (!entity.trigger && ImGui::MenuItem("Trigger")) {
             entity.trigger = scene::Trigger{};
             changed = true;
