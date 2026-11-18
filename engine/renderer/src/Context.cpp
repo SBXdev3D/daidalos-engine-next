@@ -111,7 +111,7 @@ bool Context::Toggle(std::string_view label, const Rect& rect, bool& value) {
     }
     DrawBackground(rect, widget.focused);
     DrawLabel(label, rect, widget.focused, Align::Start);
-    DrawLabel(value ? "ON" : "OFF", rect, widget.focused, Align::End);
+    DrawLabel(value ? m_style.onText : m_style.offText, rect, widget.focused, Align::End);
     return changed;
 }
 

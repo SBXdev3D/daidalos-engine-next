@@ -77,6 +77,15 @@ struct IndirectLightConfig {
 };
 
 /// How the frame's light becomes the image a display shows (ADR-0048).
+/// What the image is corrected for, for viewers who tell colors apart less (ADR-0075): the confusion of each
+/// kind of color blindness is moved into differences they see.
+enum class ColorVision : std::uint8_t {
+    Normal,
+    Protanopia,   // Red weak.
+    Deuteranopia, // Green weak.
+    Tritanopia,   // Blue weak.
+};
+
 struct ImageConfig {
     /// The eye adapts to the light, within the range the scene's atmosphere sets. Off, it stays at the
     /// atmosphere's ev100.
@@ -101,6 +110,8 @@ struct ImageConfig {
     /// Motion blur with temporal antialiasing: the fraction of the frame's time the shutter is open, 0 for
     /// none.
     float motionBlur = 0.0f;
+    /// Corrects the whole image, interface included, for a kind of color blindness.
+    ColorVision colorVision = ColorVision::Normal;
 };
 
 /// The resolution the scene is rendered at, below the output's, and how it moves to hold the frame rate

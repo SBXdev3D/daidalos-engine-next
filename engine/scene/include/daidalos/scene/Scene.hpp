@@ -16,7 +16,9 @@
 #include <daidalos/scene/Perception.hpp>
 #include <daidalos/scene/Sequence.hpp>
 #include <daidalos/scene/Systems.hpp>
+#include <daidalos/scene/Text.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <deque>
 #include <filesystem>
@@ -115,6 +117,14 @@ public:
     [[nodiscard]] std::vector<std::string> TakeEvents() { return std::exchange(m_events, {}); }
     /// Whether a camera cue has the camera.
     [[nodiscard]] bool InCinematic() const { return m_cinematic.has_value(); }
+    /// Shows a subtitle or a sound's caption (ADR-0075) for its seconds; the same text shown again starts
+    /// over rather than showing twice. The game draws them, as its settings say.
+    void ShowCaption(Caption caption);
+    [[nodiscard]] std::span<const Caption> Captions() const { return m_captions; }
+    static constexpr std::size_t kMaxCaptions = 4;
+    /// How much the camera shakes, from 0 (not at all) to 1 (ADR-0075): an accessibility setting.
+    void SetShakeScale(float scale) { m_shakeScale = std::clamp(scale, 0.0f, 1.0f); }
+    [[nodiscard]] float ShakeScale() const { return m_shakeScale; }
 
     /// A sound that AI can hear (ADR-0070), kept for kNoiseMemory seconds.
     void MakeNoise(const Noise& noise) { m_noises.push_back(noise); }
@@ -180,6 +190,8 @@ private:
     float m_shake = 0.0f;
     float m_shakeTime = 0.0f;
     float m_shakeLength = 0.0f;
+    float m_shakeScale = 1.0f;
+    std::vector<Caption> m_captions;
     std::vector<std::string> m_events;
     audio::SoundWorld m_sounds;
     ecs::Schedule m_fixedSystems;

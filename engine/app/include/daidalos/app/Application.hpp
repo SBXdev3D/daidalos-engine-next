@@ -249,6 +249,7 @@ private:
     std::optional<core::CVar<double>> m_chromaticAberration;
     std::optional<core::CVar<double>> m_lensDirt;
     std::optional<core::CVar<double>> m_motionBlur;
+    std::optional<core::CVar<std::string>> m_colorVision;
     std::optional<core::CVar<std::int64_t>> m_fogSlices;
     std::optional<core::CVar<std::int64_t>> m_fogTile;
     std::optional<core::CVar<double>> m_particleDensity;
