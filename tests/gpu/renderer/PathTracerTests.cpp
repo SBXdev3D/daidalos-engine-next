@@ -72,6 +72,41 @@ renderer::Atmosphere Dark() {
     return {.ev100 = 3.0f};
 }
 
+// How PathTracerTest::Rasterize draws, outside the class so that its defaults exist where Rasterize is declared.
+struct RasterOptions {
+    std::uint32_t frames = 1;
+    bool denoise = false;
+    /// Indirect light from this global illumination, whose cache the frames fill (ADR-0040).
+    renderer::GlobalIllumination* indirect = nullptr;
+    /// Frames drawn first and left out of the average, while the cache fills.
+    std::uint32_t warmup = 0;
+    /// With indirect: reflections traced along each pixel's specular lobe (ADR-0042).
+    bool reflections = false;
+    /// With reflections: the denoiser follows them with their hit distance.
+    bool reprojectReflections = true;
+    /// Changes the view before each frame is drawn, warmup included.
+    std::function<void(SceneView&, std::uint32_t)> animate;
+    /// How ReSTIR DI reuses its samples (ADR-0044).
+    renderer::DirectLightingSettings restir;
+    /// With indirect: how its light is traced (ADR-0045).
+    renderer::GlobalIlluminationSettings gi;
+    /// Called with each frame drawn after the warmup, through the denoiser if there is one, and its number.
+    std::function<void(const Image&, std::uint32_t)> eachFrame;
+    /// Each frame is jittered and resolved by temporal antialiasing, which upscales it from this scale of
+    /// the extent (ADR-0049); the last frame resolved is returned.
+    bool resolve = false;
+    float renderScale = 1.0f;
+    /// With resolve: AMD FSR 3.1 upscales the frames instead of the engine's resolve (ADR-0050).
+    bool fsr = false;
+    /// Volumetric fog in a grid of this size (ADR-0051); none without.
+    std::optional<renderer::FroxelGrid> fog;
+    /// Tints of the lit scene (MeshPass::FrameTargets::debugFlags): decals 1, wetness 2.
+    std::uint32_t debugFlags = 0;
+    /// Simulates the view's particles each frame, spawned on the first, and puts them in the frame's
+    /// structure (ADR-0062). They are not drawn: only what rays see of them shows.
+    renderer::ParticlePass* particles = nullptr;
+};
+
 class PathTracerTest : public GpuTest {
 protected:
     void SetUp() override {
@@ -159,40 +194,6 @@ protected:
         EXPECT_EQ(m_tracer->Samples(), samples);
         return Read(m_tracer->Output(), extent);
     }
-
-    struct RasterOptions {
-        std::uint32_t frames = 1;
-        bool denoise = false;
-        /// Indirect light from this global illumination, whose cache the frames fill (ADR-0040).
-        renderer::GlobalIllumination* indirect = nullptr;
-        /// Frames drawn first and left out of the average, while the cache fills.
-        std::uint32_t warmup = 0;
-        /// With indirect: reflections traced along each pixel's specular lobe (ADR-0042).
-        bool reflections = false;
-        /// With reflections: the denoiser follows them with their hit distance.
-        bool reprojectReflections = true;
-        /// Changes the view before each frame is drawn, warmup included.
-        std::function<void(SceneView&, std::uint32_t)> animate;
-        /// How ReSTIR DI reuses its samples (ADR-0044).
-        renderer::DirectLightingSettings restir;
-        /// With indirect: how its light is traced (ADR-0045).
-        renderer::GlobalIlluminationSettings gi;
-        /// Called with each frame drawn after the warmup, through the denoiser if there is one, and its number.
-        std::function<void(const Image&, std::uint32_t)> eachFrame;
-        /// Each frame is jittered and resolved by temporal antialiasing, which upscales it from this scale of
-        /// the extent (ADR-0049); the last frame resolved is returned.
-        bool resolve = false;
-        float renderScale = 1.0f;
-        /// With resolve: AMD FSR 3.1 upscales the frames instead of the engine's resolve (ADR-0050).
-        bool fsr = false;
-        /// Volumetric fog in a grid of this size (ADR-0051); none without.
-        std::optional<renderer::FroxelGrid> fog;
-        /// Tints of the lit scene (MeshPass::FrameTargets::debugFlags): decals 1, wetness 2.
-        std::uint32_t debugFlags = 0;
-        /// Simulates the view's particles each frame, spawned on the first, and puts them in the frame's
-        /// structure (ADR-0062). They are not drawn: only what rays see of them shows.
-        renderer::ParticlePass* particles = nullptr;
-    };
 
     // What the G-buffer and the lighting draw of the view, in linear HDR. The view is drawn frames times, each with the
     // next noise (ADR-0039): through the denoiser, the last frame is returned; without, their average.
@@ -1751,18 +1752,18 @@ struct UpscalingScores {
 
 } // namespace
 
+// What UpscalingTest's frames are lit by: indirect light and its reflections, or direct light alone.
+struct Lighting {
+    bool indirect = true;
+    bool reflections = true;
+};
+
 class UpscalingTest : public PathTracerTest {
 protected:
     static constexpr rhi::Extent kExtent{320, 180};
     static constexpr std::uint32_t kStill = 48;
     static constexpr std::uint32_t kPan = 32;
     static constexpr float kDegreesPerFrame = 0.5f;
-
-    // What the frames are lit by: indirect light and its reflections, or direct light alone.
-    struct Lighting {
-        bool indirect = true;
-        bool reflections = true;
-    };
 
     // The frames of the view, still then turning, at the extent, rendered at scale of it and upscaled, through
     // the lighting and the denoiser.

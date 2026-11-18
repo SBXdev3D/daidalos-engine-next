@@ -57,7 +57,7 @@ inline constexpr std::uint32_t kLightMoved = 2;
 
 /// The lights of one source of a frame, consecutive in its list: an analytic light, or the triangles of an
 /// emissive draw, and what names the source from frame to frame.
-struct LightRange {
+struct LightSourceRange {
     std::uint64_t key = 0;
     std::uint32_t first = 0;
     std::uint32_t count = 0;
@@ -66,7 +66,7 @@ struct LightRange {
 /// Where each light of the previous frame is in this frame's list, or kGone (ADR-0044): a source found
 /// again by its key keeps its lights if it has as many. lightCount is the previous frame's number of lights.
 inline constexpr std::uint32_t kGone = 0xFFFFFFFF;
-[[nodiscard]] std::vector<std::uint32_t> MapLights(std::span<const LightRange> previous,
-                                                   std::span<const LightRange> current, std::uint32_t lightCount);
+[[nodiscard]] std::vector<std::uint32_t> MapLights(std::span<const LightSourceRange> previous,
+                                                   std::span<const LightSourceRange> current, std::uint32_t lightCount);
 
 } // namespace daidalos::renderer

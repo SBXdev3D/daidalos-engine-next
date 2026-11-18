@@ -870,7 +870,7 @@ core::Result<MeshPass::FrameLights> MeshPass::PrepareLights(FrameSlot& slot, con
     auto* lights = reinterpret_cast<LightData*>(m_device->Mapped(slot.lights).data());
     std::vector<float> powers;
     std::vector<float> fogPowers;
-    std::vector<LightRange> ranges;
+    std::vector<LightSourceRange> ranges;
     // Lights that moved since the last frame, whose light the histories must follow at once.
     std::vector<bool> moved;
     std::unordered_map<std::uint64_t, LightPlace> places;

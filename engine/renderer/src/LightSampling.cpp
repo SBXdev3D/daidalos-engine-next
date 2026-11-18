@@ -100,15 +100,15 @@ std::uint64_t IdentityKey(SceneId id, std::uint32_t position) {
     return id != 0 ? id : (kPositional | position);
 }
 
-std::vector<std::uint32_t> MapLights(std::span<const LightRange> previous, std::span<const LightRange> current,
-                                     std::uint32_t lightCount) {
-    std::unordered_map<std::uint64_t, const LightRange*> where;
+std::vector<std::uint32_t> MapLights(std::span<const LightSourceRange> previous,
+                                     std::span<const LightSourceRange> current, std::uint32_t lightCount) {
+    std::unordered_map<std::uint64_t, const LightSourceRange*> where;
     where.reserve(current.size());
-    for (const LightRange& range : current) {
+    for (const LightSourceRange& range : current) {
         where.emplace(range.key, &range);
     }
     std::vector<std::uint32_t> mapped(lightCount, kGone);
-    for (const LightRange& range : previous) {
+    for (const LightSourceRange& range : previous) {
         const auto found = where.find(range.key);
         if (found == where.end() || found->second->count != range.count) {
             continue;
