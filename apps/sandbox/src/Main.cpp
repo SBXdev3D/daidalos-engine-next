@@ -89,6 +89,11 @@ public:
                                    .Register<double>("sandbox.flashlight_battery", 900.0,
                                                      "Seconds a full flashlight battery lasts; 0 never runs down")
                                    .Get());
+        m_settings.classicMusic =
+            app.CVars()
+                .Register<bool>("sandbox.classic_music", false,
+                                "Play the old demo's music track instead of the score that follows the danger")
+                .Get();
         m_settings.aperture = static_cast<float>(
             app.CVars()
                 .Register<double>("sandbox.aperture", 0.0,

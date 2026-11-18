@@ -44,4 +44,12 @@ void UpdateZombies(daidalos::scene::Scene& scene, daidalos::ecs::Entity player, 
 /// Draws the zombies between their last two fixed steps.
 void PlaceZombies(daidalos::scene::Scene& scene);
 
+/// How tense the moment is (ADR-0068), from 0 to 1, and how many zombies hunt the player: from the zombies
+/// chasing the player, the nearer the tenser, and those waiting nearby.
+struct Threat {
+    float tension = 0.0f;
+    int hunting = 0;
+};
+[[nodiscard]] Threat ZombieThreat(daidalos::scene::Scene& scene, const glm::vec3& feet);
+
 } // namespace sandbox

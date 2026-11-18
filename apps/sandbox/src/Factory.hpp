@@ -156,6 +156,8 @@ struct Settings {
     bool startWithFlashlight = false;
     /// Seconds a full flashlight battery lasts; 0 never runs down (ADR-0058).
     float flashlightBattery = 900.0f;
+    /// The old demo's music track instead of the layered score (ADR-0068).
+    bool classicMusic = false;
     /// The player's camera's lens (ADR-0063): an f-number, 0 for everything sharp, and its focus in meters.
     float aperture = 0.0f;
     float focusDistance = 3.0f;

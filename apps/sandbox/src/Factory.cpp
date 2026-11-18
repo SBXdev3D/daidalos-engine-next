@@ -112,6 +112,8 @@ struct LoopedSound {
     float volume = 1.0f;
     float minDistance = 1.5f;
     float maxDistance = 35.0f;
+    /// As loud as the entity's light shines (ADR-0068).
+    bool followsLight = false;
 };
 
 /// The sounds of the game, with the player's entity.
@@ -132,6 +134,13 @@ struct SoundBank {
     audio::ClipHandle alarm;
     audio::ClipHandle fan;
     audio::ClipHandle music;
+    /// The score in layers and its stingers (ADR-0068): scripts/make_music.py.
+    std::vector<audio::ClipHandle> tension;
+    std::vector<audio::ClipHandle> stingers;
+    audio::ClipHandle hum;
+    /// Seconds before the next stinger may play.
+    float stingerCooldown = 0.0f;
+    int hunting = 0;
     float stepDistance = 0.0f;
     float ladderDistance = 0.0f;
     std::size_t lastStep = 0;
@@ -308,6 +317,11 @@ SoundBank LoadSounds(scene::Scene& scene) {
     bank.alarm = LoadSound(scene, "alarm.wav");
     bank.fan = LoadSound(scene, "fan.wav");
     bank.music = LoadSound(scene, "enter_the_maze.ogg", {.stream = true});
+    for (int layer = 0; layer < 4; ++layer) {
+        bank.tension.push_back(LoadSound(scene, std::format("Music/tension_{}.wav", layer)));
+    }
+    bank.stingers = {LoadSound(scene, "Music/stinger_1.wav"), LoadSound(scene, "Music/stinger_2.wav")};
+    bank.hum = LoadSound(scene, "Music/hum.wav");
     const std::chrono::duration<double, std::milli> elapsed = std::chrono::steady_clock::now() - start;
     DAI_LOG_INFO("sandbox", "{} sounds loaded in {:.0f} ms", scene.Sounds().ClipCount(), elapsed.count());
     return bank;
@@ -315,11 +329,16 @@ SoundBank LoadSounds(scene::Scene& scene) {
 
 /// Starts what plays for the whole level. Waiting for the scene to run keeps a restart, which builds
 /// the new scene while the old one plays, from doubling every sound.
-void StartLoopedSounds(scene::Scene& scene, ecs::Entity playerEntity) {
+void StartLoopedSounds(scene::Scene& scene, ecs::Entity playerEntity, bool classicMusic) {
     ecs::World& world = scene.World();
     audio::SoundWorld& sounds = scene.Sounds();
     if (const SoundBank* bank = world.TryGet<SoundBank>(playerEntity)) {
-        sounds.Play(bank->music, {.volume = kMusicVolume, .loop = true, .bus = audio::Bus::Music});
+        // The score rises with the danger (ADR-0068); the old demo's track stays a setting away.
+        if (classicMusic) {
+            sounds.Play(bank->music, {.volume = kMusicVolume, .loop = true, .bus = audio::Bus::Music});
+        } else {
+            sounds.PlayLayers(bank->tension, kMusicVolume * 1.6f);
+        }
     }
     std::vector<std::pair<ecs::Entity, audio::VoiceHandle>> started;
     world.Each<LoopedSound, ecs::LocalTransform>(
@@ -333,7 +352,8 @@ void StartLoopedSounds(scene::Scene& scene, ecs::Entity playerEntity) {
                                                                   .maxDistance = sound.maxDistance}));
         });
     for (const auto& [entity, voice] : started) {
-        world.Add<scene::SoundEmitter>(entity, voice);
+        const LoopedSound& sound = world.Get<LoopedSound>(entity);
+        world.Add<scene::SoundEmitter>(entity, voice, sound.volume, sound.followsLight);
     }
 }
 
@@ -953,6 +973,19 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
         }
     }
     world.Add<BodySurfaces>(playerEntity, std::move(surfaces));
+    // Tired tubes hum, and their hum dies when they do (ADR-0068).
+    std::vector<ecs::Entity> humming;
+    world.Each<scene::Light>([&humming](ecs::Entity entity, const scene::Light& light) {
+        if (light.animation.pattern == scene::LightPattern::Buzz ||
+            light.animation.pattern == scene::LightPattern::Failing) {
+            humming.push_back(entity);
+        }
+    });
+    for (const ecs::Entity entity : humming) {
+        if (!world.Has<LoopedSound>(entity)) {
+            world.Add<LoopedSound>(entity, bank.hum, 0.18f, 0.8f, 10.0f, true);
+        }
+    }
     ecs::LocalTransform start;
     start.translation = eye;
     world.Add<ecs::LocalTransform>(playerEntity, start);
@@ -1112,11 +1145,30 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
             UpdatePickups(scene, entity, static_cast<float>(delta.count()));
         }
     });
-    systems.Add("Looped sounds", [&scene, player, started = false](ecs::World& /*world*/, core::Seconds) mutable {
-        if (!started) {
-            started = true;
-            StartLoopedSounds(scene, player());
+    systems.Add("Looped sounds",
+                [&scene, &settings, player, started = false](ecs::World& /*world*/, core::Seconds) mutable {
+                    if (!started) {
+                        started = true;
+                        StartLoopedSounds(scene, player(), settings.classicMusic);
+                    }
+                });
+    // The score follows the danger, and a stinger marks the moment a zombie starts the hunt (ADR-0068).
+    systems.Add("Tension", [&scene, player](ecs::World& world, core::Seconds delta) {
+        const ecs::Entity entity = player();
+        SoundBank* bank = world.IsAlive(entity) ? world.TryGet<SoundBank>(entity) : nullptr;
+        if (bank == nullptr) {
+            return;
         }
+        const Player& state = world.Get<Player>(entity);
+        const Threat threat = ZombieThreat(scene, state.feet);
+        scene.Sounds().SetTension(state.dead ? 0.0f : threat.tension);
+        bank->stingerCooldown = std::max(bank->stingerCooldown - static_cast<float>(delta.count()), 0.0f);
+        if (threat.hunting > 0 && bank->hunting == 0 && bank->stingerCooldown <= 0.0f && !bank->stingers.empty()) {
+            scene.Sounds().Play(bank->stingers[bank->random() % bank->stingers.size()],
+                                {.volume = 0.6f, .bus = audio::Bus::Interface, .ducking = 0.6f});
+            bank->stingerCooldown = 25.0f;
+        }
+        bank->hunting = threat.hunting;
     });
     systems.Add("Lights", [&, player, handedOver = false](ecs::World& world, core::Seconds delta) mutable {
         const float seconds = static_cast<float>(delta.count());
