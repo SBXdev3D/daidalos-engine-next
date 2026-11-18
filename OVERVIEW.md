@@ -2062,6 +2062,8 @@ Completion criteria:
 - A saved game restores the world the player left.
 - Added complexity provides measurable or functional value.
 
+Done in five steps (2026-11-18): 13.1 navigation meshes (ADR-0069); 13.2 perception and utility AI (ADR-0070); 13.3 triggers, sequences and cinematics (ADR-0071); 13.4 saves and checkpoints (ADR-0072); 13.5 loose objects to pick up and throw (ADR-0073). Ragdolls, cloth, leaning, animation layers and IK, and portal visibility wait for an asset or a measurement that needs them (ADR-0073).
+
 ## Phase 14 — Linux Validation
 
 **Goal:** Validate the engine fully on Linux.
