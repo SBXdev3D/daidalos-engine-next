@@ -125,6 +125,8 @@ struct LevelEntity {
     std::optional<Decal> decal;
     /// Wet air in its box (ADR-0061).
     std::optional<WetVolume> wet;
+    /// A box that plays a sequence when the player enters (ADR-0071); its file is relative to the level.
+    std::optional<Trigger> trigger;
     std::optional<Tags> game;
     [[nodiscard]] bool operator==(const LevelEntity&) const;
 };

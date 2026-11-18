@@ -14,12 +14,16 @@
 #include <daidalos/renderer/SceneView.hpp>
 #include <daidalos/scene/AssetLibrary.hpp>
 #include <daidalos/scene/Perception.hpp>
+#include <daidalos/scene/Sequence.hpp>
 #include <daidalos/scene/Systems.hpp>
 
 #include <chrono>
 #include <deque>
 #include <filesystem>
+#include <map>
+#include <memory>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -102,6 +106,16 @@ public:
     static constexpr std::size_t kMaxTransientDecals = 96;
     /// Rings on still water (ADR-0061): a step in a puddle, a shot into it. The 16 most recent show.
     void AddRipple(const glm::vec3& position, float strength = 1.0f);
+    /// Plays a sequence of cues from now (ADR-0071), alongside those already playing.
+    void PlaySequence(std::shared_ptr<const Sequence> sequence);
+    /// Plays a .sequence.json file, relative to the asset root, reading it the first time.
+    core::Result<void> PlaySequenceFile(std::string_view path);
+    [[nodiscard]] std::size_t PlayingSequences() const { return m_sequences.size(); }
+    /// The names of the event cues played since the last call, for the game's code.
+    [[nodiscard]] std::vector<std::string> TakeEvents() { return std::exchange(m_events, {}); }
+    /// Whether a camera cue has the camera.
+    [[nodiscard]] bool InCinematic() const { return m_cinematic.has_value(); }
+
     /// A sound that AI can hear (ADR-0070), kept for kNoiseMemory seconds.
     void MakeNoise(const Noise& noise) { m_noises.push_back(noise); }
     [[nodiscard]] std::span<const Noise> Noises() const { return m_noises; }
@@ -137,6 +151,36 @@ private:
     physics::PhysicsWorld m_physics;
     std::optional<navigation::NavMesh> m_navigation;
     std::vector<Noise> m_noises;
+    // Sequences (ADR-0071): those playing, the files read, and what their cues set going.
+    struct PlayingSequence {
+        std::shared_ptr<const Sequence> sequence;
+        float time = 0.0f;
+        std::size_t next = 0;
+    };
+    struct Moving {
+        ecs::Entity entity;
+        glm::vec3 from{0.0f};
+        glm::vec3 to{0.0f};
+        float seconds = 0.0f;
+        float time = 0.0f;
+    };
+    struct Cinematic {
+        std::vector<CameraKey> keys;
+        float time = 0.0f;
+    };
+    void UpdateTriggers();
+    void RunSequences();
+    void RunCue(const Cue& cue);
+    [[nodiscard]] ecs::Entity Named(std::string_view name);
+    std::filesystem::path m_assetRoot;
+    std::vector<PlayingSequence> m_sequences;
+    std::map<std::string, std::shared_ptr<const Sequence>, std::less<>> m_sequenceFiles;
+    std::vector<Moving> m_moving;
+    std::optional<Cinematic> m_cinematic;
+    float m_shake = 0.0f;
+    float m_shakeTime = 0.0f;
+    float m_shakeLength = 0.0f;
+    std::vector<std::string> m_events;
     audio::SoundWorld m_sounds;
     ecs::Schedule m_fixedSystems;
     ecs::Schedule m_frameSystems;
