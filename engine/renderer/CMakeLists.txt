@@ -7,6 +7,7 @@ dai_add_module(NAME renderer
         include/daidalos/renderer/MirrorRoom.hpp
         include/daidalos/renderer/Material.hpp
         include/daidalos/renderer/Particles.hpp
+        include/daidalos/renderer/Portals.hpp
         include/daidalos/renderer/Primitives.hpp
         include/daidalos/renderer/Renderer.hpp
         include/daidalos/renderer/SceneView.hpp
@@ -44,6 +45,7 @@ dai_add_module(NAME renderer
         src/ParticlePass.cpp
         src/Particles.cpp
         src/ParticlePass.hpp
+        src/Portals.cpp
         src/Primitives.cpp
         src/PathTracerPass.cpp
         src/PathTracerPass.hpp

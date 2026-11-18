@@ -91,3 +91,5 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0085](0085-combat-feel.md) | Where a wound came from around the crosshair, hit markers, recoil that springs back, zombies that flinch | Accepted |
 | [0086](0086-the-opening.md) | An opening camera flight as a sequence, played on a new game and skippable; the player waits and the HUD hides while a camera cue has the camera; fixed showcase shots | Accepted |
 | [0087](0087-the-showcase-budget.md) | The dressed factory measured on every preset; frustum culling of rasterized draws; the first launch measures only frames of play; occlusion, LODs and Ultra's GI listed for Phase 17 | Accepted |
+| [0088](0088-hardening.md) | Phase 17: portal visibility, levels of detail, the presets' costly passes, a bug sweep, the assessment | Accepted |
+| [0089](0089-portal-visibility.md) | Rooms and doorways as cells, portals where their boxes overlap, the cells seen from the camera; draws, decals and water outside them skipped | Accepted |

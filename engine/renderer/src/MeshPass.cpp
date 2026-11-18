@@ -1054,6 +1054,13 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         m_previousViewProjection.has_value() && !view.cut ? *m_previousViewProjection : viewProjection;
     m_previousViewProjection = viewProjection;
     m_viewProjection = viewProjection;
+    // Rooms seen through their doorways (ADR-0089): what lies in the others is neither rasterized nor decals nor
+    // water to test pixels against.
+    const std::vector<bool> seenCells = VisibleCells(view.cells, viewProjection, cameraPosition);
+    const auto boxRadius = [](const glm::mat4& world) {
+        return 0.5f * glm::length(glm::vec3(glm::length(glm::vec3(world[0])), glm::length(glm::vec3(world[1])),
+                                            glm::length(glm::vec3(world[2]))));
+    };
     // The first frame, and the first after a cut, have no history to read: their own size stands in.
     const rhi::Extent previousExtent =
         m_previousRenderExtent.width > 0 && !view.cut ? m_previousRenderExtent : targets.extent;
@@ -1126,7 +1133,8 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     for (std::size_t index = 0; index < view.decals.size(); ++index) {
         const Decal& decal = view.decals[index];
         if (!decal.albedo.IsNull() && decal.opacity > 0.0f &&
-            glm::distance(glm::vec3(decal.world[3]), cameraPosition) <= farPlane) {
+            glm::distance(glm::vec3(decal.world[3]), cameraPosition) <= farPlane &&
+            MayBeSeen(view.cells, seenCells, glm::vec3(decal.world[3]), boxRadius(decal.world))) {
             nearDecals.push_back(index);
         }
     }
@@ -1174,8 +1182,13 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
 
     // Wet air, and ripples on its water (ADR-0061): the volumes nearest to the camera when there are more, as a
     // level with painted wet patches has (ADR-0078).
-    std::vector<std::size_t> nearWet(view.wetVolumes.size());
-    std::iota(nearWet.begin(), nearWet.end(), std::size_t{0});
+    std::vector<std::size_t> nearWet;
+    for (std::size_t index = 0; index < view.wetVolumes.size(); ++index) {
+        const glm::mat4& world = view.wetVolumes[index].world;
+        if (MayBeSeen(view.cells, seenCells, glm::vec3(world[3]), boxRadius(world))) {
+            nearWet.push_back(index);
+        }
+    }
     if (nearWet.size() > kMaxWetVolumes) {
         std::ranges::partial_sort(nearWet, nearWet.begin() + kMaxWetVolumes, {}, [&](std::size_t index) {
             return glm::distance(glm::vec3(view.wetVolumes[index].world[3]), cameraPosition);
@@ -1239,9 +1252,12 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
             side /= std::max(glm::length(glm::vec3(side)), 1e-6f);
         }
     }
-    const auto inView = [&sides](const glm::vec3& center, float radius) {
+    // Rooms seen through their doorways (ADR-0089).
+    const auto inView = [&sides, &view, &seenCells](const glm::vec3& center, float radius) {
         return std::ranges::none_of(
-            sides, [&](const glm::vec4& side) { return glm::dot(glm::vec3(side), center) + side.w < -radius; });
+                   sides,
+                   [&](const glm::vec4& side) { return glm::dot(glm::vec3(side), center) + side.w < -radius; }) &&
+               MayBeSeen(view.cells, seenCells, center, radius);
     };
 
     // Sorted, so that the pipeline and the buffers change as rarely as possible. Instance i is the i-th

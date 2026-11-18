@@ -366,6 +366,12 @@ bool InspectComponents(scene::LevelEntity& entity) {
     changed |= Section("Ray visibility", entity.visibility, InspectVisibility);
     changed |= Section("Decal", entity.decal, InspectDecal);
     changed |= Section("Wet", entity.wet, InspectWet);
+    changed |= Section("Visibility cell", entity.cell, [](scene::VisibilityCell& cell) {
+        const bool edited = ImGui::Checkbox("Enabled", &cell.enabled);
+        ImGui::TextDisabled(
+            "A room or a doorway (ADR-0089): where two cells' boxes overlap is the opening between them.");
+        return edited;
+    });
     changed |= Section("Trigger", entity.trigger, InspectTrigger);
     changed |= Section("Loose object", entity.body, InspectBody);
 
@@ -380,6 +386,10 @@ bool InspectComponents(scene::LevelEntity& entity) {
         }
         if (!entity.trigger && ImGui::MenuItem("Trigger")) {
             entity.trigger = scene::Trigger{};
+            changed = true;
+        }
+        if (!entity.cell && ImGui::MenuItem("Visibility cell")) {
+            entity.cell = scene::VisibilityCell{};
             changed = true;
         }
         if (!entity.wet && ImGui::MenuItem("Wet")) {

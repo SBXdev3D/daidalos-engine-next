@@ -334,6 +334,9 @@ void LevelInstance::Make(const LevelEntity& entity) {
     if (entity.wet) {
         world.Add<WetVolume>(created, *entity.wet);
     }
+    if (entity.cell) {
+        world.Add<VisibilityCell>(created, *entity.cell);
+    }
     if (entity.body && entity.body->mass <= 0.0f) {
         // A static box (ADR-0083), where the entity is in the world, parents included.
         glm::mat4 placement = math::ToMatrix(entity.transform);
