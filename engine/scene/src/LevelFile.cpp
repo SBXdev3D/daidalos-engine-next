@@ -492,6 +492,7 @@ core::Result<LevelEntity> ReadEntity(const JsonObject& object, std::size_t index
     DAI_LEVEL_TRY(reader.Text("name", entity.name));
     DAI_LEVEL_TRY(reader.Id("parent", entity.parent));
     DAI_LEVEL_TRY(reader.Text("model", entity.model));
+    DAI_LEVEL_TRY(reader.Text("prefab", entity.prefab));
 
     // Each component: read it if it is there.
     const auto component = [&reader]<class T>(std::string_view key, std::optional<T>& out,
@@ -766,6 +767,7 @@ Json WriteEntity(const LevelEntity& entity) {
     Put(object, "name", entity.name, std::string{});
     Put(object, "parent", entity.parent, std::uint64_t{0});
     Put(object, "model", entity.model, std::string{});
+    Put(object, "prefab", entity.prefab, std::string{});
     const math::Transform identity;
     if (entity.transform != identity) {
         JsonObject transform;
@@ -1030,7 +1032,7 @@ bool LevelParticles::operator==(const LevelParticles& other) const {
 
 bool LevelEntity::operator==(const LevelEntity& other) const {
     return id == other.id && name == other.name && parent == other.parent && transform == other.transform &&
-           model == other.model && light == other.light && fog == other.fog && wind == other.wind &&
+           model == other.model && prefab == other.prefab && light == other.light && fog == other.fog && wind == other.wind &&
            particles == other.particles && attractor == other.attractor && weather == other.weather &&
            ribbon == other.ribbon && lightning == other.lightning && game == other.game &&
            visibility == other.visibility && decal == other.decal && wet == other.wet && trigger == other.trigger &&
@@ -1161,6 +1163,11 @@ core::Result<void> SaveLevelFile(const std::filesystem::path& file, const Level&
     return {};
 }
 
+bool IsPrefabPath(std::string_view path) {
+    constexpr std::string_view kSuffix = ".prefab.json";
+    return path.size() > kSuffix.size() && path.ends_with(kSuffix);
+}
+
 Level LevelOfModel(std::string_view modelPath) {
     Level level;
     const std::filesystem::path path(modelPath);
@@ -1201,6 +1208,10 @@ void Relocate(Level& level, std::string_view fromLevelPath, std::string_view toL
     move(level.environment.skyFaces);
     for (LevelEntity& entity : level.entities) {
         move(entity.model);
+        move(entity.prefab);
+        if (entity.trigger) {
+            move(entity.trigger->sequence);
+        }
         if (entity.light) {
             move(entity.light->profile);
             move(entity.light->cookie);

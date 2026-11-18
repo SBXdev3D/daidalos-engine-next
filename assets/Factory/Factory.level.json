@@ -84,42 +84,9 @@
       "id": 8,
       "model": "Props/alarm.gltf",
       "name": "Alarm 14",
+      "prefab": "Prefabs/alarm_beams.prefab.json",
       "transform": {
         "translation": [10.5, 8.4, -47.25]
-      }
-    },
-    {
-      "id": 9,
-      "light": {
-        "color": [1, 0, 0],
-        "inner_angle": 16,
-        "intensity": 965,
-        "outer_angle": 20,
-        "range": 28,
-        "type": "spot"
-      },
-      "name": "Alarm 14 beam 1",
-      "parent": 8,
-      "transform": {
-        "rotation": [-0.21643916, 0, 0, 0.9762962],
-        "translation": [0, -0.7, 0]
-      }
-    },
-    {
-      "id": 10,
-      "light": {
-        "color": [1, 0, 0],
-        "inner_angle": 16,
-        "intensity": 965,
-        "outer_angle": 20,
-        "range": 28,
-        "type": "spot"
-      },
-      "name": "Alarm 14 beam 2",
-      "parent": 8,
-      "transform": {
-        "rotation": [0, 0.9762962, 0.21643916, 0],
-        "translation": [0, -0.7, 0]
       }
     },
     {
@@ -130,42 +97,9 @@
       "id": 11,
       "model": "Props/alarm_2.gltf",
       "name": "Alarm 15",
+      "prefab": "Prefabs/alarm_beams.prefab.json",
       "transform": {
         "translation": [-10.5, 8.4, -47.25]
-      }
-    },
-    {
-      "id": 12,
-      "light": {
-        "color": [1, 0, 0],
-        "inner_angle": 16,
-        "intensity": 965,
-        "outer_angle": 20,
-        "range": 28,
-        "type": "spot"
-      },
-      "name": "Alarm 15 beam 1",
-      "parent": 11,
-      "transform": {
-        "rotation": [-0.21643916, 0, 0, 0.9762962],
-        "translation": [0, -0.7, 0]
-      }
-    },
-    {
-      "id": 13,
-      "light": {
-        "color": [1, 0, 0],
-        "inner_angle": 16,
-        "intensity": 965,
-        "outer_angle": 20,
-        "range": 28,
-        "type": "spot"
-      },
-      "name": "Alarm 15 beam 2",
-      "parent": 11,
-      "transform": {
-        "rotation": [0, 0.9762962, 0.21643916, 0],
-        "translation": [0, -0.7, 0]
       }
     },
     {

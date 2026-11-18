@@ -280,3 +280,24 @@ TEST(LevelFileTest, LooseObjectsKeepTheirBody) {
     ASSERT_TRUE(read.has_value()) << core::Format(read.error());
     EXPECT_EQ(*read, level);
 }
+
+TEST(LevelFileTest, EntitiesKeepTheirPrefab) {
+    Level level;
+    level.entities.push_back(LevelEntity{.id = 1, .name = "Alarm", .prefab = "Prefabs/alarm_beams.prefab.json"});
+    const core::Result<Level> read = ParseLevel(WriteLevel(level));
+    ASSERT_TRUE(read.has_value()) << core::Format(read.error());
+    EXPECT_EQ(*read, level);
+    EXPECT_TRUE(scene::IsPrefabPath("Prefabs/alarm_beams.prefab.json"));
+    EXPECT_FALSE(scene::IsPrefabPath("Factory.level.json"));
+    EXPECT_FALSE(scene::IsPrefabPath(".prefab.json"));
+}
+
+TEST(LevelFileTest, RelocateMovesPrefabsAndSequences) {
+    Level level;
+    LevelEntity entity{.id = 1, .prefab = "Prefabs/alarm_beams.prefab.json"};
+    entity.trigger = scene::Trigger{.sequence = "Sequences/boo.sequence.json"};
+    level.entities.push_back(entity);
+    scene::Relocate(level, "Factory/Factory.level.json", "Levels/Copy.level.json");
+    EXPECT_EQ(level.entities[0].prefab, "../Factory/Prefabs/alarm_beams.prefab.json");
+    EXPECT_EQ(level.entities[0].trigger->sequence, "../Factory/Sequences/boo.sequence.json");
+}

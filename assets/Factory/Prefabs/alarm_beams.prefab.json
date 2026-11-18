@@ -1,0 +1,39 @@
+{
+  "entities": [
+    {
+      "id": 1,
+      "light": {
+        "color": [1, 0, 0],
+        "inner_angle": 16,
+        "intensity": 965,
+        "outer_angle": 20,
+        "range": 28,
+        "type": "spot"
+      },
+      "name": "Beam 1",
+      "transform": {
+        "rotation": [-0.21643916, 0, 0, 0.9762962],
+        "translation": [0, -0.7, 0]
+      }
+    },
+    {
+      "id": 2,
+      "light": {
+        "color": [1, 0, 0],
+        "inner_angle": 16,
+        "intensity": 965,
+        "outer_angle": 20,
+        "range": 28,
+        "type": "spot"
+      },
+      "name": "Beam 2",
+      "transform": {
+        "rotation": [0, 0.9762962, 0.21643916, 0],
+        "translation": [0, -0.7, 0]
+      }
+    }
+  ],
+  "environment": {},
+  "format": "daidalos-level",
+  "version": 1
+}

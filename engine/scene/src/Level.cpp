@@ -64,6 +64,49 @@ ecs::Entity FindNodeEntity(const ecs::World& world, ecs::Entity root, std::strin
 LevelInstance::LevelInstance(Scene& scene, std::string_view levelPath)
     : m_scene(&scene), m_directory(std::filesystem::path(levelPath).parent_path().generic_string()) {}
 
+LevelInstance::LevelInstance(Scene& scene, std::string_view prefabPath, std::vector<std::string> chain)
+    : LevelInstance(scene, prefabPath) {
+    m_part = true;
+    m_chain = std::move(chain);
+}
+
+void LevelInstance::Place(const LevelEntity& entity, ecs::Entity holder) {
+    const std::string path = std::filesystem::path(Resolve(entity.prefab)).lexically_normal().generic_string();
+    if (std::ranges::find(m_chain, path) != m_chain.end() || m_chain.size() >= kMaxPrefabDepth) {
+        DAI_LOG_WARNING(kModule, "Level entity {} '{}': the prefab '{}' places itself", entity.id, entity.name, path);
+        return;
+    }
+    core::Result<std::shared_ptr<const Level>> prefab = m_scene->Assets().LoadPrefab(path);
+    if (!prefab) {
+        DAI_LOG_WARNING(kModule, "Level entity {} '{}': {}", entity.id, entity.name, core::Format(prefab.error()));
+        return;
+    }
+    std::vector<std::string> chain = m_chain;
+    chain.push_back(path);
+    std::unique_ptr<LevelInstance> placed(new LevelInstance(*m_scene, path, std::move(chain)));
+    ecs::World& world = m_scene->World();
+    for (const LevelEntity* part : CreationOrder(**prefab)) {
+        placed->Make(*part);
+        if (part->parent == 0) {
+            [[maybe_unused]] const core::Result<void> attached = world.SetParent(placed->Find(part->id), holder);
+        }
+    }
+    placed->Link(**prefab);
+    m_prefabs[entity.id] = std::move(placed);
+}
+
+std::size_t LevelInstance::RemakePrefabs(const Level& level) {
+    std::size_t count = 0;
+    for (const LevelEntity* entity : CreationOrder(level)) {
+        if (!entity->prefab.empty()) {
+            Make(*entity);
+            ++count;
+        }
+    }
+    Link(level);
+    return count;
+}
+
 std::string LevelInstance::Resolve(std::string_view relative) const {
     return m_directory.empty() ? std::string(relative) : m_directory + "/" + std::string(relative);
 }
@@ -229,7 +272,9 @@ void LevelInstance::Make(const LevelEntity& entity) {
     ecs::LocalTransform transform;
     static_cast<math::Transform&>(transform) = entity.transform;
     world.Add<ecs::LocalTransform>(created, transform);
-    world.Add<LevelEntityId>(created, entity.id);
+    if (!m_part) {
+        world.Add<LevelEntityId>(created, entity.id);
+    }
     if (!entity.name.empty()) {
         world.Add<NodeName>(created, entity.name);
     }
@@ -252,6 +297,9 @@ void LevelInstance::Make(const LevelEntity& entity) {
         } else {
             DAI_LOG_WARNING(kModule, "Level entity {} '{}': {}", entity.id, entity.name, core::Format(model.error()));
         }
+    }
+    if (!entity.prefab.empty()) {
+        Place(entity, created);
     }
     if (entity.light) {
         world.Add<Light>(created, *entity.light);
@@ -435,8 +483,17 @@ void LevelInstance::Destroy(std::uint64_t id) {
     if (entity.IsNull()) {
         return;
     }
-    if (const RigidBody* body = world.TryGet<RigidBody>(entity)) {
-        m_scene->Physics().RemoveBody(body->body);
+    // The bodies of loose objects under it, a prefab's among them, leave the physics world.
+    std::vector<ecs::Entity> stack{entity};
+    while (!stack.empty()) {
+        const ecs::Entity current = stack.back();
+        stack.pop_back();
+        if (const RigidBody* body = world.TryGet<RigidBody>(current)) {
+            m_scene->Physics().RemoveBody(body->body);
+        }
+        for (ecs::Entity child = world.FirstChild(current); !child.IsNull(); child = world.NextSibling(child)) {
+            stack.push_back(child);
+        }
     }
     world.Destroy(entity);
     // Its descendants made from the level went with it, and so do the emitters they put on other surfaces.
@@ -444,6 +501,7 @@ void LevelInstance::Destroy(std::uint64_t id) {
         if (world.IsAlive(pair.second)) {
             return false;
         }
+        m_prefabs.erase(pair.first);
         if (const auto emitter = m_surfaceEmitters.find(pair.first); emitter != m_surfaceEmitters.end()) {
             world.Remove<ParticleEmitter>(emitter->second);
             m_surfaceEmitters.erase(emitter);
