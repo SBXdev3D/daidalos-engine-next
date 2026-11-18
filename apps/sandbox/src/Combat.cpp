@@ -367,6 +367,7 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
         std::vector<physics::BodyId> zombieBodies;
         world.Each<Zombie>([&](ecs::Entity, const Zombie& zombie) { zombieBodies.push_back(zombie.body); });
         const BodySurfaces* surfaces = world.TryGet<BodySurfaces>(playerEntity);
+        bool heard = false;
         for (const physics::RayHit& hit : hits) {
             const bool flesh = std::ranges::find(zombieBodies, hit.body) != zombieBodies.end();
             const std::string_view surface = surfaces != nullptr ? surfaces->Of(hit.body) : std::string_view{};
@@ -374,6 +375,10 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
                 scene.SpawnParticles(impact.effect, hit.position, hit.normal, impact.count);
             }
             LeaveMark(scene, physics, *effects, hit, flesh, surface, aim);
+            // One impact heard per shot: a shotgun's pellets land at once.
+            if (!std::exchange(heard, true)) {
+                PlayImpact(scene, playerEntity, flesh ? "flesh" : surface, hit.position);
+            }
         }
     }
 

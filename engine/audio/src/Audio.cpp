@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <format>
 #include <map>
@@ -84,27 +85,73 @@ struct AudioEngine::Impl {
     Impl(const Impl&) = delete;
     Impl& operator=(const Impl&) = delete;
     ~Impl() {
-        if (effectsReady) {
-            ma_sound_group_uninit(&effects);
+        for (std::size_t bus = 0; bus < kBusCount; ++bus) {
+            if (busReady[bus]) {
+                ma_sound_group_uninit(&groups[bus]);
+            }
         }
-        if (musicReady) {
-            ma_sound_group_uninit(&music);
+        if (filterReady) {
+            ma_lpf_node_uninit(&worldFilter, nullptr);
         }
         if (engineReady) {
             ma_engine_uninit(&engine);
         }
     }
 
-    [[nodiscard]] ma_sound_group* Group(Bus bus) { return bus == Bus::Music ? &music : &effects; }
+    [[nodiscard]] ma_sound_group* Group(Bus bus) { return &groups[static_cast<std::size_t>(bus)]; }
+
+    /// Sets each bus's volume: the player's, times the mix's, times the ducking for music and ambience.
+    void ApplyVolumes() {
+        for (std::size_t bus = 0; bus < kBusCount; ++bus) {
+            const auto which = static_cast<Bus>(bus);
+            const float user = which == Bus::Music ? musicVolume : effectsVolume;
+            const bool ducked = which == Bus::Music || which == Bus::Ambience;
+            ma_sound_group_set_volume(&groups[bus], user * mix.buses[bus] * (ducked ? 1.0f - ducking : 1.0f));
+        }
+    }
+
+    /// The world filter's cutoff, from the mix. Above 18 kHz, the world's buses bypass it.
+    void ApplyFilter() {
+        if (!filterReady) {
+            return;
+        }
+        const float cutoff = std::clamp(mix.lowpass, 40.0f, 20000.0f);
+        const bool filtering = cutoff < 18000.0f;
+        if (filtering != filtered) {
+            filtered = filtering;
+            for (const Bus bus : {Bus::Effects, Bus::Ambience}) {
+                ma_node_attach_output_bus(Group(bus), 0,
+                                          filtering ? static_cast<ma_node*>(&worldFilter)
+                                                    : static_cast<ma_node*>(ma_engine_get_endpoint(&engine)),
+                                          0);
+            }
+        }
+        if (!filtering || std::abs(cutoff - filterCutoff) < 1.0f) {
+            return;
+        }
+        filterCutoff = cutoff;
+        const ma_uint32 channels = ma_engine_get_channels(&engine);
+        const ma_uint32 rate = ma_engine_get_sample_rate(&engine);
+        const ma_lpf_config config =
+            ma_lpf_config_init(ma_format_f32, channels, rate, std::min<double>(cutoff, 0.45 * rate), 2);
+        ma_lpf_node_reinit(&config, &worldFilter);
+    }
 
     ma_engine engine{};
-    ma_sound_group effects{};
-    ma_sound_group music{};
+    std::array<ma_sound_group, kBusCount> groups{};
+    std::array<bool, kBusCount> busReady{};
+    /// The world's sounds, effects and ambience, through a low-pass filter that snapshots set (ADR-0067).
+    ma_lpf_node worldFilter{};
+    bool filterReady = false;
+    bool filtered = false;
+    float filterCutoff = 20000.0f;
+    float effectsVolume = 1.0f;
+    float musicVolume = 1.0f;
+    MixSnapshot mix;
+    float ducking = 0.0f;
     /// Steam Audio's context, or null when sounds are panned by miniaudio (ADR-0065).
     std::unique_ptr<steam::Context> steam;
     bool engineReady = false;
-    bool effectsReady = false;
-    bool musicReady = false;
     bool hasDevice = false;
 };
 
@@ -122,21 +169,28 @@ core::Result<AudioEngine> AudioEngine::Create(const AudioConfig& config) {
     impl->engineReady = true;
     impl->hasDevice = config.useDevice;
 
-    if (const ma_result result = ma_sound_group_init(&impl->engine, 0, nullptr, &impl->effects); result != MA_SUCCESS) {
-        return tl::unexpected(AudioError(core::ErrorCode::DeviceError, "Cannot create the effects bus", result));
+    const ma_uint32 channels = ma_engine_get_channels(&impl->engine);
+    const ma_lpf_node_config filter = ma_lpf_node_config_init(channels, ma_engine_get_sample_rate(&impl->engine),
+                                                              0.45 * ma_engine_get_sample_rate(&impl->engine), 2);
+    if (ma_lpf_node_init(ma_engine_get_node_graph(&impl->engine), &filter, nullptr, &impl->worldFilter) == MA_SUCCESS) {
+        impl->filterReady = true;
+        ma_node_attach_output_bus(&impl->worldFilter, 0, ma_engine_get_endpoint(&impl->engine), 0);
     }
-    impl->effectsReady = true;
-    if (const ma_result result = ma_sound_group_init(&impl->engine, 0, nullptr, &impl->music); result != MA_SUCCESS) {
-        return tl::unexpected(AudioError(core::ErrorCode::DeviceError, "Cannot create the music bus", result));
+    for (std::size_t bus = 0; bus < kBusCount; ++bus) {
+        if (const ma_result result = ma_sound_group_init(&impl->engine, 0, nullptr, &impl->groups[bus]);
+            result != MA_SUCCESS) {
+            return tl::unexpected(AudioError(core::ErrorCode::DeviceError, "Cannot create a bus", result));
+        }
+        impl->busReady[bus] = true;
     }
-    impl->musicReady = true;
     if (config.steamAudio) {
         impl->steam = steam::Context::Create(config.sampleRate);
     }
 
     ma_engine_set_volume(&impl->engine, config.volume);
-    ma_sound_group_set_volume(&impl->effects, config.effectsVolume);
-    ma_sound_group_set_volume(&impl->music, config.musicVolume);
+    impl->effectsVolume = config.effectsVolume;
+    impl->musicVolume = config.musicVolume;
+    impl->ApplyVolumes();
     return AudioEngine(std::move(impl));
 }
 
@@ -153,8 +207,9 @@ void AudioEngine::Read(std::span<float> samples) {
 
 void AudioEngine::SetVolumes(float volume, float effectsVolume, float musicVolume) {
     ma_engine_set_volume(&m_impl->engine, std::clamp(volume, 0.0f, 1.0f));
-    ma_sound_group_set_volume(&m_impl->effects, std::clamp(effectsVolume, 0.0f, 1.0f));
-    ma_sound_group_set_volume(&m_impl->music, std::clamp(musicVolume, 0.0f, 1.0f));
+    m_impl->effectsVolume = std::clamp(effectsVolume, 0.0f, 1.0f);
+    m_impl->musicVolume = std::clamp(musicVolume, 0.0f, 1.0f);
+    m_impl->ApplyVolumes();
 }
 
 struct SoundWorld::State {
@@ -194,6 +249,7 @@ struct SoundWorld::State {
         glm::vec3 position{0.0f};
         float minDistance = 1.0f;
         float maxDistance = 35.0f;
+        float ducking = 0.0f;
     };
 
     State(AudioEngine* owner, std::filesystem::path assetRoot) : engine(owner), root(std::move(assetRoot)) {}
@@ -230,6 +286,14 @@ struct SoundWorld::State {
     AudioEngine* engine;
     std::filesystem::path root;
     steam::Scene::Listener listener;
+    // The mix (ADR-0067): where it is, where it goes, and how fast; and the ducking.
+    MixSnapshot mix;
+    MixSnapshot mixFrom;
+    MixSnapshot mixTo;
+    float mixFade = 0.0f;
+    float mixElapsed = 0.0f;
+    float ducking = 0.0f;
+    std::chrono::steady_clock::time_point lastUpdate = std::chrono::steady_clock::now();
     // The acoustic scene outlives the voices, whose sources it holds.
     std::unique_ptr<steam::Scene> scene;
     double simulationMilliseconds = 0.0;
@@ -330,6 +394,7 @@ VoiceHandle SoundWorld::Play(ClipHandle clip, const PlayOptions& options) {
         ma_sound_set_min_distance(sound, options.minDistance);
         ma_sound_set_max_distance(sound, options.maxDistance);
     }
+    playing.ducking = std::clamp(options.ducking, 0.0f, 1.0f);
     playing.sound = std::move(voice);
     const VoiceHandle handle = state.voices.Insert(std::move(playing));
     if (steamed) {
@@ -413,10 +478,57 @@ void SoundWorld::Update() {
         state.voices.Remove(handle);
         return true;
     });
+    // The mix moves towards its snapshot, and the ducking towards what the loudest ducking voice asks: fast
+    // down, slower back up.
+    const auto now = std::chrono::steady_clock::now();
+    const float seconds = std::min(std::chrono::duration<float>(now - state.lastUpdate).count(), 0.25f);
+    state.lastUpdate = now;
+    if (!state.paused) {
+        state.mixElapsed = std::min(state.mixElapsed + seconds, state.mixFade);
+        const float t = state.mixFade > 0.0f ? state.mixElapsed / state.mixFade : 1.0f;
+        for (std::size_t bus = 0; bus < kBusCount; ++bus) {
+            state.mix.buses[bus] = state.mixFrom.buses[bus] + (state.mixTo.buses[bus] - state.mixFrom.buses[bus]) * t;
+        }
+        // The cutoff moves in octaves, as the ear hears it.
+        state.mix.lowpass = std::exp2(std::lerp(std::log2(std::max(state.mixFrom.lowpass, 1.0f)),
+                                                std::log2(std::max(state.mixTo.lowpass, 1.0f)), t));
+        float ducked = 0.0f;
+        for (const VoiceHandle handle : state.playing) {
+            ducked = std::max(ducked, state.voices.Get(handle).ducking);
+        }
+        const float rate = ducked > state.ducking ? 8.0f : 1.5f;
+        state.ducking += (ducked - state.ducking) * std::min(seconds * rate, 1.0f);
+    }
+    if (state.engine != nullptr) {
+        AudioEngine::Impl& impl = state.engine->Internals();
+        impl.mix = state.mix;
+        impl.ducking = state.ducking;
+        impl.ApplyVolumes();
+        impl.ApplyFilter();
+    }
     const auto start = std::chrono::steady_clock::now();
     state.Simulate(state.playing);
     state.simulationMilliseconds =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+}
+
+void SoundWorld::SetSnapshot(const MixSnapshot& snapshot, float fadeSeconds) {
+    State& state = *m_state;
+    state.mixFrom = state.mix;
+    state.mixTo = snapshot;
+    state.mixFade = std::max(fadeSeconds, 0.0f);
+    state.mixElapsed = 0.0f;
+    if (state.mixFade == 0.0f) {
+        state.mix = snapshot;
+    }
+}
+
+const MixSnapshot& SoundWorld::Mix() const {
+    return m_state->mix;
+}
+
+float SoundWorld::Ducking() const {
+    return m_state->ducking;
 }
 
 double SoundWorld::LastSimulationMilliseconds() const {

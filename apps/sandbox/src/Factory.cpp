@@ -117,6 +117,11 @@ struct LoopedSound {
 /// The sounds of the game, with the player's entity.
 struct SoundBank {
     std::array<audio::ClipHandle, 4> steps;
+    /// Footsteps and impacts by what the surface is made of (ADR-0067): scripts/make_surface_sounds.py.
+    std::map<std::string, std::vector<audio::ClipHandle>, std::less<>> surfaceSteps;
+    std::map<std::string, std::vector<audio::ClipHandle>, std::less<>> surfaceImpacts;
+    /// The mix the player's state asks for (ADR-0067): 0 normal, 1 hurt, 2 dead.
+    int mixState = 0;
     std::array<audio::ClipHandle, kPickupKinds> pickups;
     audio::ClipHandle jump;
     audio::ClipHandle land;
@@ -283,6 +288,17 @@ SoundBank LoadSounds(scene::Scene& scene) {
     bank.pickups[static_cast<std::size_t>(PickupKind::Flashlight)] = LoadSound(scene, "flashlight_bonus.wav");
     bank.pickups[static_cast<std::size_t>(PickupKind::RedCard)] = LoadSound(scene, "misc_bonus.wav");
     bank.pickups[static_cast<std::size_t>(PickupKind::Shotgun)] = LoadSound(scene, "weapon_bonus.wav");
+    for (const char* surface : {"concrete", "metal", "wood", "tile", "water"}) {
+        for (int n = 1; n <= 4; ++n) {
+            bank.surfaceSteps[surface].push_back(LoadSound(scene, std::format("Surfaces/step_{}_{}.wav", surface, n)));
+        }
+    }
+    for (const char* surface : {"concrete", "metal", "wood", "tile", "glass", "flesh"}) {
+        for (int n = 1; n <= 3; ++n) {
+            bank.surfaceImpacts[surface].push_back(
+                LoadSound(scene, std::format("Surfaces/impact_{}_{}.wav", surface, n)));
+        }
+    }
     bank.jump = LoadSound(scene, "jump.wav");
     bank.land = LoadSound(scene, "footstep_fall.wav");
     bank.ladder = LoadSound(scene, "ladder.wav");
@@ -311,6 +327,8 @@ void StartLoopedSounds(scene::Scene& scene, ecs::Entity playerEntity) {
             started.emplace_back(entity, sounds.Play(sound.clip, {.position = transform.translation,
                                                                   .volume = sound.volume,
                                                                   .loop = true,
+                                                                  // Hums and drones: ambience (ADR-0067).
+                                                                  .bus = audio::Bus::Ambience,
                                                                   .minDistance = sound.minDistance,
                                                                   .maxDistance = sound.maxDistance}));
         });
@@ -410,6 +428,51 @@ std::optional<float> LadderTop(ecs::World& world, const glm::vec3& feet) {
     return top;
 }
 
+/// What the player stands on, for the sound of a step (ADR-0067): water where it pools, else the surface of
+/// the body under the feet; what has no surface or no sound of its own sounds like concrete.
+std::string_view GroundSurface(scene::Scene& scene, ecs::Entity entity, const Player& player, const SoundBank& bank) {
+    ecs::World& world = scene.World();
+    bool inWater = false;
+    world.Each<scene::WetVolume, ecs::WorldTransform>([&](ecs::Entity, const scene::WetVolume& wet,
+                                                          const ecs::WorldTransform& transform) {
+        const glm::vec3 local = glm::vec3(glm::inverse(transform.matrix) * glm::vec4(player.feet, 1.0f));
+        const glm::vec3 size{glm::length(glm::vec3(transform.matrix[0])), glm::length(glm::vec3(transform.matrix[1])),
+                             glm::length(glm::vec3(transform.matrix[2]))};
+        inWater = inWater ||
+                  (wet.enabled && wet.puddles > 0.2f && glm::all(glm::lessThan(glm::abs(local), glm::vec3(0.5f))) &&
+                   (local.y + 0.5f) * size.y < wet.puddleHeight);
+    });
+    if (inWater) {
+        return "water";
+    }
+    const physics::PhysicsWorld& physics = scene.Physics();
+    const auto hit =
+        physics.CastRay(player.feet + math::kUp * 0.3f, -math::kUp, 1.0f, physics.CharacterBody(player.character));
+    const BodySurfaces* surfaces = world.TryGet<BodySurfaces>(entity);
+    const std::string_view surface =
+        hit.has_value() && surfaces != nullptr ? surfaces->Of(hit->body) : std::string_view{};
+    return bank.surfaceSteps.contains(surface) ? surface : std::string_view("concrete");
+}
+
+} // namespace
+
+void PlayImpact(scene::Scene& scene, ecs::Entity player, std::string_view surface, const glm::vec3& position) {
+    SoundBank* bank = scene.World().TryGet<SoundBank>(player);
+    if (bank == nullptr) {
+        return;
+    }
+    auto impacts = bank->surfaceImpacts.find(surface);
+    if (impacts == bank->surfaceImpacts.end()) {
+        impacts = bank->surfaceImpacts.find("concrete");
+    }
+    if (impacts != bank->surfaceImpacts.end() && !impacts->second.empty()) {
+        scene.Sounds().Play(impacts->second[bank->random() % impacts->second.size()],
+                            {.position = position, .volume = 0.8f, .minDistance = 1.0f, .maxDistance = 40.0f});
+    }
+}
+
+namespace {
+
 /// Footsteps go by the distance walked, so that they follow the speed of the player.
 void PlayMovementSounds(scene::Scene& scene, ecs::Entity entity, bool climbing, bool grounded) {
     ecs::World& world = scene.World();
@@ -432,7 +495,12 @@ void PlayMovementSounds(scene::Scene& scene, ecs::Entity entity, bool climbing, 
             // Never the same one twice in a row.
             const std::size_t offset = 1 + bank->random() % (bank->steps.size() - 1);
             bank->lastStep = (bank->lastStep + offset) % bank->steps.size();
-            scene.Sounds().Play(bank->steps[bank->lastStep]);
+            // The step of the surface underfoot, over the old step's thud.
+            const auto steps = bank->surfaceSteps.find(GroundSurface(scene, entity, player, *bank));
+            if (steps != bank->surfaceSteps.end() && !steps->second.empty()) {
+                scene.Sounds().Play(steps->second[bank->lastStep % steps->second.size()], {.volume = 0.7f});
+            }
+            scene.Sounds().Play(bank->steps[bank->lastStep], {.volume = 0.5f});
             // In a puddle, the step rings the water (ADR-0061); elsewhere the ring shows on nothing.
             scene.AddRipple(player.feet, 1.5f);
         }
@@ -994,6 +1062,31 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
     });
 
     ecs::Schedule& systems = scene.FrameSystems();
+    // The mix follows the player (ADR-0067): a wound muffles the world for a moment, death for good.
+    systems.Add("Mix", [&scene, player](ecs::World& world, core::Seconds /*delta*/) {
+        const ecs::Entity entity = player();
+        SoundBank* bank = world.IsAlive(entity) ? world.TryGet<SoundBank>(entity) : nullptr;
+        if (bank == nullptr) {
+            return;
+        }
+        const Player& state = world.Get<Player>(entity);
+        const int wanted = state.dead ? 2 : (state.hurtTime > 0.0f ? 1 : 0);
+        if (wanted == bank->mixState) {
+            return;
+        }
+        bank->mixState = wanted;
+        switch (wanted) {
+        case 2:
+            scene.Sounds().SetSnapshot({.buses = {0.7f, 0.5f, 0.7f, 1.0f}, .lowpass = 500.0f}, 1.5f);
+            break;
+        case 1:
+            scene.Sounds().SetSnapshot({.buses = {1.0f, 0.8f, 1.0f, 1.0f}, .lowpass = 1800.0f}, 0.05f);
+            break;
+        default:
+            scene.Sounds().SetSnapshot({}, 0.6f);
+            break;
+        }
+    });
     systems.Add("Look", [&, player](ecs::World& world, core::Seconds delta) {
         if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
             if (scene::Camera* camera = world.TryGet<scene::Camera>(entity)) {

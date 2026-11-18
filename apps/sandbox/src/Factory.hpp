@@ -86,6 +86,10 @@ struct ParticleEffects {
 
 /// What the level's bodies are made of, by body, from their materials' surface (ADR-0053): "concrete",
 /// "metal", "wood", "glass". A body that is not here is of no known surface. A component of the camera entity.
+/// The sound of a shot landing on a surface (ADR-0067), where it lands; the player holds the sounds.
+void PlayImpact(daidalos::scene::Scene& scene, daidalos::ecs::Entity player, std::string_view surface,
+                const glm::vec3& position);
+
 struct BodySurfaces {
     std::unordered_map<std::uint32_t, std::string> surfaces;
 
