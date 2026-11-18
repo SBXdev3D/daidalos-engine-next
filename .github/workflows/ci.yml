@@ -29,6 +29,9 @@ jobs:
           pip install clang-format==19.1.5
           python3 scripts/format.py --check
 
+      - name: Check that asset paths match their files' case
+        run: python3 scripts/check_asset_case.py
+
       - name: Install build dependencies
         # Ninja, the X11 and Wayland development packages that SDL3 is built against, lavapipe with the
         # validation layers for the GPU tests, and a virtual display for the tests that need a window.
@@ -65,4 +68,5 @@ jobs:
 
       # Without -noreset, Xvfb resets when its last client leaves, and the next test finds no display.
       - name: Test on a virtual display
-        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24 -noreset" ctest --preset linux-clang-asan
+        # The scene smoke tests play each scene for 150 frames on lavapipe: too slow under ASan for CI.
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24 -noreset" ctest --preset linux-clang-asan -LE smoke
