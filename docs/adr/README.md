@@ -70,3 +70,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0064](0064-relief.md) | Relief: height in the mr texture's alpha, occlusion baked into red (strength from the albedo's cavities), horizons found in the G-buffer, every light shadowed in Respond; no parallax | Accepted |
 | [0065](0065-steam-audio.md) | Steam Audio (vcpkg, static): HRTF and the direct path per voice in a miniaudio node; acoustic meshes with measured materials, doors movable; simulation in SoundWorld::Update | Accepted |
 | [0066](0066-reverb-and-pathing.md) | A worker thread per world: listener-centric parametric reverb from traced reflections; pathing over probes placed on floors, baked at start, played as much as the direct path is occluded | Accepted |
+| [0067](0067-mix-and-surfaces.md) | Four buses, faded snapshots with a world low-pass, ducking voices; footsteps and impacts by surface, synthesized by a script | Accepted |
