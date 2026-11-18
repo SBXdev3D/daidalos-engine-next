@@ -1,6 +1,7 @@
 {
   "comment": "The first steps into the rain room: something moans in the far corner, the ceiling spits sparks. Authored as data (ADR-0071).",
   "cues": [
+    {"at": 0.0, "event": "checkpoint"},
     {"at": 0.0, "sound": {"clip": "Factory/Sounds/zombie_moan.wav", "entity": "Particles drip 113", "volume": 1.0, "ducking": 0.4}},
     {"at": 0.1, "mix": {"lowpass": 2500, "seconds": 0.2}},
     {"at": 0.35, "shake": {"strength": 0.6, "seconds": 0.7}},

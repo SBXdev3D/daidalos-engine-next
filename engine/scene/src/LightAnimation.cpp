@@ -137,6 +137,14 @@ void PowerCircuits::Set(std::string_view circuit, bool on, double seconds) {
     }
 }
 
+std::vector<std::pair<std::string, bool>> PowerCircuits::Switched() const {
+    std::vector<std::pair<std::string, bool>> switched;
+    for (const auto& [name, state] : m_states) {
+        switched.emplace_back(name, state.on);
+    }
+    return switched;
+}
+
 bool PowerCircuits::IsOn(std::string_view circuit) const {
     const auto found = m_states.find(circuit);
     return found == m_states.end() || found->second.on;

@@ -11,6 +11,7 @@ dai_add_module(NAME scene
         include/daidalos/scene/Components.hpp
         include/daidalos/scene/Level.hpp
         include/daidalos/scene/Perception.hpp
+        include/daidalos/scene/SaveGame.hpp
         include/daidalos/scene/Sequence.hpp
         include/daidalos/scene/ParticleEffectFile.hpp
         include/daidalos/scene/Scene.hpp
@@ -19,6 +20,7 @@ dai_add_module(NAME scene
         src/AssetLibrary.cpp
         src/Level.cpp
         src/Perception.cpp
+        src/SaveGame.cpp
         src/Sequence.cpp
         src/LevelFile.cpp
         src/LightAnimation.cpp

@@ -153,6 +153,7 @@ The sandbox adds its own:
 | `sandbox.aperture` | 0 | The camera's f-number for depth of field; 0 keeps everything sharp |
 | `sandbox.focus` | 3 | Meters the camera is focused at |
 | `sandbox.classic_music` | false | The old demo's music track instead of the score that follows the danger |
+| `sandbox.continue` | false | Start from the last checkpoint; F6 saves, F9 loads |
 | `sandbox.start` | | Where the player's eyes start: `x y z yaw pitch`, in meters and degrees |
 
 ## Releasing

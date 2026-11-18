@@ -8,6 +8,7 @@
 #include <daidalos/ecs/World.hpp>
 #include <daidalos/input/ActionMap.hpp>
 #include <daidalos/input/InputState.hpp>
+#include <daidalos/scene/SaveGame.hpp>
 #include <daidalos/scene/Scene.hpp>
 
 #include <string>
@@ -50,6 +51,10 @@ struct Threat {
     float tension = 0.0f;
     int hunting = 0;
 };
+/// The zombies' part of a saved game (ADR-0072), by their save keys.
+void SaveZombies(daidalos::scene::Scene& scene, daidalos::scene::SaveData& data);
+void LoadZombies(daidalos::scene::Scene& scene, const daidalos::scene::SaveData& data);
+
 [[nodiscard]] Threat ZombieThreat(daidalos::scene::Scene& scene, const glm::vec3& feet);
 
 } // namespace sandbox

@@ -89,6 +89,15 @@ public:
                                    .Register<double>("sandbox.flashlight_battery", 900.0,
                                                      "Seconds a full flashlight battery lasts; 0 never runs down")
                                    .Get());
+        m_settings.checkpointSave = platform::ExecutableDirectory() / "saves" / "checkpoint.save";
+        // Continue from the last checkpoint, if there is one (ADR-0072).
+        if (std::error_code missing;
+            app.CVars()
+                .Register<bool>("sandbox.continue", false, "Start from the last checkpoint instead of the beginning")
+                .Get() &&
+            std::filesystem::exists(m_settings.checkpointSave, missing)) {
+            m_settings.loadSave = m_settings.checkpointSave;
+        }
         m_settings.classicMusic =
             app.CVars()
                 .Register<bool>("sandbox.classic_music", false,
@@ -163,7 +172,26 @@ public:
                     app.MainWindow().SetMouseCaptured(m_mouseCaptured);
                 }
                 if (m_actions.WasPressed(input, sandbox::Restart)) {
+                    m_settings.loadSave.clear();
                     Restart(app);
+                }
+                // Saves (ADR-0072): F6 saves where the player is, F9 starts the factory over as it was saved, or
+                // at the last checkpoint.
+                if (m_actions.WasPressed(input, sandbox::QuickSave) && app.CurrentScene() != nullptr) {
+                    if (const core::Result<void> saved = sandbox::SaveGame(*app.CurrentScene(), QuickSavePath());
+                        !saved) {
+                        DAI_LOG_WARNING("sandbox", "Save: {}", core::Format(saved.error()));
+                    }
+                }
+                if (m_actions.WasPressed(input, sandbox::QuickLoad)) {
+                    std::error_code missing;
+                    const std::filesystem::path quick = QuickSavePath();
+                    m_settings.loadSave = std::filesystem::exists(quick, missing) ? quick : m_settings.checkpointSave;
+                    if (std::filesystem::exists(m_settings.loadSave, missing)) {
+                        Restart(app);
+                    } else {
+                        m_settings.loadSave.clear();
+                    }
                 }
                 m_playSeconds += delta;
                 WatchTheEnd(app, delta);
@@ -280,6 +308,10 @@ private:
     }
 
     /// Starts the level over in a new scene, which replaces this one once it is built.
+    [[nodiscard]] static std::filesystem::path QuickSavePath() {
+        return platform::ExecutableDirectory() / "saves" / "quick.save";
+    }
+
     void Restart(app::Application& app) {
         if (m_loading) {
             return;
