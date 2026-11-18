@@ -114,6 +114,10 @@ public:
             app.CVars()
                 .Register<std::string>("sandbox.start", "", "Where to start: 'x y z yaw pitch', in meters and degrees")
                 .Get();
+        m_opening = app.CVars()
+                        .Register<std::string>("sandbox.opening", "Factory/Sequences/opening.sequence.json",
+                                               "The sequence a new game opens with, under assets/; empty for none")
+                        .Get();
         m_showcase = app.CVars()
                          .Register<bool>("sandbox.showcase", false,
                                          "Put the effects of mesh particles and ribbons in front of the start")
@@ -183,7 +187,14 @@ public:
         if (m_loading) {
             m_loadingSeconds += delta;
         } else if (m_screen == sandbox::Screen::None) {
-            if (m_actions.WasPressed(input, sandbox::Menu)) {
+            scene::Scene* current = app.CurrentScene();
+            if (current != nullptr && current->InCinematic()) {
+                // A cinematic is skipped by the menu, jump or use keys, not by a shot (ADR-0086).
+                if (m_actions.WasPressed(input, sandbox::Menu) || m_actions.WasPressed(input, sandbox::Jump) ||
+                    m_actions.WasPressed(input, sandbox::Interact)) {
+                    current->StopCinematic();
+                }
+            } else if (m_actions.WasPressed(input, sandbox::Menu)) {
                 OpenScreen(app, sandbox::Screen::Pause);
             } else {
                 if (m_actions.WasPressed(input, sandbox::ToggleMouse)) {
@@ -460,6 +471,14 @@ private:
         case sandbox::MenuChoice::None:
             break;
         case sandbox::MenuChoice::Play:
+            OpenScreen(app, sandbox::Screen::None);
+            if (scene::Scene* current = app.CurrentScene();
+                current != nullptr && !m_opening.empty() && !std::exchange(m_openingPlayed, true)) {
+                if (const core::Result<void> played = current->PlaySequenceFile(m_opening); !played) {
+                    DAI_LOG_WARNING("sandbox", "The opening: {}", core::Format(played.error()));
+                }
+            }
+            break;
         case sandbox::MenuChoice::Resume:
             OpenScreen(app, sandbox::Screen::None);
             break;
@@ -647,7 +666,10 @@ private:
             return;
         }
         const sandbox::Player* player = FindPlayer(app);
-        if (player != nullptr && (m_screen == sandbox::Screen::None || m_screen == sandbox::Screen::Dead)) {
+        // A cinematic shows the scene alone, with its subtitles (ADR-0086).
+        const bool cinematic = app.CurrentScene() != nullptr && app.CurrentScene()->InCinematic();
+        if (player != nullptr && !cinematic &&
+            (m_screen == sandbox::Screen::None || m_screen == sandbox::Screen::Dead)) {
             sandbox::DrawHud(canvas, m_hud, *player);
         }
         if (scene::Scene* scene = app.CurrentScene(); scene != nullptr && m_screen == sandbox::Screen::None) {
@@ -775,6 +797,9 @@ private:
     std::optional<core::CVar<bool>> m_captions;
     std::optional<core::CVar<double>> m_textSize;
     std::optional<core::CVar<double>> m_cameraShake;
+    /// The opening camera flight (ADR-0086), played once, when a new game starts from the main menu.
+    std::string m_opening;
+    bool m_openingPlayed = false;
     sandbox::OptionsState m_options;
     sandbox::PhotoMode m_photo;
     ui::Context m_ui;
