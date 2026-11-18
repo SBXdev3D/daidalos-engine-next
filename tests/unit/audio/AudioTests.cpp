@@ -466,3 +466,43 @@ TEST_F(AudioTest, SoundFindsTheWayAroundAWall) {
     RecordProperty("around", std::to_string(around));
     EXPECT_GT(around, muffled * 2.0f);
 }
+
+TEST_F(AudioTest, ASnapshotMufflesTheWorldButNotTheMusic) {
+    // A snapshot with a low cutoff (ADR-0067): the world's sounds lose their 440 Hz tone; music keeps it.
+    const ClipHandle clip = Clip("long.wav");
+    const audio::VoiceHandle effect = m_sounds->Play(clip, {.loop = true});
+    m_sounds->Update();
+    Mix();
+    const float clear = Mix().left;
+    m_sounds->SetSnapshot({.lowpass = 100.0f}, 0.0f);
+    m_sounds->Update();
+    Mix();
+    const float muffled = Mix().left;
+    m_sounds->Stop(effect);
+    m_sounds->Play(clip, {.loop = true, .bus = audio::Bus::Music});
+    m_sounds->Update();
+    Mix();
+    const float music = Mix().left;
+    RecordProperty("clear", std::to_string(clear));
+    RecordProperty("muffled", std::to_string(muffled));
+    EXPECT_LT(muffled, clear * 0.3f);
+    EXPECT_GT(music, 0.05f);
+}
+
+TEST_F(AudioTest, AStingerDucksTheMusic) {
+    const ClipHandle clip = Clip("long.wav");
+    m_sounds->Play(clip, {.loop = true, .bus = audio::Bus::Music});
+    m_sounds->Update();
+    Mix();
+    const float alone = Mix().left;
+    const audio::VoiceHandle stinger = m_sounds->Play(Clip("long.wav"), {.volume = 0.0f, .ducking = 0.8f});
+    for (int frame = 0; frame < 30; ++frame) {
+        m_sounds->Update();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    Mix();
+    const float ducked = Mix().left;
+    EXPECT_GT(m_sounds->Ducking(), 0.5f);
+    EXPECT_LT(ducked, alone * 0.5f);
+    m_sounds->Stop(stinger);
+}

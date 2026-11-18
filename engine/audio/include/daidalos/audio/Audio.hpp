@@ -28,8 +28,20 @@ using ClipHandle = core::Handle<ClipTag>;
 /// One playback of a clip.
 using VoiceHandle = core::Handle<VoiceTag>;
 
-/// Each bus has its own volume.
-enum class Bus { Effects, Music };
+/// Each bus has its own volume (ADR-0067). Effects and ambience are the world's sounds, which snapshots can
+/// muffle; music and the interface are not in the world.
+enum class Bus { Effects, Music, Ambience, Interface };
+inline constexpr std::size_t kBusCount = 4;
+
+/// A state of the mix (ADR-0067): each bus's share of its volume, and how muffled the world's sounds are, as
+/// a low-pass filter's cutoff in hertz (20 kHz or more: none). A game sets one for a menu, for being hurt,
+/// for a scare, and the mix fades to it.
+struct MixSnapshot {
+    std::array<float, kBusCount> buses{1.0f, 1.0f, 1.0f, 1.0f};
+    float lowpass = 20000.0f;
+
+    bool operator==(const MixSnapshot&) const = default;
+};
 
 struct AudioConfig {
     /// False mixes on demand with AudioEngine::Read and plays nothing, for tests.
@@ -84,6 +96,9 @@ struct PlayOptions {
     /// Meters. Closer than the minimum, the sound is at full volume; it stops fading at the maximum.
     float minDistance = 1.5f;
     float maxDistance = 35.0f;
+    /// While it plays, music and ambience drop by this share, so that it is heard over them (ADR-0067): a
+    /// stinger, a voice, a scream.
+    float ducking = 0.0f;
 };
 
 /// How a surface treats sound (ADR-0065), in three bands, low (around 400 Hz), middle (2.5 kHz) and high
@@ -163,8 +178,14 @@ public:
     /// Whether sounds are heard through the geometry and an HRTF.
     [[nodiscard]] bool HearsGeometry() const;
 
-    /// Releases the voices that ended, then simulates how each sound reaches the listener through the
-    /// geometry. Run it once per frame.
+    /// Fades the mix to a snapshot over these seconds (ADR-0067).
+    void SetSnapshot(const MixSnapshot& snapshot, float fadeSeconds = 0.5f);
+    /// The mix as it is now, on its way to the last snapshot, and how much music and ambience are ducked.
+    [[nodiscard]] const MixSnapshot& Mix() const;
+    [[nodiscard]] float Ducking() const;
+
+    /// Releases the voices that ended, moves the mix towards its snapshot and its ducking, then simulates how
+    /// each sound reaches the listener through the geometry. Run it once per frame.
     void Update();
     /// Milliseconds the last Update spent simulating, for the sound's CPU budget.
     [[nodiscard]] double LastSimulationMilliseconds() const;
