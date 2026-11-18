@@ -281,3 +281,37 @@ TEST(PhysicsWorld, RemovedCharacterIsNoLongerHit) {
     physics.RemoveCharacter(character);
     EXPECT_FALSE(physics.CastRay({-5.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, 10.0f).has_value());
 }
+
+TEST(PhysicsWorld, ABoxFallsAndComesToRestOnTheFloor) {
+    // A loose crate (ADR-0073): it falls, lands and stays.
+    PhysicsWorld physics;
+    AddFloor(physics);
+    math::Transform start;
+    start.translation = {0.0f, 3.0f, 0.0f};
+    const core::Result<BodyId> crate = physics.AddDynamicBox(glm::vec3(0.3f), 15.0f, start);
+    ASSERT_TRUE(crate.has_value());
+    EXPECT_TRUE(physics.IsDynamic(*crate));
+    EXPECT_NEAR(physics.BodyMass(*crate), 15.0f, 0.01f);
+    for (int step = 0; step < 240; ++step) {
+        physics.Step(1.0f / 60.0f);
+    }
+    EXPECT_NEAR(physics.BodyPosition(*crate).y, 0.3f, 0.05f);
+    EXPECT_LT(glm::length(physics.BodyVelocity(*crate)), 0.05f);
+}
+
+TEST(PhysicsWorld, AThrownBoxFliesTheWayItWasThrown) {
+    PhysicsWorld physics;
+    AddFloor(physics);
+    math::Transform start;
+    start.translation = {0.0f, 0.3f, 0.0f};
+    const core::Result<BodyId> crate = physics.AddDynamicBox(glm::vec3(0.3f), 10.0f, start);
+    ASSERT_TRUE(crate.has_value());
+    physics.Step(1.0f / 60.0f);
+    physics.SetBodyVelocity(*crate, {0.0f, 3.0f, -6.0f});
+    for (int step = 0; step < 30; ++step) {
+        physics.Step(1.0f / 60.0f);
+    }
+    EXPECT_LT(physics.BodyPosition(*crate).z, -2.0f);
+    physics.SetBodyTransform(*crate, {5.0f, 2.0f, 5.0f}, glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
+    EXPECT_NEAR(physics.BodyPosition(*crate).x, 5.0f, 1e-4f);
+}

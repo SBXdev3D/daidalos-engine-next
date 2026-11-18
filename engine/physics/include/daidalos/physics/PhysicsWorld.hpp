@@ -74,6 +74,20 @@ public:
     [[nodiscard]] core::Result<BodyId> AddKinematicBox(const glm::vec3& halfExtents, const glm::vec3& center = {},
                                                        const math::Transform& transform = {});
 
+    /// A box that falls, slides, tumbles and can be pushed (ADR-0073): mass in kilograms, half extents in meters,
+    /// around a center in its own frame.
+    [[nodiscard]] core::Result<BodyId> AddDynamicBox(const glm::vec3& halfExtents, float mass,
+                                                     const math::Transform& transform, const glm::vec3& center = {});
+    [[nodiscard]] glm::quat BodyRotation(BodyId body) const;
+    [[nodiscard]] glm::vec3 BodyVelocity(BodyId body) const;
+    /// Sets how a dynamic body moves and turns, waking it.
+    void SetBodyVelocity(BodyId body, const glm::vec3& linear, const glm::vec3& angular = {});
+    /// Puts a body somewhere at once, as a saved game does, waking it.
+    void SetBodyTransform(BodyId body, const glm::vec3& position, const glm::quat& rotation);
+    /// A push through the body's center of mass, in kilogram-meters per second.
+    void AddImpulse(BodyId body, const glm::vec3& impulse);
+    [[nodiscard]] bool IsDynamic(BodyId body) const;
+    [[nodiscard]] float BodyMass(BodyId body) const;
     void RemoveBody(BodyId body);
     [[nodiscard]] std::size_t BodyCount() const;
 

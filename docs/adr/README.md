@@ -76,3 +76,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0070](0070-perception-and-utility-ai.md) | Perception in the engine (noises heard along the navmesh, lux from lights with shadow rays, a utility chooser); zombies stalk, search, ambush and hide | Accepted |
 | [0071](0071-triggers-and-sequences.md) | Sequences as data (power, light, sound, particles, move, visible, shake, camera paths and focus pulls, mix, events), played by the scene, started by level triggers; no scripting language | Accepted |
 | [0072](0072-saves.md) | Saves as key = value text; the level made anew then put back; level ids and save keys; engine and game parts; checkpoints from sequence events | Accepted |
+| [0073](0073-loose-objects.md) | Dynamic bodies and gravity, loose objects in levels, picking up and throwing; ragdolls, cloth, leaning, animation extras and portal visibility left for later with why | Accepted |
