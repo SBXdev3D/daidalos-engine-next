@@ -10,6 +10,7 @@
 #include <daidalos/core/Result.hpp>
 #include <daidalos/core/WorkerPool.hpp>
 #include <daidalos/input/InputState.hpp>
+#include <daidalos/input/Rumble.hpp>
 #include <daidalos/logging/Log.hpp>
 #include <daidalos/platform/Event.hpp>
 #include <daidalos/platform/Platform.hpp>
@@ -132,6 +133,9 @@ public:
     /// OnUpdate. Presses and releases last one frame: read them in OnUpdate, because OnFixedUpdate
     /// may run zero or several times per frame.
     [[nodiscard]] const input::InputState& Input() const noexcept { return m_input; }
+    /// The gamepads' motors (ADR-0076): what the game pulses and holds there is sent after each OnUpdate,
+    /// scaled by input.rumble.
+    [[nodiscard]] input::RumbleMixer& Rumble() noexcept { return m_rumble; }
     /// Valid between OnStart and OnStop, when ApplicationConfig::rendering is set.
     [[nodiscard]] renderer::Renderer& Renderer();
     /// The game's interface for this frame, begun again before each frame's updates and drawn over the
@@ -269,6 +273,8 @@ private:
     std::optional<core::CVar<double>> m_effectsVolume;
     std::optional<core::CVar<double>> m_musicVolume;
     std::optional<core::CVar<double>> m_mouseSensitivity;
+    std::optional<core::CVar<double>> m_rumbleStrength;
+    input::RumbleMixer m_rumble;
     std::optional<core::CVar<bool>> m_directInput;
     std::optional<platform::Platform> m_platform;
     std::optional<platform::Window> m_window;

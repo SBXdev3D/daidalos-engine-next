@@ -125,7 +125,10 @@ public:
                            .Register<bool>("sandbox.calibrated", false,
                                            "The brightness was calibrated; false shows its screen before the menu")
                            .Get();
-        m_actions = sandbox::MakeActions();
+        // The controls, as the player bound them (ADR-0076), and the gamepads' motors.
+        sandbox::RegisterControls(app.CVars());
+        m_actions = sandbox::MakeActions(app.CVars());
+        m_settings.rumble = &app.Rumble();
         m_assetRoot = FindAssetRoot();
         DAI_LOG_INFO("sandbox", "Assets in '{}'", m_assetRoot.string());
 
@@ -211,7 +214,8 @@ public:
                 m_playSeconds += delta;
                 WatchTheEnd(app, delta);
             }
-        } else if (m_actions.WasPressed(input, sandbox::Menu)) {
+        } else if ((m_actions.WasPressed(input, sandbox::Menu) || m_actions.WasPressed(input, sandbox::MenuBack)) &&
+                   !m_options.capturing.has_value()) {
             if (m_screen == sandbox::Screen::Pause) {
                 OpenScreen(app, sandbox::Screen::None);
             } else if (m_screen == sandbox::Screen::Options) {
@@ -343,6 +347,8 @@ private:
         if (screen == sandbox::Screen::Options) {
             m_optionsReturn = m_screen;
             m_settingsChanged = false;
+            m_options.capturing.reset();
+            m_ui.Hold(false);
         } else if (screen == sandbox::Screen::Calibration) {
             m_calibrationReturn = m_screen;
         }
@@ -353,8 +359,12 @@ private:
         app.MainWindow().SetMouseCaptured(playing);
         if (playing) {
             m_resumePending = true;
-        } else if (scene::Scene* current = app.CurrentScene()) {
-            current->SetPaused(true);
+        } else {
+            // The pads go still with the game.
+            app.Rumble().Stop();
+            if (scene::Scene* current = app.CurrentScene()) {
+                current->SetPaused(true);
+            }
         }
     }
 
@@ -630,7 +640,10 @@ private:
             choice = sandbox::DrawPauseMenu(m_ui, canvas, m_hud);
             break;
         case sandbox::Screen::Options:
-            choice = sandbox::DrawOptions(m_ui, canvas, m_hud, app, m_optionsPage, m_settingsChanged);
+            choice = sandbox::DrawOptions(m_ui, canvas, m_hud, app, m_options, m_settingsChanged);
+            if (std::exchange(m_options.rebound, false)) {
+                m_actions = sandbox::MakeActions(app.CVars());
+            }
             break;
         case sandbox::Screen::Calibration:
             choice = sandbox::DrawCalibration(m_ui, canvas, m_hud, app, m_settingsChanged);
@@ -714,7 +727,7 @@ private:
     std::optional<core::CVar<bool>> m_captions;
     std::optional<core::CVar<double>> m_textSize;
     std::optional<core::CVar<double>> m_cameraShake;
-    sandbox::OptionsPage m_optionsPage = sandbox::OptionsPage::Video;
+    sandbox::OptionsState m_options;
     ui::Context m_ui;
     sandbox::Screen m_screen = sandbox::Screen::None;
     /// Where the options go back to.

@@ -844,44 +844,27 @@ void ApplyAtmosphere(scene::Scene& scene, const Settings& settings) {
 
 } // namespace
 
-input::ActionMap MakeActions() {
-    using platform::GamepadAxis;
-    using platform::GamepadButton;
-    using platform::Key;
-
-    input::ActionMap actions;
-    actions.BindAxis(MoveForward, Key::W, Key::S);
-    actions.BindAxis(MoveForward, GamepadAxis::LeftY);
-    actions.BindAxis(MoveRight, Key::D, Key::A);
-    actions.BindAxis(MoveRight, GamepadAxis::LeftX);
-    actions.Bind(Jump, Key::Space);
-    actions.Bind(Jump, GamepadButton::South);
-    actions.Bind(Crouch, Key::C);
-    actions.Bind(Crouch, Key::LeftCtrl);
-    actions.Bind(Crouch, GamepadButton::East);
-    actions.Bind(Run, Key::LeftShift);
-    actions.Bind(Run, GamepadButton::LeftShoulder);
-    actions.Bind(Interact, Key::E);
-    actions.Bind(Interact, GamepadButton::West);
-    actions.Bind(ToggleFlashlight, Key::F);
-    actions.Bind(ToggleFlashlight, GamepadButton::North);
-    actions.Bind(Restart, Key::F5);
-    actions.Bind(QuickSave, Key::F6);
-    actions.Bind(QuickLoad, Key::F9);
-    actions.Bind(ToggleMouse, Key::Tab);
-    actions.Bind(Menu, Key::Escape);
-    actions.Bind(Menu, GamepadButton::Start);
-    actions.Bind(Menu, GamepadButton::Back);
-    actions.Bind(Fire, platform::MouseButton::Left);
-    actions.BindAxis(FireTrigger, GamepadAxis::RightTrigger);
-    actions.Bind(Reload, Key::R);
-    actions.Bind(Reload, GamepadButton::RightShoulder);
-    actions.Bind(NextWeapon, Key::Q);
-    actions.Bind(NextWeapon, GamepadButton::DpadUp);
-    actions.Bind(SelectHandgun, Key::Digit1);
-    actions.Bind(SelectShotgun, Key::Digit2);
-    return actions;
+void Kick(Player& player, float low, float high, float seconds) {
+    if (low + high > player.kick.low + player.kick.high) {
+        player.kick = {.low = low, .high = high, .seconds = seconds};
+    }
 }
+
+namespace {
+
+/// The heavy motor's level of a heartbeat (ADR-0076): a strong beat, then a weaker one, then rest, at a phase
+/// from 0 to 1 of the beat.
+float HeartbeatLevel(float phase) {
+    if (phase < 0.08f) {
+        return 1.0f;
+    }
+    if (phase >= 0.2f && phase < 0.26f) {
+        return 0.6f;
+    }
+    return 0.0f;
+}
+
+} // namespace
 
 audio::ClipHandle LoadSound(scene::Scene& scene, std::string_view name, const audio::ClipOptions& options) {
     core::Result<audio::ClipHandle> clip =
@@ -1405,6 +1388,21 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
         }
         const Threat threat = ZombieThreat(scene, state.feet);
         scene.Sounds().SetTension(state.dead ? 0.0f : threat.tension);
+        // The gamepad (ADR-0076): the shots and wounds asked for, over a heartbeat that comes with the danger
+        // or a low health, faster and harder as it grows.
+        if (Player& felt = world.Get<Player>(entity); settings.rumble != nullptr) {
+            if (felt.kick.seconds > 0.0f) {
+                settings.rumble->Pulse(felt.kick.low, felt.kick.high, felt.kick.seconds);
+            }
+            const float wounded = std::clamp((40.0f - static_cast<float>(felt.health)) / 30.0f, 0.0f, 1.0f);
+            const float fear =
+                felt.dead ? 0.0f : std::max(std::clamp((threat.tension - 0.45f) / 0.55f, 0.0f, 1.0f), wounded);
+            const float beatsPerSecond = (60.0f + (70.0f * fear)) / 60.0f;
+            felt.heartbeat = std::fmod(felt.heartbeat + (static_cast<float>(delta.count()) * beatsPerSecond), 1.0f);
+            settings.rumble->Hold(
+                {.low = fear > 0.0f ? (0.12f + (0.33f * fear)) * HeartbeatLevel(felt.heartbeat) : 0.0f});
+        }
+        world.Get<Player>(entity).kick = {};
         bank->stingerCooldown = std::max(bank->stingerCooldown - static_cast<float>(delta.count()), 0.0f);
         if (threat.hunting > 0 && bank->hunting == 0 && bank->stingerCooldown <= 0.0f && !bank->stingers.empty()) {
             scene.Sounds().Play(bank->stingers[bank->random() % bank->stingers.size()],

@@ -144,6 +144,7 @@ sandbox.exe +window.fullscreen true +renderer.antialiasing off
 | `view.distance` | 150 | Meters: nothing farther is drawn or lit |
 | `audio.volume`, `audio.effects`, `audio.music` | 1 | Volumes, from 0 to 1, read at startup |
 | `input.mouse_sensitivity` | 0.0025 | Radians of turn per mouse unit |
+| `input.rumble` | 1 | Strength of the gamepads' rumble, 0 (off) to 1 |
 
 The sandbox adds its own:
 
@@ -162,6 +163,7 @@ The sandbox adds its own:
 | `game.subtitles`, `game.captions` | true, false | Show what is said, and what sounds are heard |
 | `renderer.color_vision` | normal | protanopia, deuteranopia or tritanopia correct the image |
 | `view.camera_shake` | 1 | How much the camera shakes, 0 to 1 |
+| `bind.key.<control>`, `bind.pad.<control>` | | A control's key or gamepad button by name (`E`, `MouseRight`, `PadWest`); empty for none. The options' Controls tab sets them |
 | `sandbox.start` | | Where the player's eyes start: `x y z yaw pitch`, in meters and degrees |
 
 ## Releasing

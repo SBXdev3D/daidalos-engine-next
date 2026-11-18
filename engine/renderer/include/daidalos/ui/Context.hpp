@@ -41,7 +41,7 @@ struct WidgetStyle {
 ///
 /// Mouse: the widget under the pointer takes the focus when the pointer moves, and a left click uses it.
 /// Keyboard: up and down move the focus, wrapping around; Enter or Space use the focused widget; left
-/// and right change its value.
+/// and right change its value. Gamepad: the D-pad or the left stick as the arrows, South as Enter.
 class Context {
 public:
     /// Starts this frame's widgets, on a canvas begun for the frame. windowSize is in the units of
@@ -53,6 +53,9 @@ public:
     void ResetFocus();
 
     void SetStyle(const WidgetStyle& style) { m_style = style; }
+    /// While held, from the next Begin, the widgets read no input and the focus stays: a menu waiting for the
+    /// key to bind to an action reads the input itself.
+    void Hold(bool held) { m_held = held; }
     [[nodiscard]] const WidgetStyle& Style() const { return m_style; }
 
     /// The pointer, in canvas units.
@@ -95,8 +98,12 @@ private:
     bool m_mouseDown = false;
     bool m_activate = false;
     int m_step = 0;
+    /// Where the left sticks leaned last frame, so that a lean moves once.
+    int m_leanX = 0;
+    int m_leanY = 0;
     /// Input is ignored for the rest of the frame.
     bool m_consumed = false;
+    bool m_held = false;
     /// Places in the frame's calls.
     std::size_t m_focus = 0;
     std::size_t m_next = 0;

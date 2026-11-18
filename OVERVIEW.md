@@ -2095,7 +2095,7 @@ Potential deliverables:
 - Level and texture streaming, when a level no longer fits in memory or in one load.
 - Accessibility: subtitles with speakers and sound captions, colorblind modes, toggles for motion blur, camera shake, film grain and chromatic aberration.
 - Localization of text and subtitles.
-- Input: full rebinding, gamepad rumble and trigger effects tied to tension.
+- Input: full rebinding, gamepad rumble and trigger effects tied to tension. Done (ADR-0076) but trigger effects, left until a pad that has them is at hand.
 - Diegetic UI: the game's interface drawn into textures on screens, notes and watches.
 - Crash reports from the minidumps.
 - Photo mode: a free camera, the path tracer converging, physical camera and image controls, high-resolution and EXR capture. The game provides its menu and rules.

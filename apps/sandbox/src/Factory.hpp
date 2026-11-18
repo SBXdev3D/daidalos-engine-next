@@ -6,6 +6,7 @@
 
 #include <daidalos/ecs/World.hpp>
 #include <daidalos/input/ActionMap.hpp>
+#include <daidalos/input/Rumble.hpp>
 #include <daidalos/physics/PhysicsWorld.hpp>
 #include <daidalos/scene/AssetLibrary.hpp>
 #include <daidalos/scene/Level.hpp>
@@ -22,36 +23,13 @@
 #include <string_view>
 #include <unordered_map>
 
+#include "Controls.hpp"
 #include "Flashlight.hpp"
 
 namespace sandbox {
 
 // The demo game, on the level of the original Daidalos demo (docs/DEMO.md). What is here belongs to
 // this game, not to the engine.
-
-enum Action : daidalos::input::Action {
-    MoveForward,
-    MoveRight,
-    Jump,
-    Crouch,
-    Run,
-    Interact,
-    ToggleFlashlight,
-    Restart,
-    ToggleMouse,
-    /// Pauses the game, or goes back from a menu.
-    Menu,
-    Fire,
-    /// The gamepad's trigger, which fires past half of its travel.
-    FireTrigger,
-    Reload,
-    NextWeapon,
-    SelectHandgun,
-    SelectShotgun,
-    /// Saves the game, and loads the last save (ADR-0072).
-    QuickSave,
-    QuickLoad,
-};
 
 enum class WeaponKind : std::uint8_t { Handgun, Shotgun };
 inline constexpr std::size_t kWeaponKinds = 2;
@@ -62,8 +40,6 @@ struct WeaponState {
     int magazine = 0;
     int reserve = 0;
 };
-
-[[nodiscard]] daidalos::input::ActionMap MakeActions();
 
 /// The particle effects that the game's code spawns, loaded from their files with the level's assets
 /// (ADR-0053), as a component of the camera entity. The level's emitters name their own files.
@@ -159,7 +135,18 @@ struct Player {
     /// Last thing that happened, and how long it stays on screen, in seconds.
     std::string message;
     float messageTime = 0.0f;
+    /// A shake of the gamepad asked for since the last frame (ADR-0076): a shot, a wound. The strongest wins.
+    struct Kick {
+        float low = 0.0f;
+        float high = 0.0f;
+        float seconds = 0.0f;
+    } kick;
+    /// Where the heartbeat the gamepad gives under tension is in its beat, from 0 to 1.
+    float heartbeat = 0.0f;
 };
+
+/// Asks for a shake of the gamepad, unless a stronger one is asked for already this frame.
+void Kick(Player& player, float low, float high, float seconds);
 
 /// Settings of the game, which must outlive the scene.
 struct Settings {
@@ -179,6 +166,8 @@ struct Settings {
     /// The player's camera's lens (ADR-0063): an f-number, 0 for everything sharp, and its focus in meters.
     float aperture = 0.0f;
     float focusDistance = 3.0f;
+    /// The gamepads' motors (ADR-0076), or none for a game without them, as in tests.
+    daidalos::input::RumbleMixer* rumble = nullptr;
 };
 
 /// Makes the flashlight fail for this long: it stutters and dies at random, as scripted scares want.

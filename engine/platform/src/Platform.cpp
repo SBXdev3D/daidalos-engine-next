@@ -136,6 +136,13 @@ std::string ExecutableFileName(std::string_view program) {
 #endif
 }
 
+std::string KeyLabel(Key key) {
+    // Key values are USB HID usages, which SDL's scancodes are.
+    const SDL_Keycode code = SDL_GetKeyFromScancode(static_cast<SDL_Scancode>(key), SDL_KMOD_NONE, false);
+    const char* name = code != SDLK_UNKNOWN ? SDL_GetKeyName(code) : nullptr;
+    return name != nullptr ? std::string(name) : std::string();
+}
+
 void ShowErrorMessage(const std::string& title, const std::string& message) {
     if (!SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, title.c_str(), message.c_str(), nullptr)) {
         DAI_LOG_WARNING("platform", "Cannot show an error box: {}", SDL_GetError());
@@ -161,6 +168,17 @@ void Platform::WaitEvents(std::chrono::milliseconds timeout, std::vector<Event>&
 
 bool Platform::GamepadsAvailable() const {
     return m_state->gamepadsAvailable;
+}
+
+void Platform::RumbleGamepads(float low, float high, std::chrono::milliseconds duration) {
+    constexpr float kFull = std::numeric_limits<Uint16>::max();
+    const auto strength = [](float value) { return static_cast<Uint16>(std::clamp(value, 0.0f, 1.0f) * kFull); };
+    const auto milliseconds =
+        static_cast<Uint32>(std::clamp<std::chrono::milliseconds::rep>(duration.count(), 0, 60000));
+    for (SDL_Gamepad* gamepad : m_state->gamepads) {
+        // A pad without motors says so; that is not worth a log line on every frame.
+        SDL_RumbleGamepad(gamepad, strength(low), strength(high), milliseconds);
+    }
 }
 
 std::string_view Platform::VideoDriver() const {
