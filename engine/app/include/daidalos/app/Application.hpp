@@ -154,15 +154,15 @@ public:
     /// The game's interface for this frame, begun again before each frame's updates and drawn over the
     /// scene (ADR-0027). Empty without ApplicationConfig::rendering.
     [[nodiscard]] ui::Canvas& Canvas() noexcept { return m_canvas; }
+    /// The crash reports written at this start, for runs that crashed since the last one (ADR-0080): what the
+    /// game may tell the player about.
+    [[nodiscard]] const std::vector<std::filesystem::path>& CrashReports() const noexcept { return m_crashReports; }
 #if DAI_DEV_TOOLS
     /// The overlay, or null without ApplicationConfig::rendering. Valid between OnStart and OnStop.
     [[nodiscard]] debugui::DebugUi* DebugOverlay() noexcept { return m_debugUi ? &*m_debugUi : nullptr; }
     /// The developer tools (ADR-0030), or null without ApplicationConfig::rendering. Valid between
     /// OnStart and OnStop.
     [[nodiscard]] DevTools* Tools() noexcept { return m_devTools ? &*m_devTools : nullptr; }
-    /// The crash reports written at this start, for runs that crashed since the last one (ADR-0080): what the
-    /// game may tell the player about.
-    [[nodiscard]] const std::vector<std::filesystem::path>& CrashReports() const noexcept { return m_crashReports; }
     /// Opens or closes the tools, as the key under Escape does. Open, they free the pointer and the game
     /// gets no keyboard or mouse input; closed, the pointer is captured again if it was.
     void SetToolsOpen(bool open);
