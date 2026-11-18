@@ -258,6 +258,13 @@ core::Result<Trigger> ReadTrigger(Reader reader) {
     return trigger;
 }
 
+core::Result<VisibilityCell> ReadCell(Reader reader) {
+    VisibilityCell cell;
+    DAI_LEVEL_TRY(reader.Flag("enabled", cell.enabled));
+    DAI_LEVEL_TRY(reader.Finish());
+    return cell;
+}
+
 core::Result<WetVolume> ReadWet(Reader reader) {
     WetVolume wet;
     DAI_LEVEL_TRY(reader.Number("wetness", wet.wetness));
@@ -478,6 +485,7 @@ core::Result<LevelEntity> ReadEntity(const JsonObject& object, std::size_t index
     DAI_LEVEL_TRY(component("visibility", entity.visibility, &ReadVisibility));
     DAI_LEVEL_TRY(component("decal", entity.decal, &ReadDecal));
     DAI_LEVEL_TRY(component("wet", entity.wet, &ReadWet));
+    DAI_LEVEL_TRY(component("cell", entity.cell, &ReadCell));
     DAI_LEVEL_TRY(component("trigger", entity.trigger, &ReadTrigger));
     DAI_LEVEL_TRY(component("body", entity.body, &ReadBody));
     DAI_LEVEL_TRY(component("fog", entity.fog, &ReadFog));
@@ -751,6 +759,11 @@ Json WriteEntity(const LevelEntity& entity) {
         Put(wet, "enabled", entity.wet->enabled, fallback.enabled);
         object.emplace("wet", Json{std::move(wet)});
     }
+    if (entity.cell) {
+        JsonObject cell;
+        Put(cell, "enabled", entity.cell->enabled, true);
+        object.emplace("cell", Json{std::move(cell)});
+    }
     if (entity.trigger) {
         const Trigger fallback;
         JsonObject trigger;
@@ -891,8 +904,8 @@ bool LevelEntity::operator==(const LevelEntity& other) const {
            model == other.model && prefab == other.prefab && light == other.light && fog == other.fog &&
            wind == other.wind && particles == other.particles && attractor == other.attractor &&
            weather == other.weather && ribbon == other.ribbon && lightning == other.lightning && game == other.game &&
-           visibility == other.visibility && decal == other.decal && wet == other.wet && trigger == other.trigger &&
-           body == other.body;
+           visibility == other.visibility && decal == other.decal && wet == other.wet && cell == other.cell &&
+           trigger == other.trigger && body == other.body;
 }
 
 const LevelEntity* Level::Find(std::uint64_t id) const {

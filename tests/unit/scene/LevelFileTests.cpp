@@ -301,3 +301,16 @@ TEST(LevelFileTest, RelocateMovesPrefabsAndSequences) {
     EXPECT_EQ(level.entities[0].prefab, "../Factory/Prefabs/alarm_beams.prefab.json");
     EXPECT_EQ(level.entities[0].trigger->sequence, "../Factory/Sequences/boo.sequence.json");
 }
+
+TEST(LevelFileTest, VisibilityCellsKeepTheirBox) {
+    Level level;
+    LevelEntity room{.id = 1, .name = "Cell hall"};
+    room.transform.scale = {40.0f, 8.0f, 37.0f};
+    room.cell = scene::VisibilityCell{};
+    LevelEntity off{.id = 2, .name = "Cell off"};
+    off.cell = scene::VisibilityCell{.enabled = false};
+    level.entities = {room, off};
+    const core::Result<Level> read = ParseLevel(WriteLevel(level));
+    ASSERT_TRUE(read.has_value()) << core::Format(read.error());
+    EXPECT_EQ(*read, level);
+}

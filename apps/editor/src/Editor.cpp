@@ -2257,7 +2257,7 @@ void Editor::DrawMarkers() {
         const ImU32 color = selected ? IM_COL32(255, 220, 60, 255) : ((MarkerColor(entity) & 0x00FFFFFFU) | alpha);
         // Volumes show their box; a selected light shows where it points and how far it reaches.
         if (entity.fog || entity.wind || entity.weather || entity.lightning || entity.decal || entity.wet ||
-            entity.trigger) {
+            entity.trigger || entity.cell) {
             box(matrix, glm::vec3(-0.5f), glm::vec3(0.5f),
                 (color & 0x00FFFFFFU) | (selected ? 0xFF000000U : static_cast<ImU32>(fade * 90.0f) << 24),
                 selected ? 2.0f : 1.0f);

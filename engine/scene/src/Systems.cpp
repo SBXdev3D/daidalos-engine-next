@@ -126,6 +126,24 @@ void AnimateLights(ecs::World& world, double seconds, const PowerCircuits& circu
 
 namespace {
 
+void ExtractCells(ecs::World& world, renderer::SceneView& view) {
+    world.Each<ecs::WorldTransform, VisibilityCell>(
+        [&](ecs::Entity, const ecs::WorldTransform& transform, const VisibilityCell& cell) {
+            if (!cell.enabled) {
+                return;
+            }
+            renderer::VisibilityCell box{glm::vec3(1e30f), glm::vec3(-1e30f)};
+            for (int corner = 0; corner < 8; ++corner) {
+                const glm::vec3 local((corner & 1) != 0 ? 0.5f : -0.5f, (corner & 2) != 0 ? 0.5f : -0.5f,
+                                      (corner & 4) != 0 ? 0.5f : -0.5f);
+                const glm::vec3 point(transform.matrix * glm::vec4(local, 1.0f));
+                box.min = glm::min(box.min, point);
+                box.max = glm::max(box.max, point);
+            }
+            view.cells.push_back(box);
+        });
+}
+
 void ExtractWetVolumes(ecs::World& world, renderer::SceneView& view) {
     world.Each<ecs::WorldTransform, WetVolume>(
         [&](ecs::Entity, const ecs::WorldTransform& transform, const WetVolume& volume) {
@@ -250,6 +268,7 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
     view.fogVolumes.clear();
     view.decals.clear();
     view.wetVolumes.clear();
+    view.cells.clear();
     view.windVolumes.clear();
     view.particleAttractors.clear();
     DrawnTransforms drawn(world);
@@ -319,6 +338,7 @@ void ExtractScene(ecs::World& world, renderer::SceneView& view, ecs::Entity acti
     ExtractFogVolumes(world, view);
     ExtractDecals(world, view);
     ExtractWetVolumes(world, view);
+    ExtractCells(world, view);
     ExtractParticleForces(world, view);
 }
 

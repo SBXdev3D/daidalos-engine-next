@@ -126,6 +126,13 @@ struct Light {
 
 /// ECS component: wet air (ADR-0061). The entity's box, from -0.5 to 0.5 scaled by its transform, makes what is
 /// inside it wet: porous surfaces darken, water films everything, pools on floors and runs down walls.
+/// ECS component: a room or a doorway for portal visibility (ADR-0089). Its box, from -0.5 to 0.5 scaled by
+/// its transform, is a cell: where two cells overlap is the opening between them.
+struct VisibilityCell {
+    bool enabled = true;
+    [[nodiscard]] bool operator==(const VisibilityCell&) const = default;
+};
+
 struct WetVolume {
     /// 0 dry, 1 soaked; it falls by dryingRate.
     float wetness = 1.0f;

@@ -6,6 +6,7 @@
 
 #include <daidalos/core/Handle.hpp>
 #include <daidalos/renderer/Particles.hpp>
+#include <daidalos/renderer/Portals.hpp>
 #include <daidalos/rhi/Types.hpp>
 
 #include <glm/mat4x4.hpp>
@@ -274,6 +275,9 @@ struct SceneView {
     std::vector<Decal> decals;
     /// Boxes of wet air, of which the 16 nearest the camera are drawn, and ripples on their water (ADR-0061).
     std::vector<WetVolume> wetVolumes;
+    /// Rooms and doorways for portal visibility (ADR-0089): draws in rooms the camera cannot see through the
+    /// doorways are not rasterized. None: everything is.
+    std::vector<VisibilityCell> cells;
     std::vector<Ripple> ripples;
     /// New particles of the frame (ADR-0025).
     std::vector<ParticleSpawn> particleSpawns;

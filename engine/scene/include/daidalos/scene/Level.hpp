@@ -129,6 +129,8 @@ struct LevelEntity {
     std::optional<Decal> decal;
     /// Wet air in its box (ADR-0061).
     std::optional<WetVolume> wet;
+    /// A room or a doorway for portal visibility, its box (ADR-0089).
+    std::optional<VisibilityCell> cell;
     /// A box that plays a sequence when the player enters (ADR-0071); its file is relative to the level.
     std::optional<Trigger> trigger;
     /// A loose object (ADR-0073): physics moves it.
