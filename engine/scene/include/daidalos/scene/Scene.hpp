@@ -13,6 +13,7 @@
 #include <daidalos/renderer/Renderer.hpp>
 #include <daidalos/renderer/SceneView.hpp>
 #include <daidalos/scene/AssetLibrary.hpp>
+#include <daidalos/scene/Perception.hpp>
 #include <daidalos/scene/Systems.hpp>
 
 #include <chrono>
@@ -101,6 +102,9 @@ public:
     static constexpr std::size_t kMaxTransientDecals = 96;
     /// Rings on still water (ADR-0061): a step in a puddle, a shot into it. The 16 most recent show.
     void AddRipple(const glm::vec3& position, float strength = 1.0f);
+    /// A sound that AI can hear (ADR-0070), kept for kNoiseMemory seconds.
+    void MakeNoise(const Noise& noise) { m_noises.push_back(noise); }
+    [[nodiscard]] std::span<const Noise> Noises() const { return m_noises; }
     void SpawnDecal(const DecalSpawn& spawn);
     [[nodiscard]] std::size_t TransientDecalCount() const { return m_transientDecals.size(); }
 
@@ -132,6 +136,7 @@ private:
     ecs::World m_world;
     physics::PhysicsWorld m_physics;
     std::optional<navigation::NavMesh> m_navigation;
+    std::vector<Noise> m_noises;
     audio::SoundWorld m_sounds;
     ecs::Schedule m_fixedSystems;
     ecs::Schedule m_frameSystems;

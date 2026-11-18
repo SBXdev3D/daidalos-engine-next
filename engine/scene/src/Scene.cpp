@@ -77,6 +77,11 @@ void Scene::RunFrame(core::Seconds delta, float fixedAlpha) {
         ripple.age += m_frameDelta;
     }
     std::erase_if(m_ripples, [](const renderer::Ripple& ripple) { return ripple.age > 2.0f; });
+    // Noises fade from memory (ADR-0070).
+    for (Noise& noise : m_noises) {
+        noise.age += m_frameDelta;
+    }
+    std::erase_if(m_noises, [](const Noise& noise) { return noise.age > kNoiseMemory; });
     // Wet places dry (ADR-0061).
     m_world.Each<WetVolume>([this](ecs::Entity, WetVolume& volume) {
         volume.wetness = std::max(volume.wetness - volume.dryingRate * m_frameDelta / 60.0f, 0.0f);
