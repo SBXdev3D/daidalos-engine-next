@@ -1,0 +1,26 @@
+{
+  "entities": [
+    {
+      "id": 1,
+      "model": "../Showcase/industrial_wall_lamp/industrial_wall_lamp.gltf",
+      "name": "Industrial wall lamp"
+    },
+    {
+      "id": 2,
+      "light": {
+        "color": [1, 0.85, 0.65],
+        "intensity": 110,
+        "range": 8,
+        "type": "point"
+      },
+      "name": "Industrial wall lamp light",
+      "parent": 1,
+      "transform": {
+        "translation": [0, -0.02, 0.1]
+      }
+    }
+  ],
+  "environment": {},
+  "format": "daidalos-level",
+  "version": 1
+}

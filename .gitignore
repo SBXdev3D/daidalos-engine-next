@@ -34,3 +34,6 @@ Thumbs.db
 
 # Cached results of texture-tool relief (scripts/convert_factory_textures.py).
 assets/Factory/*.cavity
+
+# The showcase kit's downloaded sources (scripts/fetch_showcase_props.py): only converted files are committed.
+assets/Factory/Showcase/*/Source/

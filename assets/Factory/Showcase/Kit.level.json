@@ -1,0 +1,432 @@
+{
+  "entities": [
+    {
+      "id": 1,
+      "light": {
+        "color": [0.75, 0.82, 1],
+        "intensity": 0.6,
+        "type": "directional"
+      },
+      "name": "Moon",
+      "transform": {
+        "rotation": [-0.35052618, 0.20030068, 0.08012027, 0.91136813]
+      }
+    },
+    {
+      "id": 2,
+      "model": "Barrel_01/Barrel_01.gltf",
+      "name": "Barrel_01",
+      "transform": {
+        "translation": [-10.5, 0, -4]
+      }
+    },
+    {
+      "id": 3,
+      "model": "Barrel_02/Barrel_02.gltf",
+      "name": "Barrel_02",
+      "transform": {
+        "translation": [-7.5, 0, -4]
+      }
+    },
+    {
+      "id": 4,
+      "model": "barrel_03/barrel_03.gltf",
+      "name": "barrel_03",
+      "transform": {
+        "translation": [-4.5, 0, -4]
+      }
+    },
+    {
+      "id": 5,
+      "model": "caged_hanging_light/caged_hanging_light.gltf",
+      "name": "caged_hanging_light",
+      "transform": {
+        "translation": [-1.5, 0, -4]
+      }
+    },
+    {
+      "id": 6,
+      "model": "cement_bag/cement_bag.gltf",
+      "name": "cement_bag",
+      "transform": {
+        "translation": [1.5, 0, -4]
+      }
+    },
+    {
+      "id": 7,
+      "model": "drill_press_01/drill_press_01.gltf",
+      "name": "drill_press_01",
+      "transform": {
+        "translation": [4.5, 0, -4]
+      }
+    },
+    {
+      "id": 8,
+      "model": "hand_truck/hand_truck.gltf",
+      "name": "hand_truck",
+      "transform": {
+        "translation": [7.5, 0, -4]
+      }
+    },
+    {
+      "id": 9,
+      "model": "hanging_industrial_lamp/hanging_industrial_lamp.gltf",
+      "name": "hanging_industrial_lamp",
+      "transform": {
+        "translation": [10.5, 0, -4]
+      }
+    },
+    {
+      "id": 10,
+      "model": "industrial_storage_cart/industrial_storage_cart.gltf",
+      "name": "industrial_storage_cart",
+      "transform": {
+        "translation": [-10.5, 0, -8]
+      }
+    },
+    {
+      "id": 11,
+      "model": "industrial_wall_lamp/industrial_wall_lamp.gltf",
+      "name": "industrial_wall_lamp",
+      "transform": {
+        "translation": [-7.5, 0, -8]
+      }
+    },
+    {
+      "id": 12,
+      "model": "korean_fire_extinguisher_01/korean_fire_extinguisher_01.gltf",
+      "name": "korean_fire_extinguisher_01",
+      "transform": {
+        "translation": [-4.5, 0, -8]
+      }
+    },
+    {
+      "id": 13,
+      "model": "metal_jerrycan/metal_jerrycan.gltf",
+      "name": "metal_jerrycan",
+      "transform": {
+        "translation": [-1.5, 0, -8]
+      }
+    },
+    {
+      "id": 14,
+      "model": "metal_office_desk/metal_office_desk.gltf",
+      "name": "metal_office_desk",
+      "transform": {
+        "translation": [1.5, 0, -8]
+      }
+    },
+    {
+      "id": 15,
+      "model": "metal_stool_01/metal_stool_01.gltf",
+      "name": "metal_stool_01",
+      "transform": {
+        "translation": [4.5, 0, -8]
+      }
+    },
+    {
+      "id": 16,
+      "model": "metal_tool_chest/metal_tool_chest.gltf",
+      "name": "metal_tool_chest",
+      "transform": {
+        "translation": [7.5, 0, -8]
+      }
+    },
+    {
+      "id": 17,
+      "model": "metal_toolbox/metal_toolbox.gltf",
+      "name": "metal_toolbox",
+      "transform": {
+        "translation": [10.5, 0, -8]
+      }
+    },
+    {
+      "id": 18,
+      "model": "modular_airduct_circular_01/modular_airduct_circular_01.gltf",
+      "name": "modular_airduct_circular_01",
+      "transform": {
+        "translation": [-10.5, 0, -12]
+      }
+    },
+    {
+      "id": 19,
+      "model": "modular_electric_cables/modular_electric_cables.gltf",
+      "name": "modular_electric_cables",
+      "transform": {
+        "translation": [-7.5, 0, -12]
+      }
+    },
+    {
+      "id": 20,
+      "model": "modular_industrial_pipes_01/modular_industrial_pipes_01.gltf",
+      "name": "modular_industrial_pipes_01",
+      "transform": {
+        "translation": [-4.5, 0, -12]
+      }
+    },
+    {
+      "id": 21,
+      "model": "mounted_fluorescent_lights/mounted_fluorescent_lights.gltf",
+      "name": "mounted_fluorescent_lights",
+      "transform": {
+        "translation": [-1.5, 0, -12]
+      }
+    },
+    {
+      "id": 22,
+      "model": "old_gas_mask/old_gas_mask.gltf",
+      "name": "old_gas_mask",
+      "transform": {
+        "translation": [1.5, 0, -12]
+      }
+    },
+    {
+      "id": 23,
+      "model": "old_military_compressor/old_military_compressor.gltf",
+      "name": "old_military_compressor",
+      "transform": {
+        "translation": [4.5, 0, -12]
+      }
+    },
+    {
+      "id": 24,
+      "model": "old_military_crate/old_military_crate.gltf",
+      "name": "old_military_crate",
+      "transform": {
+        "translation": [7.5, 0, -12]
+      }
+    },
+    {
+      "id": 25,
+      "model": "overhead_crane/overhead_crane.gltf",
+      "name": "overhead_crane",
+      "transform": {
+        "translation": [10.5, 0, -12]
+      }
+    },
+    {
+      "id": 26,
+      "model": "plastic_crate_01/plastic_crate_01.gltf",
+      "name": "plastic_crate_01",
+      "transform": {
+        "translation": [-10.5, 0, -16]
+      }
+    },
+    {
+      "id": 27,
+      "model": "portable_generator/portable_generator.gltf",
+      "name": "portable_generator",
+      "transform": {
+        "translation": [-7.5, 0, -16]
+      }
+    },
+    {
+      "id": 28,
+      "model": "power_box_01/power_box_01.gltf",
+      "name": "power_box_01",
+      "transform": {
+        "translation": [-4.5, 0, -16]
+      }
+    },
+    {
+      "id": 29,
+      "model": "propane_tank/propane_tank.gltf",
+      "name": "propane_tank",
+      "transform": {
+        "translation": [-1.5, 0, -16]
+      }
+    },
+    {
+      "id": 30,
+      "model": "security_light/security_light.gltf",
+      "name": "security_light",
+      "transform": {
+        "translation": [1.5, 0, -16]
+      }
+    },
+    {
+      "id": 31,
+      "model": "steel_frame_shelves_01/steel_frame_shelves_01.gltf",
+      "name": "steel_frame_shelves_01",
+      "transform": {
+        "translation": [4.5, 0, -16]
+      }
+    },
+    {
+      "id": 32,
+      "model": "steel_frame_shelves_02/steel_frame_shelves_02.gltf",
+      "name": "steel_frame_shelves_02",
+      "transform": {
+        "translation": [7.5, 0, -16]
+      }
+    },
+    {
+      "id": 33,
+      "model": "tool_cart/tool_cart.gltf",
+      "name": "tool_cart",
+      "transform": {
+        "translation": [10.5, 0, -16]
+      }
+    },
+    {
+      "id": 34,
+      "model": "trashbag/trashbag.gltf",
+      "name": "trashbag",
+      "transform": {
+        "translation": [-10.5, 0, -20]
+      }
+    },
+    {
+      "id": 35,
+      "model": "utility_box_01/utility_box_01.gltf",
+      "name": "utility_box_01",
+      "transform": {
+        "translation": [-7.5, 0, -20]
+      }
+    },
+    {
+      "id": 36,
+      "model": "utility_box_02/utility_box_02.gltf",
+      "name": "utility_box_02",
+      "transform": {
+        "translation": [-4.5, 0, -20]
+      }
+    },
+    {
+      "id": 37,
+      "model": "WetFloorSign_01/WetFloorSign_01.gltf",
+      "name": "WetFloorSign_01",
+      "transform": {
+        "translation": [-1.5, 0, -20]
+      }
+    },
+    {
+      "id": 38,
+      "model": "wooden_crate_01/wooden_crate_01.gltf",
+      "name": "wooden_crate_01",
+      "transform": {
+        "translation": [1.5, 0, -20]
+      }
+    },
+    {
+      "id": 39,
+      "model": "wooden_crate_02/wooden_crate_02.gltf",
+      "name": "wooden_crate_02",
+      "transform": {
+        "translation": [4.5, 0, -20]
+      }
+    },
+    {
+      "id": 40,
+      "light": {
+        "color": [1, 0.92, 0.82],
+        "intensity": 150,
+        "range": 14,
+        "type": "point"
+      },
+      "name": "Row light 1",
+      "transform": {
+        "translation": [0, 4.5, -4]
+      }
+    },
+    {
+      "id": 41,
+      "light": {
+        "color": [1, 0.92, 0.82],
+        "intensity": 150,
+        "range": 14,
+        "type": "point"
+      },
+      "name": "Row light 2",
+      "transform": {
+        "translation": [0, 4.5, -8]
+      }
+    },
+    {
+      "id": 42,
+      "light": {
+        "color": [1, 0.92, 0.82],
+        "intensity": 150,
+        "range": 14,
+        "type": "point"
+      },
+      "name": "Row light 3",
+      "transform": {
+        "translation": [0, 4.5, -12]
+      }
+    },
+    {
+      "id": 43,
+      "light": {
+        "color": [1, 0.92, 0.82],
+        "intensity": 150,
+        "range": 14,
+        "type": "point"
+      },
+      "name": "Row light 4",
+      "transform": {
+        "translation": [0, 4.5, -16]
+      }
+    },
+    {
+      "id": 44,
+      "light": {
+        "color": [1, 0.92, 0.82],
+        "intensity": 150,
+        "range": 14,
+        "type": "point"
+      },
+      "name": "Row light 5",
+      "transform": {
+        "translation": [0, 4.5, -20]
+      }
+    },
+    {
+      "id": 45,
+      "name": "hanging_industrial_lamp prefab",
+      "prefab": "../Prefabs/hanging_industrial_lamp.prefab.json",
+      "transform": {
+        "translation": [-6, 2.5, 2]
+      }
+    },
+    {
+      "id": 46,
+      "name": "industrial_wall_lamp prefab",
+      "prefab": "../Prefabs/industrial_wall_lamp.prefab.json",
+      "transform": {
+        "translation": [-2, 2.5, 2]
+      }
+    },
+    {
+      "id": 47,
+      "name": "caged_hanging_light prefab",
+      "prefab": "../Prefabs/caged_hanging_light.prefab.json",
+      "transform": {
+        "translation": [2, 2.5, 2]
+      }
+    },
+    {
+      "id": 48,
+      "name": "security_light prefab",
+      "prefab": "../Prefabs/security_light.prefab.json",
+      "transform": {
+        "translation": [6, 2.5, 2]
+      }
+    }
+  ],
+  "environment": {
+    "exposure": {
+      "auto": true,
+      "ev100": 3,
+      "max": 2.5,
+      "min": -0.5
+    },
+    "sky": {
+      "faces": "../Sky/sky1",
+      "intensity": 2,
+      "yaw": 180
+    }
+  },
+  "format": "daidalos-level",
+  "version": 1
+}

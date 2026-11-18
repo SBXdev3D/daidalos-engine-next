@@ -1,0 +1,28 @@
+{
+  "entities": [
+    {
+      "id": 1,
+      "model": "../Showcase/security_light/security_light.gltf",
+      "name": "Security light"
+    },
+    {
+      "id": 2,
+      "light": {
+        "color": [0.9, 0.95, 1],
+        "intensity": 2500,
+        "outer_angle": 45,
+        "range": 25,
+        "type": "spot"
+      },
+      "name": "Security light light",
+      "parent": 1,
+      "transform": {
+        "rotation": [-0, 0.9659259, 0.25881904, 0],
+        "translation": [0, 0, 0.3]
+      }
+    }
+  ],
+  "environment": {},
+  "format": "daidalos-level",
+  "version": 1
+}

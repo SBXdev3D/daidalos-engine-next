@@ -41,6 +41,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -67,6 +68,19 @@ constexpr std::string_view kUsage =
     "       texture-tool relief <roughness> <metallic|-> <height> <file.ktx2> [--depth N] [--albedo <albedo>]\n"
     "       texture-tool flipbook fire|smoke|explosion <out> [--frames N] [--size N] [--grid N] [--seed N]\n"
     "                    [--preview 1]\n";
+
+// The image without its mip levels larger than maxSize on either side: a smaller texture for a small prop
+// (ADR-0082). Its levels were averaged from the full image, so nothing is resampled again.
+ImageData LimitSize(ImageData image, std::uint32_t maxSize) {
+    while ((image.width > maxSize || image.height > maxSize) && image.mipLevels > 1) {
+        const std::size_t top = std::size_t{image.width} * image.height * 4;
+        image.pixels.erase(image.pixels.begin(), image.pixels.begin() + static_cast<std::ptrdiff_t>(top));
+        image.width = std::max(image.width / 2, 1U);
+        image.height = std::max(image.height / 2, 1U);
+        --image.mipLevels;
+    }
+    return image;
+}
 
 // glTF metallic-roughness texture: red is unused, green is roughness, blue is metalness.
 core::Result<ImageData> PackMetallicRoughness(const ImageData& roughness, const ImageData* metallic) {
@@ -425,6 +439,15 @@ int main(int argc, char** argv) {
         arguments = arguments.subspan(1);
         --argc;
     }
+    std::uint32_t maxSize = 0;
+    std::vector<char*> kept;
+    if (argc > 2 && std::string_view(arguments[1]) == "--max-size") {
+        maxSize = static_cast<std::uint32_t>(std::max(std::atoi(arguments[2]), 1));
+        kept.assign(arguments.begin(), arguments.end());
+        kept.erase(kept.begin() + 1, kept.begin() + 3);
+        arguments = std::span<char* const>(kept);
+        argc -= 2;
+    }
     const std::string_view mode = (argc > 1) ? arguments[1] : "";
     const bool packing = mode == "metallic-roughness";
     const bool known = packing || mode == "color" || mode == "normal" || mode == "data";
@@ -453,8 +476,8 @@ int main(int argc, char** argv) {
 
     const auto start = std::chrono::steady_clock::now();
     const core::Result<std::vector<std::byte>> encoded =
-        Load(inputs, packing, use).and_then([use](const ImageData& image) {
-            return resources::EncodeKtx2(image, use);
+        Load(inputs, packing, use).and_then([use, maxSize](const ImageData& image) {
+            return resources::EncodeKtx2(maxSize > 0 ? LimitSize(image, maxSize) : image, use);
         });
     const core::Result<void> written =
         encoded.and_then([&output](const std::vector<std::byte>& bytes) { return Write(output, bytes); });
