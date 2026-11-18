@@ -73,3 +73,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0067](0067-mix-and-surfaces.md) | Four buses, faded snapshots with a world low-pass, ducking voices; footsteps and impacts by surface, synthesized by a script | Accepted |
 | [0068](0068-score-and-flicker.md) | Layered score on one clock, faded in by tension; stingers on the interface bus; emitters that follow their light; all synthesized by a script | Accepted |
 | [0069](0069-navigation.md) | A navigation module over Recast and Detour: one mesh from the level, doors as areas that SetBlocked shuts, paths for zombies | Accepted |
+| [0070](0070-perception-and-utility-ai.md) | Perception in the engine (noises heard along the navmesh, lux from lights with shadow rays, a utility chooser); zombies stalk, search, ambush and hide | Accepted |
