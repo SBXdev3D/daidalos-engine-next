@@ -261,7 +261,7 @@ void HurtPlayer(scene::Scene& scene, ecs::Entity playerEntity, int damage) {
     player.health = 0;
     player.dead = true;
     player.reloading = false;
-    player.message = "You are dead.";
+    player.message = "message.dead";
     player.messageTime = kDeadMessageTime;
     if (arsenal != nullptr) {
         scene.Sounds().Play(arsenal->die);
@@ -290,6 +290,7 @@ void Kill(scene::Scene& scene, Zombie& zombie, Arsenal* arsenal) {
     Play(scene.World(), zombie.model, "die", {.loop = false, .fade = 0.1f, .restart = true});
     if (arsenal != nullptr) {
         scene.Sounds().Play(arsenal->bodyFall, {.position = zombie.feet});
+        scene.ShowCaption({.text = "caption.zombie_fall", .seconds = 2.0f, .position = zombie.feet, .reach = 20.0f});
     }
 }
 
@@ -517,6 +518,7 @@ void Groan(scene::Scene& scene, Zombie& zombie, Arsenal* arsenal, float step) {
     zombie.groanTime = Random(arsenal->random, 4.0f, 9.0f);
     const std::size_t which = arsenal->random() % arsenal->groans.size();
     scene.Sounds().Play(arsenal->groans[which], {.position = zombie.feet, .minDistance = 2.0f, .maxDistance = 25.0f});
+    scene.ShowCaption({.text = "caption.zombie_groan", .seconds = 2.5f, .position = zombie.feet, .reach = 15.0f});
 }
 
 // A point of the navigation mesh within a radius of a center, or the center.
@@ -608,6 +610,8 @@ void Think(scene::Scene& scene, ecs::Entity playerEntity, Zombie& zombie, float 
             if (next == ZombieState::Chasing && wasIdle && arsenal != nullptr) {
                 scene.Sounds().Play(arsenal->moan,
                                     {.position = zombie.feet, .minDistance = 2.0f, .maxDistance = 25.0f});
+                scene.ShowCaption(
+                    {.text = "caption.zombie_scream", .seconds = 2.5f, .position = zombie.feet, .reach = 25.0f});
             }
         }
         speed = kBehaviourSpeeds[chosen];

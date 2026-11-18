@@ -25,7 +25,6 @@
 
 #include <array>
 #include <cstdint>
-#include <cstdio>
 #include <filesystem>
 #include <format>
 #include <memory>
@@ -138,7 +137,17 @@ public:
             return tl::unexpected(std::move(hud.error()));
         }
         m_hud = *hud;
-        m_ui.SetStyle(sandbox::MenuStyle(m_hud));
+        // What the player reads and how (ADR-0075).
+        m_languageSetting = app.CVars().Register<std::string>(
+            "game.language", "en", "The language of the interface, subtitles and captions: a file of assets/Text");
+        m_subtitles = app.CVars().Register<bool>("game.subtitles", true, "Show what is said");
+        m_captions =
+            app.CVars().Register<bool>("game.captions", false, "Show what sounds are heard, and from which side");
+        m_textSize =
+            app.CVars().Register<double>("game.text_size", 1.0, "Size of subtitles and captions, 1 by default");
+        m_cameraShake =
+            app.CVars().Register<double>("view.camera_shake", 1.0, "How much the camera shakes, from 0 to 1");
+        LoadText();
         AddDevTools(app);
 
         // The first scene is current at once: the renderer's owner then releases it on any failure.
@@ -160,6 +169,12 @@ public:
             }
         }
         m_settings.mouseSensitivity = app.MouseSensitivity();
+        if (m_languageSetting->Get() != m_language) {
+            LoadText();
+        }
+        if (app.CurrentScene() != nullptr) {
+            app.CurrentScene()->SetShakeScale(static_cast<float>(m_cameraShake->Get()));
+        }
 
         if (m_loading) {
             m_loadingSeconds += delta;
@@ -560,6 +575,23 @@ private:
         return {};
     }
 
+    /// Reads the text of the language the player chose, and the names of the others (ADR-0075).
+    void LoadText() {
+        m_language = m_languageSetting->Get();
+        m_text = scene::TextTable::Load(m_assetRoot, m_language);
+        m_hud.text = &m_text;
+        m_hud.languages.clear();
+        for (const std::string& code : scene::TextTable::Languages(m_assetRoot)) {
+            const scene::TextTable table = scene::TextTable::Load(m_assetRoot, code);
+            m_hud.languages.emplace_back(code, std::string(table.Get("language.name")));
+        }
+        ui::WidgetStyle style = sandbox::MenuStyle(m_hud);
+        style.onText = std::string(m_text.Get("options.on"));
+        style.offText = std::string(m_text.Get("options.off"));
+        m_ui.SetStyle(style);
+        DAI_LOG_INFO("sandbox", "Text in '{}': {} strings", m_language, m_text.Size());
+    }
+
     /// The game's own interface, in every build.
     void DrawInterface(app::Application& app) {
         ui::Canvas& canvas = app.Canvas();
@@ -573,6 +605,19 @@ private:
         if (player != nullptr && (m_screen == sandbox::Screen::None || m_screen == sandbox::Screen::Dead)) {
             sandbox::DrawHud(canvas, m_hud, *player);
         }
+        if (scene::Scene* scene = app.CurrentScene(); scene != nullptr && m_screen == sandbox::Screen::None) {
+            const ecs::Entity camera = scene->ActiveCamera();
+            const ecs::WorldTransform* eye =
+                scene->World().IsAlive(camera) ? scene->World().TryGet<ecs::WorldTransform>(camera) : nullptr;
+            if (eye != nullptr) {
+                const glm::vec3 position(eye->matrix[3]);
+                const glm::quat rotation = glm::quat_cast(glm::mat3(eye->matrix));
+                sandbox::DrawCaptions(canvas, m_hud, scene->Captions(), position, glm::normalize(rotation),
+                                      {.subtitles = m_subtitles->Get(),
+                                       .sounds = m_captions->Get(),
+                                       .size = static_cast<float>(m_textSize->Get())});
+            }
+        }
 
         sandbox::MenuChoice choice = sandbox::MenuChoice::None;
         switch (m_screen) {
@@ -585,7 +630,7 @@ private:
             choice = sandbox::DrawPauseMenu(m_ui, canvas, m_hud);
             break;
         case sandbox::Screen::Options:
-            choice = sandbox::DrawOptions(m_ui, canvas, m_hud, app, m_settingsChanged);
+            choice = sandbox::DrawOptions(m_ui, canvas, m_hud, app, m_optionsPage, m_settingsChanged);
             break;
         case sandbox::Screen::Calibration:
             choice = sandbox::DrawCalibration(m_ui, canvas, m_hud, app, m_settingsChanged);
@@ -661,6 +706,15 @@ private:
     std::unique_ptr<scene::Scene> m_nextScene;
     std::unique_ptr<scene::AssetLibrary> m_interfaceAssets;
     sandbox::HudAssets m_hud;
+    /// The interface's text in the player's language, which m_hud points to (ADR-0075).
+    scene::TextTable m_text;
+    std::string m_language;
+    std::optional<core::CVar<std::string>> m_languageSetting;
+    std::optional<core::CVar<bool>> m_subtitles;
+    std::optional<core::CVar<bool>> m_captions;
+    std::optional<core::CVar<double>> m_textSize;
+    std::optional<core::CVar<double>> m_cameraShake;
+    sandbox::OptionsPage m_optionsPage = sandbox::OptionsPage::Video;
     ui::Context m_ui;
     sandbox::Screen m_screen = sandbox::Screen::None;
     /// Where the options go back to.

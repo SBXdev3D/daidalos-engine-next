@@ -364,38 +364,38 @@ void Collect(Player& player, PickupKind kind) {
     switch (kind) {
     case PickupKind::Health:
         player.health = std::min(player.health + kHealthBonus, kMaxHealth);
-        Say(player, "Health");
+        Say(player, "message.health");
         break;
     case PickupKind::Armor:
         player.armor += kArmorBonus;
-        Say(player, "Armor");
+        Say(player, "message.armor");
         break;
     case PickupKind::HandgunAmmo:
         AddAmmo(player, WeaponKind::Handgun, kHandgunAmmoBonus);
-        Say(player, "Handgun ammo");
+        Say(player, "message.handgun_ammo");
         break;
     case PickupKind::ShotgunAmmo:
         AddAmmo(player, WeaponKind::Shotgun, kShotgunAmmoBonus);
-        Say(player, "Shotgun shells");
+        Say(player, "message.shotgun_shells");
         break;
     case PickupKind::Shotgun:
         GiveShotgun(player);
-        Say(player, "Shotgun: press 2");
+        Say(player, "message.shotgun");
         break;
     case PickupKind::Flashlight:
         // A second flashlight is a fresh battery.
         if (player.hasFlashlight) {
             player.torch.battery = 1.0f;
-            Say(player, "Fresh batteries");
+            Say(player, "message.batteries");
         } else {
-            Say(player, "Flashlight: press F");
+            Say(player, "message.flashlight");
         }
         player.hasFlashlight = true;
         player.flashlightOn = true;
         break;
     case PickupKind::RedCard:
         player.hasRedCard = true;
-        Say(player, "Red access card");
+        Say(player, "message.red_card");
         break;
     }
 }
@@ -777,6 +777,12 @@ void UpdateDoors(scene::Scene& scene, ecs::Entity playerEntity, float delta) {
             scene.Sounds().Play(bank->*clip, {.position = position});
         }
     };
+    // Each door sound with its caption (ADR-0075).
+    const auto playAtCaptioned = [&](audio::ClipHandle(SoundBank::* clip), const glm::vec3& position,
+                                     std::string_view caption) {
+        playAt(clip, position);
+        scene.ShowCaption({.text = std::string(caption), .seconds = 2.0f, .position = position, .reach = 15.0f});
+    };
     Player& player = world.Get<Player>(playerEntity);
     const glm::vec3 eye = world.Get<ecs::LocalTransform>(playerEntity).translation;
     const bool interact = player.interactPressed;
@@ -787,12 +793,12 @@ void UpdateDoors(scene::Scene& scene, ecs::Entity playerEntity, float delta) {
         const bool byHand = door.radius < 0.0f;
         if (!door.open && (byHand ? interact && distance < kDoorRadius : distance < door.radius)) {
             if (door.locked && !player.hasRedCard) {
-                Say(player, "Locked: it needs a red card");
+                Say(player, "message.locked");
             } else {
                 door.locked = false;
                 door.open = true;
                 door.timeLeft = kDoorOpenTime;
-                playAt(&SoundBank::doorStart, door.closedPosition);
+                playAtCaptioned(&SoundBank::doorStart, door.closedPosition, "caption.door_open");
             }
         }
         if (door.open && door.closable) {
@@ -800,7 +806,7 @@ void UpdateDoors(scene::Scene& scene, ecs::Entity playerEntity, float delta) {
             // Never down on the player.
             if (door.timeLeft <= 0.0f && distance >= kDoorRadius) {
                 door.open = false;
-                playAt(&SoundBank::doorStart, door.closedPosition);
+                playAtCaptioned(&SoundBank::doorStart, door.closedPosition, "caption.door_close");
             }
         }
         const float step = kDoorSpeed * delta;
@@ -1393,6 +1399,7 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
             if (event == "stinger" && !bank->stingers.empty()) {
                 scene.Sounds().Play(bank->stingers[bank->random() % bank->stingers.size()],
                                     {.volume = 0.6f, .bus = audio::Bus::Interface, .ducking = 0.6f});
+                scene.ShowCaption({.text = "caption.stinger", .seconds = 3.0f});
                 bank->stingerCooldown = 25.0f;
             }
         }
@@ -1402,6 +1409,7 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
         if (threat.hunting > 0 && bank->hunting == 0 && bank->stingerCooldown <= 0.0f && !bank->stingers.empty()) {
             scene.Sounds().Play(bank->stingers[bank->random() % bank->stingers.size()],
                                 {.volume = 0.6f, .bus = audio::Bus::Interface, .ducking = 0.6f});
+            scene.ShowCaption({.text = "caption.stinger", .seconds = 3.0f});
             bank->stingerCooldown = 25.0f;
         }
         bank->hunting = threat.hunting;
@@ -1435,7 +1443,7 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
                 flashlight->intensity = kFlashlightCandela * brightness;
             }
             if (ecs::LocalTransform* hand = world.TryGet<ecs::LocalTransform>(state->flashlight)) {
-                const glm::vec2 aim = FlashlightAim(state->torch);
+                const glm::vec2 aim = FlashlightAim(state->torch) * scene.ShakeScale();
                 const glm::vec3 straight = glm::normalize(math::kForward * kFlashlightAimDistance - kFlashlightHand);
                 hand->rotation = glm::normalize(glm::angleAxis(aim.x, math::kUp) * glm::angleAxis(aim.y, math::kRight) *
                                                 glm::quatLookAtRH(straight, math::kUp));

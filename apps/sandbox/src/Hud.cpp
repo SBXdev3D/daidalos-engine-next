@@ -4,7 +4,11 @@
 
 #include "Hud.hpp"
 
+#include <daidalos/math/Axes.hpp>
+
+#include <glm/geometric.hpp>
 #include <glm/gtc/constants.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <algorithm>
 #include <format>
@@ -101,7 +105,7 @@ void DrawHud(ui::Canvas& canvas, const HudAssets& hud, const Player& player) {
     canvas.DrawText(*hud.boldFont, std::format("{} / {}", weapon.magazine, weapon.reserve),
                     {ammoIcon - 12.0f, bottomRow}, Label(glm::vec4(1.0f), ui::Align::End));
     if (player.reloading) {
-        canvas.DrawText(*hud.font, "RELOADING", {ammoIcon - 12.0f, upperRow},
+        canvas.DrawText(*hud.font, T(hud, "hud.reloading"), {ammoIcon - 12.0f, upperRow},
                         Label({1.0f, 1.0f, 1.0f, 0.7f}, ui::Align::End));
     }
 
@@ -118,7 +122,8 @@ void DrawHud(ui::Canvas& canvas, const HudAssets& hud, const Player& player) {
                                                                 : glm::vec4(1.0f, 1.0f, 1.0f, 0.8f * alpha));
     }
     if (player.hasRedCard) {
-        canvas.DrawText(*hud.boldFont, "RED CARD", {size.x - kMargin - kIconSize - 16.0f, 20.0f + (kIconSize * 0.5f)},
+        canvas.DrawText(*hud.boldFont, T(hud, "hud.red_card"),
+                        {size.x - kMargin - kIconSize - 16.0f, 20.0f + (kIconSize * 0.5f)},
                         {.size = 28.0f,
                          .color = {1.0f, 0.15f, 0.1f, 1.0f},
                          .horizontal = ui::Align::End,
@@ -129,7 +134,7 @@ void DrawHud(ui::Canvas& canvas, const HudAssets& hud, const Player& player) {
     // The last message fades out over its final second.
     if (player.messageTime > 0.0f && !player.message.empty()) {
         const float alpha = std::min(player.messageTime, 1.0f);
-        canvas.DrawText(*hud.font, player.message, {center.x, center.y - 120.0f},
+        canvas.DrawText(*hud.font, T(hud, player.message), {center.x, center.y - 120.0f},
                         {.size = kMessageSize,
                          .color = {1.0f, 0.85f, 0.4f, alpha},
                          .horizontal = ui::Align::Center,
@@ -138,10 +143,59 @@ void DrawHud(ui::Canvas& canvas, const HudAssets& hud, const Player& player) {
     }
 }
 
+void DrawCaptions(ui::Canvas& canvas, const HudAssets& hud, std::span<const scene::Caption> captions,
+                  const glm::vec3& eye, const glm::quat& rotation, const CaptionSettings& settings) {
+    const glm::vec2 size = canvas.Size();
+    const float textSize = 34.0f * std::clamp(settings.size, 0.5f, 2.5f);
+    const float lineHeight = textSize * 1.3f;
+    std::vector<std::string> lines;
+    for (const scene::Caption& caption : captions) {
+        if (caption.IsSound()) {
+            if (!settings.sounds) {
+                continue;
+            }
+            std::string_view side;
+            if (caption.position.has_value()) {
+                const glm::vec3 toward = *caption.position - eye;
+                const float distance = glm::length(toward);
+                if (caption.reach > 0.0f && distance > caption.reach) {
+                    continue;
+                }
+                // Left or right of where the eye looks; behind counts as the nearer side.
+                if (distance > 0.5f) {
+                    const glm::vec3 local = glm::inverse(rotation) * (toward / distance);
+                    side = local.x < -0.35f ? "< " : (local.x > 0.35f ? " >" : "");
+                }
+            }
+            const std::string text = std::format("[{}]", T(hud, caption.text));
+            lines.push_back(side == "< " ? std::string(side) + text : text + std::string(side));
+        } else if (settings.subtitles) {
+            lines.push_back(std::format("{}: {}", T(hud, caption.speaker), T(hud, caption.text)));
+        }
+    }
+    if (lines.empty()) {
+        return;
+    }
+    float y = size.y - 150.0f - (static_cast<float>(lines.size()) * lineHeight);
+    const float alpha = 1.0f;
+    for (const std::string& line : lines) {
+        const float width = std::min(static_cast<float>(line.size()) * textSize * 0.42f + 40.0f, size.x - 80.0f);
+        canvas.FillRect({{(size.x - width) * 0.5f, y - (lineHeight * 0.5f)}, {width, lineHeight}},
+                        {0.0f, 0.0f, 0.0f, 0.6f * alpha});
+        canvas.DrawText(*hud.font, line, {size.x * 0.5f, y},
+                        {.size = textSize,
+                         .color = {1.0f, 1.0f, 1.0f, alpha},
+                         .horizontal = ui::Align::Center,
+                         .vertical = ui::Align::Center,
+                         .shadowColor = kShadow});
+        y += lineHeight;
+    }
+}
+
 void DrawLoading(ui::Canvas& canvas, const HudAssets& hud, bool coverScreen, float seconds) {
     const glm::vec2 size = canvas.Size();
     canvas.FillRect({{0.0f, 0.0f}, size}, {0.0f, 0.0f, 0.0f, coverScreen ? 1.0f : 0.6f});
-    canvas.DrawText(*hud.boldFont, "LOADING...", size * 0.5f,
+    canvas.DrawText(*hud.boldFont, T(hud, "menu.loading"), size * 0.5f,
                     {.size = 80.0f,
                      .color = glm::vec4(1.0f),
                      .horizontal = ui::Align::Center,

@@ -78,3 +78,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0072](0072-saves.md) | Saves as key = value text; the level made anew then put back; level ids and save keys; engine and game parts; checkpoints from sequence events | Accepted |
 | [0073](0073-loose-objects.md) | Dynamic bodies and gravity, loose objects in levels, picking up and throwing; ragdolls, cloth, leaning, animation extras and portal visibility left for later with why | Accepted |
 | [0074](0074-linux-validation.md) | Linux checked from Windows (compile check against an Ubuntu sysroot, asset case, scene smoke tests); the run itself in scripts/validate_linux.sh, unverified until WSL2 or Linux | Accepted |
+| [0075](0075-accessibility-and-text.md) | Text tables per language, subtitles and directional sound captions, daltonization in the output pass, camera shake and lens sliders, options in tabs | Accepted |

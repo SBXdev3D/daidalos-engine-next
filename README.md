@@ -158,6 +158,10 @@ The sandbox adds its own:
 | `sandbox.focus` | 3 | Meters the camera is focused at |
 | `sandbox.classic_music` | false | The old demo's music track instead of the score that follows the danger |
 | `sandbox.continue` | false | Start from the last checkpoint; F6 saves, F9 loads |
+| `game.language` | en | Language of the interface, subtitles and captions (a file of `assets/Text`) |
+| `game.subtitles`, `game.captions` | true, false | Show what is said, and what sounds are heard |
+| `renderer.color_vision` | normal | protanopia, deuteranopia or tritanopia correct the image |
+| `view.camera_shake` | 1 | How much the camera shakes, 0 to 1 |
 | `sandbox.start` | | Where the player's eyes start: `x y z yaw pitch`, in meters and degrees |
 
 ## Releasing
