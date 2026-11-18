@@ -87,3 +87,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0081](0081-pipeline-shipping-and-samples.md) | meshoptimizer and BC6H measured and deferred until content needs them; the release archive checked unpacked; docs/GUIDE.md and samples/level-viewer | Accepted |
 | [0082](0082-factory-showcase.md) | Phase 16: the factory showcase in six steps (kit, dressing, pacing and scares, feel, the opening, the budget); CC0 props from Poly Haven | Accepted |
 | [0083](0083-dressing-the-factory.md) | Bodies without mass as static boxes for physics, navigation and sound; the factory dressed by a rule-based script of rooms and purposes, checked in the editor | Accepted |
+| [0084](0084-pacing-scares-and-exit.md) | Rooms on power circuits, `ambush` and `exit` events, five scares along the route with a way out, an end summary of time, kills and items | Accepted |

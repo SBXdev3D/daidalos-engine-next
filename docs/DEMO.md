@@ -39,6 +39,7 @@ flowchart LR
 | 11: Materials, lights and atmosphere | Wet floors and puddles, decals of blood and grime, a better flashlight, flickering and dying lamps, film grain | 11.1 to 11.3 done: clear coat and sheen, profiles, cookies and animated lights, the flashlight with its sway and battery |
 | 12: Sound | Doors that muffle sound, reverb that follows the rooms, music that follows the danger | |
 | 13: Gameplay systems | Security camera, opening camera flight, better zombie navigation, scripted scares, saves | |
+| 16: The showcase | The factory dressed with CC0 props by room and purpose, lamps on room circuits, scares along the route, a way out at the far end of the pumps, an end summary | 16.1 kit, 16.2 dressing, 16.3 scares and the way out done |
 
 Zombies come earlier than the roadmap's AI phase, because a shooter with no one to shoot is not a demo. Their state machine belongs to the game, and Phase 13 only adds what they turn out to lack.
 
@@ -47,7 +48,7 @@ Zombies come earlier than the roadmap's AI phase, because a shooter with no one 
 - **Pace.** Faster movement, more enemies, ambushes when doors open: closer to Doom than to the original's slow zombies.
 - **Dread.** Between the fights, the factory should feel hostile: dark corridors, lights that flicker and die, wet floors, scares set up by the level.
 - **Feel.** Hit feedback, screen flash on damage, stronger recoil and sway.
-- **Structure.** The factory level has shotgun ammunition, but no shotgun to pick up. The remake has a shotgun next to the shells, and still needs a clear exit and an end-of-level summary of kills, items and time.
+- **Structure.** The factory level has shotgun ammunition, but no shotgun to pick up. The remake has a shotgun next to the shells, a way out at the far end of the pumps, and an end-of-level summary of time, kills and items (ADR-0084).
 - **Sound.** Spatial audio is done. Occlusion by doors can come later, with rays from the listener.
 
 ## Running it
