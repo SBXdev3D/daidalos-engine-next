@@ -3,6 +3,7 @@
 
   "menu.title": "DAIDALOS",
   "menu.tagline": "Quelque chose ne va pas dans l'usine.",
+  "menu.crashed": "Le jeu s'est arrêté brusquement la dernière fois. Un rapport est dans {}.",
   "menu.new_game": "Nouvelle partie",
   "menu.continue": "Continuer",
   "menu.options": "Options",

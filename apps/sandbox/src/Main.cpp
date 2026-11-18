@@ -669,7 +669,14 @@ private:
         case sandbox::Screen::None:
             break;
         case sandbox::Screen::Main:
-            choice = sandbox::DrawMainMenu(m_ui, canvas, m_hud);
+            // After a crash, where its report is (ADR-0080), as long as the game has not started again.
+            choice = sandbox::DrawMainMenu(m_ui, canvas, m_hud,
+                                           app.CrashReports().empty()
+                                               ? std::string{}
+                                               : sandbox::Tf(m_hud, "menu.crashed",
+                                                             (app.CrashReports().back().parent_path().filename() /
+                                                              app.CrashReports().back().filename())
+                                                                 .generic_string()));
             break;
         case sandbox::Screen::Pause:
             choice = sandbox::DrawPauseMenu(m_ui, canvas, m_hud);

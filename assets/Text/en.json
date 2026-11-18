@@ -3,6 +3,7 @@
 
   "menu.title": "DAIDALOS",
   "menu.tagline": "Something is wrong in the factory.",
+  "menu.crashed": "The game stopped unexpectedly last time. A report is in {}.",
   "menu.new_game": "New game",
   "menu.continue": "Continue",
   "menu.options": "Options",

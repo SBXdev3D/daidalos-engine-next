@@ -103,6 +103,16 @@ jobs:
             build/packages/*.tar.gz
           if-no-files-found: error
 
+      # The executables' symbols, which the archive leaves out: crash reports of a released build need them
+      # (crash-report --symbols, ADR-0080). Kept with the workflow run, not attached to the release.
+      - name: Keep the symbols
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: symbols-${{ matrix.preset }}
+          path: build/${{ matrix.preset }}/apps/**/*.pdb
+          if-no-files-found: warn
+
   release:
     name: Draft the release
     needs: [version, build]

@@ -6,6 +6,7 @@
 #include <daidalos/core/Assert.hpp>
 #include <daidalos/core/Profile.hpp>
 #include <daidalos/platform/CrashHandler.hpp>
+#include <daidalos/platform/CrashReport.hpp>
 #include <daidalos/resources/ImageFile.hpp>
 
 #include <glm/trigonometric.hpp>
@@ -281,6 +282,14 @@ core::Result<void> Application::Start(IApplicationHandler& handler) {
     if (!m_config.crashDumpDirectory.empty()) {
         DAI_TRY(Starting("crash handler", platform::InstallCrashHandler({m_config.crashDumpDirectory, "crash"})));
         m_crashHandlerInstalled = true;
+        // Dumps of runs that crashed since the last start get a report beside them (ADR-0080).
+        if (platform::CrashReportsSupported()) {
+            m_crashReports = platform::ReportNewCrashes(m_config.crashDumpDirectory,
+                                                        logging::PreviousLogPath(m_config.log.filePath));
+            for (const std::filesystem::path& report : m_crashReports) {
+                DAI_LOG_WARNING(kModule, "A run crashed: its report is {}", report.generic_string());
+            }
+        }
     }
     DAI_TRY(Starting("configuration", LoadConfiguration()));
 

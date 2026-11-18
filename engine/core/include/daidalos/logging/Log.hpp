@@ -38,9 +38,12 @@ public:
 struct LogConfig {
     Level minimumLevel = Level::Info;
     bool console = true;
-    std::filesystem::path filePath; ///< Empty: no log file. The file is overwritten at startup.
+    std::filesystem::path filePath; ///< Empty: no log file. The last run's file is kept (PreviousLogPath).
     std::vector<ISink*> sinks;      ///< Not owned. Each sink must stay alive until Shutdown().
 };
+
+/// Where Initialize keeps the last run's log: "sandbox.log" becomes "sandbox.previous.log".
+[[nodiscard]] std::filesystem::path PreviousLogPath(const std::filesystem::path& file);
 
 /// Starts logging.
 ///
