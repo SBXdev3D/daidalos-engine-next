@@ -38,7 +38,6 @@
    }
   },
   {
-   "alphaMode": "BLEND",
    "doubleSided": true,
    "name": "old_military_compressor_glass",
    "normalTexture": {
@@ -50,10 +49,16 @@
     },
     "metallicRoughnessTexture": {
      "index": 5
-    }
+    },
+    "roughnessFactor": 0.1
    },
    "extras": {
-    "surface": "metal"
+    "surface": "glass"
+   },
+   "extensions": {
+    "KHR_materials_transmission": {
+     "transmissionFactor": 0.95
+    }
    }
   }
  ],
@@ -283,6 +288,7 @@
   }
  ],
  "extensionsUsed": [
+  "KHR_materials_transmission",
   "KHR_texture_basisu"
  ],
  "extensionsRequired": [

@@ -8,7 +8,12 @@
     {
       "id": 2,
       "light": {
-        "color": [0.9, 0.95, 1],
+        "color": [
+          0.9,
+          0.95,
+          1.0
+        ],
+        "inner_angle": 20,
         "intensity": 2500,
         "outer_angle": 45,
         "range": 25,
@@ -17,8 +22,17 @@
       "name": "Security light light",
       "parent": 1,
       "transform": {
-        "rotation": [-0, 0.9659259, 0.25881904, 0],
-        "translation": [0, 0, 0.3]
+        "rotation": [
+          -0.0,
+          0.9659258,
+          0.258819,
+          0.0
+        ],
+        "translation": [
+          0,
+          0,
+          0.3
+        ]
       }
     }
   ],
