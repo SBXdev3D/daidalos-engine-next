@@ -6,6 +6,11 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <string>
+
 using namespace daidalos;
 using scene::Cue;
 
@@ -95,4 +100,21 @@ TEST(SequenceTest, WritingAndReadingBackGivesTheSameSequence) {
     ASSERT_TRUE(read.has_value()) << core::Format(read.error()) << "\n" << written;
     EXPECT_EQ(*read, *sequence) << written;
     EXPECT_EQ(scene::WriteSequence(*read), written) << "Written twice, the same text";
+}
+
+TEST(SequenceTest, EverySequenceOfTheAssetsParses) {
+    const std::filesystem::path root = DAI_PROJECT_ASSET_DIR;
+    std::size_t count = 0;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(root)) {
+        const std::string name = entry.path().filename().string();
+        if (!name.ends_with(".sequence.json")) {
+            continue;
+        }
+        std::ifstream file(entry.path(), std::ios::binary);
+        const std::string json{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+        const core::Result<scene::Sequence> sequence = scene::ParseSequence(json, name);
+        EXPECT_TRUE(sequence.has_value()) << core::Format(sequence.error());
+        ++count;
+    }
+    EXPECT_GE(count, 6U);
 }

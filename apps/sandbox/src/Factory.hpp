@@ -114,6 +114,11 @@ struct Player {
     float hurtTime = 0.0f;
     int kills = 0;
     int zombieCount = 0;
+    /// Pickups taken, out of those the level had (ADR-0084).
+    int items = 0;
+    int itemCount = 0;
+    /// The player reached the way out: a sequence's "exit" event (ADR-0084).
+    bool escaped = false;
     bool hasFlashlight = false;
     bool flashlightOn = false;
     /// Its sway, battery and faults (ADR-0058).

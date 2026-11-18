@@ -16,6 +16,9 @@
   "menu.try_again": "Réessayer",
   "menu.cleared": "USINE NETTOYÉE",
   "menu.cleared_time": "Les {} zombies tués en {}:{:02}",
+  "menu.escaped": "VOUS ÊTES SORTI",
+  "menu.summary_time": "Temps : {}:{:02}",
+  "menu.items": "Objets trouvés : {} sur {}",
   "menu.play_again": "Rejouer",
   "menu.loading": "CHARGEMENT...",
 
@@ -110,6 +113,10 @@
   "speaker.you": "Vous",
 
   "subtitle.rain_room.you": "Il y a quelque chose ici, avec moi.",
+  "subtitle.hall.you": "Le courant... non, non, non.",
+  "subtitle.pumps.you": "Il fait noir comme dans un four ici.",
+  "subtitle.exit.you": "Un puits qui remonte. C'est ma sortie.",
+  "subtitle.workshop.you": "Il y a quelque chose derrière ce mur.",
 
   "caption.zombie_groan": "Gémissements",
   "caption.zombie_scream": "Un hurlement",
