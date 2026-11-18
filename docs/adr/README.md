@@ -89,3 +89,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0083](0083-dressing-the-factory.md) | Bodies without mass as static boxes for physics, navigation and sound; the factory dressed by a rule-based script of rooms and purposes, checked in the editor | Accepted |
 | [0084](0084-pacing-scares-and-exit.md) | Rooms on power circuits, `ambush` and `exit` events, five scares along the route with a way out, an end summary of time, kills and items | Accepted |
 | [0085](0085-combat-feel.md) | Where a wound came from around the crosshair, hit markers, recoil that springs back, zombies that flinch | Accepted |
+| [0086](0086-the-opening.md) | An opening camera flight as a sequence, played on a new game and skippable; the player waits and the HUD hides while a camera cue has the camera; fixed showcase shots | Accepted |
