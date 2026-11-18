@@ -72,3 +72,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0066](0066-reverb-and-pathing.md) | A worker thread per world: listener-centric parametric reverb from traced reflections; pathing over probes placed on floors, baked at start, played as much as the direct path is occluded | Accepted |
 | [0067](0067-mix-and-surfaces.md) | Four buses, faded snapshots with a world low-pass, ducking voices; footsteps and impacts by surface, synthesized by a script | Accepted |
 | [0068](0068-score-and-flicker.md) | Layered score on one clock, faded in by tension; stingers on the interface bus; emitters that follow their light; all synthesized by a script | Accepted |
+| [0069](0069-navigation.md) | A navigation module over Recast and Detour: one mesh from the level, doors as areas that SetBlocked shuts, paths for zombies | Accepted |

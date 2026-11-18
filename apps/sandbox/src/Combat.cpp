@@ -129,6 +129,10 @@ struct Zombie {
     float groanTime = 0.0f;
     /// Seconds spent walking without getting anywhere.
     float stuck = 0.0f;
+    /// The way to where it goes (ADR-0069): the corners left, where it leads, and when to look again.
+    std::vector<glm::vec3> path;
+    glm::vec3 pathGoal{0.0f};
+    float repath = 0.0f;
 };
 
 /// ECS component on the player: the sounds of the fight, and the weapons held in view.
@@ -553,6 +557,26 @@ void Think(scene::Scene& scene, ecs::Entity playerEntity, Zombie& zombie, float 
         break;
     case ZombieState::Dying:
         return;
+    }
+
+    // It goes the way the navigation mesh finds (ADR-0069), corner by corner; straight without one.
+    if (target.has_value()) {
+        if (const navigation::NavMesh* mesh = scene.Navigation()) {
+            zombie.repath -= step;
+            if (zombie.path.empty() || zombie.repath <= 0.0f || glm::distance(zombie.pathGoal, *target) > 1.0f) {
+                zombie.path = mesh->FindPath(zombie.feet, *target);
+                zombie.pathGoal = *target;
+                zombie.repath = 0.5f;
+            }
+            while (!zombie.path.empty() && glm::length(Flat(zombie.path.front() - zombie.feet)) < 0.4f) {
+                zombie.path.erase(zombie.path.begin());
+            }
+            if (!zombie.path.empty()) {
+                target = zombie.path.front();
+            }
+        }
+    } else {
+        zombie.path.clear();
     }
 
     // It turns first, and walks once it roughly faces where it goes.

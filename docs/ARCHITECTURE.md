@@ -34,6 +34,7 @@ Every module also links to `core`; the graph only shows it for the bottom row.
 | `rhi` | Vulkan 1.4 device with ray queries, swapchain, buffers, textures, pipelines, command lists, batched uploads | Vulkan, volk, VMA |
 | `renderer` | Draws a `SceneView`: G-buffer, lighting, skinning, materials, shader hot reload, the game's interface (`ui::`), and the debug overlay (`debugui::`, development builds) | Dear ImGui, stb_truetype (in `resources`) |
 | `physics` | Collisions, characters and ray queries of a scene | Jolt |
+| `navigation` | Navigation meshes and paths, doors that shut them | Recast, Detour |
 | `audio` | Output, mixing, clips and voices of a scene, heard through an HRTF and the scene's walls and doors, silent without an output | miniaudio, stb_vorbis, Steam Audio |
 | `scene` | Entities (`ecs::`), animation (`animation::`), the asset library, the engine's components, the systems that tie entities to the renderer, physics and sounds, and the scene itself | |
 | `app` | Startup and shutdown in order, main loop, current scene, the player's settings, the developer console and tools (development builds) | |

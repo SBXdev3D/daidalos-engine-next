@@ -35,6 +35,7 @@
     },
     "miniaudio",
     "mikktspace",
+    "recastnavigation",
     "shader-slang",
     "simdjson",
     "spdlog",

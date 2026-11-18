@@ -169,6 +169,9 @@ struct Door {
     /// Meters above the closed position.
     float rise = 0.0f;
     float timeLeft = 0.0f;
+    /// Its box in the navigation mesh (ADR-0069), and whether the mesh has it shut.
+    std::optional<navigation::NavBox> navBox;
+    bool navShut = true;
 };
 
 template <class T>
@@ -780,6 +783,10 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
     // What the game needs from the models' geometry: the level to walk on, what each of its parts is made of,
     // and the size of the doors, from the nodes tagged "level" and "door".
     BodySurfaces surfaces;
+    // The level's triangles in world space, for the navigation mesh (ADR-0069), and the doors' boxes.
+    std::vector<glm::vec3> walkPositions;
+    std::vector<std::uint32_t> walkIndices;
+    std::vector<navigation::NavBox> doorBoxes;
     struct DoorShape {
         const scene::Model* model = nullptr;
         const scene::Model::Node* node = nullptr;
@@ -815,6 +822,11 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
                 DAI_TRY_ASSIGN(physics::BodyId body, physics.AddStaticMesh(positions, part.indices, math::Transform{}));
                 // Sound meets the same walls and floors (ADR-0065), made of the part's surface.
                 scene.Sounds().AddAcousticMesh(positions, part.indices, audio::AcousticMaterialOf(part.surface));
+                const auto first = static_cast<std::uint32_t>(walkPositions.size());
+                walkPositions.insert(walkPositions.end(), positions.begin(), positions.end());
+                for (const std::uint32_t vertex : part.indices) {
+                    walkIndices.push_back(first + vertex);
+                }
                 if (!part.surface.empty()) {
                     surfaces.surfaces.emplace(body.value, part.surface);
                 }
@@ -938,6 +950,19 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
                     math::Transform transform;
                     transform.translation = door.closedPosition;
                     const glm::vec3 halfExtents = glm::max((high - low) * 0.5f, glm::vec3(0.05f));
+                    // The door's box where it stands closed, grown across its thickness to cover the doorway.
+                    const glm::mat4& doorWorld = world.Get<ecs::WorldTransform>(entity).matrix;
+                    glm::vec3 boxLow(std::numeric_limits<float>::max());
+                    glm::vec3 boxHigh(std::numeric_limits<float>::lowest());
+                    for (int corner = 0; corner < 8; ++corner) {
+                        const glm::vec3 local((corner & 1) != 0 ? high.x : low.x, (corner & 2) != 0 ? high.y : low.y,
+                                              (corner & 4) != 0 ? high.z : low.z);
+                        const glm::vec3 at = math::TransformPoint(doorWorld, local);
+                        boxLow = glm::min(boxLow, at);
+                        boxHigh = glm::max(boxHigh, at);
+                    }
+                    doorBoxes.push_back({boxLow - glm::vec3(0.6f, 0.5f, 0.6f), boxHigh + glm::vec3(0.6f, 0.0f, 0.6f)});
+                    world.Get<Door>(entity).navBox = doorBoxes.back();
                     DAI_TRY_ASSIGN(physics::BodyId box,
                                    physics.AddKinematicBox(halfExtents, (low + high) * 0.5f, transform));
                     world.Add<scene::KinematicBody>(entity, box);
@@ -973,6 +998,17 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
         }
     }
     world.Add<BodySurfaces>(playerEntity, std::move(surfaces));
+    // Where zombies can walk (ADR-0069): doors cut the mesh, and shut it while they are closed.
+    if (core::Result<navigation::NavMesh> mesh = navigation::NavMesh::Build(walkPositions, walkIndices, doorBoxes)) {
+        DAI_LOG_INFO("sandbox", "Navigation mesh: {} polygons in {:.0f} ms", mesh->PolygonCount(),
+                     mesh->BuildSeconds() * 1000.0);
+        for (const navigation::NavBox& box : doorBoxes) {
+            mesh->SetBlocked(box.low, box.high, true);
+        }
+        scene.SetNavigation(std::move(*mesh));
+    } else {
+        DAI_LOG_WARNING("sandbox", "No navigation mesh: {}", core::Format(mesh.error()));
+    }
     // Tired tubes hum, and their hum dies when they do (ADR-0068).
     std::vector<ecs::Entity> humming;
     world.Each<scene::Light>([&humming](ecs::Entity entity, const scene::Light& light) {
@@ -1083,6 +1119,17 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
     fixed.Add("Doors", [&scene, player](ecs::World& world, core::Seconds step) {
         if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
             UpdateDoors(scene, entity, static_cast<float>(step.count()));
+        }
+        // An open door lets zombies through (ADR-0069).
+        if (navigation::NavMesh* mesh = scene.Navigation()) {
+            world.Each<Door, ecs::LocalTransform>(
+                [mesh](ecs::Entity, Door& door, const ecs::LocalTransform& transform) {
+                    const bool shut = glm::distance(transform.translation, door.closedPosition) < 0.3f;
+                    if (door.navBox.has_value() && shut != door.navShut) {
+                        door.navShut = shut;
+                        mesh->SetBlocked(door.navBox->low, door.navBox->high, shut);
+                    }
+                });
         }
         // Doors that moved move in the acoustic scene too.
         world.Each<DoorAcoustics, ecs::WorldTransform>(
