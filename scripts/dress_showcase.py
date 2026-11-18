@@ -342,6 +342,11 @@ class Room:
         return None
 
 
+def circuit(room):
+    """The power circuit of a room's lamps: its name in lower case with underscores ("loading_floor")."""
+    return re.sub(r"[^a-z0-9]+", "_", room.lower()).strip("_")
+
+
 def keepouts(level, gameplay, ladders, doors):
     """Cells kept free on a floor: around doors, what the game uses, and ladders."""
     out = set()
@@ -508,6 +513,19 @@ def main():
                 entity["parent"] = group_id
                 next_id += 1
                 children.append(entity)
+                if "prefab" in entity:
+                    # The lamp's model and its light, on the room's power circuit, so that a scare can cut the
+                    # room's lights (ADR-0084); a lamp in four buzzes, or is failing.
+                    prefab = json.loads((FACTORY / entity.pop("prefab")).read_text(encoding="utf-8"))
+                    model, light = prefab["entities"][0], prefab["entities"][1]
+                    entity["model"] = (Path("Prefabs") / model["model"]).as_posix().replace("Prefabs/../", "")
+                    lit = dict(light["light"])
+                    roll = rng.random()
+                    lit["animation"] = {"circuit": circuit(name),
+                                        "pattern": "failing" if roll < 0.08 else "buzz" if roll < 0.25 else "steady"}
+                    children.append({"id": next_id, "parent": entity["id"], "name": entity["name"] + " light",
+                                     "light": lit, "transform": light.get("transform", {})})
+                    next_id += 1
         if children:
             level["entities"].append({"id": group_id, "name": GROUP + name})
             level["entities"].extend(children)

@@ -1,0 +1,46 @@
+{
+  "comment": "Down to the pumps: their lights go out for good. The flashlight is all there is. Staged by scripts/stage_showcase_scares.py (ADR-0084).",
+  "cues": [
+    {
+      "at": 0.0,
+      "event": "checkpoint"
+    },
+    {
+      "at": 0.0,
+      "power": {
+        "circuit": "pumps",
+        "on": false
+      }
+    },
+    {
+      "at": 0.2,
+      "mix": {
+        "lowpass": 1500,
+        "seconds": 1.0
+      }
+    },
+    {
+      "at": 0.8,
+      "subtitle": {
+        "speaker": "speaker.you",
+        "text": "subtitle.pumps.you",
+        "seconds": 3.5
+      }
+    },
+    {
+      "at": 2.0,
+      "sound": {
+        "clip": "Factory/Sounds/zombie_moan.wav",
+        "volume": 0.7,
+        "ducking": 0.3
+      }
+    },
+    {
+      "at": 4.0,
+      "mix": {
+        "lowpass": 20000,
+        "seconds": 2.0
+      }
+    }
+  ]
+}
