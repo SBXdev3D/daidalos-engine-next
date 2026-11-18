@@ -146,6 +146,7 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
 
     // What is created on the way stays in the library, also if a later step fails.
     Model model;
+    model.path = key;
     std::vector<renderer::MaterialHandle> materials;
     materials.reserve(data.materials.size());
     for (const resources::MaterialData& material : data.materials) {

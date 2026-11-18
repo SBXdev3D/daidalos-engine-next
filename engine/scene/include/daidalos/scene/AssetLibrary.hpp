@@ -71,6 +71,8 @@ struct Model {
         /// From KHR_lights_punctual (ADR-0043): Instantiate gives it to the node's entity.
         std::optional<Light> light;
     };
+    /// Its file under the asset root, as the library knows it (NormalizeAssetPath).
+    std::string path;
     /// One per glTF primitive, each stored once.
     std::vector<Part> parts;
     /// One per glTF material, in the file's order. Mutable: AssetLibrary::UpdateMaterial changes them in place,

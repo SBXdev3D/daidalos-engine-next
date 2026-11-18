@@ -28,8 +28,10 @@
 
 #include "AssetBrowser.hpp"
 #include "History.hpp"
+#include "MaterialPanel.hpp"
 #include "Paint.hpp"
 #include "Picking.hpp"
+#include "SequencePanel.hpp"
 
 namespace editor {
 
@@ -70,7 +72,10 @@ private:
     /// Saves to the level's file, or to another path (Save As), whose paths are then rewritten to name the same
     /// files. Returns false if it failed; the status says why.
     bool Save(const std::string& levelPath = {});
-    [[nodiscard]] bool Dirty() const { return m_history.Current() != m_savedRevision; }
+    /// The level, a material or the open sequence differs from its file.
+    [[nodiscard]] bool Dirty() const {
+        return m_history.Current() != m_savedRevision || m_materials.Dirty() || m_sequences.Dirty();
+    }
     /// Changes the level through edit, as one step of the history labelled label, and makes the scene follow.
     /// Edits made while the mouse holds a widget or a gizmo join the step they started.
     void Change(std::string_view label, const std::function<void(daidalos::scene::Level&)>& edit);
@@ -106,6 +111,20 @@ private:
     void UnpackPrefab(std::uint64_t id);
     /// Reads the prefabs again, after one was saved in another editor.
     void ReloadPrefabs();
+
+    // Materials and sequences (ADR-0079).
+    /// Shows the materials of the selection's model in their panel, unless a click chose one already.
+    void FollowSelectionMaterials();
+    /// The panel's materials for what a click hit: the model it belongs to and the material it is drawn with.
+    void ShowMaterialOf(daidalos::ecs::Entity drawn);
+    /// Opens the sequence a trigger plays, making its path first if it has none.
+    void EditSequence(std::uint64_t id);
+    /// Runs the sequence panel and what it asks: a preview, or the scene made again.
+    void UpdateSequences(float seconds);
+    /// Makes every entity of the level again, undoing what a preview changed.
+    void RemakeScene();
+    /// A camera cue's path and where a move cue goes, in the view.
+    void DrawSelectedCue();
 
     // Painting (ADR-0078).
     /// Strokes of the paint tool in the view: stamps where the mouse drags over surfaces, one step of history
@@ -211,6 +230,13 @@ private:
     glm::vec3 m_lastStamp{0.0f};
     glm::vec3 m_lastNormal{0.0f, 1.0f, 0.0f};
     std::size_t m_strokeStamps = 0;
+    MaterialPanel m_materials;
+    SequencePanel m_sequences;
+    /// Seconds since a preview of the open sequence started, while it plays.
+    std::optional<float> m_previewTime;
+    /// The selection the material panel last followed: a click's choice of material holds while it stays.
+    std::uint64_t m_followedSelection = ~std::uint64_t{0};
+    std::uint64_t m_pendingSequence = 0;
     /// What the inspector's buttons asked for, done after it is drawn.
     std::string m_pendingOpenPrefab;
     std::uint64_t m_pendingUnpack = 0;

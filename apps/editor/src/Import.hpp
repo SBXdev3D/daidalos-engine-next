@@ -15,7 +15,7 @@
 namespace editor {
 
 /// What a file is to the asset browser.
-enum class AssetKind { Folder, Model, Sky, Effect, Ribbon, Level, Prefab, Decal, Other };
+enum class AssetKind { Folder, Model, Sky, Effect, Ribbon, Level, Prefab, Decal, Sequence, Other };
 
 /// An asset of a folder, as the browser lists it.
 struct AssetEntry {
