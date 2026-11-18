@@ -261,3 +261,12 @@ TEST_F(LevelInstanceTest, LooseObjectsUnderAnEntityGoWithIt) {
     m_instance->Destroy(1);
     EXPECT_EQ(m_scene->Physics().BodyCount(), bodies);
 }
+
+TEST_F(LevelInstanceTest, TheSceneFindsSoundsUnderItsAssetRoot) {
+    // The scene once gave its sounds an empty root (its members were initialized in another order than written),
+    // and the game played none.
+    const core::Result<audio::ClipHandle> clip = m_scene->Sounds().Load("Factory/Sounds/alarm.wav");
+    if (!clip) {
+        EXPECT_NE(clip.error().code, core::ErrorCode::NotFound) << core::Format(clip.error());
+    }
+}

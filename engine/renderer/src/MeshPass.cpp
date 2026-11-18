@@ -421,12 +421,12 @@ MeshPass::MeshPass(MeshPass&& other) noexcept
       m_materialCapacity(std::exchange(other.m_materialCapacity, 0)),
       m_defaultMaterial(std::exchange(other.m_defaultMaterial, {})),
       m_frameSlots(std::exchange(other.m_frameSlots, {})), m_nextFrameSlot(other.m_nextFrameSlot),
-      m_skinned(std::exchange(other.m_skinned, {})), m_previousSkinned(std::exchange(other.m_previousSkinned, {})),
-      m_skinnedCapacity(std::exchange(other.m_skinnedCapacity, 0)),
-      m_skinningPipeline(std::exchange(other.m_skinningPipeline, {})),
       m_emissiveSources(std::exchange(other.m_emissiveSources, {})),
       m_emissiveAverage(std::exchange(other.m_emissiveAverage, {})),
-      m_emissiveTriangles(std::exchange(other.m_emissiveTriangles, {})) {}
+      m_emissiveTriangles(std::exchange(other.m_emissiveTriangles, {})),
+      m_skinned(std::exchange(other.m_skinned, {})), m_previousSkinned(std::exchange(other.m_previousSkinned, {})),
+      m_skinnedCapacity(std::exchange(other.m_skinnedCapacity, 0)),
+      m_skinningPipeline(std::exchange(other.m_skinningPipeline, {})) {}
 
 MeshPass::~MeshPass() {
     DestroyPipelines(m_pipelines);
