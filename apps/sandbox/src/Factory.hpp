@@ -112,6 +112,15 @@ struct Player {
     bool dead = false;
     /// Seconds left of the red flash of a wound.
     float hurtTime = 0.0f;
+    /// Where the last wound came from, in the world, while its marker shows (ADR-0085).
+    glm::vec3 hurtFrom{0.0f};
+    bool hurtFromKnown = false;
+    float hurtMarker = 0.0f;
+    /// Seconds left of the marker around the crosshair after a hit, and whether the hit killed (ADR-0085).
+    float hitTime = 0.0f;
+    bool hitKilled = false;
+    /// Radians the last shots kicked the view up, which spring back (ADR-0085).
+    float recoil = 0.0f;
     int kills = 0;
     int zombieCount = 0;
     /// Pickups taken, out of those the level had (ADR-0084).

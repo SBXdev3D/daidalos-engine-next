@@ -11,6 +11,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 #include <string>
 
@@ -81,6 +82,32 @@ void DrawHud(ui::Canvas& canvas, const HudAssets& hud, const Player& player) {
     }
 
     const glm::vec2 center = size * 0.5f;
+    // Where the last wound came from: an arc of red marks around the crosshair, toward it (ADR-0085).
+    if (player.hurtMarker > 0.0f && player.hurtFromKnown && !player.dead) {
+        const glm::vec3 toward = player.hurtFrom - player.feet;
+        // Yaw 0 looks along -Z and grows to the left, as the player's does.
+        const float angle = std::atan2(-toward.x, -toward.z) - player.yaw;
+        const float alpha = std::min(player.hurtMarker, 1.0f) * 0.85f;
+        const float radius = std::min(size.x, size.y) * 0.22f;
+        for (int mark = -6; mark <= 6; ++mark) {
+            const float at = angle + (static_cast<float>(mark) * 0.045f);
+            const glm::vec2 point = center + (glm::vec2(-std::sin(at), -std::cos(at)) * radius);
+            const float side = 16.0f - (std::abs(static_cast<float>(mark)) * 1.6f);
+            canvas.FillRect({point - (side * 0.5f), glm::vec2(side)}, {0.9f, 0.05f, 0.0f, alpha});
+        }
+    }
+    // A hit: four marks around the crosshair, red when it killed (ADR-0085).
+    if (player.hitTime > 0.0f && !player.dead) {
+        const glm::vec4 color =
+            player.hitKilled ? glm::vec4(1.0f, 0.15f, 0.1f, 1.0f) : glm::vec4(1.0f, 1.0f, 1.0f, 0.9f);
+        for (const glm::vec2 corner :
+             {glm::vec2(-1.0f, -1.0f), glm::vec2(1.0f, -1.0f), glm::vec2(-1.0f, 1.0f), glm::vec2(1.0f, 1.0f)}) {
+            for (int step = 0; step < 3; ++step) {
+                const glm::vec2 point = center + (corner * (14.0f + (static_cast<float>(step) * 4.0f)));
+                canvas.FillRect({point - 2.0f, glm::vec2(4.0f)}, color);
+            }
+        }
+    }
     if (!player.dead) {
         canvas.DrawImage(hud.crosshair, {center - (kCrosshairSize * 0.5f), glm::vec2(kCrosshairSize)},
                          {.color = {1.0f, 1.0f, 1.0f, 0.9f}});
