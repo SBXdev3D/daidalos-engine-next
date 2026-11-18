@@ -2091,7 +2091,7 @@ Done as far as Windows can check (2026-11-18, ADR-0074): a Linux compile check a
 Potential deliverables:
 
 - The level editor grown by need: prefabs, painting wetness and decals on surfaces, a material editor with live preview, trigger editing. Done: prefabs and painting (ADR-0078), the material editor and the sequence editor for triggers (ADR-0079).
-- Asset pipeline: mesh optimization (meshoptimizer), BC6H for HDR textures next to BC7 and BC5.
+- Asset pipeline: mesh optimization (meshoptimizer), BC6H for HDR textures next to BC7 and BC5. Measured and deferred until content needs them (ADR-0081).
 - Level and texture streaming, when a level no longer fits in memory or in one load.
 - Accessibility: subtitles with speakers and sound captions, colorblind modes, toggles for motion blur, camera shake, film grain and chromatic aberration.
 - Localization of text and subtitles.
@@ -2099,8 +2099,8 @@ Potential deliverables:
 - Diegetic UI: the game's interface drawn into textures on screens, notes and watches.
 - Crash reports from the minidumps. Done (ADR-0080), on Windows.
 - Photo mode: a free camera, the path tracer converging, physical camera and image controls, high-resolution and EXR capture. The game provides its menu and rules. Done (ADR-0077) except captures larger than the window.
-- Packaging and deployment.
-- Documentation and sample projects.
+- Packaging and deployment. The archive is checked as a player gets it (ADR-0081).
+- Documentation and sample projects. Done: docs/GUIDE.md and samples/level-viewer (ADR-0081).
 
 This phase is deliberately open-ended.
 
