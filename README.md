@@ -146,6 +146,8 @@ sandbox.exe +window.fullscreen true +renderer.antialiasing off
 | `input.mouse_sensitivity` | 0.0025 | Radians of turn per mouse unit |
 | `input.rumble` | 1 | Strength of the gamepads' rumble, 0 (off) to 1 |
 
+F12 saves a screenshot in `Screenshots/` beside `user.cfg`. In the sandbox, P (or the right stick's click) opens photo mode: a free camera, lens, exposure and film controls, the path tracer, and photos saved as PNG and EXR.
+
 The sandbox adds its own:
 
 | Cvar | Default | Meaning |
