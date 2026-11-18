@@ -78,6 +78,10 @@ cmake --build --preset linux-clang-debug
 ctest --preset linux-clang-debug
 ```
 
+`scripts/validate_linux.sh` does all of it on Ubuntu 24.04 or under WSL2, with the scene smoke tests and the release archive, and writes a report to `build/linux-validation.txt` ([ADR-0074](docs/adr/0074-linux-validation.md)). From Windows, `scripts/check_linux_compile.py` parses every source as Clang does on Linux, against Ubuntu's headers.
+
+The scene smoke tests (`ctest -L smoke`) play each scene of the sandbox for 150 frames with the validation layers on; `ctest -LE smoke` leaves them out.
+
 ### Sanitizers
 
 `windows-msvc-asan` (AddressSanitizer) and `linux-clang-asan` (AddressSanitizer and UndefinedBehaviorSanitizer) are available with the same three commands.

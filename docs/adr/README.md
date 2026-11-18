@@ -77,3 +77,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0071](0071-triggers-and-sequences.md) | Sequences as data (power, light, sound, particles, move, visible, shake, camera paths and focus pulls, mix, events), played by the scene, started by level triggers; no scripting language | Accepted |
 | [0072](0072-saves.md) | Saves as key = value text; the level made anew then put back; level ids and save keys; engine and game parts; checkpoints from sequence events | Accepted |
 | [0073](0073-loose-objects.md) | Dynamic bodies and gravity, loose objects in levels, picking up and throwing; ragdolls, cloth, leaning, animation extras and portal visibility left for later with why | Accepted |
+| [0074](0074-linux-validation.md) | Linux checked from Windows (compile check against an Ubuntu sysroot, asset case, scene smoke tests); the run itself in scripts/validate_linux.sh, unverified until WSL2 or Linux | Accepted |
