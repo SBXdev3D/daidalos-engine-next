@@ -39,6 +39,7 @@
 #include <vector>
 
 #include "Clipboard.hpp"
+#include "Cues.hpp"
 #include "Inspector.hpp"
 
 using namespace daidalos;
@@ -183,6 +184,10 @@ core::Result<void> Editor::OnStart(app::Application& app) {
         app.CVars()
             .Register<std::string>("editor.level", "Factory/Factory.level.json", "Level file to open, under assets/")
             .Get();
+    const std::string sequence =
+        app.CVars()
+            .Register<std::string>("editor.sequence", "", "A .sequence.json file under assets/ to open in its panel")
+            .Get();
     m_autosaveSeconds = static_cast<float>(
         app.CVars()
             .Register<double>("editor.autosave", 120.0,
@@ -223,6 +228,9 @@ core::Result<void> Editor::OnStart(app::Application& app) {
         return {};
     }
     LoadBookmarks();
+    if (!sequence.empty()) {
+        m_sequences.Open(m_assetRoot, sequence);
+    }
     if (core::Result<void> opened = Open(app, level); !opened) {
         // An editor with no level still opens, on an empty one.
         DAI_LOG_WARNING(kModule, "{}", core::Format(opened.error()));
@@ -267,6 +275,9 @@ core::Result<void> Editor::Open(app::Application& app, const std::string& levelP
     m_levelPath = levelPath;
     m_decalImages.clear();
     m_stroking = false;
+    m_materials.Forget();
+    m_followedSelection = ~std::uint64_t{0};
+    m_previewTime.reset();
     Select(0);
     m_history.Clear();
     m_savedRevision = m_history.Current();
@@ -285,6 +296,15 @@ core::Result<void> Editor::Open(app::Application& app, const std::string& levelP
 }
 
 bool Editor::Save(const std::string& levelPath) {
+    // Materials and the open sequence are files of their own, saved with the level (ADR-0079).
+    if (!m_materials.SaveAll(m_assetRoot)) {
+        m_status = m_materials.Status();
+        return false;
+    }
+    if (m_sequences.Dirty() && !m_sequences.Save(m_assetRoot)) {
+        m_status = m_sequences.Status();
+        return false;
+    }
     m_history.Commit(m_level);
     const std::string target = levelPath.empty() ? m_levelPath : levelPath;
     scene::Level level = m_level;
@@ -465,6 +485,10 @@ void Editor::PlaceAsset(app::Application& app, const AssetEntry& asset, std::opt
         entity.ribbon = scene::LevelRibbon{.effect = RelativeToLevel(asset.path)};
         entity.name = std::filesystem::path(name).stem().generic_string();
         break;
+    case AssetKind::Sequence:
+        m_sequences.Open(m_assetRoot, asset.path);
+        m_status = m_sequences.Status();
+        return;
     case AssetKind::Prefab:
         entity.prefab = RelativeToLevel(asset.path);
         entity.name = std::filesystem::path(name).stem().generic_string();
@@ -905,6 +929,153 @@ void Editor::DrawPaint() {
     ImGui::End();
 }
 
+void Editor::FollowSelectionMaterials() {
+    if (m_selected == m_followedSelection || m_instance == nullptr) {
+        return;
+    }
+    m_followedSelection = m_selected;
+    const ecs::Entity created = m_selected != 0 ? m_instance->Find(m_selected) : ecs::Entity{};
+    const scene::ModelInstance* placed =
+        created.IsNull() ? nullptr : m_scene->World().TryGet<scene::ModelInstance>(created);
+    if (placed != nullptr && placed->model != nullptr) {
+        m_materials.Show(placed->model, placed->model->path, std::nullopt);
+    } else {
+        m_materials.Clear();
+    }
+}
+
+void Editor::ShowMaterialOf(ecs::Entity drawn) {
+    const ecs::World& world = m_scene->World();
+    const scene::MeshRenderer* renderer = world.TryGet<scene::MeshRenderer>(drawn);
+    // The model is placed by the nearest entity above that has one: a level entity, or a prefab's part.
+    for (ecs::Entity entity = drawn; renderer != nullptr && !entity.IsNull(); entity = world.Parent(entity)) {
+        const scene::ModelInstance* placed = world.TryGet<scene::ModelInstance>(entity);
+        if (placed == nullptr || placed->model == nullptr) {
+            continue;
+        }
+        const scene::Model& model = *placed->model;
+        for (std::uint32_t index = 0; index < model.materials.size(); ++index) {
+            if (model.materials[index].handle == renderer->material) {
+                m_materials.Show(&model, model.path, index);
+                m_followedSelection = m_selected;
+                return;
+            }
+        }
+        return;
+    }
+}
+
+void Editor::EditSequence(std::uint64_t id) {
+    scene::LevelEntity* entity = m_level.Find(id);
+    if (entity == nullptr || !entity->trigger || m_instance == nullptr) {
+        return;
+    }
+    if (entity->trigger->sequence.empty()) {
+        std::string name = entity->name.empty() ? std::format("trigger_{}", id) : Lower(entity->name);
+        std::ranges::replace(name, ' ', '_');
+        scene::LevelEntity named = *entity;
+        named.trigger->sequence = std::format("Sequences/{}.sequence.json", name);
+        m_history.Commit(m_level);
+        Apply(named, std::format("Give {} a sequence", EntityLabel(named)));
+        m_history.Commit(m_level);
+        entity = m_level.Find(id);
+    }
+    if (m_sequences.IsOpen() && m_sequences.Dirty()) {
+        m_status = std::format("Save or revert {} first", m_sequences.Path());
+        return;
+    }
+    m_sequences.Open(m_assetRoot, m_instance->Resolve(entity->trigger->sequence));
+    m_status = m_sequences.Status();
+}
+
+void Editor::RemakeScene() {
+    if (m_instance == nullptr) {
+        return;
+    }
+    m_instance->Sync(m_level, scene::Level{});
+    m_instance->Sync(scene::Level{}, m_level);
+    m_picker.Rebuild(m_scene->World());
+    m_followedSelection = ~std::uint64_t{0};
+    m_previewTime.reset();
+    m_sequences.SetPlayhead(std::nullopt);
+}
+
+void Editor::UpdateSequences(float seconds) {
+    if (m_previewTime) {
+        *m_previewTime += seconds;
+        if (*m_previewTime > m_sequences.Sequence().Length() + 1.0f) {
+            m_previewTime.reset();
+        }
+        m_sequences.SetPlayhead(m_previewTime);
+    }
+    SequencePanel::Context context{.level = &m_level,
+                                   .assetRoot = m_assetRoot,
+                                   .cameraPosition = m_camera.position,
+                                   .cameraForward = m_camera.Forward()};
+    switch (m_sequences.Draw(context)) {
+    case SequencePanel::Request::Play:
+        if (m_scene != nullptr) {
+            m_scene->PlaySequence(std::make_shared<const scene::Sequence>(m_sequences.Sequence()));
+            m_previewTime = 0.0f;
+            m_status = "Playing the sequence: \"Put the scene back\" undoes what it changed";
+        }
+        break;
+    case SequencePanel::Request::Reset:
+        RemakeScene();
+        m_status = "Made the level's entities again";
+        break;
+    case SequencePanel::Request::None:
+        break;
+    }
+}
+
+void Editor::DrawSelectedCue() {
+    const scene::Cue* cue = m_sequences.Selected();
+    if (cue == nullptr || m_instance == nullptr) {
+        return;
+    }
+    ImDrawList* draw = ImGui::GetBackgroundDrawList();
+    draw->PushClipRect({m_viewportMin.x, m_viewportMin.y}, {m_viewportMax.x, m_viewportMax.y}, true);
+    const auto line = [&](const glm::vec3& from, const glm::vec3& to, ImU32 color, float thickness) {
+        const std::optional<glm::vec2> a = Project(from);
+        const std::optional<glm::vec2> b = Project(to);
+        if (a && b) {
+            draw->AddLine({a->x, a->y}, {b->x, b->y}, color, thickness);
+        }
+    };
+    const ImU32 color = CueColor(cue->kind);
+    if (cue->kind == scene::Cue::Kind::Camera && !cue->keys.empty()) {
+        // The path the camera takes, sampled as the scene moves it, and where each key looks.
+        constexpr int kSteps = 64;
+        const float length = cue->keys.back().at - cue->keys.front().at;
+        for (int step = 0; step < kSteps; ++step) {
+            const float a = cue->keys.front().at + length * static_cast<float>(step) / kSteps;
+            const float b = cue->keys.front().at + length * static_cast<float>(step + 1) / kSteps;
+            line(scene::CameraAt(cue->keys, a).position, scene::CameraAt(cue->keys, b).position, color, 2.0f);
+        }
+        for (const scene::CameraKey& key : cue->keys) {
+            line(key.position, key.target, IM_COL32(255, 255, 255, 140), 1.0f);
+            if (const std::optional<glm::vec2> at = Project(key.position)) {
+                draw->AddCircleFilled({at->x, at->y}, 5.0f, color);
+            }
+        }
+    } else if (cue->kind == scene::Cue::Kind::Move) {
+        for (const scene::LevelEntity& entity : m_level.entities) {
+            if (entity.name == cue->name) {
+                const ecs::Entity created = m_instance->Find(entity.id);
+                if (!created.IsNull()) {
+                    line(glm::vec3(m_scene->World().Get<ecs::WorldTransform>(created).matrix[3]), cue->position, color,
+                         2.0f);
+                }
+            }
+        }
+        if (const std::optional<glm::vec2> at = Project(cue->position)) {
+            draw->AddCircleFilled({at->x, at->y}, 5.0f, color);
+        }
+    }
+    draw->PopClipRect();
+}
+
 void Editor::LoadBookmarks() {
     // "slot x y z yaw pitch level", one per line.
     std::ifstream file(platform::ExecutableDirectory() / "editor_bookmarks.txt");
@@ -1094,6 +1265,16 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
     DrawHierarchy();
     DrawInspector();
     DrawEnvironment();
+    FollowSelectionMaterials();
+    if (m_scene != nullptr) {
+        // A tab beside the inspector the first time, also in a layout saved before the panel existed.
+        if (const ImGuiWindow* inspector = ImGui::FindWindowByName("Inspector");
+            inspector != nullptr && inspector->DockId != 0) {
+            ImGui::SetNextWindowDockID(inspector->DockId, ImGuiCond_FirstUseEver);
+        }
+        m_materials.Draw(m_scene->Assets(), m_assetRoot);
+    }
+    UpdateSequences(static_cast<float>(time.unclampedDelta.count()));
     DrawPaint();
     DrawStatus(app, time);
     DrawDialogs(app);
@@ -1118,6 +1299,7 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
         UpdateCamera(app, static_cast<float>(time.unclampedDelta.count()));
         DrawGrid();
         DrawMarkers();
+        DrawSelectedCue();
         if (m_painting) {
             DrawBrush();
             PaintStrokes(app);
@@ -1139,6 +1321,9 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
     }
     if (m_pendingUnpack != 0) {
         UnpackPrefab(std::exchange(m_pendingUnpack, 0));
+    }
+    if (m_pendingSequence != 0) {
+        EditSequence(std::exchange(m_pendingSequence, 0));
     }
 
     // An edit ends when the mouse lets go of the widget or the gizmo that made it.
@@ -1741,6 +1926,7 @@ void Editor::DrawDockspace() {
         ImGui::DockBuilderDockWindow("Hierarchy", left);
         ImGui::DockBuilderDockWindow("Inspector", right);
         ImGui::DockBuilderDockWindow("Environment", right);
+        ImGui::DockBuilderDockWindow("Materials", right);
         ImGui::DockBuilderDockWindow("Assets", bottom);
         ImGui::DockBuilderDockWindow("Status", bottom);
         ImGui::DockBuilderFinish(dockspace);
@@ -1924,6 +2110,14 @@ void Editor::DrawInspector() {
         ImGui::TextDisabled("Its entities are edited in the prefab's file, and change everywhere it is placed.");
     }
     changed |= InspectComponents(edited);
+    if (edited.trigger) {
+        if (ImGui::Button(edited.trigger->sequence.empty() ? "Make its sequence" : "Edit its sequence")) {
+            m_pendingSequence = edited.id;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Opens the timeline of what the trigger plays (ADR-0079)");
+        }
+    }
     if (changed) {
         Apply(edited, std::format("Edit {}", EntityLabel(edited)));
     }
@@ -2202,7 +2396,7 @@ void Editor::DrawHelp() {
         return;
     }
     if (ImGui::Begin("Shortcuts", &m_showHelp, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize)) {
-        constexpr std::array<std::array<const char*, 2>, 24> kKeys{{
+        constexpr std::array<std::array<const char*, 2>, 25> kKeys{{
             {"Right mouse + WASD, Q, E", "Fly; Shift goes faster, the wheel sets the speed"},
             {"Wheel, middle mouse", "Walk forward and back, pan"},
             {"Click, Ctrl+click", "Select, add to the selection"},
@@ -2226,6 +2420,7 @@ void Editor::DrawHelp() {
             {"Double-click an asset", "Place it in front of the camera"},
             {"Drag an asset into the view", "Place it where it is let go"},
             {"Edit > Make prefab", "Save the selection as a prefab, placed where it was"},
+            {"Click a surface", "Its material in the Materials panel, edited live"},
             {"Drop files on the window", "Import glTF models and skies"},
         }};
         if (ImGui::BeginTable("keys", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
@@ -2250,6 +2445,7 @@ void Editor::Pick(app::Application& app) {
     const glm::vec2 mouse(io.MousePos.x, io.MousePos.y);
     // Markers first: they stand for what has nothing to click on.
     std::uint64_t nearest = 0;
+    ecs::Entity drawn;
     float nearestDistance = kPickDistance;
     ecs::World& world = m_scene->World();
     for (const scene::LevelEntity& entity : m_level.entities) {
@@ -2272,12 +2468,16 @@ void Editor::Pick(app::Application& app) {
         const auto [origin, direction] = RayAt(mouse);
         if (const std::optional<PickHit> hit = m_picker.Cast(world, origin, direction)) {
             nearest = m_instance->IdOf(hit->entity);
+            drawn = hit->entity;
         }
     }
     if (io.KeyCtrl) {
         ToggleSelect(nearest);
     } else {
         Select(nearest);
+    }
+    if (!drawn.IsNull()) {
+        ShowMaterialOf(drawn);
     }
 }
 

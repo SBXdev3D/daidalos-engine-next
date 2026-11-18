@@ -82,3 +82,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0076](0076-rebinding-and-rumble.md) | Bindings as settings with swaps, button names and layout labels, gamepads in menus, a rumble mixer with a heartbeat under tension | Accepted |
 | [0077](0077-photo-mode-and-captures.md) | Frame captures (PNG without the interface, EXR of the scene's light) read back from the output pass, F12 screenshots, the sandbox's photo mode | Accepted |
 | [0078](0078-prefabs-and-painting.md) | Prefabs as level files placed by entities, made as parts with no ids, unpacked rather than overridden; a paint tool that stamps decals and wet patches facing the surface; the 16 nearest wet volumes drawn | Accepted |
+| [0079](0079-material-and-sequence-editors.md) | Materials edited live (`Renderer::UpdateMaterial`) and written back into their glTF files; sequences as timelines in the editor, written by `WriteSequence`, previewed in the scene | Accepted |

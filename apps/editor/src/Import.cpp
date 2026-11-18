@@ -55,6 +55,9 @@ AssetKind KindOf(const std::filesystem::path& file) {
     if (name.ends_with(".ribbon.json")) {
         return AssetKind::Ribbon;
     }
+    if (name.ends_with(".sequence.json")) {
+        return AssetKind::Sequence;
+    }
     if (name.ends_with(".prefab.json")) {
         return AssetKind::Prefab;
     }

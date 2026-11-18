@@ -1,0 +1,60 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+#pragma once
+
+#include <daidalos/scene/AssetLibrary.hpp>
+
+#include <cstdint>
+#include <filesystem>
+#include <map>
+#include <optional>
+#include <string>
+#include <utility>
+
+namespace editor {
+
+/// The material panel (ADR-0079): the materials of the model under the selection, their values edited with the
+/// scene showing each change as it is made, and saved back into the model's glTF file. Edits are not steps of
+/// the level's undo history; Revert puts back what the file holds.
+class MaterialPanel {
+public:
+    /// Shows a model's materials, and one of them if given. modelPath is the model's file under the asset root.
+    void Show(const daidalos::scene::Model* model, std::string modelPath, std::optional<std::uint32_t> material);
+    /// Nothing to show: the selection places no model.
+    void Clear();
+    /// A model is about to be unloaded (another level opens): what was not saved is lost.
+    void Forget();
+
+    void Draw(daidalos::scene::AssetLibrary& assets, const std::filesystem::path& assetRoot);
+
+    /// Whether a material differs from its file.
+    [[nodiscard]] bool Dirty() const;
+    /// Writes every changed material into its model's file. Returns false if one failed; Status says why.
+    bool SaveAll(const std::filesystem::path& assetRoot);
+    [[nodiscard]] const std::string& Status() const { return m_status; }
+
+private:
+    using Key = std::pair<const daidalos::scene::Model*, std::uint32_t>;
+    struct Changed {
+        std::string modelPath;
+        /// The values its file holds.
+        daidalos::resources::MaterialData saved;
+    };
+    bool Save(const std::filesystem::path& assetRoot, const daidalos::scene::Model* model);
+    void Revert(daidalos::scene::AssetLibrary& assets, const daidalos::scene::Model* model);
+    [[nodiscard]] bool ModelDirty(const daidalos::scene::Model* model) const;
+
+    const daidalos::scene::Model* m_model = nullptr;
+    std::string m_modelPath;
+    std::uint32_t m_index = 0;
+    /// The materials changed since they were read or saved.
+    std::map<Key, Changed> m_changed;
+    std::string m_status;
+};
+
+/// Whether two materials' values are the same, as far as the panel edits and files keep them.
+[[nodiscard]] bool SameValues(const daidalos::resources::MaterialData& a, const daidalos::resources::MaterialData& b);
+
+} // namespace editor

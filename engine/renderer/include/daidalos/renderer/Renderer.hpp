@@ -268,6 +268,9 @@ public:
     void DestroyMesh(MeshHandle mesh);
 
     [[nodiscard]] core::Result<MaterialHandle> CreateMaterial(const MaterialDesc& desc);
+    /// Changes a material in place, as the editor's material panel does (ADR-0079): what draws with it, the path
+    /// tracer included, shows the change from the next frame. False if the material is gone.
+    bool UpdateMaterial(MaterialHandle material, const MaterialDesc& desc);
     /// Draws using the material fall back to the default one.
     void DestroyMaterial(MaterialHandle material);
 

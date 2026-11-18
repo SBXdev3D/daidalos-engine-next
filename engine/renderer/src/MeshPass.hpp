@@ -161,6 +161,8 @@ public:
     [[nodiscard]] MaterialSlot MaterialOf(MaterialHandle material) const;
 
     [[nodiscard]] core::Result<MaterialHandle> CreateMaterial(const MaterialDesc& desc);
+    /// Changes a material in place (ADR-0079); false if it is gone or is the default one.
+    bool UpdateMaterial(MaterialHandle material, const MaterialDesc& desc);
     void DestroyMaterial(MaterialHandle material);
 
     /// The G-buffer's first target: world normals, times 0.5 plus 0.5, and the roughness. Half floats: in 8
@@ -300,6 +302,10 @@ private:
         /// Its emission lights the scene (MaterialDesc::emissiveLight), and it has some.
         bool emissive = false;
     };
+    /// What the passes need to know of a material to choose its pipeline and pass.
+    [[nodiscard]] static Material Flags(const MaterialDesc& desc);
+    /// Writes a material's values into its slot of the table the shaders read.
+    void WriteMaterial(std::uint32_t slot, const MaterialDesc& desc);
     /// A mesh drawn with an emissive material, whose triangles are lights (ADR-0044).
     struct EmissiveSource {
         std::uint32_t triangleCount = 0;

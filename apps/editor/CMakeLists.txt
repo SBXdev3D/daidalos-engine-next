@@ -7,6 +7,8 @@ dai_add_app(NAME editor
         src/AssetBrowser.hpp
         src/Clipboard.cpp
         src/Clipboard.hpp
+        src/Cues.cpp
+        src/Cues.hpp
         src/Editor.cpp
         src/Editor.hpp
         src/History.cpp
@@ -16,10 +18,14 @@ dai_add_app(NAME editor
         src/Inspector.cpp
         src/Inspector.hpp
         src/Main.cpp
+        src/MaterialPanel.cpp
+        src/MaterialPanel.hpp
         src/Paint.cpp
         src/Paint.hpp
         src/Picking.cpp
         src/Picking.hpp
+        src/SequencePanel.cpp
+        src/SequencePanel.hpp
         src/Thumbnail.cpp
         src/Thumbnail.hpp
     DEPS

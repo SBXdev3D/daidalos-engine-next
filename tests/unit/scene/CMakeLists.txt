@@ -3,6 +3,7 @@ dai_add_test(NAME daidalos_scene_tests
         AnimationTests.cpp
         AssertCapture.hpp
         EntityTests.cpp
+        GltfMaterialsTests.cpp
         PerceptionTests.cpp
         SaveGameTests.cpp
         SequenceTests.cpp
@@ -17,4 +18,5 @@ dai_add_test(NAME daidalos_scene_tests
         WorldTests.cpp
     DEPS
         daidalos::scene)
-target_compile_definitions(daidalos_scene_tests PRIVATE DAI_PROJECT_ASSET_DIR="${PROJECT_SOURCE_DIR}/assets")
+target_compile_definitions(daidalos_scene_tests PRIVATE DAI_PROJECT_ASSET_DIR="${PROJECT_SOURCE_DIR}/assets"
+    DAI_TEST_ASSET_DIR="${PROJECT_SOURCE_DIR}/tests/assets")

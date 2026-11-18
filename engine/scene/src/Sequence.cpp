@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <format>
 
+#include "JsonTree.hpp"
+
 namespace daidalos::scene {
 
 namespace {
@@ -251,13 +253,16 @@ core::Result<Sequence> ParseSequence(std::string_view json, std::string_view nam
         object["cues"].get_array().get(cues) != simdjson::SUCCESS) {
         return core::MakeError(core::ErrorCode::ParseError, kModule, std::format("{}: needs a list of \"cues\"", name));
     }
+    Sequence sequence;
+    if (std::string_view comment; object["comment"].get_string().get(comment) == simdjson::SUCCESS) {
+        sequence.comment = std::string(comment);
+    }
     for (const auto field : object) {
         if (field.key != "cues" && field.key != "comment") {
             return core::MakeError(core::ErrorCode::ParseError, kModule,
                                    std::format("{}: \"{}\" is not a known key", name, field.key));
         }
     }
-    Sequence sequence;
     std::size_t index = 0;
     for (Element item : cues) {
         simdjson::dom::object cue;
@@ -270,6 +275,134 @@ core::Result<Sequence> ParseSequence(std::string_view json, std::string_view nam
     }
     std::ranges::stable_sort(sequence.cues, {}, &Cue::at);
     return sequence;
+}
+
+std::string_view CueKindName(Cue::Kind kind) {
+    switch (kind) {
+    case Cue::Kind::Power:
+        return "power";
+    case Cue::Kind::Light:
+        return "light";
+    case Cue::Kind::Sound:
+        return "sound";
+    case Cue::Kind::Particles:
+        return "particles";
+    case Cue::Kind::Move:
+        return "move";
+    case Cue::Kind::Visible:
+        return "visible";
+    case Cue::Kind::Shake:
+        return "shake";
+    case Cue::Kind::Camera:
+        return "camera";
+    case Cue::Kind::Mix:
+        return "mix";
+    case Cue::Kind::Event:
+        return "event";
+    case Cue::Kind::Subtitle:
+        return "subtitle";
+    }
+    return "event";
+}
+
+std::string WriteSequence(const Sequence& sequence) {
+    using detail::Json;
+    using detail::JsonArray;
+    using detail::JsonObject;
+    const auto number = [](float value) { return Json{static_cast<double>(value)}; };
+    const auto text = [](const std::string& value) { return Json{value}; };
+    const auto vector = [&number](const glm::vec3& value) {
+        return Json{JsonArray{number(value.x), number(value.y), number(value.z)}};
+    };
+    std::vector<const Cue*> ordered;
+    for (const Cue& cue : sequence.cues) {
+        ordered.push_back(&cue);
+    }
+    std::ranges::stable_sort(ordered, {}, &Cue::at);
+    JsonArray cues;
+    for (const Cue* cue : ordered) {
+        JsonObject object;
+        object.emplace("at", number(cue->at));
+        if (cue->kind == Cue::Kind::Event) {
+            object.emplace("event", text(cue->name));
+            cues.push_back(Json{std::move(object)});
+            continue;
+        }
+        JsonObject body;
+        switch (cue->kind) {
+        case Cue::Kind::Power:
+            body.emplace("circuit", text(cue->name));
+            body.emplace("on", Json{cue->on});
+            break;
+        case Cue::Kind::Light:
+        case Cue::Kind::Visible:
+            body.emplace("entity", text(cue->name));
+            body.emplace("on", Json{cue->on});
+            break;
+        case Cue::Kind::Sound:
+            body.emplace("clip", text(cue->path));
+            if (!cue->name.empty()) {
+                body.emplace("entity", text(cue->name));
+            }
+            if (!cue->caption.empty()) {
+                body.emplace("caption", text(cue->caption));
+            }
+            body.emplace("volume", number(cue->volume));
+            body.emplace("ducking", number(cue->ducking));
+            break;
+        case Cue::Kind::Subtitle:
+            body.emplace("text", text(cue->caption));
+            body.emplace("speaker", text(cue->name));
+            body.emplace("seconds", number(cue->seconds));
+            break;
+        case Cue::Kind::Particles:
+            body.emplace("effect", text(cue->path));
+            body.emplace("entity", text(cue->name));
+            body.emplace("count", Json{static_cast<double>(cue->count)});
+            break;
+        case Cue::Kind::Move:
+            body.emplace("entity", text(cue->name));
+            body.emplace("to", vector(cue->position));
+            body.emplace("seconds", number(cue->seconds));
+            break;
+        case Cue::Kind::Shake:
+            body.emplace("strength", number(cue->strength));
+            body.emplace("seconds", number(cue->seconds));
+            break;
+        case Cue::Kind::Mix:
+            body.emplace("effects", number(cue->mix.buses[0]));
+            body.emplace("music", number(cue->mix.buses[1]));
+            body.emplace("ambience", number(cue->mix.buses[2]));
+            body.emplace("interface", number(cue->mix.buses[3]));
+            body.emplace("lowpass", number(cue->mix.lowpass));
+            body.emplace("seconds", number(cue->seconds));
+            break;
+        case Cue::Kind::Camera: {
+            JsonArray keys;
+            for (const CameraKey& key : cue->keys) {
+                JsonObject written;
+                written.emplace("at", number(key.at));
+                written.emplace("position", vector(key.position));
+                written.emplace("target", vector(key.target));
+                written.emplace("aperture", number(key.aperture));
+                written.emplace("focus", number(key.focus));
+                keys.push_back(Json{std::move(written)});
+            }
+            body.emplace("keys", Json{std::move(keys)});
+            break;
+        }
+        case Cue::Kind::Event:
+            break;
+        }
+        object.emplace(std::string(CueKindName(cue->kind)), Json{std::move(body)});
+        cues.push_back(Json{std::move(object)});
+    }
+    JsonObject root;
+    if (!sequence.comment.empty()) {
+        root.emplace("comment", Json{sequence.comment});
+    }
+    root.emplace("cues", Json{std::move(cues)});
+    return detail::WriteJson(Json{std::move(root)});
 }
 
 CameraKey CameraAt(const std::vector<CameraKey>& keys, float time) {

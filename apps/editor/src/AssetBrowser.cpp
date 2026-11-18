@@ -47,6 +47,8 @@ const char* KindName(AssetKind kind) {
         return "Prefab";
     case AssetKind::Decal:
         return "Decal";
+    case AssetKind::Sequence:
+        return "Sequence";
     case AssetKind::Other:
         break;
     }
@@ -71,6 +73,8 @@ ImU32 KindColor(AssetKind kind) {
         return IM_COL32(90, 200, 210, 255);
     case AssetKind::Decal:
         return IM_COL32(200, 80, 80, 255);
+    case AssetKind::Sequence:
+        return IM_COL32(230, 230, 120, 255);
     case AssetKind::Other:
         break;
     }
@@ -306,12 +310,13 @@ void AssetBrowser::DrawTile(const AssetEntry& entry, std::optional<AssetEntry>& 
 
     if (hovered) {
         ImGui::SetTooltip("%s\n%s", entry.path.c_str(),
-                          entry.kind == AssetKind::Folder  ? "Double-click to open"
-                          : entry.kind == AssetKind::Level ? "Double-click to open the level"
-                          : entry.kind == AssetKind::Sky   ? "Double-click to use as the sky, or drag into the view"
-                          : entry.kind == AssetKind::Decal ? "Double-click to paint with it, or drag onto a surface"
-                                                           : "Double-click to place in front of the camera, or drag "
-                                                             "into the view");
+                          entry.kind == AssetKind::Folder     ? "Double-click to open"
+                          : entry.kind == AssetKind::Level    ? "Double-click to open the level"
+                          : entry.kind == AssetKind::Sky      ? "Double-click to use as the sky, or drag into the view"
+                          : entry.kind == AssetKind::Decal    ? "Double-click to paint with it, or drag onto a surface"
+                          : entry.kind == AssetKind::Sequence ? "Double-click to edit its timeline"
+                                                              : "Double-click to place in front of the camera, or drag "
+                                                                "into the view");
     }
     if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
         if (entry.kind == AssetKind::Folder) {
@@ -321,7 +326,7 @@ void AssetBrowser::DrawTile(const AssetEntry& entry, std::optional<AssetEntry>& 
         }
     }
     (void)clicked;
-    if (entry.kind != AssetKind::Folder && entry.kind != AssetKind::Level &&
+    if (entry.kind != AssetKind::Folder && entry.kind != AssetKind::Level && entry.kind != AssetKind::Sequence &&
         ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
         m_dragged = entry;
         ImGui::SetDragDropPayload("DAIDALOS_ASSET", entry.path.c_str(), entry.path.size() + 1);

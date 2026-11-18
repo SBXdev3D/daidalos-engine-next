@@ -270,3 +270,23 @@ TEST_F(LevelInstanceTest, TheSceneFindsSoundsUnderItsAssetRoot) {
         EXPECT_NE(clip.error().code, core::ErrorCode::NotFound) << core::Format(clip.error());
     }
 }
+
+TEST_F(LevelInstanceTest, AModelsMaterialChangesInPlace) {
+    core::Result<const scene::Model*> model = m_scene->Assets().LoadModel("Factory/Props/crate.gltf");
+    ASSERT_TRUE(model.has_value()) << core::Format(model.error());
+    const scene::Model& crate = **model;
+    ASSERT_FALSE(crate.materials.empty());
+    for (const scene::Model::Part& part : crate.parts) {
+        ASSERT_TRUE(part.materialIndex.has_value());
+        EXPECT_EQ(part.material, crate.materials[*part.materialIndex].handle);
+    }
+    resources::MaterialData values = crate.materials[0].values;
+    const rhi::TextureHandle texture = crate.materials[0].desc.baseColorTexture;
+    values.roughnessFactor = 0.123f;
+    values.baseColorFactor = {1.0f, 0.0f, 0.0f, 1.0f};
+    EXPECT_TRUE(m_scene->Assets().UpdateMaterial(crate, 0, values));
+    EXPECT_FLOAT_EQ(crate.materials[0].desc.roughnessFactor, 0.123f);
+    EXPECT_EQ(crate.materials[0].desc.baseColorTexture, texture) << "Its textures stay";
+    EXPECT_FLOAT_EQ(crate.materials[0].values.roughnessFactor, 0.123f);
+    EXPECT_FALSE(m_scene->Assets().UpdateMaterial(crate, 99, values));
+}
