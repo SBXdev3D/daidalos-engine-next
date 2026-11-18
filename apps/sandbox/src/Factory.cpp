@@ -843,6 +843,8 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
     glm::vec3 eye{0.0f, kEyeHeight, 3.0f};
     Player& newPlayer = world.Add<Player>(playerEntity);
     world.Add<scene::Camera>(playerEntity);
+    // The player sets off the level's triggers (ADR-0071).
+    world.Add<scene::TriggerActivator>(playerEntity);
     world.Add<LevelLook>(playerEntity, level.environment);
     // The lights that the player carries follow the camera.
     const glm::vec3 flashlightAim = glm::normalize(math::kForward * kFlashlightAimDistance - kFlashlightHand);
@@ -1209,6 +1211,14 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
             return;
         }
         const Player& state = world.Get<Player>(entity);
+        // What the level's sequences ask of the game (ADR-0071).
+        for (const std::string& event : scene.TakeEvents()) {
+            if (event == "stinger" && !bank->stingers.empty()) {
+                scene.Sounds().Play(bank->stingers[bank->random() % bank->stingers.size()],
+                                    {.volume = 0.6f, .bus = audio::Bus::Interface, .ducking = 0.6f});
+                bank->stingerCooldown = 25.0f;
+            }
+        }
         const Threat threat = ZombieThreat(scene, state.feet);
         scene.Sounds().SetTension(state.dead ? 0.0f : threat.tension);
         bank->stingerCooldown = std::max(bank->stingerCooldown - static_cast<float>(delta.count()), 0.0f);

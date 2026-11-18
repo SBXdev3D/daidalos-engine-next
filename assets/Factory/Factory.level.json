@@ -1257,6 +1257,17 @@
         "streaks": 0.6,
         "wetness": 0.8
       }
+    },
+    {
+      "id": 106,
+      "name": "Trigger rain room scare",
+      "transform": {
+        "scale": [8, 3, 2],
+        "translation": [0, 1, -33]
+      },
+      "trigger": {
+        "sequence": "Sequences/rain_room_scare.sequence.json"
+      }
     }
   ],
   "environment": {

@@ -8,6 +8,8 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <string>
@@ -290,3 +292,49 @@ TEST_F(ApplicationScene, ToolsDrawEveryWindowOverAScene) {
     EXPECT_EQ(validationErrors, 0U);
 }
 #endif
+
+TEST_F(ApplicationScene, ATriggerPlaysItsSequenceOnce) {
+    // A trigger at the origin, a sequence that moves a crate and sends an event (ADR-0071), and something that
+    // sets triggers off walking in, out and in again.
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / "daidalos-trigger-test";
+    std::filesystem::create_directories(root);
+    std::ofstream(root / "boo.sequence.json")
+        << R"({"cues": [{"at": 0, "event": "boo"}, {"at": 0, "move": {"entity": "Crate", "to": [0, 3, 0], "seconds": 0}}]})";
+    std::vector<std::string> events;
+    glm::vec3 crate{0.0f};
+    FunctionHandler handler;
+    handler.start = [&](app::Application& app) -> core::Result<void> {
+        scene::Scene scene(app.Renderer(), root);
+        ecs::World& world = scene.World();
+        const ecs::Entity trigger = world.Create();
+        world.Add<ecs::LocalTransform>(trigger).scale = glm::vec3(2.0f);
+        world.Add<scene::Trigger>(trigger, scene::Trigger{.sequence = "boo.sequence.json"});
+        const ecs::Entity box = world.Create();
+        world.Add<ecs::LocalTransform>(box);
+        world.Add<scene::NodeName>(box, "Crate");
+        const ecs::Entity walker = world.Create();
+        world.Add<ecs::LocalTransform>(walker).translation = glm::vec3(5.0f, 0.0f, 0.0f);
+        world.Add<scene::TriggerActivator>(walker);
+        const auto frame = [&] {
+            ecs::PropagateTransforms(world);
+            scene.RunFrame(core::Seconds(0.1), 0.0f);
+            for (std::string& event : scene.TakeEvents()) {
+                events.push_back(std::move(event));
+            }
+        };
+        frame();
+        for (const float x : {0.0f, 5.0f, 0.0f}) {
+            world.Get<ecs::LocalTransform>(walker).translation.x = x;
+            frame();
+            frame();
+        }
+        crate = world.Get<ecs::LocalTransform>(box).translation;
+        app.RequestQuit();
+        return {};
+    };
+    RUN_OR_SKIP(handler);
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(events, (std::vector<std::string>{"boo"}));
+    EXPECT_EQ(crate, glm::vec3(0.0f, 3.0f, 0.0f));
+    std::filesystem::remove_all(root);
+}

@@ -283,6 +283,15 @@ core::Result<Light> ReadLight(Reader reader) {
     return light;
 }
 
+core::Result<Trigger> ReadTrigger(Reader reader) {
+    Trigger trigger;
+    DAI_LEVEL_TRY(reader.Text("sequence", trigger.sequence));
+    DAI_LEVEL_TRY(reader.Flag("once", trigger.once));
+    DAI_LEVEL_TRY(reader.Flag("enabled", trigger.enabled));
+    DAI_LEVEL_TRY(reader.Finish());
+    return trigger;
+}
+
 core::Result<WetVolume> ReadWet(Reader reader) {
     WetVolume wet;
     DAI_LEVEL_TRY(reader.Number("wetness", wet.wetness));
@@ -502,6 +511,7 @@ core::Result<LevelEntity> ReadEntity(const JsonObject& object, std::size_t index
     DAI_LEVEL_TRY(component("visibility", entity.visibility, &ReadVisibility));
     DAI_LEVEL_TRY(component("decal", entity.decal, &ReadDecal));
     DAI_LEVEL_TRY(component("wet", entity.wet, &ReadWet));
+    DAI_LEVEL_TRY(component("trigger", entity.trigger, &ReadTrigger));
     DAI_LEVEL_TRY(component("fog", entity.fog, &ReadFog));
     DAI_LEVEL_TRY(component("wind", entity.wind, &ReadWind));
     DAI_LEVEL_TRY(component("particles", entity.particles, &ReadParticles));
@@ -772,6 +782,14 @@ Json WriteEntity(const LevelEntity& entity) {
         Put(wet, "enabled", entity.wet->enabled, fallback.enabled);
         object.emplace("wet", Json{std::move(wet)});
     }
+    if (entity.trigger) {
+        const Trigger fallback;
+        JsonObject trigger;
+        trigger.emplace("sequence", Json{entity.trigger->sequence});
+        Put(trigger, "once", entity.trigger->once, fallback.once);
+        Put(trigger, "enabled", entity.trigger->enabled, fallback.enabled);
+        object.emplace("trigger", Json{std::move(trigger)});
+    }
     if (entity.decal) {
         const Decal fallback;
         JsonObject decal;
@@ -997,7 +1015,7 @@ bool LevelEntity::operator==(const LevelEntity& other) const {
            model == other.model && light == other.light && fog == other.fog && wind == other.wind &&
            particles == other.particles && attractor == other.attractor && weather == other.weather &&
            ribbon == other.ribbon && lightning == other.lightning && game == other.game &&
-           visibility == other.visibility && decal == other.decal && wet == other.wet;
+           visibility == other.visibility && decal == other.decal && wet == other.wet && trigger == other.trigger;
 }
 
 const LevelEntity* Level::Find(std::uint64_t id) const {

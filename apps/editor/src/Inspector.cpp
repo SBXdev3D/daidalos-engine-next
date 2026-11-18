@@ -324,6 +324,19 @@ bool InputString(const char* label, std::string& value) {
     return false;
 }
 
+bool InspectTrigger(scene::Trigger& trigger) {
+    bool changed = ImGui::Checkbox("Enabled", &trigger.enabled);
+    changed |= InputString("Sequence", trigger.sequence);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("A .sequence.json file, relative to the level: what plays when the player walks in");
+    }
+    changed |= ImGui::Checkbox("Once", &trigger.once);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Off: it plays again each time the player comes back in");
+    }
+    return changed;
+}
+
 bool InspectComponents(scene::LevelEntity& entity) {
     bool changed = false;
     if (!entity.model.empty() || ImGui::GetIO().KeyAlt) {
@@ -343,12 +356,17 @@ bool InspectComponents(scene::LevelEntity& entity) {
     changed |= Section("Ray visibility", entity.visibility, InspectVisibility);
     changed |= Section("Decal", entity.decal, InspectDecal);
     changed |= Section("Wet", entity.wet, InspectWet);
+    changed |= Section("Trigger", entity.trigger, InspectTrigger);
 
     ImGui::Separator();
     if (ImGui::Button("Add a component")) {
         ImGui::OpenPopup("add component");
     }
     if (ImGui::BeginPopup("add component")) {
+        if (!entity.trigger && ImGui::MenuItem("Trigger")) {
+            entity.trigger = scene::Trigger{};
+            changed = true;
+        }
         if (!entity.wet && ImGui::MenuItem("Wet")) {
             entity.wet = scene::WetVolume{};
             changed = true;

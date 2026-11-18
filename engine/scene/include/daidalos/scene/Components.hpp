@@ -455,6 +455,26 @@ struct KinematicBody {
 };
 
 /// ECS component: a voice of the scene's sounds that follows the entity.
+/// ECS component: a box that plays a sequence when something that triggers enters it (ADR-0071). The box
+/// is the unit cube the entity's transform places, as fog and wet volumes are.
+struct Trigger {
+    /// The .sequence.json file, relative to the asset root.
+    std::string sequence;
+    /// Once: it fires the first time only; otherwise each time something enters.
+    bool once = true;
+    bool enabled = true;
+    [[nodiscard]] bool operator==(const Trigger&) const = default;
+};
+
+/// ECS component: what sets off triggers, as the player.
+struct TriggerActivator {};
+
+/// ECS component: whether something is inside a trigger, and whether it has fired: the trigger's state.
+struct TriggerState {
+    bool inside = false;
+    bool fired = false;
+};
+
 struct SoundEmitter {
     audio::VoiceHandle voice;
     /// Its volume, which a light it follows scales.

@@ -5,18 +5,27 @@
 #include <daidalos/animation/Animation.hpp>
 #include <daidalos/core/Profile.hpp>
 #include <daidalos/ecs/Transform.hpp>
+#include <daidalos/logging/Log.hpp>
 #include <daidalos/scene/Scene.hpp>
 #include <daidalos/scene/Systems.hpp>
 
+#include <glm/ext/matrix_transform.hpp>
 #include <glm/geometric.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/matrix.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <format>
+#include <fstream>
+#include <iterator>
 #include <utility>
 
 namespace daidalos::scene {
+
+namespace {
+constexpr std::string_view kModule = "scene";
+} // namespace
 
 namespace {
 
@@ -35,7 +44,7 @@ glm::quat RotationBetween(const glm::vec3& from, const glm::vec3& to) {
 } // namespace
 
 Scene::Scene(renderer::Renderer& renderer, std::filesystem::path assetRoot, audio::AudioEngine* audio)
-    : m_assets(renderer, assetRoot), m_sounds(audio, std::move(assetRoot)) {}
+    : m_assets(renderer, assetRoot), m_sounds(audio, assetRoot), m_assetRoot(std::move(assetRoot)) {}
 
 void Scene::SetPaused(bool paused) {
     m_paused = paused;
@@ -82,6 +91,9 @@ void Scene::RunFrame(core::Seconds delta, float fixedAlpha) {
         noise.age += m_frameDelta;
     }
     std::erase_if(m_noises, [](const Noise& noise) { return noise.age > kNoiseMemory; });
+    // Triggers set off sequences, and sequences play their cues (ADR-0071).
+    UpdateTriggers();
+    RunSequences();
     // Wet places dry (ADR-0061).
     m_world.Each<WetVolume>([this](ecs::Entity, WetVolume& volume) {
         volume.wetness = std::max(volume.wetness - volume.dryingRate * m_frameDelta / 60.0f, 0.0f);
@@ -113,6 +125,29 @@ void Scene::Extract(renderer::SceneView& view) {
     ecs::PropagateTransforms(m_world);
     AnimateLights(m_world, m_lightClock, m_power);
     ExtractScene(m_world, view, m_activeCamera);
+    // A camera cue has the camera, and a shake shakes whichever has it (ADR-0071).
+    if (view.camera.has_value()) {
+        if (m_cinematic.has_value()) {
+            const CameraKey key = CameraAt(m_cinematic->keys, m_cinematic->time);
+            const glm::vec3 forward = key.target - key.position;
+            if (glm::length(forward) > 1e-4f) {
+                view.camera->view = glm::lookAt(key.position, key.target, glm::vec3(0.0f, 1.0f, 0.0f));
+            }
+            view.camera->aperture = key.aperture;
+            view.camera->focusDistance = key.focus;
+        }
+        if (m_shakeTime > 0.0f && m_shakeLength > 0.0f) {
+            // Handheld: two slow sines on each axis, fading out.
+            const float left = m_shakeTime / m_shakeLength;
+            const auto t = static_cast<float>(m_lightClock);
+            const float amount = m_shake * left * glm::radians(1.5f);
+            const float pitch = amount * (std::sin(t * 17.0f) + 0.5f * std::sin(t * 29.0f));
+            const float yaw = amount * (std::sin(t * 13.0f + 1.0f) + 0.5f * std::sin(t * 23.0f));
+            const glm::mat4 shake = glm::rotate(glm::rotate(glm::mat4(1.0f), pitch, glm::vec3(1.0f, 0.0f, 0.0f)), yaw,
+                                                glm::vec3(0.0f, 1.0f, 0.0f));
+            view.camera->view = shake * view.camera->view;
+        }
+    }
     view.atmosphere = m_atmosphere;
     view.timeStep = m_frameDelta;
     view.cut = std::exchange(m_cut, false);
@@ -147,6 +182,170 @@ void Scene::Extract(renderer::SceneView& view) {
                              glm::normalize(glm::vec3(camera[1])));
     }
     m_sounds.Update();
+}
+
+void Scene::PlaySequence(std::shared_ptr<const Sequence> sequence) {
+    if (sequence != nullptr) {
+        m_sequences.push_back({std::move(sequence)});
+    }
+}
+
+core::Result<void> Scene::PlaySequenceFile(std::string_view path) {
+    auto found = m_sequenceFiles.find(path);
+    if (found == m_sequenceFiles.end()) {
+        const std::filesystem::path file = m_assetRoot / path;
+        std::ifstream stream(file, std::ios::binary);
+        if (!stream) {
+            return core::MakeError(core::ErrorCode::NotFound, kModule,
+                                   std::format("Missing sequence '{}'", file.generic_string()));
+        }
+        const std::string text((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+        DAI_TRY_ASSIGN(Sequence sequence, ParseSequence(text, path));
+        found = m_sequenceFiles.emplace(std::string(path), std::make_shared<const Sequence>(std::move(sequence))).first;
+    }
+    PlaySequence(found->second);
+    return {};
+}
+
+ecs::Entity Scene::Named(std::string_view name) {
+    ecs::Entity found;
+    m_world.Each<NodeName>([&](ecs::Entity entity, const NodeName& node) {
+        if (found.IsNull() && node.value == name) {
+            found = entity;
+        }
+    });
+    return found;
+}
+
+void Scene::UpdateTriggers() {
+    std::vector<glm::vec3> activators;
+    m_world.Each<TriggerActivator, ecs::WorldTransform>(
+        [&](ecs::Entity, const TriggerActivator&, const ecs::WorldTransform& transform) {
+            activators.emplace_back(transform.matrix[3]);
+        });
+    std::vector<std::string> fired;
+    m_world.Each<Trigger, ecs::WorldTransform>(
+        [&](ecs::Entity entity, const Trigger& trigger, const ecs::WorldTransform& transform) {
+            TriggerState& state = m_world.Has<TriggerState>(entity) ? m_world.Get<TriggerState>(entity)
+                                                                    : m_world.Add<TriggerState>(entity);
+            const glm::mat4 inverse = glm::inverse(transform.matrix);
+            bool inside = false;
+            for (const glm::vec3& position : activators) {
+                const glm::vec3 local = glm::vec3(inverse * glm::vec4(position, 1.0f));
+                inside = inside || glm::all(glm::lessThanEqual(glm::abs(local), glm::vec3(0.5f)));
+            }
+            if (inside && !state.inside && trigger.enabled && !(trigger.once && state.fired)) {
+                state.fired = true;
+                fired.push_back(trigger.sequence);
+            }
+            state.inside = inside;
+        });
+    for (const std::string& sequence : fired) {
+        if (const core::Result<void> played = PlaySequenceFile(sequence); !played) {
+            DAI_LOG_WARNING(kModule, "Trigger: {}", core::Format(played.error()));
+        }
+    }
+}
+
+void Scene::RunSequences() {
+    // Cues due this frame, in order.
+    for (std::size_t index = 0; index < m_sequences.size(); ++index) {
+        PlayingSequence& playing = m_sequences[index];
+        playing.time += m_frameDelta;
+        while (playing.next < playing.sequence->cues.size() &&
+               playing.sequence->cues[playing.next].at <= playing.time) {
+            const Cue cue = playing.sequence->cues[playing.next++];
+            RunCue(cue);
+        }
+    }
+    std::erase_if(m_sequences,
+                  [](const PlayingSequence& playing) { return playing.next >= playing.sequence->cues.size(); });
+    for (Moving& moving : m_moving) {
+        moving.time = std::min(moving.time + m_frameDelta, moving.seconds);
+        if (ecs::LocalTransform* transform = m_world.TryGet<ecs::LocalTransform>(moving.entity)) {
+            const float t = moving.seconds > 0.0f ? moving.time / moving.seconds : 1.0f;
+            transform->translation = glm::mix(moving.from, moving.to, t * t * (3.0f - 2.0f * t));
+        }
+    }
+    std::erase_if(m_moving, [](const Moving& moving) { return moving.time >= moving.seconds; });
+    if (m_cinematic.has_value()) {
+        m_cinematic->time += m_frameDelta;
+        if (m_cinematic->keys.empty() || m_cinematic->time > m_cinematic->keys.back().at) {
+            m_cinematic.reset();
+            m_cut = true;
+        }
+    }
+    m_shakeTime = std::max(m_shakeTime - m_frameDelta, 0.0f);
+}
+
+void Scene::RunCue(const Cue& cue) {
+    const auto entityPosition = [this](ecs::Entity entity) -> std::optional<glm::vec3> {
+        if (const ecs::WorldTransform* transform = m_world.TryGet<ecs::WorldTransform>(entity)) {
+            return glm::vec3(transform->matrix[3]);
+        }
+        return std::nullopt;
+    };
+    switch (cue.kind) {
+    case Cue::Kind::Power:
+        m_power.Set(cue.name, cue.on, m_lightClock);
+        break;
+    case Cue::Kind::Light:
+        if (Light* light = m_world.TryGet<Light>(Named(cue.name))) {
+            light->enabled = cue.on;
+        }
+        break;
+    case Cue::Kind::Sound: {
+        const core::Result<audio::ClipHandle> clip = m_sounds.Load(cue.path);
+        if (!clip) {
+            DAI_LOG_WARNING(kModule, "Sequence: {}", core::Format(clip.error()));
+            break;
+        }
+        const std::optional<glm::vec3> at = cue.name.empty() ? std::nullopt : entityPosition(Named(cue.name));
+        m_sounds.Play(*clip, {.position = at, .volume = cue.volume, .ducking = cue.ducking});
+        break;
+    }
+    case Cue::Kind::Particles: {
+        const core::Result<ParticleEffectAsset> effect = m_assets.LoadParticleEffect(cue.path);
+        const std::optional<glm::vec3> at = entityPosition(Named(cue.name));
+        if (effect && at.has_value()) {
+            SpawnParticles(effect->effect, *at, glm::vec3(0.0f, 1.0f, 0.0f), cue.count);
+        } else if (!effect) {
+            DAI_LOG_WARNING(kModule, "Sequence: {}", core::Format(effect.error()));
+        }
+        break;
+    }
+    case Cue::Kind::Move: {
+        const ecs::Entity entity = Named(cue.name);
+        if (const ecs::LocalTransform* transform = m_world.TryGet<ecs::LocalTransform>(entity)) {
+            m_moving.push_back({entity, transform->translation, cue.position, cue.seconds, 0.0f});
+        }
+        break;
+    }
+    case Cue::Kind::Visible: {
+        const ecs::Entity entity = Named(cue.name);
+        if (m_world.IsAlive(entity)) {
+            RayVisibility& visibility = m_world.Has<RayVisibility>(entity) ? m_world.Get<RayVisibility>(entity)
+                                                                           : m_world.Add<RayVisibility>(entity);
+            visibility = {cue.on, cue.on, cue.on, cue.on};
+        }
+        break;
+    }
+    case Cue::Kind::Shake:
+        m_shake = std::max(cue.strength, 0.0f);
+        m_shakeLength = std::max(cue.seconds, 0.01f);
+        m_shakeTime = m_shakeLength;
+        break;
+    case Cue::Kind::Camera:
+        m_cinematic = Cinematic{cue.keys, 0.0f};
+        m_cut = true;
+        break;
+    case Cue::Kind::Mix:
+        m_sounds.SetSnapshot(cue.mix, cue.seconds);
+        break;
+    case Cue::Kind::Event:
+        m_events.push_back(cue.name);
+        break;
+    }
 }
 
 void Scene::SpawnDecal(const DecalSpawn& spawn) {

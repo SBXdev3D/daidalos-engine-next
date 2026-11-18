@@ -284,6 +284,12 @@ void LevelInstance::Make(const LevelEntity& entity) {
     if (entity.wet) {
         world.Add<WetVolume>(created, *entity.wet);
     }
+    if (entity.trigger) {
+        // Its sequence, from the level's directory to the asset root's (ADR-0071).
+        Trigger trigger = *entity.trigger;
+        trigger.sequence = Resolve(trigger.sequence);
+        world.Add<Trigger>(created, std::move(trigger));
+    }
     if (entity.decal) {
         world.Add<Decal>(created, *entity.decal);
         DecalTextures textures;

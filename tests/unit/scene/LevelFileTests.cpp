@@ -260,3 +260,13 @@ TEST(LevelFileTest, WetAreasKeepTheirWater) {
     ASSERT_TRUE(read.has_value()) << core::Format(read.error());
     EXPECT_EQ(*read, level);
 }
+
+TEST(LevelFileTest, TriggersKeepTheirSequence) {
+    Level level;
+    LevelEntity entity{.id = 1, .name = "Scare"};
+    entity.trigger = scene::Trigger{.sequence = "Sequences/boo.sequence.json", .once = false};
+    level.entities.push_back(entity);
+    const core::Result<Level> read = ParseLevel(WriteLevel(level));
+    ASSERT_TRUE(read.has_value()) << core::Format(read.error());
+    EXPECT_EQ(*read, level);
+}
