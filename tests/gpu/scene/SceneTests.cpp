@@ -5,6 +5,9 @@
 #include <daidalos/app/Application.hpp>
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/scene/Components.hpp>
+#include <daidalos/scene/Level.hpp>
+#include <daidalos/scene/SaveGame.hpp>
+#include <daidalos/scene/Scene.hpp>
 
 #include <gtest/gtest.h>
 
@@ -337,4 +340,71 @@ TEST_F(ApplicationScene, ATriggerPlaysItsSequenceOnce) {
     EXPECT_EQ(events, (std::vector<std::string>{"boo"}));
     EXPECT_EQ(crate, glm::vec3(0.0f, 3.0f, 0.0f));
     std::filesystem::remove_all(root);
+}
+
+TEST_F(ApplicationScene, ASavedGameRestoresTheWorldItLeft) {
+    // A world made from the same "level" twice (ADR-0072): changes made to the first come back in the second.
+    struct Made {
+        ecs::Entity crate;
+        ecs::Entity lamp;
+        ecs::Entity trigger;
+        ecs::Entity keyed;
+    };
+    const auto make = [](scene::Scene& scene) {
+        ecs::World& world = scene.World();
+        Made made;
+        made.crate = world.Create();
+        world.Add<ecs::LocalTransform>(made.crate);
+        world.Add<scene::LevelEntityId>(made.crate, std::uint64_t{7});
+        made.lamp = world.Create();
+        world.Add<ecs::LocalTransform>(made.lamp);
+        world.Add<scene::LevelEntityId>(made.lamp, std::uint64_t{8});
+        world.Add<scene::Light>(made.lamp);
+        made.trigger = world.Create();
+        world.Add<ecs::LocalTransform>(made.trigger);
+        world.Add<scene::LevelEntityId>(made.trigger, std::uint64_t{9});
+        world.Add<scene::Trigger>(made.trigger, scene::Trigger{.sequence = "x.sequence.json"});
+        made.keyed = world.Create();
+        world.Add<ecs::LocalTransform>(made.keyed);
+        world.Add<scene::SaveKey>(made.keyed, "door#0");
+        return made;
+    };
+    scene::SaveData saved;
+    glm::vec3 crate{0.0f};
+    glm::vec3 door{0.0f};
+    bool lamp = true;
+    bool fired = false;
+    bool power = true;
+    FunctionHandler handler;
+    handler.start = [&](app::Application& app) -> core::Result<void> {
+        {
+            scene::Scene first(app.Renderer(), DAI_TEST_ASSET_DIR);
+            const Made made = make(first);
+            ecs::World& world = first.World();
+            world.Get<ecs::LocalTransform>(made.crate).translation = {1.0f, 2.0f, 3.0f};
+            world.Get<ecs::LocalTransform>(made.keyed).translation = {0.0f, 2.5f, 0.0f};
+            world.Get<scene::Light>(made.lamp).enabled = false;
+            world.Add<scene::TriggerState>(made.trigger).fired = true;
+            first.Power().Set("hall", false, 0.0);
+            scene::SaveScene(first, saved);
+        }
+        scene::Scene second(app.Renderer(), DAI_TEST_ASSET_DIR);
+        const Made made = make(second);
+        scene::LoadScene(second, saved);
+        ecs::World& world = second.World();
+        crate = world.Get<ecs::LocalTransform>(made.crate).translation;
+        door = world.Get<ecs::LocalTransform>(made.keyed).translation;
+        lamp = world.Get<scene::Light>(made.lamp).enabled;
+        fired = world.Get<scene::TriggerState>(made.trigger).fired;
+        power = second.Power().IsOn("hall");
+        app.RequestQuit();
+        return {};
+    };
+    RUN_OR_SKIP(handler);
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(crate, glm::vec3(1.0f, 2.0f, 3.0f));
+    EXPECT_EQ(door, glm::vec3(0.0f, 2.5f, 0.0f));
+    EXPECT_FALSE(lamp);
+    EXPECT_TRUE(fired);
+    EXPECT_FALSE(power);
 }

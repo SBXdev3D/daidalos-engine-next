@@ -8,6 +8,8 @@
 #include <map>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace daidalos::scene {
 
@@ -60,6 +62,8 @@ public:
     [[nodiscard]] bool IsOn(std::string_view circuit) const;
     /// The brightness the circuit allows at a time, from 0 to 1.
     [[nodiscard]] float Factor(std::string_view circuit, double seconds) const;
+    /// The circuits someone switched, and whether each is on, for a saved game.
+    [[nodiscard]] std::vector<std::pair<std::string, bool>> Switched() const;
 
     /// Seconds a cut takes to go dark, and a return to come fully on.
     static constexpr double kCutSeconds = 0.35;
