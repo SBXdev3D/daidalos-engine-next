@@ -58,11 +58,10 @@
    }
   },
   {
-   "alphaMode": "BLEND",
    "doubleSided": true,
    "extensions": {
     "KHR_materials_transmission": {
-     "transmissionFactor": 1
+     "transmissionFactor": 0.95
     }
    },
    "name": "industrial_wall_lamp_glass",
@@ -76,10 +75,11 @@
     "metallicFactor": 0,
     "metallicRoughnessTexture": {
      "index": 6
-    }
+    },
+    "roughnessFactor": 0.1
    },
    "extras": {
-    "surface": "metal"
+    "surface": "glass"
    }
   }
  ],

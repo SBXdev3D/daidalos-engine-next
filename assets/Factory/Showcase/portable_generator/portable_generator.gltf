@@ -92,11 +92,10 @@
    }
   },
   {
-   "alphaMode": "BLEND",
    "doubleSided": true,
    "extensions": {
     "KHR_materials_transmission": {
-     "transmissionFactor": 1
+     "transmissionFactor": 0.95
     }
    },
    "name": "portable_generator_glass",
@@ -109,10 +108,11 @@
     },
     "metallicRoughnessTexture": {
      "index": 5
-    }
+    },
+    "roughnessFactor": 0.1
    },
    "extras": {
-    "surface": "metal"
+    "surface": "glass"
    }
   }
  ],

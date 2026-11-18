@@ -178,6 +178,18 @@ def fetch(model, surface, tool, pool):
     for material in gltf["materials"]:
         if surface:
             material.setdefault("extras", {})["surface"] = surface
+        # Blending is not drawn (ADR-0042): glass becomes glass, the rest cut out at half alpha.
+        if material.get("alphaMode") == "BLEND":
+            del material["alphaMode"]
+            if "glass" in material.get("name", "").lower():
+                material.setdefault("extensions", {})["KHR_materials_transmission"] = {"transmissionFactor": 0.95}
+                material["pbrMetallicRoughness"]["roughnessFactor"] = min(
+                    material["pbrMetallicRoughness"].get("roughnessFactor", 1.0), 0.1)
+                material.setdefault("extras", {})["surface"] = "glass"
+                gltf["extensionsUsed"] = sorted(set(gltf.get("extensionsUsed", [])) | {"KHR_materials_transmission"})
+            else:
+                material["alphaMode"] = "MASK"
+                material["alphaCutoff"] = 0.5
     gltf_path.write_text(json.dumps(gltf, indent=1), encoding="utf-8")
     return triangles(gltf)
 

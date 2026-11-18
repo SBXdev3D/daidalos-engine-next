@@ -971,6 +971,25 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
         }
     }
 
+    // The level's props stand in static boxes (ADR-0083): zombies walk around them, sound meets them, and shots
+    // throw up what their model is made of.
+    world.Each<scene::StaticBox>([&](ecs::Entity entity, const scene::StaticBox& box) {
+        std::string surface;
+        if (const scene::ModelInstance* placed = world.TryGet<scene::ModelInstance>(entity);
+            placed != nullptr && placed->model != nullptr && !placed->model->parts.empty()) {
+            surface = placed->model->parts.front().surface;
+        }
+        scene.Sounds().AddAcousticMesh(box.corners, scene::kBoxIndices, audio::AcousticMaterialOf(surface));
+        const auto first = static_cast<std::uint32_t>(walkPositions.size());
+        walkPositions.insert(walkPositions.end(), box.corners.begin(), box.corners.end());
+        for (const std::uint32_t vertex : scene::kBoxIndices) {
+            walkIndices.push_back(first + vertex);
+        }
+        if (!surface.empty()) {
+            surfaces.surfaces.emplace(box.body.value, surface);
+        }
+    });
+
     // Sound finds its way around the walls (ADR-0066): the paths bake on a worker thread while the game starts.
     scene.Sounds().StartPathing(3.0f);
 
