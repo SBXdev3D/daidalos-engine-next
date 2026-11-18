@@ -9,6 +9,11 @@ function(dai_configure_target target)
         if(DAI_WARNINGS_AS_ERRORS)
             target_compile_options(${target} PRIVATE /WX)
         endif()
+        # Optimized builds keep their debug information too, in a PDB beside each executable, so that crash
+        # reports name functions and lines (ADR-0080). /Z7 puts it in the objects; the linker gathers it. The
+        # archive installs executables only: PDBs ship as a separate artifact.
+        target_compile_options(${target} PRIVATE $<$<NOT:$<CONFIG:Debug>>:/Z7>)
+        target_link_options(${target} PRIVATE "$<$<NOT:$<CONFIG:Debug>>:/DEBUG:FULL;/OPT:REF;/OPT:ICF>")
     else()
         # Designated initializers leave fields out on purpose, which is how Vulkan structures are filled.
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Wshadow -Wconversion

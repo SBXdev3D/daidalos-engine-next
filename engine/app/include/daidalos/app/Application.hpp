@@ -160,6 +160,9 @@ public:
     /// The developer tools (ADR-0030), or null without ApplicationConfig::rendering. Valid between
     /// OnStart and OnStop.
     [[nodiscard]] DevTools* Tools() noexcept { return m_devTools ? &*m_devTools : nullptr; }
+    /// The crash reports written at this start, for runs that crashed since the last one (ADR-0080): what the
+    /// game may tell the player about.
+    [[nodiscard]] const std::vector<std::filesystem::path>& CrashReports() const noexcept { return m_crashReports; }
     /// Opens or closes the tools, as the key under Escape does. Open, they free the pointer and the game
     /// gets no keyboard or mouse input; closed, the pointer is captured again if it was.
     void SetToolsOpen(bool open);
@@ -325,6 +328,7 @@ private:
     bool m_quitRequested = false;
     bool m_loggingStarted = false;
     bool m_crashHandlerInstalled = false;
+    std::vector<std::filesystem::path> m_crashReports;
     bool m_running = false;
 };
 

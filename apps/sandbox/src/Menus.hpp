@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string_view>
 
 #include "Controls.hpp"
 #include "Hud.hpp"
@@ -39,7 +40,9 @@ enum class MenuChoice : std::uint8_t { None, Play, Resume, Restart, Options, Cal
 /// The look of the game's buttons, sliders and choices.
 [[nodiscard]] daidalos::ui::WidgetStyle MenuStyle(const HudAssets& hud);
 
-[[nodiscard]] MenuChoice DrawMainMenu(daidalos::ui::Context& ui, daidalos::ui::Canvas& canvas, const HudAssets& hud);
+/// notice, if not empty, is a line under the buttons: that the last run crashed, and where its report is.
+[[nodiscard]] MenuChoice DrawMainMenu(daidalos::ui::Context& ui, daidalos::ui::Canvas& canvas, const HudAssets& hud,
+                                      std::string_view notice = {});
 [[nodiscard]] MenuChoice DrawPauseMenu(daidalos::ui::Context& ui, daidalos::ui::Canvas& canvas, const HudAssets& hud);
 /// Kills out of the level's zombies.
 [[nodiscard]] MenuChoice DrawDeathScreen(daidalos::ui::Context& ui, daidalos::ui::Canvas& canvas, const HudAssets& hud,

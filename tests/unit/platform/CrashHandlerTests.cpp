@@ -3,10 +3,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 #include <daidalos/platform/CrashHandler.hpp>
+#include <daidalos/platform/CrashReport.hpp>
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -62,6 +65,20 @@ TEST_F(CrashHandlerTest, CanInstallAgainAfterUninstall) {
     platform::UninstallCrashHandler();
 
     EXPECT_TRUE(platform::InstallCrashHandler({directory, "test"}).has_value());
+    std::filesystem::remove_all(directory);
+}
+
+TEST(CrashReportTest, RefusesWhatIsNotADump) {
+    const std::filesystem::path directory = TestDirectory("crash_report_not_a_dump");
+    std::filesystem::create_directories(directory);
+    EXPECT_FALSE(platform::ReadCrashDump(directory / "missing.dmp").has_value());
+    {
+        std::ofstream(directory / "text.dmp") << "not a dump";
+    }
+    const core::Result<platform::CrashReport> report = platform::ReadCrashDump(directory / "text.dmp");
+    ASSERT_FALSE(report.has_value());
+    EXPECT_EQ(report.error().code,
+              platform::CrashReportsSupported() ? core::ErrorCode::ParseError : core::ErrorCode::NotSupported);
     std::filesystem::remove_all(directory);
 }
 
@@ -121,6 +138,54 @@ TEST_P(CrashDumpTest, CrashWritesOneDump) {
     ASSERT_EQ(dumps.size(), 1u);
     EXPECT_TRUE(dumps[0].filename().string().starts_with("helper-"));
     EXPECT_GT(std::filesystem::file_size(dumps[0]), 0u);
+    std::filesystem::remove_all(directory);
+}
+
+namespace {
+
+bool HasFunction(const platform::CrashReport& report, std::string_view name) {
+    return std::ranges::any_of(report.stack,
+                               [name](const platform::CrashFrame& frame) { return frame.function == name; });
+}
+
+} // namespace
+
+TEST(CrashReportTest, AnAccessViolationIsReadWithItsStack) {
+    const std::filesystem::path directory = TestDirectory("crash_report_violation");
+    RunCrashHelper(directory, L"access-violation");
+    const std::vector<std::filesystem::path> dumps = DumpFiles(directory);
+    ASSERT_EQ(dumps.size(), 1u);
+    const core::Result<platform::CrashReport> report = platform::ReadCrashDump(dumps[0]);
+    ASSERT_TRUE(report.has_value()) << core::Format(report.error());
+    EXPECT_EQ(report->exceptionCode, 0xC0000005u);
+    EXPECT_EQ(report->exception, "access violation");
+    EXPECT_EQ(report->detail, "writing 0x0");
+    ASSERT_FALSE(report->stack.empty());
+    EXPECT_EQ(report->stack[0].module, "daidalos_crash_helper.exe");
+    EXPECT_TRUE(HasFunction(*report, "main")) << platform::FormatCrashReport(*report);
+    EXPECT_NE(report->stack[0].file.find("CrashHelper.cpp"), std::string::npos) << platform::FormatCrashReport(*report);
+
+    // A report is written once, beside its dump.
+    const std::vector<std::filesystem::path> written = platform::ReportNewCrashes(directory);
+    ASSERT_EQ(written.size(), 1u);
+    std::ifstream text(written[0]);
+    std::string first;
+    std::getline(text, first);
+    EXPECT_EQ(first, "Crash: access violation, writing 0x0");
+    EXPECT_TRUE(platform::ReportNewCrashes(directory).empty());
+    text.close();
+    std::filesystem::remove_all(directory);
+}
+
+TEST(CrashReportTest, AnAbortIsReadDownToItsCaller) {
+    const std::filesystem::path directory = TestDirectory("crash_report_abort");
+    RunCrashHelper(directory, L"abort");
+    const std::vector<std::filesystem::path> dumps = DumpFiles(directory);
+    ASSERT_EQ(dumps.size(), 1u);
+    const core::Result<platform::CrashReport> report = platform::ReadCrashDump(dumps[0]);
+    ASSERT_TRUE(report.has_value()) << core::Format(report.error());
+    EXPECT_EQ(report->exception, "abort or failed assertion");
+    EXPECT_TRUE(HasFunction(*report, "main")) << platform::FormatCrashReport(*report);
     std::filesystem::remove_all(directory);
 }
 

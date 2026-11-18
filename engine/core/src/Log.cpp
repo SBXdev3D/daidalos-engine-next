@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -72,6 +73,15 @@ std::string_view ToString(Level level) noexcept {
     return "Off";
 }
 
+std::filesystem::path PreviousLogPath(const std::filesystem::path& file) {
+    if (file.empty()) {
+        return {};
+    }
+    std::filesystem::path previous = file;
+    previous.replace_filename(file.stem().string() + ".previous" + file.extension().string());
+    return previous;
+}
+
 core::Result<void> Initialize(const LogConfig& config) {
     const std::scoped_lock lock(g_mutex);
     if (g_state) {
@@ -88,6 +98,11 @@ core::Result<void> Initialize(const LogConfig& config) {
             outputs.push_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
         }
         if (!config.filePath.empty()) {
+            // The last run's log stays, for the report of a crash it ended in (ADR-0080).
+            std::error_code error;
+            if (std::filesystem::exists(config.filePath, error)) {
+                std::filesystem::rename(config.filePath, PreviousLogPath(config.filePath), error);
+            }
             outputs.push_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>(config.filePath.string(), true));
         }
         if (!outputs.empty()) {

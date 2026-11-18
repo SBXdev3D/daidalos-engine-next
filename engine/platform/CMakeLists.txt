@@ -5,6 +5,7 @@ dai_add_module(NAME platform
         include/daidalos/input/InputState.hpp
         include/daidalos/input/Rumble.hpp
         include/daidalos/platform/CrashHandler.hpp
+        include/daidalos/platform/CrashReport.hpp
         include/daidalos/platform/Event.hpp
         include/daidalos/platform/InputCodes.hpp
         include/daidalos/platform/Platform.hpp
@@ -13,6 +14,7 @@ dai_add_module(NAME platform
         src/ActionMap.cpp
         src/Bindings.cpp
         src/CrashHandler.cpp
+        src/CrashReport.cpp
         src/EventTranslation.cpp
         src/EventTranslation.hpp
         src/InputState.cpp

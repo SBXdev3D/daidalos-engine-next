@@ -108,10 +108,13 @@ ui::WidgetStyle MenuStyle(const HudAssets& hud) {
     return style;
 }
 
-MenuChoice DrawMainMenu(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud) {
+MenuChoice DrawMainMenu(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud, std::string_view notice) {
     Darken(canvas, 0.45f);
     Title(canvas, hud, T(hud, "menu.title"), 300.0f, 150.0f);
     Line(canvas, hud, T(hud, "menu.tagline"), 410.0f);
+    if (!notice.empty()) {
+        Line(canvas, hud, notice, 900.0f);
+    }
     switch (Buttons<3>(ui, canvas, 540.0f, {T(hud, "menu.new_game"), T(hud, "menu.options"), T(hud, "menu.quit")})
                 .value_or(3)) {
     case 0:
