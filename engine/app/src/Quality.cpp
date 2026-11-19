@@ -53,8 +53,9 @@ constexpr std::array<std::string_view, 4> kNames{"low", "medium", "high", "ultra
 // visibility cells (ADR-0090), in the start room and the loading floor at 1080p on an RTX 3090: Low 3.7 and
 // 4.7 ms, Medium 6.4 and 7.6, High 11.7 and 15.0, Ultra 14.6 and 16.9. Since Low and Medium trace half the
 // pixels' indirect light and draw four ReSTIR candidates (ADR-0093): Low 3.5 and 4.3 ms, Medium 5.6 and 6.7,
-// where High took 13.1 and 15.6 in the same run.
-constexpr std::array<double, 4> kShareOfHigh{0.28, 0.43, 1.0, 1.2};
+// where High took 13.1 and 15.6 in the same run. At the end of Phase 18 (ADR-0098): Low 3.2 and 3.7 ms, Medium
+// 5.0 and 5.7, High 12.5 and 11.9, Ultra 13.0 and 14.1.
+constexpr std::array<double, 4> kShareOfHigh{0.28, 0.43, 1.0, 1.1};
 // A preset must fit the frame with this margin: the factory's busiest views cost more than the start.
 constexpr double kMargin = 1.25;
 

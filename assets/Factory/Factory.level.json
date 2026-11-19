@@ -693,31 +693,6 @@
       }
     },
     {
-      "id": 64,
-      "model": "Props/lamp.gltf",
-      "name": "Lamp 60",
-      "transform": {
-        "translation": [-40, 2.8, -40]
-      }
-    },
-    {
-      "id": 65,
-      "light": {
-        "color": [1, 0.92, 0.8],
-        "inner_angle": 13.5,
-        "intensity": 347.4,
-        "outer_angle": 45.0001,
-        "range": 8,
-        "type": "spot"
-      },
-      "name": "Lamp 60 light",
-      "parent": 64,
-      "transform": {
-        "rotation": [-0.7071068, 0, 0, 0.7071068],
-        "translation": [0, -0.28, 0]
-      }
-    },
-    {
       "id": 66,
       "model": "Props/lamp.gltf",
       "name": "Lamp 61",
@@ -2298,15 +2273,6 @@
       }
     },
     {
-      "id": 187,
-      "model": "Showcase/overhead_crane/overhead_crane.gltf",
-      "name": "Overhead crane",
-      "parent": 133,
-      "transform": {
-        "translation": [0.75, 7.130544, -38.625]
-      }
-    },
-    {
       "decal": {
         "roughness": 0.85,
         "texture": "Decals/grime.png"
@@ -2942,7 +2908,7 @@
       "name": "Caged hanging light",
       "parent": 232,
       "transform": {
-        "translation": [-33.625, 2.8, -38.875]
+        "translation": [-34.625, 2.8, -38.375]
       }
     },
     {

@@ -147,7 +147,9 @@ Yes, since step 17.1 (ADR-0089). It was not before: ADR-0073 had deferred it, an
 
    In the factory, the CPU is not the limit.
 
-Measured and **not** worth doing now: levels of detail and meshoptimizer (half a million triangles cost 0.05 ms, ADR-0090); a second ray of indirect light on Ultra (invisible after denoising, ADR-0090).
+Measured and **not** worth doing now: levels of detail and meshoptimizer (half a million triangles cost 0.05 ms, ADR-0090); a second ray of indirect light on Ultra (invisible after denoising, ADR-0090); GPU-driven rendering with Hi-Z occlusion (the G-buffer is 0.7 to 0.9 ms and drawing nearest first made it slower, so hidden surfaces cost about 0.1 ms, ADR-0098); async compute on an RTX 3090 (slower, ADR-0095).
+
+**Phase 18 did items 1, 2, 3, 5 and 6** (ADR-0093 to ADR-0097). At 1080p on an RTX 3090, the frame went from Low 3.8 / 4.8, Medium 6.5 / 7.7 and High 13.1 / 15.6 ms (start room / loading floor, before Phase 18, ADR-0093) to Low 3.2 / 3.7, Medium 5.0 / 5.7 and High 12.5 / 11.9 ms. The start room on High runs in one of two states about 0.5 ms apart, and the loading floor lost its overhead crane in the editor meanwhile.
 
 ## Visual techniques not implemented
 
