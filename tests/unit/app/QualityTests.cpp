@@ -46,7 +46,8 @@ TEST(Quality, TheFirstLaunchChoosesWhatHoldsTheFrameRate) {
     EXPECT_EQ(ChooseQuality(17.0, 60.0), Quality::Medium);
     // At 120 fps, the same GPU steps down to Medium: High's 7.7 ms leave no margin in 8.3.
     EXPECT_EQ(ChooseQuality(7.7, 120.0), Quality::Medium);
-    EXPECT_EQ(ChooseQuality(12.0, 60.0), Quality::High);
+    EXPECT_EQ(ChooseQuality(12.0, 60.0), Quality::Ultra) << "Ultra is 1.1 of High (ADR-0098)";
+    EXPECT_EQ(ChooseQuality(12.5, 60.0), Quality::High);
     EXPECT_EQ(ChooseQuality(30.0, 60.0), Quality::Medium) << "Medium is 0.43 of High (ADR-0093)";
     EXPECT_EQ(ChooseQuality(35.0, 60.0), Quality::Low);
     EXPECT_EQ(ChooseQuality(100.0, 60.0), Quality::Low) << "Low is the floor";
