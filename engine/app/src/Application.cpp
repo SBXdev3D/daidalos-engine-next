@@ -396,6 +396,9 @@ core::Result<void> Application::LoadConfiguration() {
                                              "Nits of the brightest light in HDR10; 0 takes the display's");
         m_anisotropy = m_cvars.Register<std::int64_t>(
             "renderer.anisotropy", 16, "Anisotropic filtering of textures, from 1 (off) to 16, read at startup");
+        m_asyncCompute = m_cvars.Register<bool>(
+            "renderer.async_compute", false,
+            "Run the radiance cache and the fog on a compute queue beside the G-buffer, read at startup");
         m_indirectLight = m_cvars.Register<bool>("renderer.indirect_light", true,
                                                  "Light that bounces off surfaces; off leaves direct light only");
         m_denoiser = m_cvars.Register<bool>(
@@ -697,6 +700,7 @@ core::Result<void> Application::CreateRenderer() {
              .image = Image(),
              .resolution = Resolution(),
              .anisotropy = static_cast<float>(std::clamp<std::int64_t>(m_anisotropy->Get(), 1, 16)),
+             .asyncCompute = m_asyncCompute->Get(),
              .pipelineCacheFile = PipelineCachePath(),
              .normalStrength = static_cast<float>(m_normalStrength->Get()),
              .indirectLight = quality.indirectLight,
@@ -825,8 +829,11 @@ void Application::LogGpuTimes() {
         return;
     }
     constexpr std::uint32_t kFrames = 100;
+    constexpr const char* kBeside = " (compute queue)";
+    // Passes on the compute queue run beside the others (ADR-0095): they are shown apart, out of the sum.
     for (const renderer::PassTime& pass : m_renderer->GpuTimes()) {
-        m_gpuTimes[std::string(pass.name)] += pass.milliseconds / kFrames;
+        m_gpuTimes[pass.beside ? std::string(pass.name) + kBeside : std::string(pass.name)] +=
+            pass.milliseconds / kFrames;
     }
     m_soundMilliseconds += m_currentScene->Sounds().LastSimulationMilliseconds() / kFrames;
     if (++m_gpuTimeFrames < kFrames) {
@@ -836,7 +843,9 @@ void Application::LogGpuTimes() {
     std::ranges::sort(passes, std::greater{}, &std::pair<std::string, double>::second);
     double total = 0.0;
     for (const auto& [name, milliseconds] : passes) {
-        total += milliseconds;
+        if (!name.ends_with(kBeside)) {
+            total += milliseconds;
+        }
         DAI_LOG_INFO(kModule, "GPU {:7.3f} ms  {}", milliseconds, name);
     }
     DAI_LOG_INFO(kModule, "GPU {:7.3f} ms  in all, over {} frames", total, kFrames);

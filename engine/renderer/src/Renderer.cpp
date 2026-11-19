@@ -275,6 +275,8 @@ struct Renderer::Impl {
     RenderGraph graph;
     /// The timed groups of the frame recorded in each slot, in the order of their timestamps.
     std::array<std::vector<std::string_view>, rhi::kFramesInFlight> timedGroups;
+    /// The groups the compute queue timed, beside the others (ADR-0095).
+    std::array<std::vector<std::string_view>, rhi::kFramesInFlight> computeGroups;
     std::vector<PassTime> gpuTimes;
     std::optional<double> frameGpuTime;
     /// The render resolution (ADR-0049): the settings, the scale that holds the budget, and what the last
@@ -379,6 +381,13 @@ void Renderer::Impl::ReadGpuTimes(std::uint32_t slot) {
     for (std::size_t group = 0; group < groups.size(); ++group) {
         gpuTimes.push_back({groups[group], timestamps[group + 1] - timestamps[group]});
     }
+    const std::span<const double> beside = device.CompletedComputeTimestamps();
+    const std::vector<std::string_view>& besideGroups = computeGroups[slot];
+    if (beside.size() == besideGroups.size() + 1) {
+        for (std::size_t group = 0; group < besideGroups.size(); ++group) {
+            gpuTimes.push_back({besideGroups[group], beside[group + 1] - beside[group], true});
+        }
+    }
 }
 
 void Renderer::Impl::ReloadShaders() {
@@ -425,6 +434,7 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     deviceConfig.instanceExtensions = std::move(extensions);
     deviceConfig.presentation = true;
     deviceConfig.anisotropy = config.anisotropy;
+    deviceConfig.asyncCompute = config.asyncCompute;
     deviceConfig.pipelineCacheFile = config.pipelineCacheFile;
     DAI_TRY_ASSIGN(rhi::Device device, rhi::Device::Create(deviceConfig));
 
@@ -846,6 +856,36 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                                    .previousLightCount = impl.meshPass->PreviousLightCount()},
                                                   *impl.meshPass);
     }
+    // Indirect light (ADR-0040): the cache forgets the last scene after a cut, and whatever it held while it was
+    // off. The fog in front of each point of the view (ADR-0051): a frame that does not follow the last one
+    // fogged starts its history over.
+    const bool illuminate = status && hasFrame && indirectLight;
+    const bool fogs = status && hasFrame && fog;
+    std::optional<GlobalIlluminationInputs> giInputs;
+    if (illuminate) {
+        giInputs = GlobalIlluminationInputs{
+        .extent = renderExtent,
+        .frameBuffer = impl.meshPass->FrameDataIndex(),
+        .instanceBuffer = impl.meshPass->InstanceDataIndex(),
+        .materialBuffer = impl.meshPass->MaterialDataIndex(),
+        .structure = impl.rayTracing->Structure(),
+        .skinnedVertices = impl.meshPass->SkinnedVertices(),
+        .materialGrid = impl.meshPass->MaterialGrid(),
+        .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
+        .depth = impl.depth,
+        .normals = impl.normals,
+        .frameIndex = frameIndex,
+        .reflections = reflect,
+        .reflectionRoughness = impl.reflectionRoughness,
+        // The clamp is set in what the screen shows.
+        .settings = {.bounces = impl.indirect.bounces,
+                     .lightCandidates = impl.indirect.lightCandidates,
+                     .clamp = impl.indirect.clamp / displayScale,
+                     .rays = impl.indirect.rays,
+                     .pixelsPerRay = impl.indirect.pixelsPerRay}};
+    }
+    const GlobalIllumination::Mode giMode =
+        cacheView ? GlobalIllumination::Mode::Cache : GlobalIllumination::Mode::Indirect;
     if (status) {
         const bool meshParticles = hasFrame && impl.particlePass->HasMeshes();
         std::vector<rhi::BufferUse> buffers{skinnedVertices,
@@ -859,6 +899,30 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         if (meshParticles) {
             std::ranges::copy(impl.particlePass->MeshBuffers(), std::back_inserter(buffers));
         }
+        // What reads no G-buffer goes before it: on a GPU with a compute queue, the radiance cache and the fog
+        // run there, beside the G-buffer (ADR-0095).
+        if (illuminate) {
+            if (!impl.illuminated || view.cut) {
+                impl.globalIllumination->Reset();
+            }
+            impl.globalIllumination->AddCacheUpdate(graph, *giInputs, giMode);
+        }
+        if (fogs) {
+            if (!impl.fogged || view.cut) {
+                impl.volumetricFog->Reset();
+            }
+            impl.volumetricFog->AddTo(graph, {.frameBuffer = impl.meshPass->FrameDataIndex(),
+                                              .instanceBuffer = impl.meshPass->InstanceDataIndex(),
+                                              .materialBuffer = impl.meshPass->MaterialDataIndex(),
+                                              .structure = impl.rayTracing->Structure(),
+                                              .skinnedVertices = impl.meshPass->SkinnedVertices(),
+                                              .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
+                                              .frameIndex = frameIndex,
+                                              .lightMap = impl.meshPass->LightMapIndex(),
+                                              .previousLightCount = impl.meshPass->PreviousLightCount(),
+                                              .smoke = traced.smoke,
+                                              .async = true});
+        }
         graph.AddPass(
             {.name = "G-buffer",
              .rendering = MeshPass::GBufferRendering(impl.shading, impl.normals, impl.motion, impl.depth, renderExtent),
@@ -870,33 +934,9 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                 }
             });
     }
-    // Indirect light: the cache forgets the last scene after a cut, and whatever it held while it was off.
-    const bool illuminate = status && hasFrame && indirectLight;
+    // Indirect light, after its cache's passes before the G-buffer.
     if (illuminate) {
-        if (!impl.illuminated || view.cut) {
-            impl.globalIllumination->Reset();
-        }
-        impl.globalIllumination->AddTo(graph,
-                                       {.extent = renderExtent,
-                                        .frameBuffer = impl.meshPass->FrameDataIndex(),
-                                        .instanceBuffer = impl.meshPass->InstanceDataIndex(),
-                                        .materialBuffer = impl.meshPass->MaterialDataIndex(),
-                                        .structure = impl.rayTracing->Structure(),
-                                        .skinnedVertices = impl.meshPass->SkinnedVertices(),
-                                        .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
-                                        .depth = impl.depth,
-                                        .normals = impl.normals,
-                                        .frameIndex = frameIndex,
-                                        .reflections = reflect,
-                                        .reflectionRoughness = impl.reflectionRoughness,
-                                        // The clamp is set in what the screen shows.
-                                        .settings = {.bounces = impl.indirect.bounces,
-                                                     .lightCandidates = impl.indirect.lightCandidates,
-                                                     .clamp = impl.indirect.clamp / displayScale,
-                                                     .rays = impl.indirect.rays,
-                                                     .pixelsPerRay = impl.indirect.pixelsPerRay}},
-                                       cacheView ? GlobalIllumination::Mode::Cache
-                                                 : GlobalIllumination::Mode::Indirect);
+        impl.globalIllumination->AddTo(graph, *giInputs, giMode);
     }
     impl.illuminated = illuminate;
     // The light of the frame's lights, and the indirect light, at each pixel of the G-buffer (ADR-0044). A
@@ -933,24 +973,6 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                    settings);
     }
     impl.lit = light;
-    // The fog in front of each point of the view, before anything reads it. A frame that does not follow the
-    // last one fogged starts its history over.
-    const bool fogs = status && hasFrame && fog;
-    if (fogs) {
-        if (!impl.fogged || view.cut) {
-            impl.volumetricFog->Reset();
-        }
-        impl.volumetricFog->AddTo(graph, {.frameBuffer = impl.meshPass->FrameDataIndex(),
-                                          .instanceBuffer = impl.meshPass->InstanceDataIndex(),
-                                          .materialBuffer = impl.meshPass->MaterialDataIndex(),
-                                          .structure = impl.rayTracing->Structure(),
-                                          .skinnedVertices = impl.meshPass->SkinnedVertices(),
-                                          .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
-                                          .frameIndex = frameIndex,
-                                          .lightMap = impl.meshPass->LightMapIndex(),
-                                          .previousLightCount = impl.meshPass->PreviousLightCount(),
-                                          .smoke = traced.smoke});
-    }
     impl.fogged = fogs;
     // The lights' light, denoised, then put back together with the rest (ADR-0039). A frame that does not
     // follow the last one denoised starts the history over.
@@ -1239,7 +1261,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                           commands.Draw(3);
                       });
     }
-    impl.timedGroups[frame.slot] = graph.Execute(frame.commands);
+    impl.timedGroups[frame.slot] = graph.Execute(frame.commands, impl.device, impl.computeGroups[frame.slot]);
 
     core::Result<void> ended = impl.device.EndFrame(&impl.swapchain);
     return status ? ended : status;

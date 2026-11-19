@@ -110,3 +110,84 @@ TEST(RenderGraph, PassesKeepTheirOrder) {
     EXPECT_EQ(planned[1].group, "Second");
     EXPECT_EQ(graph.PassCount(), 2U);
 }
+
+namespace {
+
+const rhi::BufferHandle kCache{2, 1};
+const rhi::BufferHandle kFrameData{3, 1};
+
+// The async flags of a graph's passes, in order.
+std::vector<bool> AsyncFlags(std::initializer_list<bool> flags) {
+    return {flags};
+}
+
+} // namespace
+
+TEST(RenderGraph, WithoutAsyncPassesNothingRunsOnTheComputeQueue) {
+    RenderGraph graph;
+    graph.AddPass({.name = "First"}, Nothing);
+    graph.AddPass({.name = "Second"}, Nothing);
+    const renderer::AsyncPlan plan = RenderGraph::PlanAsync(graph.Plan(), AsyncFlags({false, false}));
+    EXPECT_EQ(plan.fork, 2U);
+    EXPECT_EQ(plan.join, 2U);
+    EXPECT_EQ(plan.onCompute, std::vector<bool>({false, false}));
+}
+
+TEST(RenderGraph, AsyncPassesRunBesideWhatDoesNotDependOnThem) {
+    // The cache runs beside the meshes, which share nothing with it but what both read; the light reads what the
+    // cache wrote, and waits for it (ADR-0095).
+    RenderGraph graph;
+    graph.AddPass({.name = "Structures", .buffers = {{kFrameData, Access::ComputeShaderWrite}}}, Nothing);
+    graph.AddPass({.name = "Cache",
+                   .buffers = {{kCache, Access::ComputeShaderWrite}, {kFrameData, Access::ComputeShaderRead}},
+                   .async = true},
+                  Nothing);
+    graph.AddPass({.name = "Meshes",
+                   .rendering = rhi::RenderingDesc{.colorTarget = kColor, .depthTarget = kDepth},
+                   .buffers = {{kFrameData, Access::FragmentShaderRead}}},
+                  Nothing);
+    graph.AddPass({.name = "Light", .buffers = {{kCache, Access::ComputeShaderRead}}}, Nothing);
+    const renderer::AsyncPlan plan = RenderGraph::PlanAsync(graph.Plan(), AsyncFlags({false, true, false, false}));
+    EXPECT_EQ(plan.fork, 1U);
+    EXPECT_EQ(plan.join, 3U);
+    EXPECT_EQ(plan.onCompute, std::vector<bool>({false, true, false, false}));
+}
+
+TEST(RenderGraph, AGraphicsPassThatWritesWhatAnAsyncPassReadsWaitsForIt) {
+    RenderGraph graph;
+    graph.AddPass({.name = "Cache", .buffers = {{kFrameData, Access::ComputeShaderRead}}, .async = true}, Nothing);
+    graph.AddPass({.name = "Upload", .buffers = {{kFrameData, Access::TransferWrite}}}, Nothing);
+    const renderer::AsyncPlan plan = RenderGraph::PlanAsync(graph.Plan(), AsyncFlags({true, false}));
+    EXPECT_EQ(plan.fork, 0U);
+    EXPECT_EQ(plan.join, 1U);
+}
+
+TEST(RenderGraph, ATextureBothQueuesUseJoinsThem) {
+    // Its layout is the device's to track: one queue at a time.
+    RenderGraph graph;
+    graph.AddPass({.name = "Fog", .textures = {{kSecondColor, Access::ComputeShaderRead}}, .async = true}, Nothing);
+    graph.AddPass({.name = "Composite", .textures = {{kSecondColor, Access::FragmentShaderRead}}}, Nothing);
+    const renderer::AsyncPlan plan = RenderGraph::PlanAsync(graph.Plan(), AsyncFlags({true, false}));
+    EXPECT_EQ(plan.join, 1U);
+}
+
+TEST(RenderGraph, AnAsyncPassAfterTheJoinRunsOnTheGraphicsQueue) {
+    RenderGraph graph;
+    graph.AddPass({.name = "Cache", .buffers = {{kCache, Access::ComputeShaderWrite}}, .async = true}, Nothing);
+    graph.AddPass({.name = "Light", .buffers = {{kCache, Access::ComputeShaderRead}}}, Nothing);
+    graph.AddPass({.name = "Fog", .buffers = {{kBuffer, Access::ComputeShaderWrite}}, .async = true}, Nothing);
+    const renderer::AsyncPlan plan = RenderGraph::PlanAsync(graph.Plan(), AsyncFlags({true, false, true}));
+    EXPECT_EQ(plan.join, 1U);
+    EXPECT_EQ(plan.onCompute, std::vector<bool>({true, false, false}));
+}
+
+TEST(RenderGraph, AGraphicsPassALaterAsyncPassNeedsComesAfterTheJoin) {
+    // The fog reads what the meshes write: it cannot start before them, so the queues join before the meshes.
+    RenderGraph graph;
+    graph.AddPass({.name = "Cache", .buffers = {{kCache, Access::ComputeShaderWrite}}, .async = true}, Nothing);
+    graph.AddPass({.name = "Meshes", .buffers = {{kBuffer, Access::ComputeShaderWrite}}}, Nothing);
+    graph.AddPass({.name = "Fog", .buffers = {{kBuffer, Access::ComputeShaderRead}}, .async = true}, Nothing);
+    const renderer::AsyncPlan plan = RenderGraph::PlanAsync(graph.Plan(), AsyncFlags({true, false, true}));
+    EXPECT_EQ(plan.join, 1U);
+    EXPECT_EQ(plan.onCompute, std::vector<bool>({true, false, false}));
+}

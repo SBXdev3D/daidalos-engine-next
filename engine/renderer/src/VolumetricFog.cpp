@@ -158,7 +158,8 @@ void VolumetricFog::AddTo(RenderGraph& graph, const VolumetricFogInputs& inputs)
         graph.AddPass({.name = "Fog smoke",
                        .group = "Volumetric fog",
                        .textures = {{m_smoke, rhi::Access::ComputeShaderWrite}},
-                       .buffers = {{inputs.smoke, rhi::Access::ComputeShaderRead}}},
+                       .buffers = {{inputs.smoke, rhi::Access::ComputeShaderRead}},
+                       .async = inputs.async},
                       [this, push](rhi::CommandList& commands) {
                           commands.BindPipeline(m_smokeSplat);
                           commands.Push(push);
@@ -172,7 +173,8 @@ void VolumetricFog::AddTo(RenderGraph& graph, const VolumetricFogInputs& inputs)
                                    {m_smoke, rhi::Access::ComputeShaderWrite}},
                       .buffers = {{inputs.skinnedVertices, rhi::Access::ComputeShaderRead},
                                   {inputs.emissiveTriangles, rhi::Access::ComputeShaderRead}},
-                      .structures = {{inputs.structure, rhi::Access::RayQueryRead}}};
+                      .structures = {{inputs.structure, rhi::Access::RayQueryRead}},
+                      .async = inputs.async};
     if (m_hasHistory) {
         lighting.textures.push_back({m_scattering[previous], rhi::Access::ComputeShaderRead});
     }
@@ -192,7 +194,8 @@ void VolumetricFog::AddTo(RenderGraph& graph, const VolumetricFogInputs& inputs)
                    .group = "Volumetric fog",
                    .textures = {{m_scattering[m_current], rhi::Access::ComputeShaderRead},
                                 {m_integrated, rhi::Access::ComputeShaderWrite, true},
-                                {m_smoke, rhi::Access::ComputeShaderWrite, true}}},
+                                {m_smoke, rhi::Access::ComputeShaderWrite, true}},
+                   .async = inputs.async},
                   [this, integratePush](rhi::CommandList& commands) {
                       commands.BindPipeline(m_integrate);
                       commands.Push(integratePush);

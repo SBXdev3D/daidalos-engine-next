@@ -153,6 +153,9 @@ struct RendererConfig {
     ResolutionConfig resolution;
     /// Anisotropic filtering of textures, from 1 (off) to 16.
     float anisotropy = 16.0f;
+    /// The radiance cache and the fog run on a compute queue beside the G-buffer, when the GPU has one
+    /// (ADR-0095). Off by default: on an RTX 3090 in the factory, the frame was slower.
+    bool asyncCompute = false;
     /// Where the pipeline cache is kept between runs (rhi::DeviceConfig::pipelineCacheFile); empty for none.
     std::filesystem::path pipelineCacheFile;
     /// Multiplies the tilt of every normal map: 0 flattens them, 1 keeps them as authored.
@@ -250,6 +253,8 @@ struct CapturedFrame {
 struct PassTime {
     std::string_view name;
     double milliseconds = 0.0;
+    /// Timed on the compute queue, beside the graphics queue's passes (ADR-0095): not part of the frame's sum.
+    bool beside = false;
 };
 
 /// Records into the interface layer after the canvas, inside a rendering scope without depth.

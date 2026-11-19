@@ -255,6 +255,7 @@ private:
     std::optional<core::CVar<double>> m_hdrPaperWhite;
     std::optional<core::CVar<double>> m_hdrPeak;
     std::optional<core::CVar<std::int64_t>> m_anisotropy;
+    std::optional<core::CVar<bool>> m_asyncCompute;
     std::optional<core::CVar<double>> m_fieldOfView;
     std::optional<core::CVar<double>> m_viewDistance;
     std::optional<core::CVar<std::string>> m_antialiasing;

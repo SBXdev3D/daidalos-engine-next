@@ -163,12 +163,13 @@ Format FromVulkan(VkFormat format) {
 core::Result<BufferHandle> Device::CreateBuffer(const BufferDesc& desc) {
     DAI_ASSERT(desc.size > 0, "A buffer cannot be empty");
 
-    const VkBufferCreateInfo bufferInfo{
+    VkBufferCreateInfo bufferInfo{
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = desc.size,
         .usage = ToVulkanUsage(desc.usage),
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
+    m_impl->Share(bufferInfo);
     VmaAllocationCreateInfo allocationInfo{.usage = VMA_MEMORY_USAGE_AUTO};
     if (desc.memory == MemoryLocation::CpuToGpu) {
         allocationInfo.flags =
@@ -290,7 +291,7 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
             std::format("Texture '{}': all {} bindless slots are in use", desc.name, kMaxBindlessTextures));
     }
 
-    const VkImageCreateInfo imageInfo{
+    VkImageCreateInfo imageInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .flags = desc.cube ? VkImageCreateFlags{VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT} : VkImageCreateFlags{0},
         .imageType = volume ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D,
@@ -304,6 +305,7 @@ core::Result<TextureHandle> Device::CreateTexture(const TextureDesc& desc) {
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
     };
+    m_impl->Share(imageInfo);
     const VmaAllocationCreateInfo allocationInfo{.usage = VMA_MEMORY_USAGE_AUTO};
 
     TextureData data;
