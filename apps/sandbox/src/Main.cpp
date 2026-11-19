@@ -10,6 +10,7 @@
 #include <daidalos/renderer/MirrorRoom.hpp>
 #include <daidalos/renderer/Primitives.hpp>
 #include <daidalos/scene/Level.hpp>
+#include <daidalos/scene/ModelBatch.hpp>
 
 #include <glm/gtc/quaternion.hpp>
 #include <glm/trigonometric.hpp>
@@ -308,27 +309,17 @@ private:
             OnLevelLoaded(app, target, std::move(level));
             return;
         }
-        struct Loading {
-            scene::Level level;
-            std::size_t remaining = 0;
-            std::optional<core::Error> failure;
-        };
-        auto loading = std::make_shared<Loading>(std::move(*level), models.size());
-        for (const std::string& model : models) {
-            target.Assets().LoadModelAsync(
-                model, app.Workers(),
-                [this, &app, &target, loading, bareModel](const core::Result<const scene::Model*>& loaded) {
-                    // A level file's missing model is logged when its entity is made; a bare model is the level.
-                    if (!loaded && bareModel && !loading->failure) {
-                        loading->failure = loaded.error();
-                    }
-                    if (--loading->remaining == 0) {
-                        OnLevelLoaded(app, target,
-                                      loading->failure ? core::Result<scene::Level>(tl::unexpected(*loading->failure))
-                                                       : core::Result<scene::Level>(std::move(loading->level)));
-                    }
-                });
-        }
+        auto loaded = std::make_shared<scene::Level>(std::move(*level));
+        m_batch = scene::ModelBatch::Start(target.Assets(), app.Workers(), models,
+                                           [this, &app, &target, loaded, bareModel](const scene::ModelBatch& batch) {
+                                               // A level file's missing model is logged when its entity is made; a bare
+                                               // model is the level.
+                                               if (bareModel && !batch.Failures().empty()) {
+                                                   OnLevelLoaded(app, target, tl::unexpected(batch.Failures().front()));
+                                               } else {
+                                                   OnLevelLoaded(app, target, std::move(*loaded));
+                                               }
+                                           });
     }
 
     void OnLevelLoaded(app::Application& app, scene::Scene& target, const core::Result<scene::Level>& level) {
@@ -819,6 +810,8 @@ private:
     float m_endSeconds = 0.0f;
     float m_loadingSeconds = 0.0f;
     bool m_loading = false;
+    /// The models of the level being loaded (ADR-0105).
+    std::shared_ptr<scene::ModelBatch> m_batch;
     /// False until the first level is built: loading covers the screen until then.
     bool m_levelShown = false;
     bool m_mouseCaptured = true;

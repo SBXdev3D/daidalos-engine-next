@@ -7,6 +7,7 @@
 #include <daidalos/app/Application.hpp>
 #include <daidalos/platform/Process.hpp>
 #include <daidalos/scene/Level.hpp>
+#include <daidalos/scene/ModelBatch.hpp>
 #include <daidalos/scene/Scene.hpp>
 
 #include <glm/mat4x4.hpp>
@@ -66,9 +67,31 @@ public:
 private:
     /// What waits for an answer about unsaved changes.
     enum class Pending { None, Open, New, Reload, Quit };
+    /// How the viewport lights the level (ADR-0105).
+    enum class Lighting { Lit, Unlit, LightingOnly, EditorLight };
+
+    /// A level whose models load on workers while the editor keeps drawing the one open (ADR-0105).
+    struct Loading {
+        std::string path;
+        daidalos::scene::Level level;
+        std::unique_ptr<daidalos::scene::Scene> scene;
+        std::shared_ptr<daidalos::scene::ModelBatch> batch;
+        /// Where the camera goes once it is open; at the level's player start without one.
+        std::optional<EditorCamera> camera;
+        float seconds = 0.0f;
+        /// The batch finished: the level is made at the start of the next frame, outside the workers' delivery.
+        bool ready = false;
+    };
 
     // The document.
-    daidalos::core::Result<void> Open(daidalos::app::Application& app, const std::string& levelPath);
+    /// Reads the level file and starts loading its models; the level opens once they are in (FinishOpen). An
+    /// error is returned only when the file cannot be read.
+    daidalos::core::Result<void> Open(daidalos::app::Application& app, const std::string& levelPath,
+                                      std::optional<EditorCamera> camera = std::nullopt);
+    /// Makes the loaded level's entities and puts its scene in the view.
+    void FinishOpen(daidalos::app::Application& app);
+    /// The loader's window, with its progress and Cancel.
+    void DrawLoading();
     /// Saves to the level's file, or to another path (Save As), whose paths are then rewritten to name the same
     /// files. Returns false if it failed; the status says why.
     bool Save(const std::string& levelPath = {});
@@ -166,6 +189,15 @@ private:
     /// Starts the sandbox on the level as it is, saved or not; from the camera if fromCamera.
     void Play(bool fromCamera);
 
+    // Lighting of the viewport and the renderer's debug views (ADR-0105).
+    void SetLighting(Lighting lighting);
+    /// Shows a renderer.debug_view by name, "off" for the lit scene.
+    void SetDebugView(std::string_view name);
+    [[nodiscard]] std::string DebugViewName() const;
+    void DrawLightingMenu();
+    /// The editor's light: the level's lights off, one soft light at the camera.
+    void LightFromCamera(daidalos::renderer::SceneView& view) const;
+
     // The interface.
     void DrawMenu(daidalos::app::Application& app);
     void DrawDialogs(daidalos::app::Application& app);
@@ -250,6 +282,9 @@ private:
     float m_sinceAutosave = 0.0f;
     History::Revision m_autosavedRevision = 0;
     std::optional<daidalos::scene::Level> m_recovered;
+
+    std::unique_ptr<Loading> m_loading;
+    Lighting m_lighting = Lighting::Lit;
 
     daidalos::platform::ChildProcess m_play;
     std::filesystem::path m_playFile;

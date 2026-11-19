@@ -119,12 +119,18 @@ renderer::DebugView DebugViewMode(const core::CVar<std::string>& cvar) {
     if (name == "wetness") {
         return renderer::DebugView::Wetness;
     }
+    if (name == "base_color") {
+        return renderer::DebugView::BaseColor;
+    }
+    if (name == "lighting_only") {
+        return renderer::DebugView::LightingOnly;
+    }
     static std::string warned;
     if (name != "off" && name != warned) {
         warned = name;
         DAI_LOG_WARNING(kModule,
                         "Unknown debug view '{}': use off, rays, path, motion, normals, indirect, radiance_cache, "
-                        "reflections, lights, bloom, fog, layers, decals or wetness",
+                        "reflections, lights, bloom, fog, layers, decals, wetness, base_color or lighting_only",
                         name);
     }
 
@@ -465,7 +471,8 @@ core::Result<void> Application::LoadConfiguration() {
         m_debugView = m_cvars.Register<std::string>(
             "renderer.debug_view", "off",
             "Shows a debug view instead of the lit scene: off, rays, path, motion, normals, indirect, "
-            "radiance_cache, reflections, lights, bloom, fog, layers, decals or wetness");
+            "radiance_cache, reflections, lights, bloom, fog, layers, decals, wetness, base_color or "
+            "lighting_only");
         m_pathBounces = m_cvars.Register<std::int64_t>(
             "renderer.path_bounces", 4, "Surfaces a path of the path tracer meets at most; 1 is direct light only");
         m_pathSamples = m_cvars.Register<std::int64_t>(

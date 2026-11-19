@@ -95,11 +95,21 @@ struct GBufferDebugPushConstants {
 constexpr std::uint32_t kShowMotion = 0;
 constexpr std::uint32_t kShowNormals = 1;
 constexpr std::uint32_t kShowLayers = 2;
+constexpr std::uint32_t kShowBaseColor = 3;
 
-/// The tints of the lit scene a debug view asks for: decals (1), wetness (2). Match Decals.slangh and
-/// Wetness.slangh.
+/// The tints of the lit scene a debug view asks for: decals (1), wetness (2), grey surfaces (4). Match
+/// Decals.slangh, Wetness.slangh and MeshTypes.slangh.
 std::uint32_t TintFlags(DebugView view) {
-    return view == DebugView::Decals ? 1U : view == DebugView::Wetness ? 2U : 0U;
+    switch (view) {
+    case DebugView::Decals:
+        return 1U;
+    case DebugView::Wetness:
+        return 2U;
+    case DebugView::LightingOnly:
+        return 4U;
+    default:
+        return 0U;
+    }
 }
 
 } // namespace
@@ -1073,14 +1083,16 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     }
     impl.resolved = resolve;
     const bool gbufferView = impl.debugView == DebugView::Motion || impl.debugView == DebugView::Normals ||
-                             impl.debugView == DebugView::Layers;
+                             impl.debugView == DebugView::Layers || impl.debugView == DebugView::BaseColor;
     if (status && hasFrame && gbufferView) {
-        const std::uint32_t mode = impl.debugView == DebugView::Normals  ? kShowNormals
-                                   : impl.debugView == DebugView::Layers ? kShowLayers
-                                                                         : kShowMotion;
-        const rhi::TextureHandle shown = mode == kShowNormals  ? impl.normals
-                                         : mode == kShowLayers ? impl.shading.layers
-                                                               : impl.motion;
+        const std::uint32_t mode = impl.debugView == DebugView::Normals     ? kShowNormals
+                                   : impl.debugView == DebugView::Layers    ? kShowLayers
+                                   : impl.debugView == DebugView::BaseColor ? kShowBaseColor
+                                                                            : kShowMotion;
+        const rhi::TextureHandle shown = mode == kShowNormals     ? impl.normals
+                                         : mode == kShowLayers    ? impl.shading.layers
+                                         : mode == kShowBaseColor ? impl.shading.baseColor
+                                                                  : impl.motion;
         graph.AddPass(
             {.name = "G-buffer debug view",
              .rendering = rhi::RenderingDesc{.colorTarget = impl.hdr},
