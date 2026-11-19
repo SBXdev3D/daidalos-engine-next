@@ -23,6 +23,7 @@ The sandbox is a first-person demo in a dark factory, the remake of the legacy e
 
 - [OVERVIEW.md](OVERVIEW.md): vision, architecture, roadmap.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how the engine is built today, with diagrams.
+- [docs/ASSESSMENT.md](docs/ASSESSMENT.md): where the engine, the demo and the editor stand at the end of the roadmap, and what to do next.
 - [docs/GUIDE.md](docs/GUIDE.md): how a game is made on the engine, with `samples/level-viewer` as the smallest one.
 - [docs/DEMO.md](docs/DEMO.md): the demo that the sandbox is becoming, and its plan.
 - [docs/CONVENTIONS.md](docs/CONVENTIONS.md): naming, ownership, error handling, math and rendering conventions.
