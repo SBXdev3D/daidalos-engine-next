@@ -33,6 +33,11 @@ struct DenoiserInputs {
     /// The reflections, whose hit distance in alpha moves the specular history of smooth surfaces with the
     /// reflected point (GlobalIllumination::Reflections, ADR-0042). Null: it moves with the surface.
     rhi::TextureHandle reflections;
+    /// For how many frames each sample of the diffuse and of the specular light is reused: the indirect
+    /// light's and the reflections' pixels per ray (ADR-0093, ADR-0096). Their average is that many times
+    /// noisier than its frames say, so the filter blurs it as if it had that many times fewer (ADR-0097).
+    std::uint32_t diffuseRepeats = 1;
+    std::uint32_t specularRepeats = 1;
 };
 
 /// The engine's own spatiotemporal denoiser (ADR-0039): it filters the diffuse and the specular light of
@@ -60,8 +65,9 @@ public:
     [[nodiscard]] rhi::TextureHandle Diffuse() const { return m_diffuse.work[0]; }
     [[nodiscard]] rhi::TextureHandle Specular() const { return m_specular.work[0]; }
 
-    /// Iterations of the spatial filter, each twice as wide as the last.
-    static constexpr std::uint32_t kIterations = 5;
+    /// Iterations of the spatial filter, each twice as wide as the last: 1, 2 then 4 pixels apart. A wider
+    /// one would only filter pixels with less than one frame of history, which there are not (ADR-0097).
+    static constexpr std::uint32_t kIterations = 3;
 
 private:
     explicit Denoiser(rhi::Device& device);

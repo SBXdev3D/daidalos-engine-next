@@ -36,6 +36,9 @@ struct TemporalPushConstants {
     // Two numbers rather than a uint2, which would be aligned to 8 bytes.
     uint width;
     uint height;
+    // For how many frames each sample of the diffuse and of the specular light is reused (ADR-0097).
+    uint diffuseRepeats;
+    uint specularRepeats;
 };
 
 [[vk::push_constant]] TemporalPushConstants g_temporal;
@@ -46,8 +49,10 @@ static const float kFramesForVariance = 4.0;
 static const float kMomentsWeight = 0.2;
 // How far the depth of last frame's surface may be from where this one was, relative to it.
 static const float kDepthTolerance = 0.05;
-// The cosine of the largest angle between last frame's normal and this one.
-static const float kNormalTolerance = 0.9;
+// The cosine of the largest angle between last frame's normal and this one: 60 degrees. The normals include
+// the normal maps, whose texels the camera's jitter samples in turn; at 25 degrees, grout lines and rough
+// textures lost their history every frame (ADR-0097). The depth test keeps the history on the same surface.
+static const float kNormalTolerance = 0.5;
 // Below this roughness, a reflection moves wholly with the reflected point; from the second, with the
 // surface; in between, partly with each.
 static const float kVirtualRoughness = 0.1;
@@ -231,7 +236,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
 
     g_halfStorageImages[g_temporal.guides][pixel] = float4(linearDepth, EncodeNormal(normal), frames);
     g_halfStorageImages[g_temporal.moments][pixel] = moments;
-    // The average of the frames has a variance that many times smaller than one frame's.
-    g_halfStorageImages[g_temporal.historyDiffuse][pixel] = float4(averageDiffuse, variance.x / frames);
-    g_halfStorageImages[g_temporal.historySpecular][pixel] = float4(averageSpecular, variance.y / frames);
+    // The average of the frames has a variance that many times smaller than one frame's, or that many
+    // times fewer where each sample came back for several frames: they hold fewer samples than frames.
+    const float2 samples = max(frames / float2(g_temporal.diffuseRepeats, g_temporal.specularRepeats), 1.0);
+    g_halfStorageImages[g_temporal.historyDiffuse][pixel] = float4(averageDiffuse, variance.x / samples.x);
+    g_halfStorageImages[g_temporal.historySpecular][pixel] = float4(averageSpecular, variance.y / samples.y);
 }
