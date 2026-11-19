@@ -20,6 +20,7 @@
 #include <shaders/GBuffer.ps.spv.h>
 #include <shaders/GBuffer.vs.spv.h>
 #include <shaders/Glass.ps.spv.h>
+#include <shaders/MaterialGrid.cs.spv.h>
 #include <shaders/Skinning.cs.spv.h>
 
 #include <algorithm>
@@ -74,6 +75,18 @@ struct SkinningPushConstants {
     std::uint32_t previousTarget;
 };
 constexpr std::uint32_t kSkinningGroupSize = 64;
+
+// Matches MaterialGridPushConstants in shaders/MaterialGrid.slang.
+struct MaterialGridPushConstants {
+    std::uint32_t frameBuffer;
+    std::uint32_t boxes;
+    std::uint32_t grid;
+};
+/// Cells of the material grid along X, Y and Z (ADR-0094), as kMaterialGridCells in shaders/MaterialGrid.slangh,
+/// the meters of a cell's side, and the cells a group of MaterialGrid.slang writes along each axis.
+constexpr glm::uvec3 kMaterialGrid{64, 16, 64};
+constexpr float kMaterialGridCell = 2.0f;
+constexpr std::uint32_t kMaterialGridGroup = 4;
 
 // Match EmissiveAveragePushConstants and EmissiveTrianglesPushConstants in shaders/EmissiveAverage.slang and
 // shaders/EmissiveTriangles.slang.
@@ -158,9 +171,12 @@ struct FrameData {
     std::uint32_t particleData; // The particles rays meet (ADR-0062): their pool, effects and curves.
     std::uint32_t particleEffects;
     std::uint32_t particleCurves;
-    std::array<std::uint32_t, 2> framePadding;
+    std::uint32_t materialGrid; // Which decals and wet volumes touch each cell (ADR-0094), and where it is.
+    float materialGridCell;
+    glm::vec3 materialGridOrigin;
+    std::uint32_t framePadding;
 };
-static_assert(sizeof(FrameData) == 496);
+static_assert(sizeof(FrameData) == 512);
 
 /// A box of wet air (ADR-0061). Matches its twin in shaders/Wetness.slangh.
 struct WetVolumeData {
@@ -427,7 +443,9 @@ MeshPass::MeshPass(MeshPass&& other) noexcept
       m_emissiveTriangles(std::exchange(other.m_emissiveTriangles, {})), m_skinned(std::exchange(other.m_skinned, {})),
       m_previousSkinned(std::exchange(other.m_previousSkinned, {})),
       m_skinnedCapacity(std::exchange(other.m_skinnedCapacity, 0)),
-      m_skinningPipeline(std::exchange(other.m_skinningPipeline, {})) {}
+      m_skinningPipeline(std::exchange(other.m_skinningPipeline, {})),
+      m_materialGridPipeline(std::exchange(other.m_materialGridPipeline, {})),
+      m_materialGrid(std::exchange(other.m_materialGrid, {})) {}
 
 MeshPass::~MeshPass() {
     DestroyPipelines(m_pipelines);
@@ -441,6 +459,8 @@ MeshPass::~MeshPass() {
     m_device->DestroyBuffer(m_skinned);
     m_device->DestroyBuffer(m_previousSkinned);
     m_device->DestroyPipeline(m_skinningPipeline);
+    m_device->DestroyPipeline(m_materialGridPipeline);
+    m_device->DestroyBuffer(m_materialGrid);
     m_device->DestroyPipeline(m_emissiveAverage);
     m_device->DestroyPipeline(m_emissiveTriangles);
     for (auto& [key, source] : m_emissiveSources) {
@@ -460,6 +480,7 @@ MeshPass::~MeshPass() {
         m_device->DestroyBuffer(slot.decals);
         m_device->DestroyBuffer(slot.wetVolumes);
         m_device->DestroyBuffer(slot.ripples);
+        m_device->DestroyBuffer(slot.materialBoxes);
     }
 }
 
@@ -468,6 +489,13 @@ core::Result<MeshPass> MeshPass::Create(rhi::Device& device, rhi::Format colorFo
     DAI_TRY(pass.ReplaceShaders(rhi::ToSpirv(kGBufferVsSpirv), rhi::ToSpirv(kGBufferPsSpirv)));
     DAI_TRY_ASSIGN(pass.m_skinningPipeline,
                    device.CreateComputePipeline({.shader = rhi::ToSpirv(kSkinningCsSpirv), .name = "Skinning"}));
+    DAI_TRY_ASSIGN(pass.m_materialGridPipeline, device.CreateComputePipeline({.shader = rhi::ToSpirv(kMaterialGridCsSpirv),
+                                                                              .name = "Material grid"}));
+    DAI_TRY_ASSIGN(pass.m_materialGrid,
+                   device.CreateBuffer({.size = std::uint64_t{kMaterialGrid.x} * kMaterialGrid.y * kMaterialGrid.z *
+                                                sizeof(glm::uvec4),
+                                        .usage = rhi::BufferUsage::Storage,
+                                        .name = "Material grid"}));
     DAI_TRY_ASSIGN(pass.m_emissiveAverage,
                    device.CreateComputePipeline(
                        {.shader = rhi::ToSpirv(kEmissiveAverageCsSpirv), .name = "Emission of triangles"}));
@@ -807,6 +835,8 @@ core::Result<void> MeshPass::PrepareFrameSlot(FrameSlot& slot, const SceneView& 
     DAI_TRY(reserve(slot.wetVolumes, slot.wetVolumeCapacity, kMaxWetVolumes, kMaxWetVolumes, sizeof(WetVolumeData),
                     "Wet volumes"));
     DAI_TRY(reserve(slot.ripples, slot.rippleCapacity, kMaxRipples, kMaxRipples, sizeof(RippleData), "Ripples"));
+    DAI_TRY(reserve(slot.materialBoxes, slot.materialBoxCapacity, (kMaxDecals + kMaxWetVolumes) * 2,
+                    (kMaxDecals + kMaxWetVolumes) * 2, sizeof(glm::vec4), "Material boxes"));
     return {};
 }
 
@@ -1145,6 +1175,8 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
         nearDecals.resize(kMaxDecals);
     }
     std::vector<DecalBox> decalBoxes;
+    // The boxes around the decals, then the wet volumes, from which the material grid is made (ADR-0094).
+    auto* boxes = reinterpret_cast<glm::vec4*>(m_device->Mapped(slot.materialBoxes).data());
     auto* decals = reinterpret_cast<DecalData*>(m_device->Mapped(slot.decals).data());
     for (std::size_t slotIndex = 0; slotIndex < nearDecals.size(); ++slotIndex) {
         const Decal& decal = view.decals[nearDecals[slotIndex]];
@@ -1157,6 +1189,8 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
             box.max = glm::max(box.max, point);
         }
         decalBoxes.push_back(box);
+        boxes[slotIndex * 2] = glm::vec4(box.min, 0.0f);
+        boxes[slotIndex * 2 + 1] = glm::vec4(box.max, 0.0f);
         const rhi::Extent size = m_device->TextureExtent(decal.albedo);
         const float width = glm::length(glm::vec3(decal.world[0]));
         decals[slotIndex] = {.worldToBox = glm::inverse(decal.world),
@@ -1199,13 +1233,20 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     const std::size_t wetCount = nearWet.size();
     for (std::size_t index = 0; index < wetCount; ++index) {
         const WetVolume& volume = view.wetVolumes[nearWet[index]];
-        // The box's lowest point, where water pools.
+        // The box's lowest point, where water pools, and the box around it for the material grid.
         float bottom = 1e30f;
+        glm::vec3 wetLowest(1e30f);
+        glm::vec3 wetHighest(-1e30f);
         for (int corner = 0; corner < 8; ++corner) {
             const glm::vec3 local((corner & 1) != 0 ? 0.5f : -0.5f, (corner & 2) != 0 ? 0.5f : -0.5f,
                                   (corner & 4) != 0 ? 0.5f : -0.5f);
-            bottom = std::min(bottom, (volume.world * glm::vec4(local, 1.0f)).y);
+            const glm::vec3 point(volume.world * glm::vec4(local, 1.0f));
+            bottom = std::min(bottom, point.y);
+            wetLowest = glm::min(wetLowest, point);
+            wetHighest = glm::max(wetHighest, point);
         }
+        boxes[(kMaxDecals + index) * 2] = glm::vec4(wetLowest, 0.0f);
+        boxes[(kMaxDecals + index) * 2 + 1] = glm::vec4(wetHighest, 0.0f);
         wetVolumes[index] = {.worldToBox = glm::inverse(volume.world),
                              .wetness = std::clamp(volume.wetness, 0.0f, 1.0f),
                              .puddles = std::clamp(volume.puddles, 0.0f, 1.0f),
@@ -1224,6 +1265,13 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
                           .strength = ripple.strength,
                           .padding = {}};
     }
+    // The material grid (ADR-0094): its cells are whole cells of the world, so that they do not move with the
+    // camera between its steps, centered on the camera. Shaders read it once AddMaterialGrid writes it; until
+    // then, a point tests every decal of its draw and every wet volume.
+    frame.materialGrid = kNoTexture;
+    frame.materialGridCell = kMaterialGridCell;
+    frame.materialGridOrigin =
+        (glm::floor(cameraPosition / kMaterialGridCell) - glm::vec3(kMaterialGrid / 2u)) * kMaterialGridCell;
     frame.wetVolumeBuffer = m_device->StorageIndex(slot.wetVolumes);
     frame.wetVolumeCount = static_cast<std::uint32_t>(wetCount);
     frame.rippleBuffer = m_device->StorageIndex(slot.ripples);
@@ -1415,6 +1463,24 @@ void MeshPass::AddSkinning(RenderGraph& graph) {
             commands.Dispatch((job.vertexCount + kSkinningGroupSize - 1) / kSkinningGroupSize);
         }
     });
+}
+
+void MeshPass::AddMaterialGrid(RenderGraph& graph) {
+    if (m_prepared == nullptr) {
+        return;
+    }
+    reinterpret_cast<FrameData*>(m_device->Mapped(m_prepared->frame).data())->materialGrid =
+        m_device->StorageIndex(m_materialGrid);
+    graph.AddPass({.name = "Material grid", .buffers = {{m_materialGrid, rhi::Access::ComputeShaderWrite}}},
+                  [this](rhi::CommandList& commands) {
+                      DAI_PROFILE_SCOPE("renderer::MeshPass::MaterialGrid");
+                      commands.BindPipeline(m_materialGridPipeline);
+                      commands.Push(MaterialGridPushConstants{m_device->StorageIndex(m_prepared->frame),
+                                                              m_device->StorageIndex(m_prepared->materialBoxes),
+                                                              m_device->StorageIndex(m_materialGrid)});
+                      commands.Dispatch(kMaterialGrid.x / kMaterialGridGroup, kMaterialGrid.y / kMaterialGridGroup,
+                                        kMaterialGrid.z / kMaterialGridGroup);
+                  });
 }
 
 void MeshPass::AddEmissiveLights(RenderGraph& graph) {

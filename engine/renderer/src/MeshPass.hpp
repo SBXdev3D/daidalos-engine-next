@@ -215,6 +215,10 @@ public:
     /// Adds the pass that skins the prepared frame's skinned draws, if it has any, as "Skinning". It must
     /// come before every pass that draws or traces them.
     void AddSkinning(RenderGraph& graph);
+    /// Writes which decals and wet volumes touch each cell of the world around the camera (ADR-0094), for the
+    /// G-buffer and ray hits: the G-buffer's pass reads MaterialGrid() first, in fragment and compute shaders.
+    void AddMaterialGrid(RenderGraph& graph);
+    [[nodiscard]] rhi::BufferHandle MaterialGrid() const { return m_materialGrid; }
     /// Adds the passes of the prepared frame's emissive lights, as "Emissive lights" (ADR-0044): the average
     /// emission of each triangle of an emissive mesh and material drawn together for the first time, read
     /// back a few frames later, and the frame's emissive triangles in world space. After AddSkinning, before
@@ -374,6 +378,9 @@ private:
         std::uint64_t wetVolumeCapacity = 0;
         rhi::BufferHandle ripples;
         std::uint64_t rippleCapacity = 0;
+        /// The boxes around the decals, then around the wet volumes, that the material grid is made from.
+        rhi::BufferHandle materialBoxes;
+        std::uint64_t materialBoxCapacity = 0;
     };
 
     MeshPass(rhi::Device& device, rhi::Format colorFormat, rhi::Format depthFormat);
@@ -489,6 +496,8 @@ private:
     std::uint64_t m_skinnedCapacity = 0;
     rhi::PipelineHandle m_skinningPipeline;
     std::vector<SkinningJob> m_skinningJobs;
+    rhi::PipelineHandle m_materialGridPipeline;
+    rhi::BufferHandle m_materialGrid;
     std::vector<TracedDraw> m_traced;
     glm::mat4 m_viewProjection{1.0f};
     Perspective m_perspective;

@@ -1,0 +1,34 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+#ifndef DAIDALOS_MATERIAL_GRID_SLANGH
+#define DAIDALOS_MATERIAL_GRID_SLANGH
+
+// The material grid (ADR-0094): boxes of the world around the camera, each listing, a bit each, the decals and
+// the wet volumes whose boxes touch it. A pixel or a ray hit tests only those of its cell, rather than every
+// decal of its draw and every wet volume of the frame. MaterialGrid.slang writes it each frame. Include after
+// MeshTypes.slangh.
+
+// Cells across the grid, along X, Y and Z. Matches kMaterialGrid in renderer/src/MeshPass.cpp.
+static const uint3 kMaterialGridCells = uint3(64, 16, 64);
+
+// Per cell: the decals' 64 bits, the wet volumes' 16 bits, and a spare word.
+[[vk::binding(2, 0)]] StructuredBuffer<uint4> g_materialGrids[];
+
+// The bits of the decals and wet volumes that may touch a point: x and y the decals', z the wet volumes'.
+// Outside the grid, every bit.
+uint3 MaterialCell(FrameData frame, float3 position) {
+    if (frame.materialGrid == kNoTexture) {
+        return uint3(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+    }
+    const float3 cell = floor((position - frame.materialGridOrigin) / frame.materialGridCell);
+    if (any(cell < 0.0) || any(cell >= float3(kMaterialGridCells))) {
+        return uint3(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+    }
+    const uint3 index = uint3(cell);
+    return g_materialGrids[frame.materialGrid]
+                          [(index.z * kMaterialGridCells.y + index.y) * kMaterialGridCells.x + index.x].xyz;
+}
+
+#endif

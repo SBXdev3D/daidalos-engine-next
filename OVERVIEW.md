@@ -2138,8 +2138,9 @@ Done:
 Done:
 
 - Indirect light at fewer pixels; four ReSTIR candidates on Low and Medium (ADR-0093).
+- A grid of the world around the camera lists the decals and water touching each cell, for pixels and ray hits alike (ADR-0094).
 
-Next: clustered decals and water, async compute, reflections, the denoiser, GPU-driven rendering.
+Next: async compute, reflections, the denoiser, GPU-driven rendering.
 
 ---
 

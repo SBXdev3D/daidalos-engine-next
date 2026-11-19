@@ -9,9 +9,11 @@
 // darken, every surface gets a film of water, a clear coat of index about 1.33 over the material; on what faces
 // up near the bottom of the box, water pools in the low spots of a noise, flat and smooth, rippled by rain and by
 // the game's ripples (steps, impacts); on walls, streaks of water run down. The G-buffer and ray hits both call
-// ApplyWetness, so reflections and the path tracer see the same water. Include after MeshTypes.slangh.
+// ApplyWetness, so reflections and the path tracer see the same water. A point tests only the volumes its cell
+// of the material grid names (ADR-0094). Include after MeshTypes.slangh.
 
 import Bsdf;
+#include "MaterialGrid.slangh"
 
 // Matches WetVolumeData in renderer/src/MeshPass.cpp.
 struct WetVolumeData {
@@ -104,7 +106,10 @@ void ApplyWetness(FrameData frame, float3 position, float3 faceNormal, float por
     float wet = 0.0;
     float pool = 0.0;
     float2 tilt = float2(0.0, 0.0);
-    for (uint index = 0; index < frame.wetVolumeCount; ++index) {
+    uint remaining = MaterialCell(frame, position).z & ((1u << frame.wetVolumeCount) - 1u);
+    while (remaining != 0) {
+        const uint index = firstbitlow(remaining);
+        remaining &= remaining - 1;
         const WetVolumeData volume = g_wetVolumes[frame.wetVolumeBuffer][index];
         const float3 local = mul(volume.worldToBox, float4(position, 1.0)).xyz;
         if (any(abs(local) > 0.5)) {

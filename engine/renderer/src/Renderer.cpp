@@ -850,6 +850,12 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         const bool meshParticles = hasFrame && impl.particlePass->HasMeshes();
         std::vector<rhi::BufferUse> buffers{skinnedVertices,
                                             {impl.meshPass->PreviousSkinnedPositions(), rhi::Access::VertexShaderRead}};
+        // The material grid is read by the G-buffer and by every ray hit after it (ADR-0094).
+        if (hasFrame) {
+            impl.meshPass->AddMaterialGrid(graph);
+            buffers.push_back(
+                {impl.meshPass->MaterialGrid(), rhi::Access::FragmentShaderRead | rhi::Access::ComputeShaderRead});
+        }
         if (meshParticles) {
             std::ranges::copy(impl.particlePass->MeshBuffers(), std::back_inserter(buffers));
         }

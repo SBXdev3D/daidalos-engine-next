@@ -328,9 +328,14 @@ protected:
                                                             *m_pass)
                                             .has_value());
                         }
+                        // Decals and water through the material grid (ADR-0094), which the path tracer does not
+                        // use: tests comparing the two compare it with every decal and volume tested.
+                        m_pass->AddMaterialGrid(graph);
                         graph.AddPass(
                             {.name = "G-buffer",
-                             .rendering = MeshPass::GBufferRendering(*shading, normals, motion, depth, renderExtent)},
+                             .rendering = MeshPass::GBufferRendering(*shading, normals, motion, depth, renderExtent),
+                             .buffers = {{m_pass->MaterialGrid(),
+                                          rhi::Access::FragmentShaderRead | rhi::Access::ComputeShaderRead}}},
                             [&](rhi::CommandList& list) { m_pass->RecordGBuffer(list); });
                         if (indirect != nullptr) {
                             indirect->AddTo(graph, {.extent = renderExtent,

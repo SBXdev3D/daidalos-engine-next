@@ -97,3 +97,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0091](0091-bug-sweep.md) | AddressSanitizer found a use after scope in the JSON reader and a use after free in lightning bolts; texture-less particles drawn alike; stale player settings dropped | Accepted |
 | [0092](0092-performance.md) | Phase 18: indirect light at fewer pixels, clustered decals and water, async compute, reflections, the denoiser, GPU-driven rendering | Accepted |
 | [0093](0093-indirect-light-at-fewer-pixels.md) | Indirect light traced at half or a quarter of the pixels, the others filled from their own history or their neighbours; Low and Medium trace half and draw four ReSTIR candidates | Accepted |
+| [0094](0094-material-grid.md) | A grid of the world around the camera, written on the GPU each frame, lists the decals and wet volumes touching each 2 m cell; pixels and ray hits test only those | Accepted |

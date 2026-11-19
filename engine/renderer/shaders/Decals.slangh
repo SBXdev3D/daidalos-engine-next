@@ -8,7 +8,10 @@
 // Decals in the material function (ADR-0060): a box projects an image along its -Z onto what is inside it,
 // changing the surface's base color, roughness, metalness and normal before it is lit. The G-buffer and ray
 // hits both call ApplyDecals, so decals show in reflections and in bounced light as on screen. Each draw
-// names the decals that touch it in a 64-bit mask, so a pixel tests only those. Include after MeshTypes.slangh.
+// names the decals that touch it in a 64-bit mask, and each cell of the material grid those that touch it
+// (ADR-0094): a pixel tests only the decals of both. Include after MeshTypes.slangh.
+
+#include "MaterialGrid.slangh"
 
 // Matches DecalData in renderer/src/MeshPass.cpp.
 struct DecalData {
@@ -39,8 +42,8 @@ void ApplyDecals(FrameData frame, uint2 mask, float3 position, float footprint, 
     if (frame.decalCount == 0 || all(mask == 0)) {
         return;
     }
+    uint2 remaining = mask & MaterialCell(frame, position).xy;
     float covered = 0.0;
-    uint2 remaining = mask;
     while (any(remaining != 0)) {
         uint index;
         if (remaining.x != 0) {
