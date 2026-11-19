@@ -29,6 +29,10 @@ struct GlobalIlluminationSettings {
     /// Pixels per traced pixel (ADR-0093): 1 traces every pixel; 2 half of them, in a checkerboard; 4 one of
     /// each two by two. They take turns, and the others take their traced neighbours' light.
     std::uint32_t pixelsPerRay = 1;
+    /// Pixels per reflection ray on rough surfaces (ADR-0096): 1 traces every pixel; 2 half of them, in a
+    /// checkerboard that takes turns, the others brought forward from last frame or taken from their neighbours.
+    /// Sharp reflections trace every pixel.
+    std::uint32_t reflectionPixelsPerRay = 1;
 };
 
 /// What global illumination reads each frame.
@@ -126,6 +130,7 @@ private:
     rhi::PipelineHandle m_trace;
     rhi::PipelineHandle m_fill;
     rhi::PipelineHandle m_reflect;
+    rhi::PipelineHandle m_reflectFill;
     rhi::BufferHandle m_keys;
     rhi::BufferHandle m_accumulation;
     rhi::BufferHandle m_radiance;
@@ -141,6 +146,10 @@ private:
     bool m_reset = true;
     /// The frame that last wrote the history: the next one may read it.
     std::optional<std::uint32_t> m_historyFrame;
+    /// Each pixel's reflection on rough surfaces, which their fill brings forward (ADR-0096), in turns, and the
+    /// frame that last wrote it.
+    std::array<rhi::TextureHandle, 2> m_reflectionHistory{};
+    std::optional<std::uint32_t> m_reflectionHistoryFrame;
     /// AddCacheUpdate added the cache's passes of the frame being built.
     bool m_cacheAdded = false;
 };

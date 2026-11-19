@@ -2140,8 +2140,9 @@ Done:
 - Indirect light at fewer pixels; four ReSTIR candidates on Low and Medium (ADR-0093).
 - A grid of the world around the camera lists the decals and water touching each cell, for pixels and ray hits alike (ADR-0094).
 - Async compute: built, measured slower on an RTX 3090 (the G-buffer leaves few shader units idle), off by default (ADR-0095).
+- Half the rough reflections traced each frame, in turns, from Medium up (ADR-0096).
 
-Next: reflections, the denoiser, GPU-driven rendering.
+Next: the denoiser, GPU-driven rendering.
 
 ---
 

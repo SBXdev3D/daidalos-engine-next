@@ -19,6 +19,10 @@
 //   hit shaded as above, so that reflections fill the cache where they need it (as SHaRC's paths do).
 // - Past the sky: the sky.
 // - Rougher than g_gi.maxRoughness: no ray; the pixel's indirect diffuse light stands in for it, as before.
+// - Rough, with g_gi.spacing 2: half the pixels trace, in a checkerboard that takes turns, and GiReflectFill.slang
+//   fills the others (ADR-0096). The pass runs twice, a thread per pixel of each half: the half whose turn it is
+//   traces every reflection; the other, g_gi.sharpOnly, only sharp ones, so that its groups on rough surfaces
+//   end at once. Skipping pixels within a group would save nothing: the group lasts as long as its slowest.
 // Alpha is the distance to the first hit, which the denoiser follows the reflection with; 0 where the
 // reflection moves with the surface.
 
@@ -30,9 +34,6 @@ import Bsdf;
 
 [[vk::binding(4, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> g_storageImages[];
 
-// Below this roughness, the reflection is sharp enough that what it shows is shaded fully. Matches
-// GlobalIllumination::kSharpRoughness.
-static const float kSharpRoughness = 0.3;
 // Below this roughness, what a reflection ray hits is a mirror that reflects on.
 static const float kMirrorRoughness = 0.1;
 static const uint kMirrorBounces = 3;
@@ -79,26 +80,32 @@ float3 DirectLight(Surface surface, float3 view, FrameData frame, bool emissiveS
 [numthreads(8, 8, 1)]
 void CSMain(uint3 id : SV_DispatchThreadID) {
     const FrameData frame = g_frames[g_gi.frameBuffer][0];
-    if (any(id.xy >= uint2(g_gi.width, g_gi.height))) {
+    // With g_gi.spacing 2, a thread per pixel of one half of a checkerboard (ADR-0096).
+    const int2 pixel = TracedPixel(id.xy);
+    if (any(pixel >= int2(g_gi.width, g_gi.height))) {
         return;
     }
-    const int2 pixel = int2(id.xy);
     const float depth = g_textures[g_gi.depth].Load(int3(pixel, 0)).r;
     if (depth <= 0.0) {
-        g_storageImages[g_gi.reflections][id.xy] = float4(0.0, 0.0, 0.0, 0.0);
+        g_storageImages[g_gi.reflections][pixel] = float4(0.0, 0.0, 0.0, 0.0);
         return;
     }
     const float4 normalRoughness = g_textures[g_gi.normals].Load(int3(pixel, 0));
     const float roughness = normalRoughness.a;
     if (roughness > g_gi.maxRoughness) {
-        g_storageImages[g_gi.reflections][id.xy] = float4(g_storageImages[g_gi.output][id.xy].rgb, 0.0);
+        g_storageImages[g_gi.reflections][pixel] = float4(g_storageImages[g_gi.output][pixel].rgb, 0.0);
+        return;
+    }
+    // The half whose turn it is not traces only sharp reflections (ADR-0096): GiReflectFill.slang fills the rough.
+    if (roughness >= kSharpRoughness && g_gi.sharpOnly != 0) {
+        g_storageImages[g_gi.reflections][pixel] = float4(0.0, 0.0, 0.0, 0.0);
         return;
     }
     const float3 position = WorldPosition(frame, (float2(pixel) + 0.5) * frame.screenTexel, depth);
     const float3 faceNormal = FaceNormalAt(frame, pixel, position);
     const float3 normal = normalize(normalRoughness.xyz * 2.0 - 1.0);
     const float3 view = normalize(frame.cameraPosition - position);
-    uint random = Pcg((id.y * g_gi.width + id.x) * 7919u + g_gi.seed * 104729u + 17u);
+    uint random = Pcg((uint(pixel.y) * g_gi.width + uint(pixel.x)) * 7919u + g_gi.seed * 104729u + 17u);
 
     RayDesc ray;
     ray.Direction = SampleSpecularDirection(normal, view, roughness, float2(Random(random), Random(random)));
@@ -164,5 +171,5 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         }
         ray.Origin = OffsetOrigin(surface.position, surface.faceNormal);
     }
-    g_storageImages[g_gi.reflections][id.xy] = float4(light, hitDistance);
+    g_storageImages[g_gi.reflections][pixel] = float4(light, hitDistance);
 }

@@ -1,0 +1,81 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+#ifndef DAIDALOS_GI_FILL_SLANGH
+#define DAIDALOS_GI_FILL_SLANGH
+
+// What the fill passes share (ADR-0093, ADR-0096): a pixel that traced no ray this frame takes the sample its
+// own surface had last frame, from a history found with last frame's view, or else its traced neighbours' on
+// its surface. The shader that includes this defines HoldsSample(pixel), whether a pixel traced this frame,
+// after GlobalIllumination.slangh.
+
+[[vk::binding(4, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> g_storageImages[];
+
+// How far from its distance in the history a point may be, relative to it, and still be the same point.
+static const float kHistoryTolerance = 0.02;
+// How far from a pixel's plane a neighbour may lie, per meter from the camera, before its weight falls by e.
+static const float kPlaneTolerance = 0.02;
+// How sharply the weight falls as the neighbour's normal turns away: normal maps differ from pixel to pixel.
+static const float kNormalPower = 2.0;
+
+// The light of the traced pixels next to pixel, in image, on its surface: the four nearest, across and down in a
+// checkerboard, diagonally or two apart at a quarter. Alpha is their alpha, weighed alike.
+float4 NeighboursLight(FrameData frame, uint image, int2 pixel, int2 size, float3 position, float3 faceNormal,
+                       float viewDistance) {
+    const float3 normal = normalize(g_textures[g_gi.normals].Load(int3(pixel, 0)).xyz * 2.0 - 1.0);
+    const float tolerance = kPlaneTolerance * max(viewDistance, 0.1);
+    float4 light = float4(0.0, 0.0, 0.0, 0.0);
+    float weights = 0.0;
+    float4 nearest = float4(0.0, 0.0, 0.0, 0.0);
+    int nearestDistance = 1000;
+    for (int y = -2; y <= 2; ++y) {
+        for (int x = -2; x <= 2; ++x) {
+            const int2 traced = pixel + int2(x, y);
+            const int distanceSquared = x * x + y * y;
+            if (distanceSquared > 4 || any(traced < int2(0, 0)) || any(traced >= size) || !HoldsSample(traced)) {
+                continue;
+            }
+            const float4 sample = g_storageImages[image][traced];
+            if (sample.a <= 0.0) {
+                continue; // The sky, or no sample.
+            }
+            const float neighbourDepth = g_textures[g_gi.depth].Load(int3(traced, 0)).r;
+            const float3 neighbour =
+                WorldPosition(frame, (float2(traced) + 0.5) * frame.screenTexel, neighbourDepth);
+            const float offPlane = abs(dot(faceNormal, neighbour - position)) / tolerance;
+            if (distanceSquared < nearestDistance && offPlane < 1.0) {
+                nearestDistance = distanceSquared;
+                nearest = sample;
+            }
+            const float3 neighbourNormal =
+                normalize(g_textures[g_gi.normals].Load(int3(traced, 0)).xyz * 2.0 - 1.0);
+            const float facing = pow(saturate(dot(normal, neighbourNormal)), kNormalPower);
+            const float weight = facing * exp(-offPlane - float(distanceSquared) * 0.5);
+            light += sample * weight;
+            weights += weight;
+        }
+    }
+    return weights > 1e-3 ? light / weights : nearest;
+}
+
+// The sample the point had last frame, from the history, where last frame's view saw it at the same distance:
+// its color, and 1 in alpha; 0 in alpha where the history did not see it.
+float4 HistoryLight(FrameData frame, float3 position) {
+    if (g_gi.historyValid == 0) {
+        return float4(0.0, 0.0, 0.0, 0.0);
+    }
+    // Last frame drew a corner of its own size (ADR-0049).
+    const float4 clip = mul(frame.previousViewProjection, float4(position, 1.0));
+    const int2 previous = int2(floor(ClipToUv(clip) * float2(frame.previousRenderSize)));
+    if (clip.w <= 0.0 || any(previous < int2(0, 0)) || any(previous >= int2(frame.previousRenderSize))) {
+        return float4(0.0, 0.0, 0.0, 0.0);
+    }
+    const float4 history = g_storageImages[g_gi.previousHistory][previous];
+    if (history.a > 0.0 && abs(history.a - clip.w) < kHistoryTolerance * clip.w) {
+        return float4(history.rgb, 1.0);
+    }
+    return float4(0.0, 0.0, 0.0, 0.0);
+}
+
+#endif

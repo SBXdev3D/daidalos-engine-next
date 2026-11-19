@@ -51,3 +51,12 @@ TEST(Quality, TheFirstLaunchChoosesWhatHoldsTheFrameRate) {
     EXPECT_EQ(ChooseQuality(35.0, 60.0), Quality::Low);
     EXPECT_EQ(ChooseQuality(100.0, 60.0), Quality::Low) << "Low is the floor";
 }
+
+TEST(Quality, PresetsWithRoughReflectionsTraceHalfOfThem) {
+    // Low traces only sharp reflections: there is nothing to halve, and the fill would cost alone (ADR-0096).
+    EXPECT_EQ(SettingsOf(Quality::Low).reflectionPixelsPerRay, 1);
+    for (const Quality quality : {Quality::Medium, Quality::High, Quality::Ultra}) {
+        EXPECT_EQ(SettingsOf(quality).reflectionPixelsPerRay, 2) << NameOf(quality);
+        EXPECT_GT(SettingsOf(quality).reflectionRoughness, 0.3) << NameOf(quality);
+    }
+}

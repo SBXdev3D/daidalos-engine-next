@@ -48,6 +48,7 @@ struct GiPushConstants {
     uint history;
     uint previousHistory;
     uint historyValid;
+    uint sharpOnly; // The reflections pass (ADR-0096): 1 traces only sharp reflections, on the half whose turn it is not.
 };
 
 [[vk::push_constant]] GiPushConstants g_gi;
@@ -380,6 +381,10 @@ bool IsTraced(int2 pixel) {
     }
     return true;
 }
+
+// Below this roughness, a reflection is sharp enough that what it shows is shaded fully, and every pixel traces
+// its own. Matches GlobalIllumination::kSharpRoughness.
+static const float kSharpRoughness = 0.3;
 
 // The surface's own orientation behind a pixel of the G-buffer (GBuffer.slangh).
 float3 FaceNormalAt(FrameData frame, int2 pixel, float3 position) {
