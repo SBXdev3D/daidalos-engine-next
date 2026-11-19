@@ -455,6 +455,8 @@ void DevTools::DrawStats() {
                                                         : ""));
         TextLine(std::format("{} buffers, {} textures, {} pipelines; {} waiting to be destroyed", memory.buffers,
                              memory.textures, memory.pipelines, renderer.Device().PendingDestructionCount()));
+        TextLine(std::format("{} acceleration structures: {}", memory.accelerationStructures,
+                             Megabytes(memory.accelerationStructureBytes)));
         if (const std::uint64_t errors = renderer.Device().ValidationErrorCount(); errors > 0) {
             ImGui::TextColored(kErrorColor, "%llu validation errors", static_cast<unsigned long long>(errors));
         }

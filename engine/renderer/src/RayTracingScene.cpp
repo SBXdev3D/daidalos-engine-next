@@ -72,7 +72,6 @@ core::Result<std::uint32_t> RayTracingScene::Reserve(std::uint32_t slot, std::si
         DAI_TRY_ASSIGN(rhi::AccelerationStructureHandle structure,
                        m_device->CreateAccelerationStructure({.level = rhi::AccelerationStructureLevel::Top,
                                                               .maxInstances = capacity,
-                                                              .rebuiltEveryFrame = true,
                                                               .name = std::format("Scene {}", slot)}));
         core::Result<rhi::BufferHandle> instances =
             m_device->CreateBuffer({.size = capacity * rhi::kAccelerationStructureInstanceSize,
