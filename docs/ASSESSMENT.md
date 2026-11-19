@@ -151,6 +151,8 @@ Measured and **not** worth doing now: levels of detail and meshoptimizer (half a
 
 **Phase 18 did items 1, 2, 3, 5 and 6** (ADR-0093 to ADR-0097). At 1080p on an RTX 3090, the frame went from Low 3.8 / 4.8, Medium 6.5 / 7.7 and High 13.1 / 15.6 ms (start room / loading floor, before Phase 18, ADR-0093) to Low 3.2 / 3.7, Medium 5.0 / 5.7 and High 12.5 / 11.9 ms. The start room on High runs in one of two states about 0.5 ms apart, and the loading floor lost its overhead crane in the editor meanwhile.
 
+**Phase 19 made the ray tracing faster at the same image** (ADR-0099 to ADR-0102): the top-level structure built for tracing, bottom-level structures compacted (30.7 to 13.6 MB), textures read at hits at the mip of the ray's cone. The loading floor takes 0.1 to 0.6 ms less on every preset: Low 3.7, Medium 5.5, High 11.6, Ultra 13.3 ms. What remains is traversal, shading at hits and ReSTIR's scattered neighbour reads; further gains trade image for time.
+
 ## Visual techniques not implemented
 
 | Technique | Status | What it would add |

@@ -43,6 +43,9 @@ struct DeviceConfig {
     /// Where the pipeline cache is kept between runs (ADR-0052): read at creation, unless another GPU or
     /// driver wrote it, and written when the device is destroyed. Empty for none.
     std::filesystem::path pipelineCacheFile;
+    /// Logs, for each compute pipeline created, what the driver reports of its code: registers, local
+    /// memory, instructions (VK_KHR_pipeline_executable_properties, ADR-0102). Ignored without the extension.
+    bool pipelineStatistics = false;
 };
 
 struct DeviceInfo {

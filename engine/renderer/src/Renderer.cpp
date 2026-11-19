@@ -436,6 +436,7 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     deviceConfig.presentation = true;
     deviceConfig.anisotropy = config.anisotropy;
     deviceConfig.asyncCompute = config.asyncCompute;
+    deviceConfig.pipelineStatistics = config.pipelineStatistics;
     deviceConfig.pipelineCacheFile = config.pipelineCacheFile;
     DAI_TRY_ASSIGN(rhi::Device device, rhi::Device::Create(deviceConfig));
 

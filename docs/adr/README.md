@@ -105,3 +105,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0099](0099-ray-tracing-performance.md) | Phase 19: faster ray tracing at the same image: structures, texture detail by ray cone, the ray shaders | Accepted |
 | [0100](0100-structures-for-tracing.md) | The top-level structure built for fast tracing; bottom-level structures built with the uploads compacted at a later frame (30.7 to 13.6 MB) | Accepted |
 | [0101](0101-texture-detail-by-ray-cone.md) | Rays read textures at the mip their cone's footprint covers, a pixel wide from the camera and growing with distance; mirrors keep their detail | Accepted |
+| [0102](0102-ray-shaders-measured.md) | The ray passes timed one by one and their registers read from the driver (`renderer.log_pipeline_statistics`); nothing left to remove at the same image; Phase 19 done | Accepted |

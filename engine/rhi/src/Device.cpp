@@ -404,8 +404,16 @@ core::Result<void> Device::Impl::CreateLogicalDevice(const DeviceConfig& config)
         };
     }
 
+    // The driver's statistics of each pipeline, on request (ADR-0102).
+    pipelineStatistics = config.pipelineStatistics &&
+                         HasDeviceExtension(physicalDevice, VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
+    VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR executableProperties{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR,
+        .pipelineExecutableInfo = VK_TRUE,
+    };
     VkPhysicalDeviceRayQueryFeaturesKHR rayQuery{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR,
+        .pNext = pipelineStatistics ? &executableProperties : nullptr,
         .rayQuery = VK_TRUE,
     };
     VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructure{
@@ -454,6 +462,9 @@ core::Result<void> Device::Impl::CreateLogicalDevice(const DeviceConfig& config)
     info.memoryBudget = HasDeviceExtension(physicalDevice, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
     if (info.memoryBudget) {
         extensions.push_back(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+    }
+    if (pipelineStatistics) {
+        extensions.push_back(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
     }
     if (config.presentation) {
         extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);

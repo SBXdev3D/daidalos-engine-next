@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 #include <daidalos/core/Assert.hpp>
+#include <daidalos/logging/Log.hpp>
 #include <daidalos/rhi/Device.hpp>
 
 #include <algorithm>
@@ -614,6 +615,7 @@ core::Result<PipelineHandle> Device::CreateComputePipeline(const ComputePipeline
     }
     const VkComputePipelineCreateInfo pipelineInfo{
         .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .flags = m_impl->pipelineStatistics ? VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR : 0U,
         .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                   .stage = VK_SHADER_STAGE_COMPUTE_BIT,
                   .module = module,
@@ -630,7 +632,50 @@ core::Result<PipelineHandle> Device::CreateComputePipeline(const ComputePipeline
         return tl::unexpected(VulkanError(std::format("Creating compute pipeline '{}'", desc.name), result));
     }
     m_impl->SetName(VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<std::uint64_t>(data.pipeline), desc.name);
+    if (m_impl->pipelineStatistics) {
+        m_impl->LogPipelineStatistics(data.pipeline, desc.name);
+    }
     return m_impl->pipelines.Insert(data);
+}
+
+void Device::Impl::LogPipelineStatistics(VkPipeline pipeline, const std::string& name) const {
+    const VkPipelineInfoKHR pipelineInfo{.sType = VK_STRUCTURE_TYPE_PIPELINE_INFO_KHR, .pipeline = pipeline};
+    std::uint32_t count = 0;
+    vkGetPipelineExecutablePropertiesKHR(device, &pipelineInfo, &count, nullptr);
+    std::vector<VkPipelineExecutablePropertiesKHR> executables(
+        count, {.sType = VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_PROPERTIES_KHR});
+    vkGetPipelineExecutablePropertiesKHR(device, &pipelineInfo, &count, executables.data());
+    for (std::uint32_t index = 0; index < count; ++index) {
+        const VkPipelineExecutableInfoKHR executable{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INFO_KHR, .pipeline = pipeline, .executableIndex = index};
+        std::uint32_t statisticCount = 0;
+        vkGetPipelineExecutableStatisticsKHR(device, &executable, &statisticCount, nullptr);
+        std::vector<VkPipelineExecutableStatisticKHR> statistics(
+            statisticCount, {.sType = VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_STATISTIC_KHR});
+        vkGetPipelineExecutableStatisticsKHR(device, &executable, &statisticCount, statistics.data());
+        std::string line;
+        for (const VkPipelineExecutableStatisticKHR& statistic : statistics) {
+            line += std::format("{}{}=", line.empty() ? "" : ", ", statistic.name);
+            switch (statistic.format) {
+            case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_BOOL32_KHR:
+                line += statistic.value.b32 == VK_TRUE ? "yes" : "no";
+                break;
+            case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_INT64_KHR:
+                line += std::format("{}", statistic.value.i64);
+                break;
+            case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR:
+                line += std::format("{}", statistic.value.u64);
+                break;
+            case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_FLOAT64_KHR:
+                line += std::format("{:.2f}", statistic.value.f64);
+                break;
+            default:
+                line += "?";
+                break;
+            }
+        }
+        DAI_LOG_INFO(kModule, "Pipeline '{}' ({}): {}", name, executables[index].name, line);
+    }
 }
 
 void Device::DestroyPipeline(PipelineHandle pipeline) {
