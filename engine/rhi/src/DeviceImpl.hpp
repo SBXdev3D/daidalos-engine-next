@@ -108,6 +108,8 @@ struct CommandRecording {
     /// First query of this recording in the timestamp pool, for frames on a device with timestamps.
     std::optional<std::uint32_t> firstTimestamp;
     std::uint32_t timestampCount = 0;
+    /// Recorded for the compute queue (ADR-0095): its barriers keep only the stages that queue has.
+    bool computeOnly = false;
 };
 
 } // namespace detail
@@ -143,7 +145,7 @@ struct Device::Impl {
     void Defer(std::function<void()> destroy);
     void CollectGarbage(std::uint64_t completed);
     /// Reads the timestamps of a finished frame into completedTimestamps.
-    [[nodiscard]] core::Result<void> ReadTimestamps(detail::CommandRecording& recording);
+    [[nodiscard]] core::Result<void> ReadTimestamps(detail::CommandRecording& recording, std::vector<double>& into);
     /// Submits recorded commands, which signal the next timeline value, and returns that value.
     [[nodiscard]] core::Result<std::uint64_t> SubmitCommands(VkCommandBuffer commands);
     /// The command list that collects the copies of UploadBuffer and UploadTexture.
@@ -161,7 +163,25 @@ struct Device::Impl {
         VkCommandPool pool = VK_NULL_HANDLE;
         detail::CommandRecording recording;
         std::uint64_t submittedValue = 0;
+        /// The frame's graphics commands, in up to three parts (ADR-0095): before the compute queue starts,
+        /// beside it, and after it. recording.commands is the part being recorded.
+        std::array<VkCommandBuffer, 3> parts{};
+        std::uint32_t part = 0;
+        /// The compute queue's commands of the frame, and whether this frame records any.
+        VkCommandPool computePool = VK_NULL_HANDLE;
+        detail::CommandRecording computeRecording;
+        bool forked = false;
     };
+
+    /// Sets a resource's sharing between the graphics and compute queues: concurrent when both exist.
+    template <typename CreateInfo>
+    void Share(CreateInfo& info) const {
+        if (computeQueue != VK_NULL_HANDLE) {
+            info.sharingMode = VK_SHARING_MODE_CONCURRENT;
+            info.queueFamilyIndexCount = static_cast<std::uint32_t>(sharedFamilies.size());
+            info.pQueueFamilyIndices = sharedFamilies.data();
+        }
+    }
 
     DeviceInfo info;
     std::atomic<std::uint64_t> validationErrors{0};
@@ -177,6 +197,15 @@ struct Device::Impl {
     std::uint32_t queueFamily = 0;
     VkDevice device = VK_NULL_HANDLE;
     VkQueue queue = VK_NULL_HANDLE;
+    /// A queue of a family that computes but does not draw, for passes that run beside the frame's drawing
+    /// (ADR-0095). Null when the device has none or DeviceConfig::asyncCompute is off.
+    std::uint32_t computeFamily = 0;
+    VkQueue computeQueue = VK_NULL_HANDLE;
+    std::array<std::uint32_t, 2> sharedFamilies{};
+    /// Orders the compute queue's part of a frame after the graphics commands before it, and the graphics
+    /// commands after it after it: each fork signals one value, each end of the compute part the next.
+    VkSemaphore asyncTimeline = VK_NULL_HANDLE;
+    std::uint64_t asyncValue = 0;
     VmaAllocator allocator = nullptr;
 
     // One semaphore orders everything: each submission signals the next value (ADR-0007).
@@ -192,6 +221,7 @@ struct Device::Impl {
     VkQueryPool timestamps = VK_NULL_HANDLE;
     double timestampPeriodMs = 0.0;
     std::vector<double> completedTimestamps;
+    std::vector<double> completedComputeTimestamps;
     /// Copies waiting for FlushUploads, recorded in a buffer of the immediate pool.
     detail::CommandRecording uploads;
 

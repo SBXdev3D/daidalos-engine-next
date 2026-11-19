@@ -87,6 +87,29 @@ StateAccess Describe(Access access, bool texture) {
     return result;
 }
 
+// What the compute queue's barriers keep (ADR-0095). A source in other stages ran on the graphics queue before
+// the compute queue started, which a semaphore orders: the barrier keeps only its layout change. A destination
+// in other stages, such as a ray query's fragment stage, is for the graphics queue's own uses.
+constexpr VkPipelineStageFlags2 kComputeStages =
+    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_COPY_BIT |
+    VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+
+constexpr VkAccessFlags2 kComputeAccesses =
+    VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT |
+    VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR |
+    VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR | VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+
+StateAccess OnComputeQueue(StateAccess access) {
+    if (access.stages == VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT) {
+        return access;
+    }
+    const VkPipelineStageFlags2 stages = access.stages & kComputeStages;
+    if (stages == VK_PIPELINE_STAGE_2_NONE) {
+        return {};
+    }
+    return {stages, access.access & kComputeAccesses};
+}
+
 VkImageAspectFlags AspectOf(Format format) {
     return (format == Format::D32Float) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
 }
@@ -146,6 +169,9 @@ AccessStep NextAccess(AccessState& state, Access next, bool texture, bool discar
 void CommandList::Use(std::span<const TextureUse> textures, std::span<const BufferUse> buffers,
                       std::span<const AccelerationStructureUse> structures) {
     Device::Impl& device = *m_recording->device;
+    const bool computeOnly = m_recording->computeOnly;
+    // On the compute queue, a barrier names only the stages that queue has, at both ends.
+    const auto onQueue = [computeOnly](StateAccess access) { return computeOnly ? OnComputeQueue(access) : access; };
     std::vector<VkImageMemoryBarrier2> imageBarriers;
     std::vector<VkBufferMemoryBarrier2> bufferBarriers;
     for (const TextureUse& use : textures) {
@@ -153,8 +179,8 @@ void CommandList::Use(std::span<const TextureUse> textures, std::span<const Buff
         const Access before = CurrentAccess(data.access);
         const AccessStep step = NextAccess(data.access, use.access, true, use.discard);
         if (step.barrier) {
-            const StateAccess source = Describe(step.source, true);
-            const StateAccess destination = Describe(use.access, true);
+            const StateAccess source = onQueue(Describe(step.source, true));
+            const StateAccess destination = onQueue(Describe(use.access, true));
             imageBarriers.push_back({
                 .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
                 .srcStageMask = source.stages,
@@ -176,8 +202,8 @@ void CommandList::Use(std::span<const TextureUse> textures, std::span<const Buff
         BufferData& data = device.buffers.Get(use.buffer);
         const AccessStep step = NextAccess(data.access, use.access, false);
         if (step.barrier) {
-            const StateAccess source = Describe(step.source, false);
-            const StateAccess destination = Describe(use.access, false);
+            const StateAccess source = onQueue(Describe(step.source, false));
+            const StateAccess destination = onQueue(Describe(use.access, false));
             bufferBarriers.push_back({
                 .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
                 .srcStageMask = source.stages,
@@ -197,8 +223,8 @@ void CommandList::Use(std::span<const TextureUse> textures, std::span<const Buff
         AccelerationStructureData& data = device.accelerationStructures.Get(use.structure);
         const AccessStep step = NextAccess(data.access, use.access, false);
         if (step.barrier) {
-            const StateAccess source = Describe(step.source, false);
-            const StateAccess destination = Describe(use.access, false);
+            const StateAccess source = onQueue(Describe(step.source, false));
+            const StateAccess destination = onQueue(Describe(use.access, false));
             memoryBarriers.push_back({.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
                                       .srcStageMask = source.stages,
                                       .srcAccessMask = source.access,

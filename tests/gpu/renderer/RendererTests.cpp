@@ -42,9 +42,9 @@ protected:
     }
 
     // Creates a renderer, or returns nothing and skips where the device is not suitable.
-    std::optional<renderer::Renderer> CreateRenderer() {
-        core::Result<renderer::Renderer> created =
-            renderer::Renderer::Create(*m_window, {.validation = true, .synchronizationValidation = true});
+    std::optional<renderer::Renderer> CreateRenderer(bool asyncCompute = false) {
+        core::Result<renderer::Renderer> created = renderer::Renderer::Create(
+            *m_window, {.validation = true, .synchronizationValidation = true, .asyncCompute = asyncCompute});
         if (!created) {
             EXPECT_EQ(created.error().code, core::ErrorCode::NotSupported) << core::Format(created.error());
             return std::nullopt;
@@ -245,6 +245,33 @@ TEST_F(RendererTest, ShowsEachDebugView) {
     target->SetIndirectLight(false);
     RenderFrames(*target, view, 2);
     target->SetIndirectLight(true);
+    RenderFrames(*target, view, 2);
+    EXPECT_EQ(target->Device().ValidationErrorCount(), 0U);
+}
+
+TEST_F(RendererTest, RunsTheCacheAndTheFogOnTheComputeQueue) {
+    // With async compute (ADR-0095), the radiance cache and the fog run on the compute queue beside the G-buffer:
+    // the frames stay free of validation errors, synchronization included, and the compute queue times them.
+    std::optional<renderer::Renderer> target = CreateRenderer(true);
+    if (!target.has_value()) {
+        GTEST_SKIP();
+    }
+    if (!target->Device().HasAsyncCompute()) {
+        GTEST_SKIP() << "The GPU has no queue that computes without drawing";
+    }
+    const core::Result<renderer::MeshHandle> mesh = target->CreateMesh(renderer::MakeCube(), "Cube");
+    ASSERT_TRUE(mesh.has_value());
+    renderer::SceneView view = TestView(*mesh);
+    view.lights.push_back({.position = {1.0f, 2.0f, 1.0f}, .range = 10.0f});
+    view.atmosphere.fog.density = 0.05f;
+    RenderFrames(*target, view, 8);
+    bool beside = false;
+    for (const renderer::PassTime& pass : target->GpuTimes()) {
+        beside = beside || (pass.beside && pass.name == "Radiance cache");
+    }
+    EXPECT_TRUE(beside);
+    // A cut starts the cache and the fog over, on the compute queue too.
+    view.cut = true;
     RenderFrames(*target, view, 2);
     EXPECT_EQ(target->Device().ValidationErrorCount(), 0U);
 }

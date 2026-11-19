@@ -32,6 +32,8 @@ struct GlobalIlluminationSettings {
 };
 
 /// What global illumination reads each frame.
+struct GiPushConstants;
+
 struct GlobalIlluminationInputs {
     /// The pixels the frame draws, in the top-left corner of the targets (ADR-0049); Resize's size when zero.
     rhi::Extent extent;
@@ -43,6 +45,8 @@ struct GlobalIlluminationInputs {
     rhi::AccelerationStructureHandle structure;
     /// The skinned vertices that rays read, or null.
     rhi::BufferHandle skinnedVertices;
+    /// Which decals and wet volumes touch each cell (ADR-0094), which ray hits read, or null.
+    rhi::BufferHandle materialGrid;
     /// The frame's emissive triangles, which light sampling reads (MeshPass::EmissiveTriangles).
     rhi::BufferHandle emissiveTriangles;
     /// The G-buffer's depth and normals.
@@ -90,6 +94,9 @@ public:
     /// pixels that traced none (GlobalIlluminationSettings::pixelsPerRay), as "Indirect light", and the reflections, as
     /// "Reflections". Valid after Resize; the frame's structure must be built before.
     void AddTo(RenderGraph& graph, const GlobalIlluminationInputs& inputs, Mode mode = Mode::Indirect);
+    /// Adds the cache's passes now, as async passes (ADR-0095), which the next AddTo then leaves out. The
+    /// cache reads no G-buffer: it can run on the compute queue beside it.
+    void AddCacheUpdate(RenderGraph& graph, const GlobalIlluminationInputs& inputs, Mode mode = Mode::Indirect);
 
     /// Output of the last frame added (kOutputFormat). Valid after Resize; its index does not change until
     /// the next Resize.
@@ -110,6 +117,8 @@ public:
 
 private:
     explicit GlobalIllumination(rhi::Device& device) : m_device(&device) {}
+    [[nodiscard]] GiPushConstants PushConstants(const GlobalIlluminationInputs& inputs, Mode mode) const;
+    void AddCache(RenderGraph& graph, const GlobalIlluminationInputs& inputs, Mode mode, bool async);
 
     rhi::Device* m_device;
     rhi::PipelineHandle m_update;
@@ -132,6 +141,8 @@ private:
     bool m_reset = true;
     /// The frame that last wrote the history: the next one may read it.
     std::optional<std::uint32_t> m_historyFrame;
+    /// AddCacheUpdate added the cache's passes of the frame being built.
+    bool m_cacheAdded = false;
 };
 
 } // namespace daidalos::renderer

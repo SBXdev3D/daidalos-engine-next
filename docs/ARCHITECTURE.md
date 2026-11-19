@@ -249,10 +249,12 @@ Each frame, the renderer and its passes add their passes to a `RenderGraph`, in 
 
 ```mermaid
 flowchart LR
-    SK["Skinning"] --> AS["Acceleration<br/>structures"] --> EL["Emissive<br/>lights"] --> SI["Simulation<br/>emit, simulate,<br/>finish, sort"] --> PP["G-buffer<br/>render resolution,<br/>mesh particles"] --> GI["Radiance cache<br/>update, resolve"] --> IL["Indirect light<br/>one ray per pixel"] --> ME["Direct lighting<br/>candidates, temporal,<br/>spatial, shading"] --> DN["Denoiser<br/>temporal, 5 spatial"] --> CO["Composite"] --> PA["Particles"] --> TR["Temporal resolve<br/>upscaled to the output<br/>(or FSR 3.1)"] --> EX["Exposure"] --> BL["Bloom<br/>6 down, 5 up"] --> UI["Interface"] --> OV["Overlay"] --> OU["Output"]
+    SK["Skinning"] --> AS["Acceleration<br/>structures"] --> EL["Emissive<br/>lights"] --> SI["Simulation<br/>emit, simulate,<br/>finish, sort"] --> MG["Material grid"] --> GI["Radiance cache<br/>update, resolve"] --> VF["Volumetric fog<br/>lighting, integration"] --> PP["G-buffer<br/>render resolution,<br/>mesh particles"] --> IL["Indirect light<br/>one ray per pixel"] --> ME["Direct lighting<br/>candidates, temporal,<br/>spatial, shading"] --> DN["Denoiser<br/>temporal, 5 spatial"] --> CO["Composite"] --> PA["Particles"] --> TR["Temporal resolve<br/>upscaled to the output<br/>(or FSR 3.1)"] --> EX["Exposure"] --> BL["Bloom<br/>6 down, 5 up"] --> UI["Interface"] --> OV["Overlay"] --> OU["Output"]
 ```
 
 Barriers come from the RHI: each texture and buffer remembers its last write and the reads since, and `CommandList::Use` decides from that whether the next use must wait (`rhi::NextAccess`). The GPU tests run with synchronization validation, which reports any use that no barrier orders.
+
+A pass marked `async` may run on a second queue, one that computes without drawing, beside the graphics passes after it (ADR-0095). The graph forks the frame at the first async pass and joins the queues before the first graphics pass that depends on one: the device splits the frame's commands in three parts, ordered by a second timeline semaphore, and resources are shared by both queues. The radiance cache and the fog are async passes, placed before the G-buffer, which reads neither. On an RTX 3090 the frame was slower with the second queue, so `renderer.async_compute` is off by default: then there is no second queue, and async passes run in order.
 
 ## Acceleration structures
 

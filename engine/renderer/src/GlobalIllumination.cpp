@@ -22,8 +22,6 @@
 
 namespace daidalos::renderer {
 
-namespace {
-
 // Matches GiPushConstants in shaders/GlobalIllumination.slangh.
 struct GiPushConstants {
     std::uint32_t frameBuffer;
@@ -52,6 +50,8 @@ struct GiPushConstants {
     std::uint32_t historyValid;
 };
 static_assert(sizeof(GiPushConstants) <= rhi::kMaxPushConstantSize);
+
+namespace {
 
 // The settings' counts, a byte each, as the shaders read them (GiPushConstants::counts).
 std::uint32_t Counts(const GlobalIlluminationSettings& settings) {
@@ -157,11 +157,9 @@ core::Result<void> GlobalIllumination::Resize(rhi::Extent extent) {
     return {};
 }
 
-void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInputs& inputs, Mode mode) {
+GiPushConstants GlobalIllumination::PushConstants(const GlobalIlluminationInputs& inputs, Mode mode) const {
     const rhi::Extent extent = inputs.extent.width > 0 ? inputs.extent : m_extent;
-    const std::uint32_t groupsX = (extent.width + kGroupSize - 1) / kGroupSize;
-    const std::uint32_t groupsY = (extent.height + kGroupSize - 1) / kGroupSize;
-    GiPushConstants push{inputs.frameBuffer,
+    return GiPushConstants{inputs.frameBuffer,
                          inputs.instanceBuffer,
                          inputs.materialBuffer,
                          m_device->StorageIndex(m_keys),
@@ -185,6 +183,15 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
                          0,
                          0,
                          0};
+}
+
+void GlobalIllumination::AddCacheUpdate(RenderGraph& graph, const GlobalIlluminationInputs& inputs, Mode mode) {
+    AddCache(graph, inputs, mode, true);
+}
+
+void GlobalIllumination::AddCache(RenderGraph& graph, const GlobalIlluminationInputs& inputs, Mode mode, bool async) {
+    const rhi::Extent extent = inputs.extent.width > 0 ? inputs.extent : m_extent;
+    const GiPushConstants push = PushConstants(inputs, mode);
     const std::vector<rhi::BufferUse> cache{{m_keys, rhi::Access::ComputeShaderWrite},
                                             {m_accumulation, rhi::Access::ComputeShaderWrite},
                                             {m_radiance, rhi::Access::ComputeShaderWrite},
@@ -194,7 +201,7 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
     if (m_reset) {
         GiPushConstants reset = push;
         reset.reset = 1;
-        graph.AddPass({.name = "Radiance cache reset", .group = "Radiance cache", .buffers = cache},
+        graph.AddPass({.name = "Radiance cache reset", .group = "Radiance cache", .buffers = cache, .async = async},
                       [this, reset, resolveGroups](rhi::CommandList& commands) {
                           commands.BindPipeline(m_resolve);
                           commands.Push(reset);
@@ -206,24 +213,48 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
     std::vector<rhi::BufferUse> traced = cache;
     traced.push_back({inputs.skinnedVertices, rhi::Access::ComputeShaderRead});
     traced.push_back({inputs.emissiveTriangles, rhi::Access::ComputeShaderRead});
+    traced.push_back({inputs.materialGrid, rhi::Access::ComputeShaderRead});
     const std::uint32_t tilesX = (extent.width + kPathSpacing - 1) / kPathSpacing;
     const std::uint32_t tilesY = (extent.height + kPathSpacing - 1) / kPathSpacing;
     graph.AddPass({.name = "Radiance cache update",
                    .group = "Radiance cache",
                    .buffers = traced,
-                   .structures = {{inputs.structure, rhi::Access::RayQueryRead}}},
+                   .structures = {{inputs.structure, rhi::Access::RayQueryRead}},
+                   .async = async},
                   [this, push, tilesX, tilesY](rhi::CommandList& commands) {
                       DAI_PROFILE_SCOPE("renderer::GlobalIllumination::Update");
                       commands.BindPipeline(m_update);
                       commands.Push(push);
                       commands.Dispatch((tilesX + kGroupSize - 1) / kGroupSize, (tilesY + kGroupSize - 1) / kGroupSize);
                   });
-    graph.AddPass({.name = "Radiance cache resolve", .group = "Radiance cache", .buffers = cache},
+    graph.AddPass({.name = "Radiance cache resolve", .group = "Radiance cache", .buffers = cache, .async = async},
                   [this, push, resolveGroups](rhi::CommandList& commands) {
                       commands.BindPipeline(m_resolve);
                       commands.Push(push);
                       commands.Dispatch(resolveGroups);
                   });
+    m_cacheAdded = true;
+}
+
+void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInputs& inputs, Mode mode) {
+    // The cache's passes, unless AddCacheUpdate added them earlier this frame.
+    if (!std::exchange(m_cacheAdded, false)) {
+        AddCache(graph, inputs, mode, false);
+        m_cacheAdded = false;
+    }
+    const rhi::Extent extent = inputs.extent.width > 0 ? inputs.extent : m_extent;
+    const std::uint32_t groupsX = (extent.width + kGroupSize - 1) / kGroupSize;
+    const std::uint32_t groupsY = (extent.height + kGroupSize - 1) / kGroupSize;
+    const GiPushConstants push = PushConstants(inputs, mode);
+    // What the rays read: the cache, and the frame's vertices, emissive triangles and material grid.
+    const std::vector<rhi::BufferUse> traced{{m_keys, rhi::Access::ComputeShaderWrite},
+                                             {m_accumulation, rhi::Access::ComputeShaderWrite},
+                                             {m_radiance, rhi::Access::ComputeShaderWrite},
+                                             {m_ages, rhi::Access::ComputeShaderWrite},
+                                             {m_anchors, rhi::Access::ComputeShaderWrite},
+                                             {inputs.skinnedVertices, rhi::Access::ComputeShaderRead},
+                                             {inputs.emissiveTriangles, rhi::Access::ComputeShaderRead},
+                                             {inputs.materialGrid, rhi::Access::ComputeShaderRead}};
     // Half the pixels trace, or a quarter, and the upsample fills the others (ADR-0093). The cache's debug view
     // shows every pixel's own cell.
     const std::uint32_t perRay = mode == Mode::Indirect ? inputs.settings.pixelsPerRay : 1;

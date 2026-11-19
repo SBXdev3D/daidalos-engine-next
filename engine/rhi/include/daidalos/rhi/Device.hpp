@@ -35,6 +35,9 @@ struct DeviceConfig {
     std::vector<std::string> instanceExtensions;
     /// Requires a device that can present to a Swapchain. Off for headless use.
     bool presentation = false;
+    /// Uses a queue that computes beside the graphics queue, when the device has one (ADR-0095); resources are
+    /// then shared by both. Off, there is no such queue and async passes run on the graphics queue, in order.
+    bool asyncCompute = false;
     /// Anisotropic filtering of the linear samplers, from 1 (off) to 16, clamped to what the device allows.
     float anisotropy = 16.0f;
     /// Where the pipeline cache is kept between runs (ADR-0052): read at creation, unless another GPU or
@@ -111,6 +114,11 @@ public:
     /// first one, in the order they were written. Empty without timestamp support. Frames finish
     /// kFramesInFlight frames after they were recorded.
     [[nodiscard]] std::span<const double> CompletedTimestamps() const;
+    /// The compute queue's timestamps of the same frame, in milliseconds after its first one: empty when the
+    /// frame had no compute part, or the compute queue cannot write timestamps.
+    [[nodiscard]] std::span<const double> CompletedComputeTimestamps() const;
+    /// Whether BeginAsyncCompute gives commands that run beside the graphics queue's (ADR-0095).
+    [[nodiscard]] bool HasAsyncCompute() const;
     /// Objects waiting for the GPU to finish with them.
     [[nodiscard]] std::size_t PendingDestructionCount() const;
     /// Device-local memory and live objects, now.
@@ -182,6 +190,13 @@ public:
     /// starts recording. Returns nothing when this frame cannot be drawn (zero-sized window, swapchain
     /// recreated): skip it and do not call EndFrame.
     [[nodiscard]] core::Result<std::optional<Frame>> BeginFrame(Swapchain* swapchain = nullptr);
+    /// Between BeginFrame and EndFrame, at most once a frame, on a device with async compute: what the frame
+    /// recorded so far runs first, then the returned list's commands run on the compute queue, beside the
+    /// graphics commands the frame records next (ADR-0095). Only compute work may be recorded in it.
+    [[nodiscard]] core::Result<CommandList> BeginAsyncCompute();
+    /// After BeginAsyncCompute: the graphics commands the frame records from now on wait for the compute
+    /// list's. EndFrame joins by itself when this is not called.
+    [[nodiscard]] core::Result<void> JoinAsyncCompute();
     /// Submits the frame and presents the swapchain image. Takes the swapchain given to BeginFrame.
     [[nodiscard]] core::Result<void> EndFrame(Swapchain* swapchain = nullptr);
 

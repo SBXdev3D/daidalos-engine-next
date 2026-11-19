@@ -153,6 +153,21 @@ std::optional<std::uint32_t> FindGraphicsQueue(VkPhysicalDevice device) {
     return std::nullopt;
 }
 
+/// A family that computes but does not draw: its queue runs beside the graphics queue (ADR-0095).
+std::optional<std::uint32_t> FindComputeQueue(VkPhysicalDevice device) {
+    std::uint32_t count = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &count, nullptr);
+    std::vector<VkQueueFamilyProperties> families(count);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &count, families.data());
+    for (std::uint32_t index = 0; index < count; ++index) {
+        if ((families[index].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0 &&
+            (families[index].queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0) {
+            return index;
+        }
+    }
+    return std::nullopt;
+}
+
 int Score(VkPhysicalDevice device) {
     VkPhysicalDeviceProperties properties{};
     vkGetPhysicalDeviceProperties(device, &properties);
@@ -209,10 +224,12 @@ Device::Impl::~Impl() {
         }
         for (FrameSlot& frame : frames) {
             vkDestroyCommandPool(device, frame.pool, nullptr);
+            vkDestroyCommandPool(device, frame.computePool, nullptr);
         }
         vkDestroyCommandPool(device, immediatePool, nullptr);
         vkDestroyQueryPool(device, timestamps, nullptr);
         vkDestroySemaphore(device, timeline, nullptr);
+        vkDestroySemaphore(device, asyncTimeline, nullptr);
         if (allocator != nullptr) {
             vmaDestroyAllocator(allocator);
         }
@@ -367,12 +384,24 @@ core::Result<void> Device::Impl::SelectPhysicalDevice(const DeviceConfig& config
 
 core::Result<void> Device::Impl::CreateLogicalDevice(const DeviceConfig& config) {
     const float priority = 1.0f;
-    const VkDeviceQueueCreateInfo queueInfo{
+    std::array<VkDeviceQueueCreateInfo, 2> queueInfos{};
+    queueInfos[0] = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .queueFamilyIndex = queueFamily,
         .queueCount = 1,
         .pQueuePriorities = &priority,
     };
+    const std::optional<std::uint32_t> compute =
+        config.asyncCompute ? FindComputeQueue(physicalDevice) : std::optional<std::uint32_t>{};
+    if (compute.has_value()) {
+        computeFamily = *compute;
+        queueInfos[1] = {
+            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            .queueFamilyIndex = computeFamily,
+            .queueCount = 1,
+            .pQueuePriorities = &priority,
+        };
+    }
 
     VkPhysicalDeviceRayQueryFeaturesKHR rayQuery{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR,
@@ -436,8 +465,8 @@ core::Result<void> Device::Impl::CreateLogicalDevice(const DeviceConfig& config)
     const VkDeviceCreateInfo createInfo{
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = &features,
-        .queueCreateInfoCount = 1,
-        .pQueueCreateInfos = &queueInfo,
+        .queueCreateInfoCount = compute.has_value() ? 2U : 1U,
+        .pQueueCreateInfos = queueInfos.data(),
         .enabledExtensionCount = static_cast<std::uint32_t>(extensions.size()),
         .ppEnabledExtensionNames = extensions.data(),
     };
@@ -452,6 +481,10 @@ core::Result<void> Device::Impl::CreateLogicalDevice(const DeviceConfig& config)
     vkGetPhysicalDeviceProperties2(physicalDevice, &properties2);
     scratchAlignment = std::max<VkDeviceSize>(structureProperties.minAccelerationStructureScratchOffsetAlignment, 1);
     vkGetDeviceQueue(device, queueFamily, 0, &queue);
+    if (compute.has_value()) {
+        vkGetDeviceQueue(device, computeFamily, 0, &computeQueue);
+        sharedFamilies = {queueFamily, computeFamily};
+    }
     return {};
 }
 
@@ -485,6 +518,12 @@ core::Result<void> Device::Impl::CreateFrameResources() {
     if (const VkResult result = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &timeline); result != VK_SUCCESS) {
         return tl::unexpected(VulkanError("vkCreateSemaphore", result));
     }
+    if (computeQueue != VK_NULL_HANDLE) {
+        if (const VkResult result = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &asyncTimeline);
+            result != VK_SUCCESS) {
+            return tl::unexpected(VulkanError("vkCreateSemaphore", result));
+        }
+    }
 
     const VkCommandPoolCreateInfo poolInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -502,13 +541,21 @@ core::Result<void> Device::Impl::CreateFrameResources() {
         const VkQueryPoolCreateInfo queryInfo{
             .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
             .queryType = VK_QUERY_TYPE_TIMESTAMP,
-            .queryCount = kMaxTimestamps * kFramesInFlight,
+            // Per frame slot, the graphics queue's queries, then the compute queue's.
+            .queryCount = kMaxTimestamps * 2 * kFramesInFlight,
         };
         if (const VkResult result = vkCreateQueryPool(device, &queryInfo, nullptr, &timestamps); result != VK_SUCCESS) {
             return tl::unexpected(VulkanError("vkCreateQueryPool", result));
         }
     }
 
+    const bool computeTimestamps = timestamps != VK_NULL_HANDLE && computeQueue != VK_NULL_HANDLE &&
+                                   families[computeFamily].timestampValidBits > 0;
+    const VkCommandPoolCreateInfo computePoolInfo{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+        .queueFamilyIndex = computeFamily,
+    };
     for (FrameSlot& frame : frames) {
         if (const VkResult result = vkCreateCommandPool(device, &poolInfo, nullptr, &frame.pool);
             result != VK_SUCCESS) {
@@ -518,13 +565,38 @@ core::Result<void> Device::Impl::CreateFrameResources() {
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
             .commandPool = frame.pool,
             .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-            .commandBufferCount = 1,
+            .commandBufferCount = static_cast<std::uint32_t>(frame.parts.size()),
         };
+        const std::uint32_t first = static_cast<std::uint32_t>(&frame - frames.data()) * kMaxTimestamps * 2;
         frame.recording.device = this;
         if (timestamps != VK_NULL_HANDLE) {
-            frame.recording.firstTimestamp = static_cast<std::uint32_t>(&frame - frames.data()) * kMaxTimestamps;
+            frame.recording.firstTimestamp = first;
         }
-        if (const VkResult result = vkAllocateCommandBuffers(device, &allocateInfo, &frame.recording.commands);
+        if (const VkResult result = vkAllocateCommandBuffers(device, &allocateInfo, frame.parts.data());
+            result != VK_SUCCESS) {
+            return tl::unexpected(VulkanError("vkAllocateCommandBuffers", result));
+        }
+        frame.recording.commands = frame.parts[0];
+        if (computeQueue == VK_NULL_HANDLE) {
+            continue;
+        }
+        if (const VkResult result = vkCreateCommandPool(device, &computePoolInfo, nullptr, &frame.computePool);
+            result != VK_SUCCESS) {
+            return tl::unexpected(VulkanError("vkCreateCommandPool", result));
+        }
+        const VkCommandBufferAllocateInfo computeAllocateInfo{
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool = frame.computePool,
+            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1,
+        };
+        frame.computeRecording.device = this;
+        frame.computeRecording.computeOnly = true;
+        if (computeTimestamps) {
+            frame.computeRecording.firstTimestamp = first + kMaxTimestamps;
+        }
+        if (const VkResult result =
+                vkAllocateCommandBuffers(device, &computeAllocateInfo, &frame.computeRecording.commands);
             result != VK_SUCCESS) {
             return tl::unexpected(VulkanError("vkAllocateCommandBuffers", result));
         }
@@ -847,9 +919,10 @@ void Device::Impl::CollectGarbage(std::uint64_t completed) {
     }
 }
 
-core::Result<void> Device::Impl::ReadTimestamps(detail::CommandRecording& recording) {
+core::Result<void> Device::Impl::ReadTimestamps(detail::CommandRecording& recording, std::vector<double>& into) {
     const std::uint32_t count = std::exchange(recording.timestampCount, 0U);
     if (!recording.firstTimestamp.has_value() || count == 0) {
+        into.clear();
         return {};
     }
     // The slot's last frame is finished, so the results are there without waiting.
@@ -860,9 +933,9 @@ core::Result<void> Device::Impl::ReadTimestamps(detail::CommandRecording& record
         result != VK_SUCCESS) {
         return tl::unexpected(VulkanError("vkGetQueryPoolResults", result));
     }
-    completedTimestamps.resize(count);
+    into.resize(count);
     for (std::uint32_t index = 0; index < count; ++index) {
-        completedTimestamps[index] = static_cast<double>(ticks[index] - ticks[0]) * timestampPeriodMs;
+        into[index] = static_cast<double>(ticks[index] - ticks[0]) * timestampPeriodMs;
     }
     return {};
 }
@@ -990,6 +1063,14 @@ std::span<const double> Device::CompletedTimestamps() const {
     return m_impl->completedTimestamps;
 }
 
+std::span<const double> Device::CompletedComputeTimestamps() const {
+    return m_impl->completedComputeTimestamps;
+}
+
+bool Device::HasAsyncCompute() const {
+    return m_impl->computeQueue != VK_NULL_HANDLE;
+}
+
 std::uint64_t Device::PresentedFrameCount() const {
     return m_impl->presentedFrames;
 }
@@ -1040,6 +1121,39 @@ MemoryStats Device::Memory() const {
     return stats;
 }
 
+namespace {
+
+core::Result<void> BeginCommands(VkCommandBuffer commands) {
+    const VkCommandBufferBeginInfo beginInfo{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+    };
+    if (const VkResult result = vkBeginCommandBuffer(commands, &beginInfo); result != VK_SUCCESS) {
+        return tl::unexpected(VulkanError("vkBeginCommandBuffer", result));
+    }
+    return {};
+}
+
+core::Result<void> EndCommands(VkCommandBuffer commands) {
+    if (const VkResult result = vkEndCommandBuffer(commands); result != VK_SUCCESS) {
+        return tl::unexpected(VulkanError("vkEndCommandBuffer", result));
+    }
+    return {};
+}
+
+core::Result<void> SubmitTo(VkQueue queue, const VkSubmitInfo2& info) {
+    if (const VkResult result = vkQueueSubmit2(queue, 1, &info, VK_NULL_HANDLE); result != VK_SUCCESS) {
+        return tl::unexpected(VulkanError("vkQueueSubmit2", result));
+    }
+    return {};
+}
+
+VkCommandBufferSubmitInfo CommandInfo(VkCommandBuffer commands) {
+    return {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, .commandBuffer = commands};
+}
+
+} // namespace
+
 core::Result<std::optional<Frame>> Device::BeginFrame(Swapchain* swapchain) {
     DAI_PROFILE_SCOPE("rhi::BeginFrame");
     DAI_ASSERT(!m_impl->frameOpen, "BeginFrame called twice without EndFrame");
@@ -1049,7 +1163,8 @@ core::Result<std::optional<Frame>> Device::BeginFrame(Swapchain* swapchain) {
     DAI_TRY(m_impl->WaitForValue(slot.submittedValue));
     DAI_TRY_ASSIGN(std::uint64_t completed, m_impl->CompletedValue());
     m_impl->CollectGarbage(completed);
-    DAI_TRY(m_impl->ReadTimestamps(slot.recording));
+    DAI_TRY(m_impl->ReadTimestamps(slot.recording, m_impl->completedTimestamps));
+    DAI_TRY(m_impl->ReadTimestamps(slot.computeRecording, m_impl->completedComputeTimestamps));
 
     Frame frame{CommandList(slot.recording), TextureHandle{}, Extent{}, m_impl->frameIndex};
     if (swapchain != nullptr) {
@@ -1064,19 +1179,48 @@ core::Result<std::optional<Frame>> Device::BeginFrame(Swapchain* swapchain) {
     if (const VkResult result = vkResetCommandPool(m_impl->device, slot.pool, 0); result != VK_SUCCESS) {
         return tl::unexpected(VulkanError("vkResetCommandPool", result));
     }
-    const VkCommandBufferBeginInfo beginInfo{
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-    };
-    if (const VkResult result = vkBeginCommandBuffer(slot.recording.commands, &beginInfo); result != VK_SUCCESS) {
-        return tl::unexpected(VulkanError("vkBeginCommandBuffer", result));
+    if (slot.computePool != VK_NULL_HANDLE) {
+        if (const VkResult result = vkResetCommandPool(m_impl->device, slot.computePool, 0); result != VK_SUCCESS) {
+            return tl::unexpected(VulkanError("vkResetCommandPool", result));
+        }
     }
+    slot.part = 0;
+    slot.forked = false;
+    slot.recording.commands = slot.parts[0];
+    DAI_TRY(BeginCommands(slot.recording.commands));
     if (slot.recording.firstTimestamp.has_value()) {
+        // The graphics queue's queries, and the compute queue's, which runs after this part.
         vkCmdResetQueryPool(slot.recording.commands, m_impl->timestamps, *slot.recording.firstTimestamp,
-                            kMaxTimestamps);
+                            kMaxTimestamps * 2);
     }
     m_impl->frameOpen = true;
     return std::optional<Frame>{frame};
+}
+
+core::Result<CommandList> Device::BeginAsyncCompute() {
+    DAI_ASSERT(m_impl->frameOpen, "BeginAsyncCompute is only allowed between BeginFrame and EndFrame");
+    DAI_ASSERT(m_impl->computeQueue != VK_NULL_HANDLE, "The device has no compute queue: see HasAsyncCompute");
+    Impl::FrameSlot& slot = m_impl->frames[m_impl->frameIndex];
+    DAI_ASSERT(!slot.forked, "BeginAsyncCompute called twice in a frame");
+    // The graphics commands so far become the first part; the next part runs beside the compute queue.
+    DAI_TRY(EndCommands(slot.recording.commands));
+    slot.part = 1;
+    slot.recording.commands = slot.parts[1];
+    DAI_TRY(BeginCommands(slot.recording.commands));
+    DAI_TRY(BeginCommands(slot.computeRecording.commands));
+    slot.forked = true;
+    return CommandList(slot.computeRecording);
+}
+
+core::Result<void> Device::JoinAsyncCompute() {
+    DAI_ASSERT(m_impl->frameOpen, "JoinAsyncCompute is only allowed between BeginFrame and EndFrame");
+    Impl::FrameSlot& slot = m_impl->frames[m_impl->frameIndex];
+    DAI_ASSERT(slot.forked && slot.part == 1, "JoinAsyncCompute needs one BeginAsyncCompute before it");
+    DAI_TRY(EndCommands(slot.recording.commands));
+    DAI_TRY(EndCommands(slot.computeRecording.commands));
+    slot.part = 2;
+    slot.recording.commands = slot.parts[2];
+    return BeginCommands(slot.recording.commands);
 }
 
 core::Result<void> Device::EndFrame(Swapchain* swapchain) {
@@ -1084,6 +1228,9 @@ core::Result<void> Device::EndFrame(Swapchain* swapchain) {
     DAI_ASSERT(m_impl->frameOpen, "EndFrame called without BeginFrame");
 
     Impl::FrameSlot& slot = m_impl->frames[m_impl->frameIndex];
+    if (slot.forked && slot.part == 1) {
+        DAI_TRY(JoinAsyncCompute());
+    }
     m_impl->frameOpen = false;
 
     VkSemaphoreSubmitInfo waitImage{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
@@ -1107,26 +1254,59 @@ core::Result<void> Device::EndFrame(Swapchain* swapchain) {
                       .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT};
         signalCount = 2;
     }
+    DAI_TRY(EndCommands(slot.recording.commands));
 
-    if (const VkResult result = vkEndCommandBuffer(slot.recording.commands); result != VK_SUCCESS) {
-        return tl::unexpected(VulkanError("vkEndCommandBuffer", result));
-    }
-
-    const VkCommandBufferSubmitInfo commandInfo{
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-        .commandBuffer = slot.recording.commands,
-    };
-    const VkSubmitInfo2 submitInfo{
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-        .waitSemaphoreInfoCount = (swapchain != nullptr) ? 1U : 0U,
-        .pWaitSemaphoreInfos = &waitImage,
-        .commandBufferInfoCount = 1,
-        .pCommandBufferInfos = &commandInfo,
-        .signalSemaphoreInfoCount = signalCount,
-        .pSignalSemaphoreInfos = signals.data(),
-    };
-    if (const VkResult result = vkQueueSubmit2(m_impl->queue, 1, &submitInfo, VK_NULL_HANDLE); result != VK_SUCCESS) {
-        return tl::unexpected(VulkanError("vkQueueSubmit2", result));
+    const std::uint32_t waitCount = (swapchain != nullptr) ? 1U : 0U;
+    if (!slot.forked) {
+        const VkCommandBufferSubmitInfo commands = CommandInfo(slot.parts[0]);
+        DAI_TRY(SubmitTo(m_impl->queue, {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+                                         .waitSemaphoreInfoCount = waitCount,
+                                         .pWaitSemaphoreInfos = &waitImage,
+                                         .commandBufferInfoCount = 1,
+                                         .pCommandBufferInfos = &commands,
+                                         .signalSemaphoreInfoCount = signalCount,
+                                         .pSignalSemaphoreInfos = signals.data()}));
+    } else {
+        // The first part, then the compute queue's after it; the second part beside it, the third after both
+        // (ADR-0095). The frame's value is signalled last, once both queues are done with the frame.
+        const std::uint64_t forkValue = ++m_impl->asyncValue;
+        const std::uint64_t joinValue = ++m_impl->asyncValue;
+        const VkSemaphoreSubmitInfo fork{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+                                         .semaphore = m_impl->asyncTimeline,
+                                         .value = forkValue,
+                                         .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT};
+        const VkSemaphoreSubmitInfo join{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+                                         .semaphore = m_impl->asyncTimeline,
+                                         .value = joinValue,
+                                         .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT};
+        const VkCommandBufferSubmitInfo first = CommandInfo(slot.parts[0]);
+        DAI_TRY(SubmitTo(m_impl->queue, {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+                                         .waitSemaphoreInfoCount = waitCount,
+                                         .pWaitSemaphoreInfos = &waitImage,
+                                         .commandBufferInfoCount = 1,
+                                         .pCommandBufferInfos = &first,
+                                         .signalSemaphoreInfoCount = 1,
+                                         .pSignalSemaphoreInfos = &fork}));
+        const VkCommandBufferSubmitInfo compute = CommandInfo(slot.computeRecording.commands);
+        DAI_TRY(SubmitTo(m_impl->computeQueue, {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+                                                .waitSemaphoreInfoCount = 1,
+                                                .pWaitSemaphoreInfos = &fork,
+                                                .commandBufferInfoCount = 1,
+                                                .pCommandBufferInfos = &compute,
+                                                .signalSemaphoreInfoCount = 1,
+                                                .pSignalSemaphoreInfos = &join}));
+        const VkCommandBufferSubmitInfo second = CommandInfo(slot.parts[1]);
+        DAI_TRY(SubmitTo(m_impl->queue, {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+                                         .commandBufferInfoCount = 1,
+                                         .pCommandBufferInfos = &second}));
+        const VkCommandBufferSubmitInfo third = CommandInfo(slot.parts[2]);
+        DAI_TRY(SubmitTo(m_impl->queue, {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+                                         .waitSemaphoreInfoCount = 1,
+                                         .pWaitSemaphoreInfos = &join,
+                                         .commandBufferInfoCount = 1,
+                                         .pCommandBufferInfos = &third,
+                                         .signalSemaphoreInfoCount = signalCount,
+                                         .pSignalSemaphoreInfos = signals.data()}));
     }
     m_impl->submittedValue = value;
     slot.submittedValue = value;

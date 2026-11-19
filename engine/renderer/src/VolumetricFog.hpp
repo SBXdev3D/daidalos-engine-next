@@ -33,6 +33,8 @@ struct VolumetricFogInputs {
     /// The particles that add to the fog, as the simulation listed them this frame (ADR-0062,
     /// ParticlePass::Traced::smoke), or null. The frame's FrameData says where the particles are.
     rhi::BufferHandle smoke;
+    /// The passes may run on the compute queue (ADR-0095): the fog reads no G-buffer.
+    bool async = false;
 };
 
 /// The size of the froxel grid.

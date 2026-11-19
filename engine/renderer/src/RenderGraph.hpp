@@ -5,6 +5,7 @@
 #pragma once
 
 #include <daidalos/rhi/CommandList.hpp>
+#include <daidalos/rhi/Device.hpp>
 
 #include <cstddef>
 #include <functional>
@@ -26,6 +27,9 @@ struct PassDesc {
     std::vector<rhi::TextureUse> textures;
     std::vector<rhi::BufferUse> buffers;
     std::vector<rhi::AccelerationStructureUse> structures;
+    /// May run on the compute queue, beside the graphics passes after it that use none of what it writes and
+    /// write none of what it reads (ADR-0095). Only compute work: no rendering.
+    bool async = false;
 };
 
 using PassRecorder = std::function<void(rhi::CommandList&)>;
@@ -38,6 +42,15 @@ struct PlannedPass {
     std::string_view group;
     /// Its group differs from the previous pass's: a timestamp and a label start here.
     bool startsGroup = false;
+};
+
+/// Which passes run on the compute queue (ADR-0095). The compute queue starts after the passes before fork,
+/// and the passes from join on wait for it; the graphics passes between them run beside it.
+struct AsyncPlan {
+    std::size_t fork = 0;
+    std::size_t join = 0;
+    /// Per pass: whether it runs on the compute queue. All false when nothing does.
+    std::vector<bool> onCompute;
 };
 
 /// The frame's passes, in the order they run (ADR-0032). Each declares what it reads and writes, and
@@ -55,6 +68,16 @@ public:
     /// Records every pass in order, each after its barriers, and empties the graph. Writes a timestamp
     /// before the first group and after each group. Returns the groups, in the order of their times.
     std::vector<std::string_view> Execute(rhi::CommandList& commands);
+    /// The same, with async passes on the device's compute queue when it has one (ADR-0095). computeGroups
+    /// receives the compute queue's groups, in the order of its timestamps: one before its first group and
+    /// one after each.
+    std::vector<std::string_view> Execute(rhi::CommandList& commands, rhi::Device& device,
+                                          std::vector<std::string_view>& computeGroups);
+
+    /// Fork at the first async pass. Join at the first graphics pass after it that writes what an async pass
+    /// uses, uses what one writes, or uses a texture one uses (its layout is shared). Async passes from the
+    /// join on run on the graphics queue, in order.
+    [[nodiscard]] static AsyncPlan PlanAsync(const std::vector<PlannedPass>& planned, const std::vector<bool>& async);
 
     [[nodiscard]] std::size_t PassCount() const noexcept { return m_passes.size(); }
 
@@ -63,6 +86,9 @@ private:
         PassDesc desc;
         PassRecorder record;
     };
+
+    void Record(rhi::CommandList& commands, std::size_t index, const PlannedPass& step,
+                std::vector<std::string_view>& groups, std::string_view& group);
 
     std::vector<Pass> m_passes;
 };

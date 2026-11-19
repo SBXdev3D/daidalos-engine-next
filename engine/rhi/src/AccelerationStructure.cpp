@@ -147,23 +147,25 @@ core::Result<AccelerationStructureHandle> Device::CreateAccelerationStructure(co
     data.desc = desc;
     data.size = sizes.accelerationStructureSize;
     const VmaAllocationCreateInfo allocation{.usage = VMA_MEMORY_USAGE_AUTO};
-    const VkBufferCreateInfo storageInfo{
+    VkBufferCreateInfo storageInfo{
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = sizes.accelerationStructureSize,
         .usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
+    impl.Share(storageInfo);
     if (const VkResult result =
             vmaCreateBuffer(impl.allocator, &storageInfo, &allocation, &data.storage, &data.storageAllocation, nullptr);
         result != VK_SUCCESS) {
         return tl::unexpected(VulkanError(std::format("Creating acceleration structure '{}'", desc.name), result));
     }
-    const VkBufferCreateInfo scratchInfo{
+    VkBufferCreateInfo scratchInfo{
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = std::max(sizes.buildScratchSize, sizes.updateScratchSize),
         .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
+    impl.Share(scratchInfo);
     if (const VkResult result =
             vmaCreateBufferWithAlignment(impl.allocator, &scratchInfo, &allocation, impl.scratchAlignment,
                                          &data.scratch, &data.scratchAllocation, nullptr);
