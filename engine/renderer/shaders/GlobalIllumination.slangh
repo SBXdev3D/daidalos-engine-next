@@ -247,14 +247,16 @@ struct BouncePoint {
     float3 faceNormal; // Towards where the ray came from.
     float3 normal;
     float3 diffuseColor;
+    float coneWidth; // The width of the cone of the ray that found it (ADR-0101).
 };
 
-BouncePoint BouncePointOf(Surface surface) {
+BouncePoint BouncePointOf(Surface surface, float coneWidth) {
     BouncePoint point;
     point.position = surface.position;
     point.faceNormal = surface.faceNormal;
     point.normal = surface.normal;
     point.diffuseColor = surface.diffuseColor;
+    point.coneWidth = coneWidth;
     return point;
 }
 
@@ -308,12 +310,14 @@ float3 BouncedLight(FrameData frame, BouncePoint first, inout uint random) {
             light += throughput * SkyRadiance(frame, ray.Direction);
             break;
         }
-        const Surface surface = ShadeHit(hit, ray.Direction, frame, g_gi.instanceBuffer, g_gi.materialBuffer);
+        const float coneWidth = point.coneWidth + PixelSpread(frame) * hit.distance;
+        const Surface surface =
+            ShadeHit(hit, ray.Direction, frame, g_gi.instanceBuffer, g_gi.materialBuffer, coneWidth);
         if (bounce + 1 == bounces) {
             light += throughput * CachedRadiance(frame, surface.position, surface.faceNormal);
             break;
         }
-        point = BouncePointOf(surface);
+        point = BouncePointOf(surface, coneWidth);
     }
     return ClampBounce(light);
 }
@@ -325,6 +329,9 @@ float3 TraceBounce(FrameData frame, RayDesc ray, inout uint random) {
         return ClampBounce(SkyRadiance(frame, ray.Direction));
     }
     BouncePoint point;
+    // A cone as wide as a pixel from the camera, to the pixel, then along the ray.
+    const float coneWidth = PixelSpread(frame) * (distance(ray.Origin, frame.cameraPosition) + hit.distance);
+    point.coneWidth = coneWidth;
     if (GiBounces() == 0) {
         // Only the cache is read: no need for the surface's material.
         const InstanceData instance = g_instances[g_gi.instanceBuffer][hit.instance];
@@ -337,7 +344,8 @@ float3 TraceBounce(FrameData frame, RayDesc ray, inout uint random) {
         point.normal = hitNormal;
         point.diffuseColor = float3(1.0, 1.0, 1.0);
     } else {
-        point = BouncePointOf(ShadeHit(hit, ray.Direction, frame, g_gi.instanceBuffer, g_gi.materialBuffer));
+        point = BouncePointOf(ShadeHit(hit, ray.Direction, frame, g_gi.instanceBuffer, g_gi.materialBuffer, coneWidth),
+                              coneWidth);
     }
     return BouncedLight(frame, point, random);
 }

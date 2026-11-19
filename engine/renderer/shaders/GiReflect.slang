@@ -118,6 +118,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     ray.TMax = 1e6;
 
     const bool sharp = roughness < kSharpRoughness;
+    // The ray's cone (ADR-0101): a pixel wide from the camera, growing along each bounce.
+    const float spread = PixelSpread(frame);
+    float travelled = distance(position, frame.cameraPosition);
     float3 light = float3(0.0, 0.0, 0.0);
     float3 throughput = float3(1.0, 1.0, 1.0);
     float hitDistance = kFarHit;
@@ -135,7 +138,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             light += throughput * hit.particleLight;
             break;
         }
-        const Surface surface = ShadeHit(hit, ray.Direction, frame, g_gi.instanceBuffer, g_gi.materialBuffer);
+        travelled += hit.distance;
+        const Surface surface =
+            ShadeHit(hit, ray.Direction, frame, g_gi.instanceBuffer, g_gi.materialBuffer, spread * travelled);
         if (!sharp) {
             const uint cell = FindCellOf(frame, surface.position, surface.faceNormal, true);
             const float4 cached = cell != kNoCell ? g_cacheRadiance[g_gi.radiance][cell] : float4(0.0, 0.0, 0.0, 0.0);

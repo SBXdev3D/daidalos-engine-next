@@ -41,13 +41,18 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     float3 albedos[kVertices];
     uint vertices = 0;
     float3 tail = float3(0.0, 0.0, 0.0); // The light that reaches the last surface along the path.
+    // The path's cone (ADR-0101): as wide as the pixels it stands for, growing with the distance travelled.
+    const float spread = PixelSpread(frame) * float(g_gi.spacing);
+    float travelled = 0.0;
     for (uint bounce = 0; bounce <= kVertices; ++bounce) {
         const Hit hit = TraceClosest(ray, frame, g_gi.instanceBuffer, g_gi.materialBuffer, kMaskIndirect);
         if (!hit.found) {
             tail = bounce == 0 ? float3(0.0, 0.0, 0.0) : SkyRadiance(frame, ray.Direction);
             break;
         }
-        const Surface surface = ShadeHit(hit, ray.Direction, frame, g_gi.instanceBuffer, g_gi.materialBuffer);
+        travelled += hit.distance;
+        const Surface surface =
+            ShadeHit(hit, ray.Direction, frame, g_gi.instanceBuffer, g_gi.materialBuffer, spread * travelled);
         if (bounce == kVertices) {
             tail = CachedRadiance(frame, surface.position, surface.faceNormal);
             break;
