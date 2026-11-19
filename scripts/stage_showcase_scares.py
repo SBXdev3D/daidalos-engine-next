@@ -56,10 +56,10 @@ def mix(at, lowpass, seconds):
 # Name: (comment, trigger center, trigger size, cues).
 SCARES = {
     "hall_blackout": (
-        "Into the loading floor: its power dies, something groans by the crane, and comes back stuttering.",
+        "Into the loading floor: its power dies, something groans in the middle of the floor, and comes back stuttering.",
         [0.5, 1.0, -21.5], [4, 3, 2], [
             event(0.0, "checkpoint"), power(0.0, "loading_floor", False),
-            sound(0.3, "zombie_groan2.wav", "Overhead crane", caption="caption.zombie_groan"),
+            sound(0.3, "zombie_groan2.wav", "Fog 83", caption="caption.zombie_groan"),
             shake(0.5, 0.3, 0.6), subtitle(1.0, "subtitle.hall.you"), event(1.2, "stinger"),
             power(7.5, "loading_floor", True)]),
     "workshop_wall": (
