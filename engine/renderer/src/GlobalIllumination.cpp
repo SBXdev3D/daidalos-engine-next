@@ -10,6 +10,7 @@
 #include <glm/vec4.hpp>
 #include <shaders/GiFill.cs.spv.h>
 #include <shaders/GiReflect.cs.spv.h>
+#include <shaders/GiReflectFill.cs.spv.h>
 #include <shaders/GiResolve.cs.spv.h>
 #include <shaders/GiTrace.cs.spv.h>
 #include <shaders/GiUpdate.cs.spv.h>
@@ -48,6 +49,7 @@ struct GiPushConstants {
     std::uint32_t history;
     std::uint32_t previousHistory;
     std::uint32_t historyValid;
+    std::uint32_t sharpOnly;
 };
 static_assert(sizeof(GiPushConstants) <= rhi::kMaxPushConstantSize);
 
@@ -70,12 +72,16 @@ GlobalIllumination::GlobalIllumination(GlobalIllumination&& other) noexcept
     : m_device(other.m_device), m_update(std::exchange(other.m_update, {})),
       m_resolve(std::exchange(other.m_resolve, {})), m_trace(std::exchange(other.m_trace, {})),
       m_fill(std::exchange(other.m_fill, {})), m_reflect(std::exchange(other.m_reflect, {})),
+      m_reflectFill(std::exchange(other.m_reflectFill, {})),
       m_keys(std::exchange(other.m_keys, {})), m_accumulation(std::exchange(other.m_accumulation, {})),
       m_radiance(std::exchange(other.m_radiance, {})), m_ages(std::exchange(other.m_ages, {})),
       m_anchors(std::exchange(other.m_anchors, {})), m_output(std::exchange(other.m_output, {})),
       m_reflections(std::exchange(other.m_reflections, {})),
       m_history{std::exchange(other.m_history[0], {}), std::exchange(other.m_history[1], {})}, m_extent(other.m_extent),
-      m_reset(other.m_reset), m_historyFrame(other.m_historyFrame) {}
+      m_reset(other.m_reset), m_historyFrame(other.m_historyFrame),
+      m_reflectionHistory{std::exchange(other.m_reflectionHistory[0], {}),
+                          std::exchange(other.m_reflectionHistory[1], {})},
+      m_reflectionHistoryFrame(other.m_reflectionHistoryFrame) {}
 
 GlobalIllumination::~GlobalIllumination() {
     m_device->DestroyPipeline(m_update);
@@ -83,6 +89,7 @@ GlobalIllumination::~GlobalIllumination() {
     m_device->DestroyPipeline(m_trace);
     m_device->DestroyPipeline(m_fill);
     m_device->DestroyPipeline(m_reflect);
+    m_device->DestroyPipeline(m_reflectFill);
     m_device->DestroyBuffer(m_keys);
     m_device->DestroyBuffer(m_accumulation);
     m_device->DestroyBuffer(m_radiance);
@@ -92,6 +99,8 @@ GlobalIllumination::~GlobalIllumination() {
     m_device->DestroyTexture(m_reflections);
     m_device->DestroyTexture(m_history[0]);
     m_device->DestroyTexture(m_history[1]);
+    m_device->DestroyTexture(m_reflectionHistory[0]);
+    m_device->DestroyTexture(m_reflectionHistory[1]);
 }
 
 core::Result<GlobalIllumination> GlobalIllumination::Create(rhi::Device& device) {
@@ -106,6 +115,8 @@ core::Result<GlobalIllumination> GlobalIllumination::Create(rhi::Device& device)
                                   {.shader = rhi::ToSpirv(kGiFillCsSpirv), .name = "Indirect light fill"}));
     DAI_TRY_ASSIGN(gi.m_reflect,
                    device.CreateComputePipeline({.shader = rhi::ToSpirv(kGiReflectCsSpirv), .name = "Reflections"}));
+    DAI_TRY_ASSIGN(gi.m_reflectFill, device.CreateComputePipeline(
+                                         {.shader = rhi::ToSpirv(kGiReflectFillCsSpirv), .name = "Reflections fill"}));
     const auto buffer = [&device](rhi::BufferHandle& handle, std::uint64_t elementSize,
                                   const char* name) -> core::Result<void> {
         DAI_TRY_ASSIGN(handle, device.CreateBuffer({.size = std::uint64_t{kCacheCapacity} * elementSize,
@@ -132,9 +143,9 @@ core::Result<void> GlobalIllumination::Resize(rhi::Extent extent) {
              .usage = rhi::TextureUsage::Storage | rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferSrc,
              .name = name});
     };
-    std::array<rhi::TextureHandle, 4> textures{};
-    const std::array<const char*, 4> names{"Indirect light", "Reflections", "Indirect light history",
-                                           "Indirect light history"};
+    std::array<rhi::TextureHandle, 6> textures{};
+    const std::array<const char*, 6> names{"Indirect light",         "Reflections",         "Indirect light history",
+                                           "Indirect light history", "Reflections history", "Reflections history"};
     for (std::size_t index = 0; index < textures.size(); ++index) {
         core::Result<rhi::TextureHandle> texture = create(names[index]);
         if (!texture) {
@@ -149,11 +160,15 @@ core::Result<void> GlobalIllumination::Resize(rhi::Extent extent) {
     m_device->DestroyTexture(m_reflections);
     m_device->DestroyTexture(m_history[0]);
     m_device->DestroyTexture(m_history[1]);
+    m_device->DestroyTexture(m_reflectionHistory[0]);
+    m_device->DestroyTexture(m_reflectionHistory[1]);
     m_output = textures[0];
     m_reflections = textures[1];
     m_history = {textures[2], textures[3]};
+    m_reflectionHistory = {textures[4], textures[5]};
     m_extent = extent;
     m_historyFrame.reset();
+    m_reflectionHistoryFrame.reset();
     return {};
 }
 
@@ -180,6 +195,7 @@ GiPushConstants GlobalIllumination::PushConstants(const GlobalIlluminationInputs
                          inputs.reflectionRoughness,
                          Counts(inputs.settings),
                          inputs.settings.clamp,
+                         0,
                          0,
                          0,
                          0};
@@ -301,8 +317,13 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
         m_historyFrame.reset();
     }
     if (!inputs.reflections || mode != Mode::Indirect) {
+        m_reflectionHistoryFrame.reset();
         return;
     }
+    // Half the rough pixels trace their reflection, in turns, and a fill gives the others theirs (ADR-0096).
+    const bool sparseReflections = inputs.settings.reflectionPixelsPerRay == 2;
+    GiPushConstants reflect = push;
+    reflect.spacing = sparseReflections ? 2 : 1;
     graph.AddPass({.name = "Reflections",
                    .group = "Reflections",
                    .textures = {{m_reflections, rhi::Access::ComputeShaderWrite, true},
@@ -311,10 +332,45 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
                                 {inputs.normals, rhi::Access::ComputeShaderRead}},
                    .buffers = traced,
                    .structures = {{inputs.structure, rhi::Access::RayQueryRead}}},
-                  [this, push, groupsX, groupsY](rhi::CommandList& commands) {
+                  [this, reflect, sparseReflections, groupsX, groupsY](rhi::CommandList& commands) {
                       DAI_PROFILE_SCOPE("renderer::GlobalIllumination::Reflect");
                       commands.BindPipeline(m_reflect);
-                      commands.Push(push);
+                      commands.Push(reflect);
+                      if (!sparseReflections) {
+                          commands.Dispatch(groupsX, groupsY);
+                          return;
+                      }
+                      // Each half of the checkerboard, a thread per pixel: the other half's sharp reflections.
+                      const std::uint32_t halfX = (groupsX + 1) / 2;
+                      commands.Dispatch(halfX, groupsY);
+                      GiPushConstants other = reflect;
+                      other.seed = reflect.seed + 1;
+                      other.sharpOnly = 1;
+                      commands.Push(other);
+                      commands.Dispatch(halfX, groupsY);
+                  });
+    if (!sparseReflections) {
+        m_reflectionHistoryFrame.reset();
+        return;
+    }
+    const std::size_t current = inputs.frameIndex % 2;
+    GiPushConstants fill = reflect;
+    fill.history = m_device->StorageImageIndex(m_reflectionHistory[current]);
+    fill.previousHistory = m_device->StorageImageIndex(m_reflectionHistory[1 - current]);
+    fill.historyValid =
+        m_reflectionHistoryFrame.has_value() && *m_reflectionHistoryFrame + 1 == inputs.frameIndex ? 1 : 0;
+    m_reflectionHistoryFrame = inputs.frameIndex;
+    graph.AddPass({.name = "Reflections fill",
+                   .group = "Reflections",
+                   .textures = {{m_reflections, rhi::Access::ComputeShaderWrite},
+                                {m_reflectionHistory[current], rhi::Access::ComputeShaderWrite, true},
+                                {m_reflectionHistory[1 - current], rhi::Access::ComputeShaderRead},
+                                {inputs.depth, rhi::Access::ComputeShaderRead},
+                                {inputs.normals, rhi::Access::ComputeShaderRead}}},
+                  [this, fill, groupsX, groupsY](rhi::CommandList& commands) {
+                      DAI_PROFILE_SCOPE("renderer::GlobalIllumination::ReflectFill");
+                      commands.BindPipeline(m_reflectFill);
+                      commands.Push(fill);
                       commands.Dispatch(groupsX, groupsY);
                   });
 }

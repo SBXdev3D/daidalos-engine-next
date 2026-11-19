@@ -99,3 +99,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0093](0093-indirect-light-at-fewer-pixels.md) | Indirect light traced at half or a quarter of the pixels, the others filled from their own history or their neighbours; Low and Medium trace half and draw four ReSTIR candidates | Accepted |
 | [0094](0094-material-grid.md) | A grid of the world around the camera, written on the GPU each frame, lists the decals and wet volumes touching each 2 m cell; pixels and ray hits test only those | Accepted |
 | [0095](0095-async-compute.md) | A compute queue beside the graphics queue, async passes in the render graph, the radiance cache and fog before the G-buffer; slower on an RTX 3090, so off by default | Accepted |
+| [0096](0096-half-the-rough-reflections.md) | Half the rough reflections traced each frame, in turns, the others brought forward or taken from neighbours; two launches so rough groups end early; on from Medium up | Accepted |

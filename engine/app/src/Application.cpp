@@ -37,10 +37,10 @@ constexpr std::uint32_t kMaxWorkerThreads = 4;
 constexpr std::uint32_t kProbeWarmupFrames = 90;
 constexpr std::uint32_t kProbeFrames = 120;
 // The settings the presets decide, which ChooseQuality puts back to the preset.
-constexpr std::array<std::string_view, 15> kPresetSettings{"renderer.render_scale",    "renderer.min_render_scale",
+constexpr std::array<std::string_view, 16> kPresetSettings{"renderer.render_scale",    "renderer.min_render_scale",
                                                            "renderer.indirect_light",  "renderer.gi_bounces",
                                                            "renderer.gi_rays",         "renderer.gi_pixels_per_ray",
-                                                           "renderer.reflections",     "renderer.reflection_roughness",
+                                                           "renderer.reflections",     "renderer.reflection_roughness", "renderer.reflection_pixels_per_ray",
                                                            "renderer.restir_spatial",  "renderer.restir_candidates",
                                                            "renderer.volumetric_fog",  "renderer.fog_slices",
                                                            "renderer.fog_tile",        "renderer.particle_density",
@@ -408,6 +408,9 @@ core::Result<void> Application::LoadConfiguration() {
         m_reflectionRoughness = m_cvars.Register<double>(
             "renderer.reflection_roughness", 0.6,
             "Surfaces rougher than this, from 0 to 1, trace no reflection: the indirect light stands in for it");
+        m_reflectionPixelsPerRay = m_cvars.Register<std::int64_t>(
+            "renderer.reflection_pixels_per_ray", 1,
+            "Pixels per reflection ray on rough surfaces: 1, or 2 in a checkerboard, the others from last frame");
         m_volumetricFog = m_cvars.Register<bool>("renderer.volumetric_fog", true,
                                                  "Fog lit by the lights, with light shafts; off, the air is clear");
         m_fogSlices = m_cvars.Register<std::int64_t>(
@@ -762,7 +765,9 @@ renderer::IndirectLightConfig Application::IndirectLight() const {
             .lightCandidates = count(*m_giLightCandidates, 1, 8),
             .clamp = static_cast<float>(std::max(m_giClamp->Get(), 0.0)),
             .rays = static_cast<std::uint32_t>(std::clamp<std::int64_t>(quality.giRays, 1, 16)),
-            .pixelsPerRay = static_cast<std::uint32_t>(std::clamp<std::int64_t>(quality.giPixelsPerRay, 1, 4))};
+            .pixelsPerRay = static_cast<std::uint32_t>(std::clamp<std::int64_t>(quality.giPixelsPerRay, 1, 4)),
+            .reflectionPixelsPerRay =
+                static_cast<std::uint32_t>(std::clamp<std::int64_t>(quality.reflectionPixelsPerRay, 1, 2))};
 }
 
 Quality Application::CurrentQuality() const {
@@ -805,6 +810,7 @@ QualitySettings Application::EffectiveQualitySettings() const {
             .giPixelsPerRay = Preset(*m_giPixelsPerRay, preset.giPixelsPerRay),
             .reflections = Preset(*m_reflections, preset.reflections),
             .reflectionRoughness = Preset(*m_reflectionRoughness, preset.reflectionRoughness),
+            .reflectionPixelsPerRay = Preset(*m_reflectionPixelsPerRay, preset.reflectionPixelsPerRay),
             .restirSpatial = Preset(*m_restirSpatial, preset.restirSpatial),
             .restirCandidates = Preset(*m_restirCandidates, preset.restirCandidates),
             .volumetricFog = Preset(*m_volumetricFog, preset.volumetricFog),

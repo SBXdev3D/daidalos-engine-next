@@ -28,9 +28,10 @@ struct QualitySettings {
     std::int64_t giBounces = 1;
     std::int64_t giRays = 1;
     std::int64_t giPixelsPerRay = 1;
-    /// renderer.reflections and renderer.reflection_roughness.
+    /// renderer.reflections, renderer.reflection_roughness and renderer.reflection_pixels_per_ray.
     bool reflections = true;
     double reflectionRoughness = 0.6;
+    std::int64_t reflectionPixelsPerRay = 2;
     /// renderer.restir_spatial and renderer.restir_candidates.
     bool restirSpatial = true;
     std::int64_t restirCandidates = 8;

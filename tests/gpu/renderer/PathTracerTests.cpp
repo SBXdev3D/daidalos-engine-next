@@ -2535,6 +2535,32 @@ TEST_F(PathTracerTest, DecalsShowInReflections) {
     Device().DestroyTexture(image);
 }
 
+TEST_F(PathTracerTest, HalfTheRoughReflectionsMatchThePathTracer) {
+    // A rough floor and a rough block, whose reflections read the radiance cache. Half the pixels trace them,
+    // in turns, and the others bring theirs forward or take their neighbours' (ADR-0096): averaged over
+    // frames, the image is as close to the path tracer's as when every pixel traces.
+    const auto material = [this](const MaterialDesc& desc) { return Material(desc); };
+    const SceneView view = BlockOnAFloor(m_cube, material, 0.45f);
+    constexpr rhi::Extent kExtent{96, 96};
+    const Image traced = Trace(view, kExtent, {.maxBounces = 3, .seed = 67, .jitter = false}, 256);
+    core::Result<renderer::GlobalIllumination> created = renderer::GlobalIllumination::Create(Device());
+    ASSERT_TRUE(created.has_value()) << core::Format(created.error());
+    const Image every =
+        Rasterize(view, kExtent, {.frames = 64, .indirect = &*created, .warmup = 32, .reflections = true});
+    const Image half = Rasterize(view, kExtent,
+                                 {.frames = 64,
+                                  .indirect = &*created,
+                                  .warmup = 32,
+                                  .reflections = true,
+                                  .gi = {.reflectionPixelsPerRay = 2}});
+    const float everyFlip = Flip(traced, every, kExtent);
+    const float halfFlip = Flip(traced, half, kExtent);
+    RecordProperty("flip", std::to_string(halfFlip));
+    RecordProperty("flipEveryPixel", std::to_string(everyFlip));
+    // Measured on an RTX 3090: 0.0176, and 0.0171 when every pixel traces.
+    EXPECT_LT(halfFlip, 1.1f * everyFlip + 0.01f);
+}
+
 TEST_F(PathTracerTest, AWetFloorMatchesThePathTracer) {
     // The grey floor in a box of wet air with puddles (ADR-0061): darker where the water soaks in, a film of
     // water over it, standing water in its low spots. The G-buffer and the path tracer's hits make it wet in the

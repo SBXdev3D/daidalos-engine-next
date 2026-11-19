@@ -181,7 +181,8 @@ struct Renderer::Impl {
                     .lightCandidates = std::clamp(config.lightCandidates, 1U, 8U),
                     .clamp = std::max(config.clamp, 0.0f),
                     .rays = std::clamp(config.rays, 1U, 16U),
-                    .pixelsPerRay = config.pixelsPerRay >= 4 ? 4U : (config.pixelsPerRay >= 2 ? 2U : 1U)};
+                    .pixelsPerRay = config.pixelsPerRay >= 4 ? 4U : (config.pixelsPerRay >= 2 ? 2U : 1U),
+                    .reflectionPixelsPerRay = config.reflectionPixelsPerRay >= 2 ? 2U : 1U};
     }
 
     platform::Window* window;
@@ -882,7 +883,8 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                      .lightCandidates = impl.indirect.lightCandidates,
                      .clamp = impl.indirect.clamp / displayScale,
                      .rays = impl.indirect.rays,
-                     .pixelsPerRay = impl.indirect.pixelsPerRay}};
+                     .pixelsPerRay = impl.indirect.pixelsPerRay,
+                     .reflectionPixelsPerRay = impl.indirect.reflectionPixelsPerRay}};
     }
     const GlobalIllumination::Mode giMode =
         cacheView ? GlobalIllumination::Mode::Cache : GlobalIllumination::Mode::Indirect;

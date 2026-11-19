@@ -16,12 +16,14 @@ namespace {
 // (+2.3 ms), reflections on rough surfaces (+1.1 ms up to roughness 0.9), ReSTIR's spatial reuse (1.0 ms)
 // and the surface lit before the radiance cache is read (0.7 ms). The fog costs 0.4 ms in all.
 constexpr std::array<QualitySettings, 4> kPresets{{
-    // Low: 58% of the resolution at most, light from the cache alone, sharp reflections only.
+    // Low: 58% of the resolution at most, light from the cache alone, sharp reflections only, so every pixel
+    // traces its own: no rough ones to halve.
     {.renderScale = 0.58,
      .minRenderScale = 0.5,
      .giBounces = 0,
      .giPixelsPerRay = 2,
      .reflectionRoughness = 0.3,
+     .reflectionPixelsPerRay = 1,
      .restirSpatial = false,
      .restirCandidates = 4,
      .fogSlices = 32,
@@ -36,7 +38,8 @@ constexpr std::array<QualitySettings, 4> kPresets{{
      .reflectionRoughness = 0.45,
      .restirCandidates = 4,
      .fogSlices = 48},
-    // High: what the engine is tuned for.
+    // High: what the engine is tuned for. Medium, High and Ultra trace half the rough reflections, in turns
+    // (ADR-0096): 0.1 to 0.35 ms less on the loading floor, the same image.
     {},
     // Ultra: two surfaces lit before the cache, reflections on rough surfaces, finer fog, never below two
     // thirds of the resolution. A second ray of indirect light doubled its cost (+4.2 to 5.2 ms) for noise the

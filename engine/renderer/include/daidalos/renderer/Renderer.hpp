@@ -78,6 +78,9 @@ struct IndirectLightConfig {
     /// Pixels per ray (ADR-0093): 1 traces every pixel, 2 half of them in a checkerboard, 4 one of each two by
     /// two. They take turns, and the others take their neighbours' light: fewer rays, for more noise.
     std::uint32_t pixelsPerRay = 1;
+    /// Pixels per reflection ray on rough surfaces (ADR-0096): 1 or 2, in a checkerboard that takes turns, the
+    /// others brought forward from last frame. Sharp reflections trace every pixel.
+    std::uint32_t reflectionPixelsPerRay = 1;
 };
 
 /// How the frame's light becomes the image a display shows (ADR-0048).
