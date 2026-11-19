@@ -399,6 +399,9 @@ core::Result<void> Application::LoadConfiguration() {
         m_asyncCompute = m_cvars.Register<bool>(
             "renderer.async_compute", false,
             "Run the radiance cache and the fog on a compute queue beside the G-buffer, read at startup");
+        m_pipelineStatistics = m_cvars.Register<bool>(
+            "renderer.log_pipeline_statistics", false,
+            "Log the driver's registers and instructions of each compute shader, read at startup");
         m_indirectLight = m_cvars.Register<bool>("renderer.indirect_light", true,
                                                  "Light that bounces off surfaces; off leaves direct light only");
         m_denoiser = m_cvars.Register<bool>(
@@ -704,6 +707,7 @@ core::Result<void> Application::CreateRenderer() {
              .resolution = Resolution(),
              .anisotropy = static_cast<float>(std::clamp<std::int64_t>(m_anisotropy->Get(), 1, 16)),
              .asyncCompute = m_asyncCompute->Get(),
+             .pipelineStatistics = m_pipelineStatistics->Get(),
              .pipelineCacheFile = PipelineCachePath(),
              .normalStrength = static_cast<float>(m_normalStrength->Get()),
              .indirectLight = quality.indirectLight,

@@ -237,6 +237,10 @@ struct Device::Impl {
     VkPipelineCache pipelineCache = VK_NULL_HANDLE;
     std::filesystem::path pipelineCacheFile;
     bool pipelinesLocked = false;
+    /// DeviceConfig::pipelineStatistics, on a device that has the extension.
+    bool pipelineStatistics = false;
+    /// Logs the driver's statistics of a pipeline created with VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR.
+    void LogPipelineStatistics(VkPipeline pipeline, const std::string& name) const;
     std::uint64_t latePipelines = 0;
     double pipelineSeconds = 0.0;
     std::array<VkSampler, kSamplerCount> samplers{};

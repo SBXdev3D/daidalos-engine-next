@@ -159,6 +159,8 @@ struct RendererConfig {
     /// The radiance cache and the fog run on a compute queue beside the G-buffer, when the GPU has one
     /// (ADR-0095). Off by default: on an RTX 3090 in the factory, the frame was slower.
     bool asyncCompute = false;
+    /// Logs the driver's statistics of each compute pipeline (rhi::DeviceConfig::pipelineStatistics).
+    bool pipelineStatistics = false;
     /// Where the pipeline cache is kept between runs (rhi::DeviceConfig::pipelineCacheFile); empty for none.
     std::filesystem::path pipelineCacheFile;
     /// Multiplies the tilt of every normal map: 0 flattens them, 1 keeps them as authored.
