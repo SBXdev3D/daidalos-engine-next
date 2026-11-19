@@ -77,9 +77,66 @@ float3 FaceNormal(InstanceData instance, uint primitive) {
     return TransformNormal(instance.world, cross(b - a, c - a));
 }
 
-// Rays have no screen derivatives: textures are read at their full detail.
+// Rays have no screen derivatives: textures are read at their full detail, unless a ray cone says otherwise.
 float4 SampleLevelZero(uint texture, float2 uv, float4 fallback) {
     return texture != kNoTexture ? g_textures[texture].SampleLevel(g_samplers[kSamplerLinearRepeat], uv, 0.0) : fallback;
+}
+
+// Texture detail by ray cone (ADR-0101; Akenine-Moller et al., "Texture Level of Detail Strategies for
+// Real-Time Ray Tracing", 2019). A ray stands for a cone as wide as a pixel where it left the camera; where it
+// hits, the cone's footprint covers so many texels, and the mip that averages them is read. The width grows
+// with the distance travelled from the camera and with how slanted the surface is. Bounces do not widen it by
+// their lobe: a mirror's reflection keeps the detail the screen would show, and rougher rays are sharper than
+// they need, never blurrier.
+
+// The angle one pixel of the frame spans, from the camera: twice the tangent of half the field of view over
+// the render height.
+float PixelSpread(FrameData frame) {
+    const float4 center = mul(frame.inverseViewProjection, float4(0.0, 0.0, 1.0, 1.0));
+    const float4 below = mul(frame.inverseViewProjection, float4(0.0, -2.0 / float(frame.renderSize.y), 1.0, 1.0));
+    return length(normalize(below.xyz / below.w - frame.cameraPosition) -
+                  normalize(center.xyz / center.w - frame.cameraPosition));
+}
+
+// What the mip of a texture of one texel per unit of texture coordinates would be at a hit: the triangle's
+// texture area over its world area, and the cone's width over how squarely it meets the surface. A texture of
+// w by h texels adds half of log2(w h). Returns kFullDetail without a cone.
+static const float kFullDetail = -1e6;
+
+float ConeLevel(InstanceData instance, uint primitive, float3 rayDirection, float coneWidth) {
+    if (coneWidth <= 0.0) {
+        return kFullDetail;
+    }
+    const uint first = primitive * 3;
+    const Vertex a = LoadVertex(instance, g_indices[instance.indexBuffer][first]);
+    const Vertex b = LoadVertex(instance, g_indices[instance.indexBuffer][first + 1]);
+    const Vertex c = LoadVertex(instance, g_indices[instance.indexBuffer][first + 2]);
+    const float3 worldCross = cross(mul((float3x3)instance.world, b.position - a.position),
+                                    mul((float3x3)instance.world, c.position - a.position));
+    const float2 du = b.uv - a.uv;
+    const float2 dv = c.uv - a.uv;
+    const float textureArea = abs(du.x * dv.y - du.y * dv.x);
+    const float worldArea = length(worldCross);
+    if (textureArea <= 0.0 || worldArea <= 0.0) {
+        return kFullDetail;
+    }
+    const float slant = max(abs(dot(worldCross / worldArea, rayDirection)), 0.05);
+    return 0.5 * log2(textureArea / worldArea) + log2(coneWidth / slant);
+}
+
+float4 SampleCone(uint texture, float2 uv, float level, float4 fallback) {
+    if (texture == kNoTexture) {
+        return fallback;
+    }
+    if (level <= kFullDetail) {
+        return g_textures[texture].SampleLevel(g_samplers[kSamplerLinearRepeat], uv, 0.0);
+    }
+    uint width;
+    uint height;
+    uint levels;
+    g_textures[texture].GetDimensions(0, width, height, levels);
+    const float mip = clamp(level + 0.5 * log2(float(width) * float(height)), 0.0, float(levels - 1));
+    return g_textures[texture].SampleLevel(g_samplers[kSamplerLinearRepeat], uv, mip);
 }
 
 // The alpha test of the G-buffer, for a candidate hit on a surface that is not opaque. The buffers are
@@ -299,13 +356,16 @@ Surface ParticleSurface(Hit hit, float3 rayDirection, FrameData frame) {
     return surface;
 }
 
-Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame, uint instanceBuffer, uint materialBuffer) {
+// coneWidth: the width of the ray's cone where it hits, in meters (ADR-0101), or 0 for full detail.
+Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame, uint instanceBuffer, uint materialBuffer,
+                 float coneWidth = 0.0) {
     if (hit.particle) {
         return ParticleSurface(hit, rayDirection, frame);
     }
     const InstanceData instance = g_instances[instanceBuffer][hit.instance];
     const MaterialData material = g_materials[materialBuffer][instance.material];
     const Vertex vertex = Interpolate(instance, hit.primitive, hit.barycentrics);
+    const float level = ConeLevel(instance, hit.primitive, rayDirection, coneWidth);
 
     Surface surface;
     surface.position = mul(instance.world, float4(vertex.position, 1.0)).xyz;
@@ -321,16 +381,16 @@ Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame, uint instanceBuf
     if (material.normalTexture != kNoTexture && dot(tangent.xyz, tangent.xyz) > 0.0) {
         const float3 t = normalize(tangent.xyz - normal * dot(normal, tangent.xyz));
         const float3 b = cross(normal, t) * (tangent.w < 0.0 ? -1.0 : 1.0);
-        float2 xy = SampleLevelZero(material.normalTexture, vertex.uv, float4(0.5, 0.5, 1.0, 1.0)).rg * 2.0 - 1.0;
+        float2 xy = SampleCone(material.normalTexture, vertex.uv, level, float4(0.5, 0.5, 1.0, 1.0)).rg * 2.0 - 1.0;
         xy *= material.normalScale * frame.normalStrength;
         const float z = sqrt(saturate(1.0 - dot(xy, xy)));
         normal = normalize(t * xy.x + b * xy.y + normal * z);
     }
     surface.normal = normal;
 
-    float4 baseColor = material.baseColorFactor * SampleLevelZero(material.baseColorTexture, vertex.uv, float4(1.0, 1.0, 1.0, 1.0));
+    float4 baseColor = material.baseColorFactor * SampleCone(material.baseColorTexture, vertex.uv, level, float4(1.0, 1.0, 1.0, 1.0));
     // glTF: roughness in green, metalness in blue.
-    const float4 metallicRoughness = SampleLevelZero(material.metallicRoughnessTexture, vertex.uv, float4(1.0, 1.0, 1.0, 1.0));
+    const float4 metallicRoughness = SampleCone(material.metallicRoughnessTexture, vertex.uv, level, float4(1.0, 1.0, 1.0, 1.0));
     float metallic = saturate(material.metallicFactor * metallicRoughness.b);
     surface.roughness = clamp(material.roughnessFactor * metallicRoughness.g, 0.045, 1.0);
     // Decals show in reflections and bounced light as on screen (ADR-0060), at a detail the hit's distance allows.
@@ -346,7 +406,7 @@ Surface ShadeHit(Hit hit, float3 rayDirection, FrameData frame, uint instanceBuf
     surface.f0 = lerp(float3(0.04, 0.04, 0.04), baseColor.rgb, metallic);
     // Nits, times the frame's exposure (ADR-0043).
     surface.emission = material.emissiveFactor *
-                       SampleLevelZero(material.emissiveTexture, vertex.uv, float4(1.0, 1.0, 1.0, 1.0)).rgb * frame.exposure *
+                       SampleCone(material.emissiveTexture, vertex.uv, level, float4(1.0, 1.0, 1.0, 1.0)).rgb * frame.exposure *
                        instance.emissiveScale;
     surface.emissiveLight = material.emissiveLight != 0;
 
