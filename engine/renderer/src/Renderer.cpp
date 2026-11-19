@@ -990,7 +990,9 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                      .depth = impl.depth,
                                      .normals = impl.normals,
                                      .motion = impl.motion,
-                                     .reflections = illuminate ? reflections : rhi::TextureHandle{}});
+                                     .reflections = illuminate ? reflections : rhi::TextureHandle{},
+                                     .diffuseRepeats = illuminate ? impl.indirect.pixelsPerRay : 1U,
+                                     .specularRepeats = illuminate ? impl.indirect.reflectionPixelsPerRay : 1U});
     }
     impl.denoised = denoise;
     if (status && hasFrame) {

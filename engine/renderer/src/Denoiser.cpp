@@ -10,6 +10,7 @@
 #include <shaders/DenoiseSpatial.cs.spv.h>
 #include <shaders/DenoiseTemporal.cs.spv.h>
 
+#include <algorithm>
 #include <utility>
 #include <vector>
 
@@ -39,6 +40,8 @@ struct TemporalPushConstants {
     std::uint32_t reflections;
     std::uint32_t width;
     std::uint32_t height;
+    std::uint32_t diffuseRepeats;
+    std::uint32_t specularRepeats;
 };
 
 // Matches SpatialPushConstants in shaders/DenoiseSpatial.slang.
@@ -54,6 +57,8 @@ struct SpatialPushConstants {
     std::uint32_t step;
     std::uint32_t width;
     std::uint32_t height;
+    std::uint32_t diffuseRepeats;
+    std::uint32_t specularRepeats;
 };
 
 constexpr std::uint32_t kGroupSize = 8;
@@ -163,7 +168,9 @@ void Denoiser::AddTo(RenderGraph& graph, const DenoiserInputs& inputs) {
                                          m_hasHistory ? 0U : 1U,
                                          inputs.reflections ? sampled(inputs.reflections) : kNoTexture,
                                          extent.width,
-                                         extent.height};
+                                         extent.height,
+                                         std::max(inputs.diffuseRepeats, 1U),
+                                         std::max(inputs.specularRepeats, 1U)};
     PassDesc accumulation{.name = "Denoiser temporal accumulation",
                           .group = "Denoiser",
                           .textures = {{m_guides[m_current], rhi::Access::ComputeShaderWrite, true},
@@ -191,7 +198,7 @@ void Denoiser::AddTo(RenderGraph& graph, const DenoiserInputs& inputs) {
     });
 
     // The spatial filter reads the history and goes back and forth between the work textures: history ->
-    // work[0] -> work[1] -> work[0] -> work[1] -> work[0], the output.
+    // work[0] -> work[1] -> work[0], the output.
     static_assert(kIterations % 2 == 1, "The last iteration writes work[0]");
     for (std::uint32_t iteration = 0; iteration < kIterations; ++iteration) {
         const auto source = [&](const Signal& signal) {
@@ -208,7 +215,9 @@ void Denoiser::AddTo(RenderGraph& graph, const DenoiserInputs& inputs) {
                                            storage(target(m_specular)),
                                            1U << iteration,
                                            extent.width,
-                                           extent.height};
+                                           extent.height,
+                                           std::max(inputs.diffuseRepeats, 1U),
+                                           std::max(inputs.specularRepeats, 1U)};
         graph.AddPass({.name = "Denoiser spatial filter",
                        .group = "Denoiser",
                        .textures = {{target(m_diffuse), rhi::Access::ComputeShaderWrite, true},

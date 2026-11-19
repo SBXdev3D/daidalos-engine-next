@@ -26,6 +26,9 @@ struct SpatialPushConstants {
     uint step;
     uint width;
     uint height;
+    // For how many frames each sample of the diffuse and of the specular light is reused (ADR-0097).
+    uint diffuseRepeats;
+    uint specularRepeats;
 };
 
 [[vk::push_constant]] SpatialPushConstants g_spatial;
@@ -40,6 +43,9 @@ static const float kLuminanceSigma = 4.0;
 static const float kSmoothRoughness = 0.1;
 // From this roughness, specular light is blurred as much as diffuse light.
 static const float kRoughRoughness = 0.4;
+// Noise below this share of the light's luminance, one standard deviation, is not filtered: it cannot be
+// seen, and most pixels with a long history are below it.
+static const float kQuietNoise = 0.005;
 
 float4 Load(uint texture, int2 pixel) {
     return g_textures[texture].Load(int3(pixel, 0));
@@ -71,10 +77,27 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     const float depth = Load(g_spatial.depth, pixel).r;
     const float4 diffuse = Load(g_spatial.inputDiffuse, pixel);
     const float4 specular = Load(g_spatial.inputSpecular, pixel);
-    // The average of n frames is as noisy as one frame blurred over n pixels: a pixel takes part in an
-    // iteration while its kernel, step pixels apart, does not reach beyond what its history lacks.
-    const float frames = max(Load(g_spatial.guides, pixel).w, 1.0);
-    if (depth <= 0.0 || float(g_spatial.step * g_spatial.step) * frames > kMaxFrames) {
+    // The average of n samples is as noisy as one sample blurred over n pixels: a pixel's light takes part
+    // in an iteration while its kernel, step pixels apart, does not reach beyond what its history lacks. A
+    // sample reused for several frames counts once.
+    const float frames = Load(g_spatial.guides, pixel).w;
+    const float2 samples = max(frames / float2(g_spatial.diffuseRepeats, g_spatial.specularRepeats), 1.0);
+    bool2 filter = float(g_spatial.step * g_spatial.step) * samples <= kMaxFrames;
+    if (depth <= 0.0 || !any(filter)) {
+        g_halfStorageImages[g_spatial.outputDiffuse][pixel] = diffuse;
+        g_halfStorageImages[g_spatial.outputSpecular][pixel] = specular;
+        return;
+    }
+    const float4 normalRoughness = LoadNormalRoughness(g_spatial.normals, pixel);
+    const float specularSpread = saturate((normalRoughness.w - kSmoothRoughness) / (kRoughRoughness - kSmoothRoughness));
+    const float2 deviation = sqrt(BlurredVariance(pixel, size));
+    const float diffuseLuminance = Luminance(diffuse.rgb);
+    const float specularLuminance = Luminance(specular.rgb);
+    // Light whose noise is too faint to see is left as it is, and so is a mirror's reflection, which takes
+    // no neighbours: the filter would give back the same light (ADR-0097).
+    filter = filter && deviation > kQuietNoise * float2(diffuseLuminance, specularLuminance);
+    filter.y = filter.y && specularSpread > 0.0;
+    if (!any(filter)) {
         g_halfStorageImages[g_spatial.outputDiffuse][pixel] = diffuse;
         g_halfStorageImages[g_spatial.outputSpecular][pixel] = specular;
         return;
@@ -83,12 +106,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     const float2 extent = float2(size);
     const float3 position = WorldPosition(frame, (float2(pixel) + 0.5) / extent, depth);
     const float planeTolerance = kPlaneTolerance * LinearDepth(frame, depth) * float(g_spatial.step);
-    const float4 normalRoughness = LoadNormalRoughness(g_spatial.normals, pixel);
     const float3 normal = normalRoughness.xyz;
-    const float specularSpread = saturate((normalRoughness.w - kSmoothRoughness) / (kRoughRoughness - kSmoothRoughness));
-    const float2 deviation = sqrt(BlurredVariance(pixel, size));
-    const float diffuseLuminance = Luminance(diffuse.rgb);
-    const float specularLuminance = Luminance(specular.rgb);
 
     // The B3 spline: 1/16, 1/4, 3/8, 1/4, 1/16.
     const float kernel[3] = { 3.0 / 8.0, 1.0 / 4.0, 1.0 / 16.0 };
@@ -106,8 +124,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             if (neighbourDepth <= 0.0) {
                 continue;
             }
-            const float4 neighbourDiffuse = Load(g_spatial.inputDiffuse, neighbour);
-            const float4 neighbourSpecular = Load(g_spatial.inputSpecular, neighbour);
+            // Only the light being filtered is read.
+            const float4 neighbourDiffuse = filter.x ? Load(g_spatial.inputDiffuse, neighbour) : 0.0;
+            const float4 neighbourSpecular = filter.y ? Load(g_spatial.inputSpecular, neighbour) : 0.0;
             const float4 neighbourNormal = LoadNormalRoughness(g_spatial.normals, neighbour);
             const float3 neighbourPosition =
                 WorldPosition(frame, (float2(neighbour) + 0.5) / extent, neighbourDepth);
@@ -133,7 +152,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     }
     // The pixel itself always counts: the sums are never empty.
     g_halfStorageImages[g_spatial.outputDiffuse][pixel] =
-        float4(diffuseSum / weightSum.x, varianceSum.x / (weightSum.x * weightSum.x));
+        filter.x ? float4(diffuseSum / weightSum.x, varianceSum.x / (weightSum.x * weightSum.x)) : diffuse;
     g_halfStorageImages[g_spatial.outputSpecular][pixel] =
-        float4(specularSum / weightSum.y, varianceSum.y / (weightSum.y * weightSum.y));
+        filter.y ? float4(specularSum / weightSum.y, varianceSum.y / (weightSum.y * weightSum.y)) : specular;
 }
