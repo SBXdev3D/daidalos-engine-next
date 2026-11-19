@@ -36,7 +36,7 @@ enum Action : daidalos::input::Action {
     Reload,
     NextWeapon,
     SelectHandgun,
-    SelectShotgun,
+    SelectRifle,
     /// Saves the game, and loads the last save (ADR-0072).
     QuickSave,
     QuickLoad,

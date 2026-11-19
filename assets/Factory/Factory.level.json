@@ -104,68 +104,80 @@
     },
     {
       "game": {
+        "glint": "0.101",
         "kind": "flashlight"
       },
       "id": 14,
-      "model": "Props/flashlight.gltf",
+      "model": "Showcase/vintage_flashlight/vintage_flashlight.gltf",
       "name": "Flashlight 16",
       "transform": {
-        "translation": [17.5, 0, -38.5]
+        "rotation": [0.0, 0.0410037, 0.0, 0.999159],
+        "translation": [21.625, 1.1476, -43.2]
       }
     },
     {
       "game": {
+        "glint": "0.068",
         "kind": "health"
       },
       "id": 15,
-      "model": "Props/health.gltf",
+      "model": "Showcase/medical_box/medical_box.gltf",
       "name": "Health 17",
       "transform": {
-        "translation": [49, 2.8, -35]
+        "rotation": [0.0, -0.6908824, 0.0, 0.7229671],
+        "translation": [50.25, 3.5885, -29.3]
       }
     },
     {
       "game": {
+        "glint": "0.124",
         "kind": "handgun_ammo"
       },
       "id": 16,
-      "model": "Props/handgun_ammo.gltf",
+      "model": "Showcase/ammo_box/ammo_box.gltf",
       "name": "Handgun ammo 18",
       "transform": {
-        "translation": [38.5, 2.8, -49]
+        "rotation": [0.0, 0.7489557, 0.0, 0.66262],
+        "translation": [41.45, 3.5884, -49.45]
       }
     },
     {
       "game": {
+        "glint": "0.124",
         "kind": "handgun_ammo"
       },
       "id": 17,
-      "model": "Props/handgun_ammo_2.gltf",
+      "model": "Showcase/ammo_box/ammo_box.gltf",
       "name": "Handgun ammo 19",
       "transform": {
-        "translation": [36.75, 2.8, -49]
+        "rotation": [0.0, 0.6691306, 0.0, 0.7431448],
+        "translation": [40.4, 2.801, -50.5]
       }
     },
     {
       "game": {
+        "glint": "0.033",
         "kind": "armor"
       },
       "id": 18,
-      "model": "Props/armor.gltf",
+      "model": "Showcase/old_gas_mask/old_gas_mask.gltf",
       "name": "Armor 20",
       "transform": {
-        "translation": [-15.75, 0, -50.75]
+        "rotation": [-0.6077033, 0.0415299, 0.0318484, 0.7924378],
+        "translation": [-18.8, 0.1571, -51.4]
       }
     },
     {
       "game": {
-        "kind": "shotgun_ammo"
+        "glint": "0.124",
+        "kind": "rifle_ammo"
       },
       "id": 19,
-      "model": "Props/shotgun_ammo.gltf",
-      "name": "Shotgun ammo 21",
+      "model": "Showcase/ammo_box/ammo_box.gltf",
+      "name": "Rifle ammo 21",
       "transform": {
-        "translation": [-14, 0, -21]
+        "rotation": [0.0, 0.7253744, 0.0, 0.6883546],
+        "translation": [-15.55, 0.001, -19.52]
       }
     },
     {
@@ -207,13 +219,16 @@
     {
       "game": {
         "color": "red",
+        "glint": "0.002",
         "kind": "card"
       },
       "id": 23,
       "model": "Props/card.gltf",
       "name": "Card 26",
       "transform": {
-        "translation": [50.05, 2.8, -81.2]
+        "rotation": [-0.6993398, 0.104517, 0.104517, 0.6993398],
+        "scale": [0.3, 0.3, 0.3],
+        "translation": [50.45, 3.1022, -78.4]
       }
     },
     {
@@ -458,13 +473,15 @@
     },
     {
       "game": {
-        "kind": "shotgun"
+        "glint": "0.221",
+        "kind": "rifle"
       },
       "id": 45,
-      "model": "shotgun.gltf",
-      "name": "Shotgun 49",
+      "model": "Showcase/bolt_action_rifle_7_62/bolt_action_rifle_7_62.gltf",
+      "name": "Rifle 49",
       "transform": {
-        "translation": [-15.75, 0, -21]
+        "rotation": [0.0861746, -0.0861746, 0.7018361, 0.7018361],
+        "translation": [-16.0, 0.6191, -19.405]
       }
     },
     {

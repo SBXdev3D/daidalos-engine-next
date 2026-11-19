@@ -58,16 +58,20 @@ constexpr float kEyeHeight = 1.5f; // Above the floor.
 constexpr float kCrouchEyeHeight = 0.75f;
 constexpr float kEyeSpeed = 4.0f; // Meters per second, when crouching and standing up.
 constexpr float kPickupRadius = 1.75f;
-constexpr float kPickupSpin = glm::radians(70.0f); // Radians per second.
-constexpr float kDoorRadius = 3.5f;                // Opens by itself this close.
-constexpr float kDoorOpenTime = 6.0f;              // Seconds before it closes again.
-constexpr float kDoorRise = 2.3f;                  // Meters.
-constexpr float kDoorSpeed = 2.3f;                 // Meters per second.
+// Items rest where they are, as they would (scripts/place_items.py): what shows them in the dark is a glint
+// where the flashlight's beam catches them, now and then, the nearer the more often.
+constexpr float kGlintRate = 1.2f;     // Glints per second, close up.
+constexpr float kGlintRange = 18.0f;   // Meters: farther, none.
+constexpr float kGlintScatter = 0.06f; // Meters around the item's glint point.
+constexpr float kDoorRadius = 3.5f;    // Opens by itself this close.
+constexpr float kDoorOpenTime = 6.0f;  // Seconds before it closes again.
+constexpr float kDoorRise = 2.3f;      // Meters.
+constexpr float kDoorSpeed = 2.3f;     // Meters per second.
 constexpr int kMaxHealth = 100;
 constexpr int kHealthBonus = 25;
 constexpr int kArmorBonus = 50;
 constexpr int kHandgunAmmoBonus = 12;
-constexpr int kShotgunAmmoBonus = 7;
+constexpr int kRifleAmmoBonus = 10;
 constexpr float kDeadEyeHeight = 0.3f; // Above the floor, once the player is down.
 constexpr float kMaxPitch = glm::radians(89.0f);
 constexpr float kStickLookSpeed = 2.5f; // Radians per second.
@@ -99,11 +103,13 @@ constexpr float kLadderDistance = 1.05f; // Meters climbed between two sounds.
 constexpr float kLandingSpeed = 4.0f;    // Meters per second.
 constexpr float kMusicVolume = 0.35f;
 
-enum class PickupKind { Health, Armor, HandgunAmmo, ShotgunAmmo, Flashlight, RedCard, Shotgun };
+enum class PickupKind { Health, Armor, HandgunAmmo, RifleAmmo, Flashlight, RedCard, Rifle };
 constexpr std::size_t kPickupKinds = 7;
 
 struct Pickup {
     PickupKind kind;
+    /// Meters above its origin where the flashlight's glint shows: the level's "glint" tag.
+    float glint = 0.1f;
 };
 
 /// A sound that plays for as long as the level does, from where its entity is.
@@ -252,6 +258,7 @@ ParticleEffects LoadParticleEffects(scene::Scene& scene, const std::string& dire
             .impactSplinters = load("impact_splinters"),
             .impactGlass = load("impact_glass"),
             .barrelSmoke = load("barrel_smoke"),
+            .glint = load("glint"),
             .hole = Decal(scene, directory, "bullet_hole.png", resources::TextureUse::Color),
             .holeNormal = Decal(scene, directory, "bullet_hole_normal.png", resources::TextureUse::Normal),
             .holeMetal = Decal(scene, directory, "bullet_hole_metal.png", resources::TextureUse::Color),
@@ -268,8 +275,8 @@ std::optional<PickupKind> PickupOf(std::string_view kind) {
     if (kind == "handgun_ammo") {
         return PickupKind::HandgunAmmo;
     }
-    if (kind == "shotgun_ammo") {
-        return PickupKind::ShotgunAmmo;
+    if (kind == "rifle_ammo") {
+        return PickupKind::RifleAmmo;
     }
     if (kind == "flashlight") {
         return PickupKind::Flashlight;
@@ -277,8 +284,8 @@ std::optional<PickupKind> PickupOf(std::string_view kind) {
     if (kind == "card") {
         return PickupKind::RedCard;
     }
-    if (kind == "shotgun") {
-        return PickupKind::Shotgun;
+    if (kind == "rifle") {
+        return PickupKind::Rifle;
     }
     return std::nullopt;
 }
@@ -296,10 +303,10 @@ SoundBank LoadSounds(scene::Scene& scene) {
     bank.pickups[static_cast<std::size_t>(PickupKind::Health)] = LoadSound(scene, "health_bonus.wav");
     bank.pickups[static_cast<std::size_t>(PickupKind::Armor)] = LoadSound(scene, "armor_bonus.wav");
     bank.pickups[static_cast<std::size_t>(PickupKind::HandgunAmmo)] = LoadSound(scene, "handgun_ammo.wav");
-    bank.pickups[static_cast<std::size_t>(PickupKind::ShotgunAmmo)] = LoadSound(scene, "shotgun_ammo.wav");
+    bank.pickups[static_cast<std::size_t>(PickupKind::RifleAmmo)] = LoadSound(scene, "shotgun_ammo.wav");
     bank.pickups[static_cast<std::size_t>(PickupKind::Flashlight)] = LoadSound(scene, "flashlight_bonus.wav");
     bank.pickups[static_cast<std::size_t>(PickupKind::RedCard)] = LoadSound(scene, "misc_bonus.wav");
-    bank.pickups[static_cast<std::size_t>(PickupKind::Shotgun)] = LoadSound(scene, "weapon_bonus.wav");
+    bank.pickups[static_cast<std::size_t>(PickupKind::Rifle)] = LoadSound(scene, "weapon_bonus.wav");
     for (const char* surface : {"concrete", "metal", "wood", "tile", "water"}) {
         for (int n = 1; n <= 4; ++n) {
             bank.surfaceSteps[surface].push_back(LoadSound(scene, std::format("Surfaces/step_{}_{}.wav", surface, n)));
@@ -374,13 +381,13 @@ void Collect(Player& player, PickupKind kind) {
         AddAmmo(player, WeaponKind::Handgun, kHandgunAmmoBonus);
         Say(player, "message.handgun_ammo");
         break;
-    case PickupKind::ShotgunAmmo:
-        AddAmmo(player, WeaponKind::Shotgun, kShotgunAmmoBonus);
-        Say(player, "message.shotgun_shells");
+    case PickupKind::RifleAmmo:
+        AddAmmo(player, WeaponKind::Rifle, kRifleAmmoBonus);
+        Say(player, "message.rifle_ammo");
         break;
-    case PickupKind::Shotgun:
-        GiveShotgun(player);
-        Say(player, "message.shotgun");
+    case PickupKind::Rifle:
+        GiveRifle(player);
+        Say(player, "message.rifle");
         break;
     case PickupKind::Flashlight:
         // A second flashlight is a fresh battery.
@@ -755,12 +762,41 @@ void UpdatePickups(scene::Scene& scene, ecs::Entity playerEntity, float delta) {
     const SoundBank* bank = world.TryGet<SoundBank>(playerEntity);
     Player& player = world.Get<Player>(playerEntity);
     const glm::vec3 eye = world.Get<ecs::LocalTransform>(playerEntity).translation;
-    const glm::quat spin = glm::angleAxis(kPickupSpin * delta, math::kUp);
+
+    // The flashlight's beam, while it shines: where it starts and where it points.
+    const ParticleEffects* effects = world.TryGet<ParticleEffects>(playerEntity);
+    const scene::Light* torch = world.TryGet<scene::Light>(player.flashlight);
+    const ecs::WorldTransform* torchTransform = world.TryGet<ecs::WorldTransform>(player.flashlight);
+    const bool beam = effects != nullptr && !effects->glint.IsNull() && torch != nullptr && torch->enabled &&
+                      torch->intensity > 0.0f && torchTransform != nullptr;
+    const glm::vec3 beamOrigin = beam ? glm::vec3(torchTransform->matrix[3]) : glm::vec3(0.0f);
+    const glm::vec3 beamAxis =
+        beam ? glm::normalize(glm::vec3(torchTransform->matrix * glm::vec4(math::kForward, 0.0f))) : math::kForward;
+    const physics::BodyId playerBody = scene.Physics().CharacterBody(player.character);
+    // Glints are flickers, not part of the game's state: their dice need not be saved or repeated.
+    static std::minstd_rand random{std::random_device{}()};
+    std::uniform_real_distribution<float> unit(0.0f, 1.0f);
 
     std::vector<ecs::Entity> taken;
     world.Each<Pickup, ecs::LocalTransform>(
-        [&](ecs::Entity entity, const Pickup& pickup, ecs::LocalTransform& transform) {
-            transform.rotation = spin * transform.rotation;
+        [&](ecs::Entity entity, const Pickup& pickup, const ecs::LocalTransform& transform) {
+            if (beam) {
+                const glm::vec3 point = transform.translation + math::kUp * pickup.glint;
+                const glm::vec3 toPoint = point - beamOrigin;
+                const float distance = glm::length(toPoint);
+                const float chance = kGlintRate * delta * (1.0f - distance / kGlintRange);
+                if (distance > 0.01f && glm::dot(toPoint / distance, beamAxis) > std::cos(kFlashlightOuterAngle) &&
+                    unit(random) < chance) {
+                    // Nothing but the item itself between the flashlight and the point.
+                    const std::optional<physics::RayHit> hit =
+                        scene.Physics().CastRay(beamOrigin, toPoint / distance, distance, playerBody);
+                    if (!hit.has_value() || hit->distance > distance - 0.3f) {
+                        const glm::vec3 scatter{unit(random) - 0.5f, unit(random) - 0.5f, unit(random) - 0.5f};
+                        scene.SpawnParticles(effects->glint, point + scatter * (2.0f * kGlintScatter),
+                                             -toPoint / distance, 1);
+                    }
+                }
+            }
             if (glm::distance(transform.translation, eye) < kPickupRadius + kEyeHeight * 0.5f) {
                 Collect(player, pickup.kind);
                 ++player.items;
@@ -1099,7 +1135,7 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
         } else if (tags.kind == "ladder") {
             world.Add<Ladder>(entity, Vector(tags, "min"), Vector(tags, "max"));
         } else if (const std::optional<PickupKind> pickup = PickupOf(tags.kind)) {
-            world.Add<Pickup>(entity, *pickup);
+            world.Add<Pickup>(entity, Pickup{*pickup, Number(tags, "glint", 0.1f)});
             ++world.Get<Player>(playerEntity).itemCount;
             world.Add<scene::SaveKey>(entity, keyOf(entity));
         } else if (tags.kind == "door") {

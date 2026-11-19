@@ -38,7 +38,7 @@ constexpr std::array kControls{
     Control{"reload",       Reload,           ControlRole::Button,   "R",         "PadRightShoulder"},
     Control{"next_weapon",  NextWeapon,       ControlRole::Button,   "Q",         "PadDpadUp"},
     Control{"handgun",      SelectHandgun,    ControlRole::Button,   "Digit1",    "PadDpadLeft"},
-    Control{"shotgun",      SelectShotgun,    ControlRole::Button,   "Digit2",    "PadDpadRight"},
+    Control{"rifle",        SelectRifle,      ControlRole::Button,   "Digit2",    "PadDpadRight"},
     Control{"quick_save",   QuickSave,        ControlRole::Button,   "F6",        ""},
     Control{"quick_load",   QuickLoad,        ControlRole::Button,   "F9",        ""},
     Control{"photo_mode",   Photograph,       ControlRole::Button,   "P",         "PadRightStick"},

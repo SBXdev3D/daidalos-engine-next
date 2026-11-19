@@ -1,0 +1,18 @@
+{
+    "comment": "A glint where the flashlight's beam catches an item (Factory.cpp): a small star of light that flares and fades, to find items by in the dark.",
+    "traced": false,
+    "texture": "sprites.png",
+    "columns": 4,
+    "cell": 4,
+    "color": [
+        [0, [5, 4.8, 4.2, 0]],
+        [0.25, [5, 4.8, 4.2, 1]],
+        [1, [5, 4.8, 4.2, 0]]
+    ],
+    "additive": true,
+    "lit": false,
+    "lifetime": [0.18, 0.3],
+    "size": [0.035, 0.055],
+    "speed": [0, 0],
+    "softness": 0.0
+}

@@ -30,8 +30,8 @@ void SetUpCombat(daidalos::scene::Scene& scene, daidalos::ecs::Entity player, co
 void AddZombie(daidalos::scene::Scene& scene, daidalos::ecs::Entity node, daidalos::ecs::Entity model,
                std::string_view patrol);
 
-/// Gives the player the shotgun, loaded. A second one only brings its shells.
-void GiveShotgun(Player& player);
+/// Gives the player the rifle, loaded. A second one only brings its rounds.
+void GiveRifle(Player& player);
 /// Adds rounds to what the player carries for a weapon, up to what can be carried.
 void AddAmmo(Player& player, WeaponKind weapon, int rounds);
 

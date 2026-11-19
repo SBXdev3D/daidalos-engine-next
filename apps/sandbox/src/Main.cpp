@@ -758,7 +758,7 @@ private:
             for (std::size_t kind = 0; kind < sandbox::kWeaponKinds; ++kind) {
                 sandbox::WeaponState& weapon = player.weapons[kind];
                 ImGui::PushID(static_cast<int>(kind));
-                ImGui::Checkbox(kind == 0 ? "Handgun" : "Shotgun", &weapon.owned);
+                ImGui::Checkbox(kind == 0 ? "Handgun" : "Rifle", &weapon.owned);
                 ImGui::SameLine();
                 ImGui::SetNextItemWidth(120.0f);
                 ImGui::InputInt("Reserve", &weapon.reserve);

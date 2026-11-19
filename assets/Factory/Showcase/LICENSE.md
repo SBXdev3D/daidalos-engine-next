@@ -44,3 +44,8 @@ without attribution. Their authors are credited here all the same. Fetched and c
 | Wet Floor Sign 01 (`WetFloorSign_01`) | Fran Calvente | https://polyhaven.com/a/WetFloorSign_01 |
 | Korean Fire Extinguisher 01 (`korean_fire_extinguisher_01`) | UM JOORIN | https://polyhaven.com/a/korean_fire_extinguisher_01 |
 | Old Gas Mask (`old_gas_mask`) | Michał Wiśniewski | https://polyhaven.com/a/old_gas_mask |
+| Service Pistol (`service_pistol`) | Mateusz Sadek | https://polyhaven.com/a/service_pistol |
+| Bolt Action Rifle 7.62 (`bolt_action_rifle_7_62`) | Mateusz Sadek | https://polyhaven.com/a/bolt_action_rifle_7_62 |
+| Ammo Box (`ammo_box`) | DanKit | https://polyhaven.com/a/ammo_box |
+| Medical Box (`medical_box`) | Ulan Cabanilla | https://polyhaven.com/a/medical_box |
+| Vintage Flashlight (`vintage_flashlight`) | Omar M. El-Safy | https://polyhaven.com/a/vintage_flashlight |
