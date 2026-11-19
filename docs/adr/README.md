@@ -94,3 +94,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0088](0088-hardening.md) | Phase 17: portal visibility, levels of detail, the presets' costly passes, a bug sweep, the assessment | Accepted |
 | [0089](0089-portal-visibility.md) | Rooms and doorways as cells, portals where their boxes overlap, the cells seen from the camera; draws, decals and water outside them skipped | Accepted |
 | [0090](0090-levels-of-detail-and-ultra.md) | Levels of detail measured and not needed (the G-buffer costs per pixel); Ultra keeps two bounces of indirect light and drops its second ray; the presets' costs measured again | Accepted |
+| [0091](0091-bug-sweep.md) | AddressSanitizer found a use after scope in the JSON reader and a use after free in lightning bolts; texture-less particles drawn alike; stale player settings dropped | Accepted |

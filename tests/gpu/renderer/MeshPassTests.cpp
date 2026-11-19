@@ -9,6 +9,7 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/packing.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>

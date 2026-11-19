@@ -190,8 +190,12 @@ ParticleOutput PSMain(VertexOutput input) {
         return RibbonPixel(frame, input);
     }
     const ParticleEffectData effect = g_particleEffects[g_particles.effects][input.effect];
-    const float4 texel = lerp(g_textures[effect.texture].Sample(g_samplers[kSamplerLinearClamp], input.uv.xy),
-                              g_textures[effect.texture].Sample(g_samplers[kSamplerLinearClamp], input.uv.zw), input.blend);
+    // Without an image, a plain square of its color, as rays see it (RayQueries.slangh).
+    const float4 texel = effect.texture != kNoTexture
+                             ? lerp(g_textures[effect.texture].Sample(g_samplers[kSamplerLinearClamp], input.uv.xy),
+                                    g_textures[effect.texture].Sample(g_samplers[kSamplerLinearClamp], input.uv.zw),
+                                    input.blend)
+                             : float4(1.0, 1.0, 1.0, 1.0);
     float alpha = input.color.a * texel.a;
 
     float depth;
