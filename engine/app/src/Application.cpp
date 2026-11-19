@@ -963,7 +963,11 @@ void Application::ReportConfigurationProblems() {
         DAI_LOG_WARNING(kModule, "Ignored setting: {}", error.message);
     }
     for (const std::string& name : m_cvars.UnregisteredNames()) {
-        DAI_LOG_WARNING(kModule, "Unknown setting '{}' was ignored", name);
+        // A setting the game no longer has leaves the player's file at its next save, instead of coming back
+        // at every start.
+        const bool forgotten = m_userSettings.erase(name) > 0;
+        DAI_LOG_WARNING(kModule, "Unknown setting '{}' was ignored{}", name,
+                        forgotten ? ", and leaves the player's settings when they are next saved" : "");
     }
 }
 

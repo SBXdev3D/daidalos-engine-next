@@ -56,7 +56,9 @@ core::Result<Json> FromSimdjson(simdjson::dom::element element) {
     switch (element.type()) {
     case simdjson::dom::element_type::ARRAY: {
         JsonArray array;
-        for (simdjson::dom::element item : element.get_array().value_unsafe()) {
+        // Held by name: a range over a member of the temporary result would outlive it.
+        const simdjson::dom::array items = element.get_array().value_unsafe();
+        for (simdjson::dom::element item : items) {
             core::Result<Json> converted = FromSimdjson(item);
             if (!converted) {
                 return tl::unexpected(converted.error());
@@ -67,7 +69,8 @@ core::Result<Json> FromSimdjson(simdjson::dom::element element) {
     }
     case simdjson::dom::element_type::OBJECT: {
         JsonObject object;
-        for (const simdjson::dom::key_value_pair field : element.get_object().value_unsafe()) {
+        const simdjson::dom::object fields = element.get_object().value_unsafe();
+        for (const simdjson::dom::key_value_pair field : fields) {
             core::Result<Json> converted = FromSimdjson(field.value);
             if (!converted) {
                 return tl::unexpected(converted.error());

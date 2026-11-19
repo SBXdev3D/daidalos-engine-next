@@ -24,7 +24,10 @@ std::string ReadText(const std::filesystem::path& file) {
 /// Writes edits into a copy of a test model and loads it back as the engine does.
 resources::MaterialData RoundTrip(const char* model, const resources::MaterialData& values) {
     const std::filesystem::path source = std::filesystem::path(DAI_TEST_ASSET_DIR) / model;
-    const std::filesystem::path copy = std::filesystem::temp_directory_path() / "daidalos_gltf_materials.gltf";
+    // One file per test: the tests may run at once, as CTest runs them.
+    const std::filesystem::path copy = std::filesystem::temp_directory_path() /
+                                       (std::string("daidalos_gltf_materials_") +
+                                        testing::UnitTest::GetInstance()->current_test_info()->name() + ".gltf");
     std::filesystem::copy_file(source, copy, std::filesystem::copy_options::overwrite_existing);
     const scene::MaterialEdit edit{.index = 0, .values = values};
     const core::Result<void> saved = scene::SaveGltfMaterials(copy, std::span(&edit, 1));

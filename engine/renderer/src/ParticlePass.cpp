@@ -574,7 +574,6 @@ std::uint32_t ParticlePass::AssignMeshSlot(ParticleEffectHandle effect, const Pa
 
 void ParticlePass::WriteEffect(ParticleEffectHandle effect, const ParticleEffectDesc& desc, const MeshPass& meshes) {
     const std::uint32_t index = effect.Index();
-    DAI_ASSERT(desc.texture || !desc.mesh.IsNull(), "A particle effect needs a texture or a mesh");
     const std::uint32_t rows = desc.rows == 0 ? desc.columns : desc.rows;
     DAI_ASSERT(desc.columns > 0 && desc.cell + std::max(desc.frames, 1U) <= desc.columns * rows,
                "The flipbook must be in the grid");

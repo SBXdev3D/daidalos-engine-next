@@ -103,7 +103,8 @@ inline constexpr std::uint32_t kParticleCurveSamples = 256;
 /// What the particles of an effect look like and how they move, on the GPU (ADR-0025, ADR-0053).
 /// Distances are meters and times seconds; directions are in the frame of what emits them.
 struct ParticleEffectDesc {
-    /// The image, a grid of columns by rows cells, counted row by row (rows = 0: as many as columns).
+    /// The image, a grid of columns by rows cells, counted row by row (rows = 0: as many as columns). None: each
+    /// particle is a plain square of its color, drawn and traced alike.
     rhi::TextureHandle texture;
     std::uint32_t columns = 1;
     std::uint32_t rows = 0;

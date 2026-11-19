@@ -680,7 +680,8 @@ std::vector<std::vector<glm::vec3>> MakeBolt(std::uint32_t generations, float di
     std::vector<std::vector<glm::vec3>> bolt;
     bolt.push_back(
         Split(glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f), generations, displacement, branches, random, &starts));
-    const std::vector<glm::vec3>& main = bolt.front();
+    // A copy: branches pushed into the bolt may move its first path.
+    const std::vector<glm::vec3> main = bolt.front();
     for (const auto& [index, left] : starts) {
         if (index == 0 || index + 1 >= main.size()) {
             continue;
