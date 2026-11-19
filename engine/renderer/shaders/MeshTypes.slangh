@@ -76,8 +76,10 @@ struct FrameData {
     uint particleData;    // The particles rays meet (ADR-0062, RayQueries.slangh): their pool, effects and curves.
     uint particleEffects;
     uint particleCurves;
-    uint framePadding0;
-    uint framePadding1;
+    uint materialGrid;        // Which decals and wet volumes touch each cell (ADR-0094, MaterialGrid.slangh), or
+    float materialGridCell;   // kNoTexture; the meters of a cell's side, and the grid's lowest corner.
+    float3 materialGridOrigin;
+    uint framePadding;
 };
 
 // From texture coordinates of the frame, over the corner it draws into, to those of its targets, for
