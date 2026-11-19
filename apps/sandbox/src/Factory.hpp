@@ -31,7 +31,7 @@ namespace sandbox {
 // The demo game, on the level of the original Daidalos demo (docs/DEMO.md). What is here belongs to
 // this game, not to the engine.
 
-enum class WeaponKind : std::uint8_t { Handgun, Shotgun };
+enum class WeaponKind : std::uint8_t { Handgun, Rifle };
 inline constexpr std::size_t kWeaponKinds = 2;
 
 /// Rounds in the weapon, and the ones the player carries for it.
@@ -57,6 +57,8 @@ struct ParticleEffects {
     daidalos::renderer::ParticleEffectHandle impactGlass;
     /// Curling out of a hot barrel after a shot, at a rate the game sets (ADR-0053).
     daidalos::renderer::ParticleEffectHandle barrelSmoke;
+    /// A spark of light where the flashlight's beam catches an item, to find it by in the dark.
+    daidalos::renderer::ParticleEffectHandle glint;
     /// What shots leave on surfaces (ADR-0060): holes in stone and metal, and blood behind what they go through.
     daidalos::rhi::TextureHandle hole;
     daidalos::rhi::TextureHandle holeNormal;
@@ -121,6 +123,8 @@ struct Player {
     bool hitKilled = false;
     /// Radians the last shots kicked the view up, which spring back (ADR-0085).
     float recoil = 0.0f;
+    /// Seconds since the last shot: the weapon in hand kicks back, and settles.
+    float sinceShot = 10.0f;
     int kills = 0;
     int zombieCount = 0;
     /// Pickups taken, out of those the level had (ADR-0084).

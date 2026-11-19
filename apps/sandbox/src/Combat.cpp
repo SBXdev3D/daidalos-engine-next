@@ -56,16 +56,31 @@ struct WeaponSpec {
     float scale;
     /// The end of its barrel, in the model's space, where smoke comes out after a shot.
     glm::vec3 muzzle;
-    /// Seconds of smoke that a shot adds to the barrel: a shotgun's blast heats it more.
+    /// Seconds of smoke that a shot adds to the barrel: a rifle's heavy round heats it more.
     float smoke;
+    /// Degrees the model turns about up to point its barrel ahead: Poly Haven's weapons point along +x.
+    float yaw;
+    /// How a shot moves the weapon in hand, which has no clip of its own: meters back, and degrees up.
+    float kickBack;
+    float kickPitch;
 };
 
+// The weapons are Poly Haven's models, at their real size (scripts/fetch_showcase_props.py): a service pistol
+// and a bolt-action rifle, which replaced the legacy shotgun. The rifle holds five rounds, fires one at a time,
+// slowly, and kills a zombie with one hit. The sounds are still the legacy handgun's and shotgun's.
 constexpr std::array<WeaponSpec, kWeaponKinds> kWeapons{{
-    {"handgun.gltf", "handgun_fire.wav", "handgun_reload.wav", 12, 108, 10, 1, 0.025f, 0.35f, 1.5f,
-     glm::vec3(0.05f, -0.1f, -0.2f), 0.36f, glm::vec3(0.0f, 0.112f, -0.199f), 1.5f},
-    {"shotgun.gltf", "shotgun_fire.wav", "shotgun_reload.wav", 7, 43, 12, 5, 0.0875f, 1.2f, 2.8f,
-     glm::vec3(0.035f, -0.135f, -0.24f), 0.72f, glm::vec3(0.0f, 0.038f, -0.78f), 2.5f},
+    {"Showcase/service_pistol/service_pistol.gltf", "handgun_fire.wav", "handgun_reload.wav", 12, 108, 10, 1, 0.025f,
+     0.35f, 1.5f, glm::vec3(0.12f, -0.14f, -0.38f), 1.0f, glm::vec3(0.174f, 0.062f, 0.0f), 1.5f, 90.0f, 0.03f, 7.0f},
+    {"Showcase/bolt_action_rifle_7_62/bolt_action_rifle_7_62.gltf", "shotgun_fire.wav", "shotgun_reload.wav", 5, 30, 50,
+     1, 0.004f, 1.3f, 3.0f, glm::vec3(0.12f, -0.16f, -0.42f), 1.0f, glm::vec3(0.6f, 0.03f, 0.0f), 2.5f, 90.0f, 0.07f,
+     5.0f},
 }};
+// How fast a kick settles: per second.
+constexpr float kKickSettle = 9.0f;
+// A reload takes the weapon down and turns it, as a hand would to change a magazine.
+constexpr float kReloadDrop = 0.12f;  // Meters.
+constexpr float kReloadRoll = 30.0f;  // Degrees.
+constexpr float kReloadPitch = 15.0f; // Degrees.
 
 constexpr float kWeaponRange = 100.0f * kLegacyUnit;
 constexpr float kSwitchTime = 0.4f;    // Seconds for the new weapon to come up.
@@ -368,8 +383,16 @@ std::vector<Impact> ImpactsOf(const ParticleEffects& effects, std::string_view s
     return {{effects.impactDust, 1}};
 }
 
-// Where the muzzle is, from the eye: right, low and ahead, where the weapons are held.
-constexpr glm::vec3 kMuzzleOffset{0.08f, -0.075f, -0.65f};
+// How a weapon is turned in the hand, at rest.
+glm::quat HeldRotation(const WeaponSpec& spec) {
+    return glm::angleAxis(glm::radians(spec.yaw), math::kUp);
+}
+
+// Where the muzzle is, from the eye: at the end of the barrel of the weapon held at rest.
+glm::vec3 MuzzleOffset(const WeaponSpec& spec) {
+    return spec.offset + HeldRotation(spec) * (spec.muzzle * spec.scale);
+}
+
 // Where casings leave the weapon, and the way they go: out of its right side, up and a little back.
 constexpr glm::vec3 kEjectOffset{0.12f, -0.1f, -0.35f};
 constexpr glm::vec3 kEjectDirection{0.8f, 0.55f, 0.25f};
@@ -385,10 +408,11 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
     --weapon.magazine;
     player.weaponBusy = spec.fireDelay;
     player.muzzleFlashTime = kMuzzleFlashTime;
-    // The view kicks up, the shotgun much more (ADR-0085).
-    player.recoil += glm::radians(player.weapon == WeaponKind::Shotgun ? 4.5f : 1.6f);
-    // The shotgun's blast in the heavy motor, the handgun's crack in the light one.
-    if (player.weapon == WeaponKind::Shotgun) {
+    player.sinceShot = 0.0f;
+    // The view kicks up, the rifle much more (ADR-0085).
+    player.recoil += glm::radians(player.weapon == WeaponKind::Rifle ? 4.5f : 1.6f);
+    // The rifle's blast in the heavy motor, the handgun's crack in the light one.
+    if (player.weapon == WeaponKind::Rifle) {
         Kick(player, 0.75f, 0.55f, 0.25f);
     } else {
         Kick(player, 0.15f, 0.5f, 0.12f);
@@ -423,7 +447,7 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
     // A flash and a puff of smoke at the muzzle, and where each pellet lands, what the surface it hits
     // throws out: blood from a zombie, sparks from metal, chips from stone, splinters from wood, glass.
     if (const ParticleEffects* effects = world.TryGet<ParticleEffects>(playerEntity)) {
-        const glm::vec3 muzzle = eye.translation + eye.rotation * kMuzzleOffset;
+        const glm::vec3 muzzle = eye.translation + eye.rotation * MuzzleOffset(spec);
         scene.SpawnParticles(effects->muzzleFlash, muzzle, aim, 3);
         scene.SpawnParticles(effects->gunSmoke, muzzle, math::kUp, 6);
         scene.SpawnParticles(effects->casings, eye.translation + eye.rotation * kEjectOffset,
@@ -439,7 +463,7 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
                 scene.SpawnParticles(impact.effect, hit.position, hit.normal, impact.count);
             }
             LeaveMark(scene, physics, *effects, hit, flesh, surface, aim);
-            // One impact heard per shot: a shotgun's pellets land at once.
+            // One impact heard per shot, however many pellets land.
             if (!std::exchange(heard, true)) {
                 PlayImpact(scene, playerEntity, flesh ? "flesh" : surface, hit.position);
             }
@@ -497,12 +521,29 @@ void PlaceWeapons(ecs::World& world, const Player& player, const Arsenal& arsena
         if (kind == static_cast<std::size_t>(player.weapon) && !player.dead) {
             drop = kWeaponDrop * (1.0f - std::clamp(player.switching / kSwitchTime, 0.0f, 1.0f));
         }
-        transform->translation = kWeapons[kind].offset - math::kUp * drop;
-        transform->scale = glm::vec3(kWeapons[kind].scale);
+        const WeaponSpec& spec = kWeapons[kind];
+        glm::vec3 translation = spec.offset - math::kUp * drop;
+        glm::quat rotation = HeldRotation(spec);
+        if (kind == static_cast<std::size_t>(player.weapon) && !player.dead) {
+            // The models have no clips: a shot kicks the weapon back and its muzzle up, and it settles; a
+            // reload takes it down, turned, and brings it back.
+            const float kick = std::exp(-kKickSettle * player.sinceShot);
+            float reload = 0.0f;
+            if (player.reloading && spec.reloadTime > 0.0f) {
+                reload =
+                    std::sin(glm::pi<float>() * std::clamp(1.0f - player.weaponBusy / spec.reloadTime, 0.0f, 1.0f));
+            }
+            translation += -math::kForward * (spec.kickBack * kick) - math::kUp * (kReloadDrop * reload);
+            rotation = glm::angleAxis(glm::radians(spec.kickPitch * kick - kReloadPitch * reload), math::kRight) *
+                       glm::angleAxis(glm::radians(kReloadRoll * reload), math::kForward) * rotation;
+        }
+        transform->translation = translation;
+        transform->rotation = rotation;
+        transform->scale = glm::vec3(spec.scale);
         if (kind == static_cast<std::size_t>(player.weapon)) {
             // The barrel's smoke comes out of the muzzle of the weapon in hand, wherever it is held.
             if (auto* smoke = world.TryGet<ecs::LocalTransform>(arsenal.barrelSmoke)) {
-                smoke->translation = transform->translation + kWeapons[kind].scale * kWeapons[kind].muzzle;
+                smoke->translation = translation + rotation * (spec.scale * spec.muzzle);
             }
         }
     }
@@ -886,16 +927,16 @@ void AddZombie(scene::Scene& scene, ecs::Entity node, ecs::Entity model, std::st
     world.Add<Zombie>(node, std::move(zombie));
 }
 
-void GiveShotgun(Player& player) {
-    WeaponState& shotgun = player.weapons[static_cast<std::size_t>(WeaponKind::Shotgun)];
-    if (shotgun.owned) {
-        AddAmmo(player, WeaponKind::Shotgun, kWeapons[static_cast<std::size_t>(WeaponKind::Shotgun)].magazine);
+void GiveRifle(Player& player) {
+    WeaponState& rifle = player.weapons[static_cast<std::size_t>(WeaponKind::Rifle)];
+    if (rifle.owned) {
+        AddAmmo(player, WeaponKind::Rifle, kWeapons[static_cast<std::size_t>(WeaponKind::Rifle)].magazine);
         return;
     }
-    shotgun.owned = true;
-    shotgun.magazine = kWeapons[static_cast<std::size_t>(WeaponKind::Shotgun)].magazine;
+    rifle.owned = true;
+    rifle.magazine = kWeapons[static_cast<std::size_t>(WeaponKind::Rifle)].magazine;
     if (!player.dead) {
-        player.weapon = WeaponKind::Shotgun;
+        player.weapon = WeaponKind::Rifle;
         player.reloading = false;
         player.weaponBusy = kSwitchTime;
         player.switching = 0.0f;
@@ -918,15 +959,16 @@ void UpdateWeapons(scene::Scene& scene, ecs::Entity playerEntity, const input::I
     player.hurtMarker = std::max(player.hurtMarker - delta, 0.0f);
     player.hitTime = std::max(player.hitTime - delta, 0.0f);
     player.barrelHeat = std::max(player.barrelHeat - delta, 0.0f);
+    player.sinceShot = std::min(player.sinceShot + delta, 10.0f);
 
     if (!player.dead) {
         std::optional<WeaponKind> wanted;
         if (actions.WasPressed(input, SelectHandgun)) {
             wanted = WeaponKind::Handgun;
-        } else if (actions.WasPressed(input, SelectShotgun)) {
-            wanted = WeaponKind::Shotgun;
+        } else if (actions.WasPressed(input, SelectRifle)) {
+            wanted = WeaponKind::Rifle;
         } else if (actions.WasPressed(input, NextWeapon) || input.WheelDelta().y != 0.0f) {
-            wanted = player.weapon == WeaponKind::Handgun ? WeaponKind::Shotgun : WeaponKind::Handgun;
+            wanted = player.weapon == WeaponKind::Handgun ? WeaponKind::Rifle : WeaponKind::Handgun;
         }
         if (wanted.has_value() && *wanted != player.weapon && player.weapons[static_cast<std::size_t>(*wanted)].owned) {
             player.weapon = *wanted;

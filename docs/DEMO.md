@@ -48,7 +48,7 @@ Zombies come earlier than the roadmap's AI phase, because a shooter with no one 
 - **Pace.** Faster movement, more enemies, ambushes when doors open: closer to Doom than to the original's slow zombies.
 - **Dread.** Between the fights, the factory should feel hostile: dark corridors, lights that flicker and die, wet floors, scares set up by the level.
 - **Feel.** Hit feedback, screen flash on damage, stronger recoil and sway.
-- **Structure.** The factory level has shotgun ammunition, but no shotgun to pick up. The remake has a shotgun next to the shells, a way out at the far end of the pumps, and an end-of-level summary of time, kills and items (ADR-0084).
+- **Structure.** The factory level has shotgun ammunition, but no shotgun to pick up. The remake has a rifle next to its ammunition (a shotgun until ADR-0103), a way out at the far end of the pumps, and an end-of-level summary of time, kills and items (ADR-0084).
 - **Sound.** Spatial audio is done. Occlusion by doors can come later, with rays from the listener.
 
 ## Running it
@@ -74,7 +74,8 @@ The numbers come from the original's code, except where the table says otherwise
 | | How it works |
 |---|---|
 | Handgun | 12 rounds, 10 damage, a shot every 0.35 s, reloads in 1.5 s (2 s in the original). Starts loaded, with nothing to reload it |
-| Shotgun | 7 shells, 5 pellets of 12 damage, a shot every 1.2 s, reloads in 2.8 s. It lies next to the shotgun shells: the original had it in its code, but nowhere to pick it up, and no model. `scripts/make_shotgun.py` builds one |
+| Rifle | 5 rounds, 50 damage (a zombie dies of one hit), a shot every 1.3 s, reloads in 3 s, up to 30 rounds carried. It replaced the original's shotgun (ADR-0103): no realistic free shotgun model exists. It leans against a wall of the west wing, its ammunition can at its foot |
+| Items | Poly Haven's models, as they would lie: a medical box (health), an old gas mask (armor), metal ammunition cans, a vintage flashlight, the red card at a keycard's size. They rest on desks, shelves, crates and floors, and the flashlight's beam makes them glint now and then (ADR-0103) |
 | Aim | Rays from the eyes, spread as the original spread its bullets, up to 35 m. A shot is heard by zombies within 20 m |
 | Zombies | 50 health. They see 12 m ahead, within 60° of where they face, if nothing is in between. They walk at 1.3 m/s, faster than the original's 0.7, straight at the player: there is no path finding. They strike for 12 every 1.5 s within 1.4 m, look for a lost player for 9 s, then go back to waiting, or to their patrol |
 | Wounds | Armor takes half of each wound while it lasts. At 0 health the player falls, and F5 starts again |

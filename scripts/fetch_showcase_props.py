@@ -50,7 +50,24 @@ MODELS = {
     "caged_hanging_light": "metal", "security_light": "metal",
     # Clutter.
     "WetFloorSign_01": "", "korean_fire_extinguisher_01": "metal", "old_gas_mask": "cloth",
+    # The game's items (pickups and the weapons in hand): the gas mask above is the armour.
+    "service_pistol": "metal", "bolt_action_rifle_7_62": "metal", "ammo_box": "metal", "medical_box": "metal",
+    "vintage_flashlight": "metal",
 }
+
+# The weapons are seen in the hand, a hand's width from the eye: their textures at 2k, kept whole.
+RESOLUTION = {"service_pistol": "2k", "bolt_action_rifle_7_62": "2k"}
+
+# Poly Haven lays some models out as a catalogue: variants and loose parts side by side. One weapon is kept of
+# each: the pistol with wooden grips (its "a" parts; the "b" parts are taped), without the loose magazines and
+# round; the rifle with its bolt closed ("a") and without the loose round.
+DROP_NODES = {
+    "service_pistol": {"service_pistol_pistol_b", "service_pistol_slide_b", "service_pistol_hammer_b",
+                       "service_pistol_trigger_b", "service_pistol_magazine_loaded",
+                       "service_pistol_magazine_empty", "service_pistol_bullet"},
+    "bolt_action_rifle_7_62": {"bolt_action_rifle_7_62_bolt_b", "bolt_action_rifle_7_62_bullet_54mm"},
+}
+SHIFT = {}
 
 
 # Large pieces keep 1k textures; the rest, seen from a step or two away, take 512 (ADR-0082).
@@ -131,6 +148,27 @@ def keep_defaults(gltf):
         texture["source"] = remap[texture["source"]]
 
 
+def drop_nodes(gltf, names, shift):
+    """Removes the top-level nodes of these names and the meshes only they drew; moves the others by shift,
+    if any."""
+    if not names and not shift:
+        return
+    scene = gltf["scenes"][gltf.get("scene", 0)]
+    if any(gltf["nodes"][index].get("children") for index in scene["nodes"]):
+        raise RuntimeError("drop_nodes handles flat scenes only")
+    kept = [index for index in range(len(gltf["nodes"])) if gltf["nodes"][index].get("name") not in names]
+    gltf["nodes"] = [gltf["nodes"][index] for index in kept]
+    scene["nodes"] = list(range(len(kept)))
+    meshes = sorted({node["mesh"] for node in gltf["nodes"] if "mesh" in node})
+    remap = {old: new for new, old in enumerate(meshes)}
+    gltf["meshes"] = [gltf["meshes"][old] for old in meshes]
+    for node in gltf["nodes"]:
+        if "mesh" in node:
+            node["mesh"] = remap[node["mesh"]]
+        if shift:
+            node["translation"] = [a + b for a, b in zip(node.get("translation", [0.0, 0.0, 0.0]), shift)]
+
+
 def triangles(gltf):
     count = 0
     for mesh in gltf.get("meshes", []):
@@ -142,9 +180,10 @@ def triangles(gltf):
 
 def fetch(model, surface, tool, pool):
     directory = KIT / model
-    files = get_json(f"{API}/files/{model}")["gltf"]["1k"]["gltf"]
+    resolution = RESOLUTION.get(model, "1k")
+    files = get_json(f"{API}/files/{model}")["gltf"][resolution]["gltf"]
     gltf_path = directory / f"{model}.gltf"
-    original = directory / "Source" / f"{model}_1k.gltf"
+    original = directory / "Source" / f"{model}_{resolution}.gltf"
     download(files["url"], original, files.get("md5"))
     jobs = []
     for relative, entry in files["include"].items():
@@ -154,6 +193,7 @@ def fetch(model, surface, tool, pool):
         job.result()
 
     gltf = json.loads(original.read_text(encoding="utf-8"))
+    drop_nodes(gltf, DROP_NODES.get(model, set()), SHIFT.get(model))
     keep_defaults(gltf)
     roles = {}
     for material in gltf["materials"]:
@@ -162,10 +202,10 @@ def fetch(model, surface, tool, pool):
     conversions = []
     for index, image in enumerate(gltf["images"]):
         source = directory / "Source" / image["uri"]
-        output = directory / "textures" / (Path(image["uri"]).stem.replace("_1k", "") + ".ktx2")
+        output = directory / "textures" / (Path(image["uri"]).stem.replace(f"_{resolution}", "") + ".ktx2")
         if not output.exists() or output.stat().st_mtime < source.stat().st_mtime:
             output.parent.mkdir(parents=True, exist_ok=True)
-            size = [] if model in LARGE else ["--max-size", str(SMALL_TEXTURES)]
+            size = [] if model in LARGE or model in RESOLUTION else ["--max-size", str(SMALL_TEXTURES)]
             conversions.append(pool.submit(subprocess.run, [str(tool), *size, roles.get(index, "data"), str(source),
                                                            str(output)], check=True, capture_output=True))
         gltf["images"][index] = {"uri": output.relative_to(directory).as_posix(), "mimeType": "image/ktx2"}
@@ -215,8 +255,14 @@ def main():
             authors = ", ".join(info.get("authors", {}).keys())
             licence.append(f"| {info.get('name', model)} (`{model}`) | {authors} | https://polyhaven.com/a/{model} |")
             print(f"{model}: {count} triangles")
-    if not arguments.only:
-        (KIT / "LICENSE.md").write_text("\n".join(licence) + "\n", encoding="utf-8")
+    if arguments.only:
+        # The other models' rows stay as they are; these replace theirs, or join the end.
+        def key(line):
+            return line.split("(`")[1].split("`)")[0] if line.startswith("| ") and "(`" in line else None
+        rows = {key(line): line for line in licence if key(line)}
+        kept = (KIT / "LICENSE.md").read_text(encoding="utf-8").splitlines()
+        licence = [rows.pop(key(line), line) if key(line) else line for line in kept] + list(rows.values())
+    (KIT / "LICENSE.md").write_text("\n".join(licence) + "\n", encoding="utf-8")
     print(f"{len(models)} models, {total} triangles")
 
 
