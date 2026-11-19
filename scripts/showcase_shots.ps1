@@ -1,14 +1,16 @@
 # Takes the factory showcase's screenshots from fixed places (ADR-0086), to compare a change with the last set.
 #
-#   powershell -File scripts/showcase_shots.ps1 [-Out <folder>] [-Only 1-start,5-pumps] [-Bright]
+#   powershell -File scripts/showcase_shots.ps1 [-Out <folder>] [-Only 1-start,5-pumps] [-Bright] [-Extra +name,value]
 #
 # Starts the sandbox at each place with the flashlight on, waits for the level and its effects to settle,
 # and saves what the window shows (PrintWindow) as <folder>/<place>.png. -Bright shows the level 16 times
-# brighter without its haze (sandbox.darkness 0), to check where things stand. Windows only.
+# brighter without its haze (sandbox.darkness 0), to check where things stand. -Extra adds settings to the
+# command line, to compare one. Windows only.
 param(
     [string]$Out = "build/showcase",
     [string[]]$Only = @(),
     [switch]$Bright,
+    [string[]]$Extra = @(),
     [int]$Wait = 22
 )
 $ErrorActionPreference = "Stop"
@@ -47,6 +49,7 @@ foreach ($name in $places.Keys) {
     $arguments = @("+window.fullscreen", "false", "+window.width", "1280", "+window.height", "720",
                    "+sandbox.menu", "false", "+sandbox.flashlight", "true", "+sandbox.start", ('"' + $places[$name] + '"'))
     if ($Bright) { $arguments += @("+sandbox.darkness", "0") }
+    $arguments += $Extra
     $process = Start-Process -FilePath $exe.FullName -ArgumentList $arguments -WorkingDirectory $exe.DirectoryName -PassThru
     Start-Sleep -Seconds $Wait
     $process.Refresh()

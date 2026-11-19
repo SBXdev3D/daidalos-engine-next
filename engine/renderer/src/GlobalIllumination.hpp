@@ -7,7 +7,9 @@
 #include <daidalos/core/Result.hpp>
 #include <daidalos/rhi/Device.hpp>
 
+#include <array>
 #include <cstdint>
+#include <optional>
 
 namespace daidalos::renderer {
 
@@ -24,6 +26,9 @@ struct GlobalIlluminationSettings {
     float clamp = 16.0f;
     /// Rays per pixel, from 1 to 16, averaged.
     std::uint32_t rays = 1;
+    /// Pixels per traced pixel (ADR-0093): 1 traces every pixel; 2 half of them, in a checkerboard; 4 one of
+    /// each two by two. They take turns, and the others take their traced neighbours' light.
+    std::uint32_t pixelsPerRay = 1;
 };
 
 /// What global illumination reads each frame.
@@ -70,7 +75,10 @@ public:
     /// Follows the size of the frame.
     [[nodiscard]] core::Result<void> Resize(rhi::Extent extent);
     /// Empties the cache, when the next frame is added: after a change of scene, nothing is left from the last.
-    void Reset() { m_reset = true; }
+    void Reset() {
+        m_reset = true;
+        m_historyFrame.reset();
+    }
     /// What Output() holds.
     enum class Mode : std::uint32_t {
         /// The indirect diffuse light of each pixel, per unit of diffuse color.
@@ -78,9 +86,9 @@ public:
         /// A debug view: the light the cache holds at each pixel's surface.
         Cache = 1,
     };
-    /// Adds the passes that update the cache, as "Radiance cache", that trace the frame's rays, as "Indirect
-    /// light", and the reflections, as "Reflections". Valid after Resize; the frame's structure must be built
-    /// before.
+    /// Adds the passes that update the cache, as "Radiance cache", that trace the frame's rays and fill the
+    /// pixels that traced none (GlobalIlluminationSettings::pixelsPerRay), as "Indirect light", and the reflections, as
+    /// "Reflections". Valid after Resize; the frame's structure must be built before.
     void AddTo(RenderGraph& graph, const GlobalIlluminationInputs& inputs, Mode mode = Mode::Indirect);
 
     /// Output of the last frame added (kOutputFormat). Valid after Resize; its index does not change until
@@ -107,6 +115,7 @@ private:
     rhi::PipelineHandle m_update;
     rhi::PipelineHandle m_resolve;
     rhi::PipelineHandle m_trace;
+    rhi::PipelineHandle m_fill;
     rhi::PipelineHandle m_reflect;
     rhi::BufferHandle m_keys;
     rhi::BufferHandle m_accumulation;
@@ -115,9 +124,14 @@ private:
     rhi::BufferHandle m_anchors;
     rhi::TextureHandle m_output;
     rhi::TextureHandle m_reflections;
+    /// Each pixel's last sample of indirect light, which the fill brings forward (ADR-0093): this frame's and
+    /// last frame's, in turns.
+    std::array<rhi::TextureHandle, 2> m_history{};
     rhi::Extent m_extent;
     /// The cache's buffers start with whatever memory held: the first frame empties them.
     bool m_reset = true;
+    /// The frame that last wrote the history: the next one may read it.
+    std::optional<std::uint32_t> m_historyFrame;
 };
 
 } // namespace daidalos::renderer

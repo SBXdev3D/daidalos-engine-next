@@ -180,7 +180,8 @@ struct Renderer::Impl {
         indirect = {.bounces = std::min(config.bounces, 3U),
                     .lightCandidates = std::clamp(config.lightCandidates, 1U, 8U),
                     .clamp = std::max(config.clamp, 0.0f),
-                    .rays = std::clamp(config.rays, 1U, 16U)};
+                    .rays = std::clamp(config.rays, 1U, 16U),
+                    .pixelsPerRay = config.pixelsPerRay >= 4 ? 4U : (config.pixelsPerRay >= 2 ? 2U : 1U)};
     }
 
     platform::Window* window;
@@ -489,6 +490,7 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     impl->fogGrid.tileSize = std::clamp(config.fogTile, 8U, 32U);
     impl->restir.spatial = config.restirSpatial;
     impl->restir.unbiased = config.restirUnbiased;
+    impl->restir.candidates = config.restirCandidates;
     impl->SetIndirect(config.indirect);
     impl->denoise = config.denoiser;
     impl->reflections = config.reflections;
@@ -580,9 +582,10 @@ void Renderer::SetIndirectLightConfig(const IndirectLightConfig& config) {
     m_impl->SetIndirect(config);
 }
 
-void Renderer::SetRestir(bool spatial, bool unbiased) {
+void Renderer::SetRestir(bool spatial, bool unbiased, std::uint32_t candidates) {
     m_impl->restir.spatial = spatial;
     m_impl->restir.unbiased = unbiased;
+    m_impl->restir.candidates = candidates;
 }
 
 void Renderer::SetFieldOfView(float radians) {
@@ -884,7 +887,8 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                         .settings = {.bounces = impl.indirect.bounces,
                                                      .lightCandidates = impl.indirect.lightCandidates,
                                                      .clamp = impl.indirect.clamp / displayScale,
-                                                     .rays = impl.indirect.rays}},
+                                                     .rays = impl.indirect.rays,
+                                                     .pixelsPerRay = impl.indirect.pixelsPerRay}},
                                        cacheView ? GlobalIllumination::Mode::Cache
                                                  : GlobalIllumination::Mode::Indirect);
     }

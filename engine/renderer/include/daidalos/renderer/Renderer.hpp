@@ -75,6 +75,9 @@ struct IndirectLightConfig {
     float clamp = 16.0f;
     /// Rays per pixel, from 1 to 16: less noise, for their cost.
     std::uint32_t rays = 1;
+    /// Pixels per ray (ADR-0093): 1 traces every pixel, 2 half of them in a checkerboard, 4 one of each two by
+    /// two. They take turns, and the others take their neighbours' light: fewer rays, for more noise.
+    std::uint32_t pixelsPerRay = 1;
 };
 
 /// How the frame's light becomes the image a display shows (ADR-0048).
@@ -178,6 +181,8 @@ struct RendererConfig {
     /// ReSTIR DI tests every sample it reuses for visibility, for comparisons with the path tracer: twice the
     /// rays.
     bool restirUnbiased = false;
+    /// ReSTIR DI: lights each pixel draws before it keeps one, from 1 to 32 (ADR-0093).
+    std::uint32_t restirCandidates = 8;
     /// How indirect light is traced (ADR-0045).
     IndirectLightConfig indirect;
     /// Radians across the view, for cameras that set no field of view of their own.
@@ -294,8 +299,8 @@ public:
     void SetVolumetricFog(bool enabled, std::uint32_t slices, std::uint32_t tile);
     /// Particles in the frame's acceleration structure (ADR-0062); off, rays pass through them.
     void SetTracedParticles(bool enabled);
-    /// See RendererConfig::restirSpatial and restirUnbiased.
-    void SetRestir(bool spatial, bool unbiased);
+    /// See RendererConfig::restirSpatial, restirUnbiased and restirCandidates.
+    void SetRestir(bool spatial, bool unbiased, std::uint32_t candidates = 8);
     void SetIndirectLightConfig(const IndirectLightConfig& config);
     /// From the next frame; see RendererConfig.
     void SetFieldOfView(float radians);

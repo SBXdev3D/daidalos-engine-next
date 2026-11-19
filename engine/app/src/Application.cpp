@@ -37,12 +37,14 @@ constexpr std::uint32_t kMaxWorkerThreads = 4;
 constexpr std::uint32_t kProbeWarmupFrames = 90;
 constexpr std::uint32_t kProbeFrames = 120;
 // The settings the presets decide, which ChooseQuality puts back to the preset.
-constexpr std::array<std::string_view, 13> kPresetSettings{
-    "renderer.render_scale",         "renderer.min_render_scale", "renderer.indirect_light",
-    "renderer.gi_bounces",           "renderer.gi_rays",          "renderer.reflections",
-    "renderer.reflection_roughness", "renderer.restir_spatial",   "renderer.volumetric_fog",
-    "renderer.fog_slices",           "renderer.fog_tile",         "renderer.particle_density",
-    "renderer.traced_particles"};
+constexpr std::array<std::string_view, 15> kPresetSettings{"renderer.render_scale",    "renderer.min_render_scale",
+                                                           "renderer.indirect_light",  "renderer.gi_bounces",
+                                                           "renderer.gi_rays",         "renderer.gi_pixels_per_ray",
+                                                           "renderer.reflections",     "renderer.reflection_roughness",
+                                                           "renderer.restir_spatial",  "renderer.restir_candidates",
+                                                           "renderer.volumetric_fog",  "renderer.fog_slices",
+                                                           "renderer.fog_tile",        "renderer.particle_density",
+                                                           "renderer.traced_particles"};
 
 /// The variable's value if something set it, the preset's otherwise.
 template <class T>
@@ -422,6 +424,8 @@ core::Result<void> Application::LoadConfiguration() {
         m_restirSpatial =
             m_cvars.Register<bool>("renderer.restir_spatial", true,
                                    "Pixels reuse the lights their neighbours chose; off, only their own past");
+        m_restirCandidates = m_cvars.Register<std::int64_t>(
+            "renderer.restir_candidates", 8, "Lights each pixel draws before it keeps one, from 1 to 32");
         m_restirUnbiased = m_cvars.Register<bool>(
             "renderer.restir_unbiased", false,
             "Test every reused light for shadows, to compare with the path tracer: twice the rays");
@@ -436,6 +440,9 @@ core::Result<void> Application::LoadConfiguration() {
             "Brightest bounced light, as on screen before tone mapping, against fireflies; 0 for no limit");
         m_giRays = m_cvars.Register<std::int64_t>(
             "renderer.gi_rays", 1, "Rays of indirect light per pixel, from 1 to 16: less noise, for their cost");
+        m_giPixelsPerRay = m_cvars.Register<std::int64_t>(
+            "renderer.gi_pixels_per_ray", 1,
+            "Pixels per ray of indirect light: 1, 2 in a checkerboard or 4, the others filled from their neighbours");
         m_normalStrength = m_cvars.Register<double>(
             "renderer.normal_strength", 1.0, "Multiplies the relief of normal maps: 0 flattens them, 1 as authored");
         m_fieldOfView = m_cvars.Register<double>(
@@ -702,6 +709,7 @@ core::Result<void> Application::CreateRenderer() {
              .fogTile = FogTile(quality.fogTile),
              .restirSpatial = quality.restirSpatial,
              .restirUnbiased = m_restirUnbiased->Get(),
+             .restirCandidates = static_cast<std::uint32_t>(std::clamp<std::int64_t>(quality.restirCandidates, 1, 32)),
              .indirect = IndirectLight(),
              .fieldOfView = FieldOfViewRadians(*m_fieldOfView),
              .viewDistance = ViewDistanceMeters(*m_viewDistance),
@@ -749,7 +757,8 @@ renderer::IndirectLightConfig Application::IndirectLight() const {
     return {.bounces = static_cast<std::uint32_t>(std::clamp<std::int64_t>(quality.giBounces, 0, 3)),
             .lightCandidates = count(*m_giLightCandidates, 1, 8),
             .clamp = static_cast<float>(std::max(m_giClamp->Get(), 0.0)),
-            .rays = static_cast<std::uint32_t>(std::clamp<std::int64_t>(quality.giRays, 1, 16))};
+            .rays = static_cast<std::uint32_t>(std::clamp<std::int64_t>(quality.giRays, 1, 16)),
+            .pixelsPerRay = static_cast<std::uint32_t>(std::clamp<std::int64_t>(quality.giPixelsPerRay, 1, 4))};
 }
 
 Quality Application::CurrentQuality() const {
@@ -789,9 +798,11 @@ QualitySettings Application::EffectiveQualitySettings() const {
             .indirectLight = Preset(*m_indirectLight, preset.indirectLight),
             .giBounces = Preset(*m_giBounces, preset.giBounces),
             .giRays = Preset(*m_giRays, preset.giRays),
+            .giPixelsPerRay = Preset(*m_giPixelsPerRay, preset.giPixelsPerRay),
             .reflections = Preset(*m_reflections, preset.reflections),
             .reflectionRoughness = Preset(*m_reflectionRoughness, preset.reflectionRoughness),
             .restirSpatial = Preset(*m_restirSpatial, preset.restirSpatial),
+            .restirCandidates = Preset(*m_restirCandidates, preset.restirCandidates),
             .volumetricFog = Preset(*m_volumetricFog, preset.volumetricFog),
             .fogSlices = Preset(*m_fogSlices, preset.fogSlices),
             .fogTile = Preset(*m_fogTile, preset.fogTile),
@@ -934,7 +945,8 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     m_renderer->SetReflections(quality.reflections);
     m_renderer->SetReflectionRoughness(ReflectionRoughness(quality.reflectionRoughness));
     m_renderer->SetVolumetricFog(quality.volumetricFog, FogSlices(quality.fogSlices), FogTile(quality.fogTile));
-    m_renderer->SetRestir(quality.restirSpatial, m_restirUnbiased->Get());
+    m_renderer->SetRestir(quality.restirSpatial, m_restirUnbiased->Get(),
+                          static_cast<std::uint32_t>(std::clamp<std::int64_t>(quality.restirCandidates, 1, 32)));
     m_renderer->SetTracedParticles(quality.tracedParticles);
     m_renderer->SetIndirectLightConfig(IndirectLight());
     m_renderer->SetFieldOfView(FieldOfViewRadians(*m_fieldOfView));

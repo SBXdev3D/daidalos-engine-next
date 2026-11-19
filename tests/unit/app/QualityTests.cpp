@@ -21,8 +21,10 @@ TEST(Quality, EachPresetCostsMoreThanTheOneBelow) {
         EXPECT_LE(lower.minRenderScale, higher.minRenderScale) << NameOf(kQualities[index]);
         EXPECT_LE(lower.giBounces, higher.giBounces) << NameOf(kQualities[index]);
         EXPECT_LE(lower.giRays, higher.giRays) << NameOf(kQualities[index]);
+        EXPECT_GE(lower.giPixelsPerRay, higher.giPixelsPerRay) << NameOf(kQualities[index]);
         EXPECT_LE(lower.reflectionRoughness, higher.reflectionRoughness) << NameOf(kQualities[index]);
         EXPECT_LE(lower.restirSpatial, higher.restirSpatial) << NameOf(kQualities[index]);
+        EXPECT_LE(lower.restirCandidates, higher.restirCandidates) << NameOf(kQualities[index]);
         EXPECT_LE(lower.fogSlices, higher.fogSlices) << NameOf(kQualities[index]);
         EXPECT_GE(lower.fogTile, higher.fogTile) << NameOf(kQualities[index]);
         EXPECT_NE(lower, higher);
@@ -45,6 +47,7 @@ TEST(Quality, TheFirstLaunchChoosesWhatHoldsTheFrameRate) {
     // At 120 fps, the same GPU steps down to Medium: High's 7.7 ms leave no margin in 8.3.
     EXPECT_EQ(ChooseQuality(7.7, 120.0), Quality::Medium);
     EXPECT_EQ(ChooseQuality(12.0, 60.0), Quality::High);
-    EXPECT_EQ(ChooseQuality(30.0, 60.0), Quality::Low);
+    EXPECT_EQ(ChooseQuality(30.0, 60.0), Quality::Medium) << "Medium is 0.43 of High (ADR-0093)";
+    EXPECT_EQ(ChooseQuality(35.0, 60.0), Quality::Low);
     EXPECT_EQ(ChooseQuality(100.0, 60.0), Quality::Low) << "Low is the floor";
 }

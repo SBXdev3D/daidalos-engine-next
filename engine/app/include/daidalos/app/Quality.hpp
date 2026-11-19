@@ -23,15 +23,17 @@ struct QualitySettings {
     /// renderer.render_scale and renderer.min_render_scale: what dynamic resolution moves between.
     double renderScale = 1.0;
     double minRenderScale = 0.5;
-    /// renderer.indirect_light, renderer.gi_bounces and renderer.gi_rays.
+    /// renderer.indirect_light, renderer.gi_bounces, renderer.gi_rays and renderer.gi_pixels_per_ray.
     bool indirectLight = true;
     std::int64_t giBounces = 1;
     std::int64_t giRays = 1;
+    std::int64_t giPixelsPerRay = 1;
     /// renderer.reflections and renderer.reflection_roughness.
     bool reflections = true;
     double reflectionRoughness = 0.6;
-    /// renderer.restir_spatial.
+    /// renderer.restir_spatial and renderer.restir_candidates.
     bool restirSpatial = true;
+    std::int64_t restirCandidates = 8;
     /// renderer.volumetric_fog, renderer.fog_slices and renderer.fog_tile.
     bool volumetricFog = true;
     std::int64_t fogSlices = 64;

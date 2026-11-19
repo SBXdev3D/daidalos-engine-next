@@ -8,12 +8,14 @@
 #include <daidalos/rhi/Spirv.hpp>
 
 #include <glm/vec4.hpp>
+#include <shaders/GiFill.cs.spv.h>
 #include <shaders/GiReflect.cs.spv.h>
 #include <shaders/GiResolve.cs.spv.h>
 #include <shaders/GiTrace.cs.spv.h>
 #include <shaders/GiUpdate.cs.spv.h>
 
 #include <algorithm>
+#include <array>
 #include <utility>
 
 #include "RenderGraph.hpp"
@@ -45,6 +47,9 @@ struct GiPushConstants {
     float maxRoughness;
     std::uint32_t counts;
     float clamp;
+    std::uint32_t history;
+    std::uint32_t previousHistory;
+    std::uint32_t historyValid;
 };
 static_assert(sizeof(GiPushConstants) <= rhi::kMaxPushConstantSize);
 
@@ -64,16 +69,19 @@ constexpr std::uint32_t kResolveGroupSize = 64;
 GlobalIllumination::GlobalIllumination(GlobalIllumination&& other) noexcept
     : m_device(other.m_device), m_update(std::exchange(other.m_update, {})),
       m_resolve(std::exchange(other.m_resolve, {})), m_trace(std::exchange(other.m_trace, {})),
-      m_reflect(std::exchange(other.m_reflect, {})), m_keys(std::exchange(other.m_keys, {})),
-      m_accumulation(std::exchange(other.m_accumulation, {})), m_radiance(std::exchange(other.m_radiance, {})),
-      m_ages(std::exchange(other.m_ages, {})), m_anchors(std::exchange(other.m_anchors, {})),
-      m_output(std::exchange(other.m_output, {})), m_reflections(std::exchange(other.m_reflections, {})),
-      m_extent(other.m_extent), m_reset(other.m_reset) {}
+      m_fill(std::exchange(other.m_fill, {})), m_reflect(std::exchange(other.m_reflect, {})),
+      m_keys(std::exchange(other.m_keys, {})), m_accumulation(std::exchange(other.m_accumulation, {})),
+      m_radiance(std::exchange(other.m_radiance, {})), m_ages(std::exchange(other.m_ages, {})),
+      m_anchors(std::exchange(other.m_anchors, {})), m_output(std::exchange(other.m_output, {})),
+      m_reflections(std::exchange(other.m_reflections, {})),
+      m_history{std::exchange(other.m_history[0], {}), std::exchange(other.m_history[1], {})}, m_extent(other.m_extent),
+      m_reset(other.m_reset), m_historyFrame(other.m_historyFrame) {}
 
 GlobalIllumination::~GlobalIllumination() {
     m_device->DestroyPipeline(m_update);
     m_device->DestroyPipeline(m_resolve);
     m_device->DestroyPipeline(m_trace);
+    m_device->DestroyPipeline(m_fill);
     m_device->DestroyPipeline(m_reflect);
     m_device->DestroyBuffer(m_keys);
     m_device->DestroyBuffer(m_accumulation);
@@ -82,6 +90,8 @@ GlobalIllumination::~GlobalIllumination() {
     m_device->DestroyBuffer(m_anchors);
     m_device->DestroyTexture(m_output);
     m_device->DestroyTexture(m_reflections);
+    m_device->DestroyTexture(m_history[0]);
+    m_device->DestroyTexture(m_history[1]);
 }
 
 core::Result<GlobalIllumination> GlobalIllumination::Create(rhi::Device& device) {
@@ -92,6 +102,8 @@ core::Result<GlobalIllumination> GlobalIllumination::Create(rhi::Device& device)
                                      {.shader = rhi::ToSpirv(kGiResolveCsSpirv), .name = "Radiance cache resolve"}));
     DAI_TRY_ASSIGN(gi.m_trace,
                    device.CreateComputePipeline({.shader = rhi::ToSpirv(kGiTraceCsSpirv), .name = "Indirect light"}));
+    DAI_TRY_ASSIGN(gi.m_fill, device.CreateComputePipeline(
+                                  {.shader = rhi::ToSpirv(kGiFillCsSpirv), .name = "Indirect light fill"}));
     DAI_TRY_ASSIGN(gi.m_reflect,
                    device.CreateComputePipeline({.shader = rhi::ToSpirv(kGiReflectCsSpirv), .name = "Reflections"}));
     const auto buffer = [&device](rhi::BufferHandle& handle, std::uint64_t elementSize,
@@ -120,17 +132,28 @@ core::Result<void> GlobalIllumination::Resize(rhi::Extent extent) {
              .usage = rhi::TextureUsage::Storage | rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferSrc,
              .name = name});
     };
-    DAI_TRY_ASSIGN(rhi::TextureHandle output, create("Indirect light"));
-    core::Result<rhi::TextureHandle> reflections = create("Reflections");
-    if (!reflections) {
-        m_device->DestroyTexture(output);
-        return tl::unexpected(std::move(reflections.error()));
+    std::array<rhi::TextureHandle, 4> textures{};
+    const std::array<const char*, 4> names{"Indirect light", "Reflections", "Indirect light history",
+                                           "Indirect light history"};
+    for (std::size_t index = 0; index < textures.size(); ++index) {
+        core::Result<rhi::TextureHandle> texture = create(names[index]);
+        if (!texture) {
+            for (const rhi::TextureHandle made : textures) {
+                m_device->DestroyTexture(made);
+            }
+            return tl::unexpected(std::move(texture.error()));
+        }
+        textures[index] = *texture;
     }
     m_device->DestroyTexture(m_output);
     m_device->DestroyTexture(m_reflections);
-    m_output = output;
-    m_reflections = *reflections;
+    m_device->DestroyTexture(m_history[0]);
+    m_device->DestroyTexture(m_history[1]);
+    m_output = textures[0];
+    m_reflections = textures[1];
+    m_history = {textures[2], textures[3]};
     m_extent = extent;
+    m_historyFrame.reset();
     return {};
 }
 
@@ -158,7 +181,10 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
                          m_device->StorageImageIndex(m_reflections),
                          inputs.reflectionRoughness,
                          Counts(inputs.settings),
-                         inputs.settings.clamp};
+                         inputs.settings.clamp,
+                         0,
+                         0,
+                         0};
     const std::vector<rhi::BufferUse> cache{{m_keys, rhi::Access::ComputeShaderWrite},
                                             {m_accumulation, rhi::Access::ComputeShaderWrite},
                                             {m_radiance, rhi::Access::ComputeShaderWrite},
@@ -198,19 +224,51 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
                       commands.Push(push);
                       commands.Dispatch(resolveGroups);
                   });
+    // Half the pixels trace, or a quarter, and the upsample fills the others (ADR-0093). The cache's debug view
+    // shows every pixel's own cell.
+    const std::uint32_t perRay = mode == Mode::Indirect ? inputs.settings.pixelsPerRay : 1;
+    const bool sparse = perRay == 2 || perRay == 4;
+    GiPushConstants trace = push;
+    trace.spacing = sparse ? perRay : 1;
+    const std::uint32_t traceGroupsX = sparse ? (groupsX + 1) / 2 : groupsX;
+    const std::uint32_t traceGroupsY = perRay == 4 ? (groupsY + 1) / 2 : groupsY;
     graph.AddPass({.name = "Indirect light",
                    .group = "Indirect light",
-                   .textures = {{m_output, rhi::Access::ComputeShaderWrite, true},
+                   .textures = {{m_output, rhi::Access::ComputeShaderWrite, !sparse},
                                 {inputs.depth, rhi::Access::ComputeShaderRead},
                                 {inputs.normals, rhi::Access::ComputeShaderRead}},
                    .buffers = traced,
                    .structures = {{inputs.structure, rhi::Access::RayQueryRead}}},
-                  [this, push, groupsX, groupsY](rhi::CommandList& commands) {
+                  [this, trace, traceGroupsX, traceGroupsY](rhi::CommandList& commands) {
                       DAI_PROFILE_SCOPE("renderer::GlobalIllumination::Trace");
                       commands.BindPipeline(m_trace);
-                      commands.Push(push);
-                      commands.Dispatch(groupsX, groupsY);
+                      commands.Push(trace);
+                      commands.Dispatch(traceGroupsX, traceGroupsY);
                   });
+    if (sparse) {
+        // The history alternates between two textures: the fill reads last frame's while it writes this one's.
+        const std::size_t current = inputs.frameIndex % 2;
+        GiPushConstants fill = trace;
+        fill.history = m_device->StorageImageIndex(m_history[current]);
+        fill.previousHistory = m_device->StorageImageIndex(m_history[1 - current]);
+        fill.historyValid = m_historyFrame.has_value() && *m_historyFrame + 1 == inputs.frameIndex ? 1 : 0;
+        m_historyFrame = inputs.frameIndex;
+        graph.AddPass({.name = "Indirect light fill",
+                       .group = "Indirect light",
+                       .textures = {{m_output, rhi::Access::ComputeShaderWrite},
+                                    {m_history[current], rhi::Access::ComputeShaderWrite, true},
+                                    {m_history[1 - current], rhi::Access::ComputeShaderRead},
+                                    {inputs.depth, rhi::Access::ComputeShaderRead},
+                                    {inputs.normals, rhi::Access::ComputeShaderRead}}},
+                      [this, fill, groupsX, groupsY](rhi::CommandList& commands) {
+                          DAI_PROFILE_SCOPE("renderer::GlobalIllumination::Fill");
+                          commands.BindPipeline(m_fill);
+                          commands.Push(fill);
+                          commands.Dispatch(groupsX, groupsY);
+                      });
+    } else {
+        m_historyFrame.reset();
+    }
     if (!inputs.reflections || mode != Mode::Indirect) {
         return;
     }
