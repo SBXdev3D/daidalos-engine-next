@@ -2106,6 +2106,31 @@ This phase is deliberately open-ended.
 
 The editor must grow according to actual development needs rather than attempting to reproduce every feature of a commercial engine.
 
+
+## Phase 16 — The Factory Showcase
+
+**Goal:** Rebuild the factory demo with everything the engine can do, as a place rather than a test level (ADR-0082).
+
+Done:
+
+- A kit of 38 CC0 props from Poly Haven, and lamp prefabs (ADR-0082).
+- The rooms dressed by purpose with a rule-based script checked in the editor; props as static boxes for physics, navigation and sound (ADR-0083).
+- Lamps on room power circuits, five scares along the route, a way out and an end summary (ADR-0084).
+- Combat feel: where a wound came from, hit markers, recoil, flinching (ADR-0085).
+- An opening camera flight, and fixed showcase shots (ADR-0086).
+- The budget on every preset; frustum culling; the first launch's measurement fixed (ADR-0087).
+
+## Phase 17 — Hardening
+
+**Goal:** Make what exists fast and sound, then judge it (ADR-0088).
+
+Done:
+
+- Portal visibility: rooms and doorways as cells (ADR-0089).
+- Levels of detail measured and not needed; Ultra's indirect light halved (ADR-0090).
+- A bug sweep under AddressSanitizer (ADR-0091).
+- The assessment: [docs/ASSESSMENT.md](docs/ASSESSMENT.md).
+
 ---
 
 # 27. First Vertical Slice
