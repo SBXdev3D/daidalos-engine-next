@@ -4,6 +4,7 @@
 
 #include <daidalos/core/Assert.hpp>
 #include <daidalos/core/Profile.hpp>
+#include <daidalos/logging/Log.hpp>
 #include <daidalos/rhi/AccelerationStructure.hpp>
 #include <daidalos/rhi/CommandList.hpp>
 #include <daidalos/rhi/Device.hpp>
@@ -104,9 +105,14 @@ VkAccelerationStructureBuildGeometryInfoKHR BuildInfo(const AccelerationStructur
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
         .type = desc.level == AccelerationStructureLevel::Top ? VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR
                                                               : VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+        // A bottom-level structure built once may be compacted after its build (ADR-0100).
         .flags = static_cast<VkBuildAccelerationStructureFlagsKHR>(
-            desc.rebuiltEveryFrame ? VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR
-                                   : VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR),
+            desc.rebuiltEveryFrame
+                ? VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR
+                : VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR |
+                      (desc.level == AccelerationStructureLevel::Bottom
+                           ? VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR
+                           : 0)),
         .mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
         .geometryCount = 1,
         .pGeometries = &geometry,
@@ -120,6 +126,51 @@ void RecordBuild(VkCommandBuffer commands, const AccelerationStructureData& data
     const VkAccelerationStructureBuildRangeInfoKHR range{.primitiveCount = geometry.primitives};
     const VkAccelerationStructureBuildRangeInfoKHR* ranges = &range;
     vkCmdBuildAccelerationStructuresKHR(commands, 1, &info, &ranges);
+}
+
+// A structure's storage and handle, of a given size.
+struct Storage {
+    VkAccelerationStructureKHR structure = VK_NULL_HANDLE;
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VmaAllocation allocation = nullptr;
+    VkDeviceAddress address = 0;
+};
+
+core::Result<Storage> CreateStorage(Device::Impl& impl, VkDeviceSize size, VkAccelerationStructureTypeKHR type,
+                                    const std::string& name) {
+    Storage storage;
+    const VmaAllocationCreateInfo allocation{.usage = VMA_MEMORY_USAGE_AUTO};
+    VkBufferCreateInfo info{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = size,
+        .usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    impl.Share(info);
+    if (const VkResult result =
+            vmaCreateBuffer(impl.allocator, &info, &allocation, &storage.buffer, &storage.allocation, nullptr);
+        result != VK_SUCCESS) {
+        return tl::unexpected(VulkanError(std::format("Creating acceleration structure '{}'", name), result));
+    }
+    const VkAccelerationStructureCreateInfoKHR createInfo{
+        .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
+        .buffer = storage.buffer,
+        .size = size,
+        .type = type,
+    };
+    if (const VkResult result = vkCreateAccelerationStructureKHR(impl.device, &createInfo, nullptr, &storage.structure);
+        result != VK_SUCCESS) {
+        vmaDestroyBuffer(impl.allocator, storage.buffer, storage.allocation);
+        return tl::unexpected(VulkanError("vkCreateAccelerationStructureKHR", result));
+    }
+    const VkAccelerationStructureDeviceAddressInfoKHR addressInfo{
+        .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR,
+        .accelerationStructure = storage.structure,
+    };
+    storage.address = vkGetAccelerationStructureDeviceAddressKHR(impl.device, &addressInfo);
+    impl.SetName(VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, reinterpret_cast<std::uint64_t>(storage.structure), name);
+    impl.SetName(VK_OBJECT_TYPE_BUFFER, reinterpret_cast<std::uint64_t>(storage.buffer), name);
+    return storage;
 }
 
 } // namespace
@@ -257,6 +308,28 @@ core::Result<void> Device::BuildWithUploads(AccelerationStructureHandle structur
     commands.Use({}, inputs, {&write, 1});
     commands.BuildAccelerationStructure(structure);
 
+    // Its compacted size, read once the uploads are done (ADR-0100).
+    if (!m_impl->freeCompactionQueries.empty()) {
+        const std::uint32_t query = m_impl->freeCompactionQueries.back();
+        m_impl->freeCompactionQueries.pop_back();
+        const VkCommandBuffer recording = m_impl->uploads.commands;
+        const VkMemoryBarrier2 built{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+            .srcStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+            .srcAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+            .dstStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+            .dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
+        };
+        const VkDependencyInfo dependency{
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .memoryBarrierCount = 1, .pMemoryBarriers = &built};
+        vkCmdPipelineBarrier2(recording, &dependency);
+        vkCmdResetQueryPool(recording, m_impl->compactionQueries, query, 1);
+        vkCmdWriteAccelerationStructuresPropertiesKHR(recording, 1, &data.structure,
+                                                      VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR,
+                                                      m_impl->compactionQueries, query);
+        m_impl->pendingCompactions.push_back({.structure = structure, .query = query});
+    }
+
     // The scratch memory goes away once the build is done.
     Impl* impl = m_impl.get();
     m_impl->Defer([impl, scratch = data.scratch, allocation = data.scratchAllocation] {
@@ -265,6 +338,80 @@ core::Result<void> Device::BuildWithUploads(AccelerationStructureHandle structur
     data.scratch = VK_NULL_HANDLE;
     data.scratchAllocation = nullptr;
     data.scratchAddress = 0;
+    return {};
+}
+
+core::Result<void> Device::Impl::CompactBuiltStructures() {
+    if (pendingCompactions.empty()) {
+        return {};
+    }
+    DAI_TRY_ASSIGN(const std::uint64_t completed, CompletedValue());
+    bool copied = false;
+    std::uint64_t builtBytes = 0;
+    std::uint64_t compactedBytes = 0;
+    std::uint32_t compactedCount = 0;
+    std::erase_if(pendingCompactions, [&](const PendingCompaction& pending) {
+        if (pending.submitted == 0 || pending.submitted > completed) {
+            return false;
+        }
+        freeCompactionQueries.push_back(pending.query);
+        VkDeviceSize compacted = 0;
+        if (vkGetQueryPoolResults(device, compactionQueries, pending.query, 1, sizeof(compacted), &compacted,
+                                  sizeof(compacted), VK_QUERY_RESULT_64_BIT) != VK_SUCCESS) {
+            return true;
+        }
+        AccelerationStructureData* data = accelerationStructures.TryGet(pending.structure);
+        if (data == nullptr || compacted == 0 || compacted >= data->size) {
+            return true;
+        }
+        if (!UploadCommands()) {
+            return true;
+        }
+        const core::Result<Storage> storage =
+            CreateStorage(*this, compacted, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, data->desc.name);
+        if (!storage) {
+            // Out of memory for the copy: the structure stays as it was built.
+            return true;
+        }
+        const VkCopyAccelerationStructureInfoKHR copy{
+            .sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR,
+            .src = data->structure,
+            .dst = storage->structure,
+            .mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR,
+        };
+        vkCmdCopyAccelerationStructureKHR(uploads.commands, &copy);
+        copied = true;
+        // Frames in flight still trace the old one; it goes after the next submission, which holds the copy.
+        Defer([this, structure = data->structure, buffer = data->storage, allocation = data->storageAllocation] {
+            vkDestroyAccelerationStructureKHR(device, structure, nullptr);
+            vmaDestroyBuffer(allocator, buffer, allocation);
+        });
+        data->structure = storage->structure;
+        data->storage = storage->buffer;
+        data->storageAllocation = storage->allocation;
+        data->address = storage->address;
+        builtBytes += data->size;
+        compactedBytes += compacted;
+        ++compactedCount;
+        data->size = compacted;
+        return true;
+    });
+    if (copied) {
+        // What traces the structures, or builds a top level over them, comes after the copies.
+        const VkMemoryBarrier2 barrier{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+            // Without rayTracingMaintenance1, copies belong to the build stage.
+            .srcStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+            .srcAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+            .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            .dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
+        };
+        const VkDependencyInfo dependency{
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .memoryBarrierCount = 1, .pMemoryBarriers = &barrier};
+        vkCmdPipelineBarrier2(uploads.commands, &dependency);
+        DAI_LOG_DEBUG(kModule, "Compacted {} acceleration structures: {:.1f} MB to {:.1f} MB", compactedCount,
+                     static_cast<double>(builtBytes) / 1048576.0, static_cast<double>(compactedBytes) / 1048576.0);
+    }
     return {};
 }
 

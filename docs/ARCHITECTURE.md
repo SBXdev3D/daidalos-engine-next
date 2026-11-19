@@ -258,7 +258,7 @@ A pass marked `async` may run on a second queue, one that computes without drawi
 
 ## Acceleration structures
 
-Rays are traced against a top-level acceleration structure rebuilt every frame from the frame's draws (ADR-0033). Each mesh has a bottom-level structure, built once with its upload. Skinned draws are skinned once per frame by a compute pass, into world-space vertices that the G-buffer draws and that each skinned draw's own structure is refitted from, so rays and rasterization see the same surface. A ray's hit names its draw's entry in the frame's instance data, which holds its vertices, indices and material. `renderer.debug_view rays` shows the structure from the camera, one color per instance. `renderer.debug_view normals` shows the G-buffer's world normals, normal maps included, and `motion` its motion vectors.
+Rays are traced against a top-level acceleration structure rebuilt every frame from the frame's draws (ADR-0033), built for fast tracing rather than fast building. Each mesh has a bottom-level structure, built once with its upload and compacted a frame or two later, once the build's compacted size is known: it then holds about 45% of the memory (ADR-0100). Skinned draws are skinned once per frame by a compute pass, into world-space vertices that the G-buffer draws and that each skinned draw's own structure is refitted from, so rays and rasterization see the same surface. A ray's hit names its draw's entry in the frame's instance data, which holds its vertices, indices and material. `renderer.debug_view rays` shows the structure from the camera, one color per instance. `renderer.debug_view normals` shows the G-buffer's world normals, normal maps included, and `motion` its motion vectors.
 
 ## The reference path tracer
 

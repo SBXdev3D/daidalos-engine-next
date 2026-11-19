@@ -12,6 +12,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <span>
 
 #include "GpuFixture.hpp"
@@ -66,7 +67,7 @@ protected:
                                                      .memory = rhi::MemoryLocation::CpuToGpu,
                                                      .name = "Instances"}));
         // The first quad where it was made; the second moved 5 m along x and 3 m down, and not opaque.
-        const std::array<rhi::AccelerationStructureInstance, 2> instances{{
+        m_instanceList = {{
             {.customIndex = 4, .mask = 0x01, .structure = m_quad},
             {.transform = glm::translate(glm::mat4(1.0f), glm::vec3(5.0f, 0.0f, -3.0f)),
              .customIndex = 9,
@@ -74,7 +75,7 @@ protected:
              .opaque = false,
              .structure = m_quad},
         }};
-        Device().WriteInstances(m_instances, 0, instances);
+        Device().WriteInstances(m_instances, 0, m_instanceList);
 
         m_origins = Created(Device().CreateBuffer({.size = sizeof(kOrigins),
                                                    .usage = rhi::BufferUsage::Storage,
@@ -140,6 +141,7 @@ protected:
     rhi::BufferHandle m_instances;
     rhi::BufferHandle m_origins;
     rhi::BufferHandle m_results;
+    std::array<rhi::AccelerationStructureInstance, 2> m_instanceList{};
     rhi::AccelerationStructureHandle m_quad;
     rhi::AccelerationStructureHandle m_scene;
     rhi::PipelineHandle m_pipeline;
@@ -168,4 +170,27 @@ TEST_F(AccelerationStructureTest, StructuresAreCountedInTheDeviceMemory) {
     EXPECT_EQ(memory.accelerationStructureBytes,
               Device().AccelerationStructureSize(m_quad) + Device().AccelerationStructureSize(m_scene));
     EXPECT_GT(Device().AccelerationStructureSize(m_quad), 0U);
+}
+
+TEST_F(AccelerationStructureTest, AStructureBuiltWithTheUploadsIsCompactedAndStillHit) {
+    const std::uint64_t built = Device().AccelerationStructureSize(m_quad);
+    // The first frame submits the uploads that hold the build; the next, once they are done, compacts it.
+    for (int frame = 0; frame < 2; ++frame) {
+        core::Result<std::optional<rhi::Frame>> begun = Device().BeginFrame();
+        ASSERT_TRUE(begun.has_value() && begun->has_value());
+        ASSERT_TRUE(Device().EndFrame().has_value());
+        ASSERT_TRUE(Device().WaitIdle().has_value());
+    }
+    EXPECT_LT(Device().AccelerationStructureSize(m_quad), built);
+    EXPECT_EQ(Device().Memory().accelerationStructureBytes,
+              Device().AccelerationStructureSize(m_quad) + Device().AccelerationStructureSize(m_scene));
+
+    // The instances name the structure by its address, which moved.
+    Device().WriteInstances(m_instances, 0, m_instanceList);
+    const auto hits = Trace(0xFF);
+    EXPECT_EQ(hits[0].x, 5.0f);
+    EXPECT_FLOAT_EQ(hits[0].y, 10.0f);
+    EXPECT_EQ(hits[1].x, 10.0f);
+    EXPECT_FLOAT_EQ(hits[1].y, 13.0f);
+    EXPECT_EQ(hits[2].x, 0.0f);
 }

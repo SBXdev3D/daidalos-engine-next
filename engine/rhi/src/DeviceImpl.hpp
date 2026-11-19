@@ -42,6 +42,8 @@ inline constexpr std::uint32_t kMaxBindlessCubes = 64;
 inline constexpr std::uint32_t kMaxStorageImages = 128;
 /// Top-level acceleration structures that shaders can trace at the same time.
 inline constexpr std::uint32_t kMaxBindlessAccelerationStructures = 16;
+/// Structures built with the uploads whose compacted size is not read yet: more are left uncompacted.
+inline constexpr std::uint32_t kMaxPendingCompactions = 4096;
 
 [[nodiscard]] core::Error VulkanError(std::string_view operation, VkResult result);
 [[nodiscard]] VkFormat ToVulkan(Format format);
@@ -153,6 +155,9 @@ struct Device::Impl {
     /// Submits the collected copies, if any, before anything else reaches the queue. Everything
     /// submitted later sees their results, without waiting for them.
     [[nodiscard]] core::Result<void> FlushUploads();
+    /// Replaces each bottom-level structure built with the uploads, once its build is done, by a compacted copy:
+    /// recorded with the uploads, the old one destroyed after it (ADR-0100). Outside frames.
+    [[nodiscard]] core::Result<void> CompactBuiltStructures();
 
     struct Deferred {
         std::uint64_t retireValue = 0;
@@ -247,6 +252,16 @@ struct Device::Impl {
     core::SlotPool<PipelineData, PipelineTag> pipelines;
     core::SlotPool<AccelerationStructureData, AccelerationStructureTag> accelerationStructures;
     std::deque<Deferred> deferred;
+    /// The compacted sizes of the structures built with the uploads, one query each (ADR-0100).
+    VkQueryPool compactionQueries = VK_NULL_HANDLE;
+    std::vector<std::uint32_t> freeCompactionQueries;
+    struct PendingCompaction {
+        AccelerationStructureHandle structure;
+        std::uint32_t query = 0;
+        /// The timeline value of the uploads that hold the build and the query; 0 until they are submitted.
+        std::uint64_t submitted = 0;
+    };
+    std::vector<PendingCompaction> pendingCompactions;
 
     /// Live swapchains; each must be destroyed before the device.
     std::uint32_t swapchains = 0;

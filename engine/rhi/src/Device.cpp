@@ -228,6 +228,7 @@ Device::Impl::~Impl() {
         }
         vkDestroyCommandPool(device, immediatePool, nullptr);
         vkDestroyQueryPool(device, timestamps, nullptr);
+        vkDestroyQueryPool(device, compactionQueries, nullptr);
         vkDestroySemaphore(device, timeline, nullptr);
         vkDestroySemaphore(device, asyncTimeline, nullptr);
         if (allocator != nullptr) {
@@ -547,6 +548,19 @@ core::Result<void> Device::Impl::CreateFrameResources() {
         if (const VkResult result = vkCreateQueryPool(device, &queryInfo, nullptr, &timestamps); result != VK_SUCCESS) {
             return tl::unexpected(VulkanError("vkCreateQueryPool", result));
         }
+    }
+
+    const VkQueryPoolCreateInfo compactionInfo{
+        .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+        .queryType = VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR,
+        .queryCount = kMaxPendingCompactions,
+    };
+    if (const VkResult result = vkCreateQueryPool(device, &compactionInfo, nullptr, &compactionQueries);
+        result != VK_SUCCESS) {
+        return tl::unexpected(VulkanError("vkCreateQueryPool", result));
+    }
+    for (std::uint32_t query = kMaxPendingCompactions; query > 0; --query) {
+        freeCompactionQueries.push_back(query - 1);
     }
 
     const bool computeTimestamps = timestamps != VK_NULL_HANDLE && computeQueue != VK_NULL_HANDLE &&
@@ -1017,7 +1031,12 @@ core::Result<void> Device::Impl::FlushUploads() {
     if (const VkResult result = vkEndCommandBuffer(commands); result != VK_SUCCESS) {
         return tl::unexpected(VulkanError("vkEndCommandBuffer", result));
     }
-    DAI_TRY(SubmitCommands(commands));
+    DAI_TRY_ASSIGN(const std::uint64_t submitted, SubmitCommands(commands));
+    for (PendingCompaction& pending : pendingCompactions) {
+        if (pending.submitted == 0) {
+            pending.submitted = submitted;
+        }
+    }
     return {};
 }
 
@@ -1158,6 +1177,7 @@ core::Result<std::optional<Frame>> Device::BeginFrame(Swapchain* swapchain) {
     DAI_PROFILE_SCOPE("rhi::BeginFrame");
     DAI_ASSERT(!m_impl->frameOpen, "BeginFrame called twice without EndFrame");
 
+    DAI_TRY(m_impl->CompactBuiltStructures());
     DAI_TRY(m_impl->FlushUploads());
     Impl::FrameSlot& slot = m_impl->frames[m_impl->frameIndex];
     DAI_TRY(m_impl->WaitForValue(slot.submittedValue));

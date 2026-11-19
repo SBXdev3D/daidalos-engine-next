@@ -163,7 +163,9 @@ public:
     [[nodiscard]] std::uint64_t AccelerationStructureSize(AccelerationStructureHandle structure) const;
     /// Builds a bottom-level structure with the uploads, after the copies recorded so far, so that it
     /// can be built from freshly uploaded vertices. Its scratch memory is released afterwards: it cannot
-    /// be built again. Not allowed between BeginFrame and EndFrame.
+    /// be built again. Not allowed between BeginFrame and EndFrame. Once the build is done, a later
+    /// BeginFrame replaces it with a compacted copy (ADR-0100): write the instances that use it after
+    /// BeginFrame, each frame.
     [[nodiscard]] core::Result<void> BuildWithUploads(AccelerationStructureHandle structure);
     /// Writes instances for a top-level build into a CpuToGpu buffer with
     /// BufferUsage::AccelerationStructureInput, kAccelerationStructureInstanceSize bytes each, from offset.
