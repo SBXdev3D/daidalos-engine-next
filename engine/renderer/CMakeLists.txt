@@ -76,7 +76,7 @@ dai_add_shaders(TARGET daidalos_renderer
         shaders/GBufferDebug.slang shaders/Composite.slang shaders/Glass.slang
     COMPUTE shaders/PathTracer.slang shaders/Skinning.slang shaders/TemporalResolve.slang shaders/ParticleEmit.slang shaders/ParticleSubEmit.slang shaders/ParticleSimulate.slang
         shaders/ParticleFinish.slang shaders/ParticleSort.slang shaders/DenoiseTemporal.slang shaders/DenoiseSpatial.slang
-        shaders/GiUpdate.slang shaders/GiResolve.slang shaders/GiTrace.slang shaders/GiReflect.slang
+        shaders/GiUpdate.slang shaders/GiResolve.slang shaders/GiTrace.slang shaders/GiFill.slang shaders/GiReflect.slang
         shaders/RestirCandidates.slang shaders/RestirTemporal.slang shaders/RestirSpatial.slang
         shaders/RestirSpatialUnbiased.slang shaders/RestirShade.slang
         shaders/EmissiveAverage.slang shaders/EmissiveTriangles.slang shaders/ExposureHistogram.slang shaders/Bloom.slang

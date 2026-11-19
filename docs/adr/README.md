@@ -95,3 +95,5 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0089](0089-portal-visibility.md) | Rooms and doorways as cells, portals where their boxes overlap, the cells seen from the camera; draws, decals and water outside them skipped | Accepted |
 | [0090](0090-levels-of-detail-and-ultra.md) | Levels of detail measured and not needed (the G-buffer costs per pixel); Ultra keeps two bounces of indirect light and drops its second ray; the presets' costs measured again | Accepted |
 | [0091](0091-bug-sweep.md) | AddressSanitizer found a use after scope in the JSON reader and a use after free in lightning bolts; texture-less particles drawn alike; stale player settings dropped | Accepted |
+| [0092](0092-performance.md) | Phase 18: indirect light at fewer pixels, clustered decals and water, async compute, reflections, the denoiser, GPU-driven rendering | Accepted |
+| [0093](0093-indirect-light-at-fewer-pixels.md) | Indirect light traced at half or a quarter of the pixels, the others filled from their own history or their neighbours; Low and Medium trace half and draw four ReSTIR candidates | Accepted |

@@ -20,14 +20,22 @@ constexpr std::array<QualitySettings, 4> kPresets{{
     {.renderScale = 0.58,
      .minRenderScale = 0.5,
      .giBounces = 0,
+     .giPixelsPerRay = 2,
      .reflectionRoughness = 0.3,
      .restirSpatial = false,
+     .restirCandidates = 4,
      .fogSlices = 32,
      .fogTile = 16,
      .particleDensity = 0.5,
      .tracedParticles = false},
-    // Medium, the minimum tier's (an RTX 3060 at 1080p): two thirds of the resolution at most.
-    {.renderScale = 0.67, .minRenderScale = 0.5, .reflectionRoughness = 0.45, .fogSlices = 48},
+    // Medium, the minimum tier's (an RTX 3060 at 1080p): two thirds of the resolution at most, and half the
+    // pixels trace indirect light, and pixels draw four lights before they keep one (ADR-0093).
+    {.renderScale = 0.67,
+     .minRenderScale = 0.5,
+     .giPixelsPerRay = 2,
+     .reflectionRoughness = 0.45,
+     .restirCandidates = 4,
+     .fogSlices = 48},
     // High: what the engine is tuned for.
     {},
     // Ultra: two surfaces lit before the cache, reflections on rough surfaces, finer fog, never below two
@@ -40,8 +48,10 @@ constexpr std::array<std::string_view, 4> kNames{"low", "medium", "high", "ultra
 
 // A frame's GPU time at each preset over High's at full scale, measured in the dressed factory with its
 // visibility cells (ADR-0090), in the start room and the loading floor at 1080p on an RTX 3090: Low 3.7 and
-// 4.7 ms, Medium 6.4 and 7.6, High 11.7 and 15.0, Ultra 14.6 and 16.9.
-constexpr std::array<double, 4> kShareOfHigh{0.32, 0.53, 1.0, 1.2};
+// 4.7 ms, Medium 6.4 and 7.6, High 11.7 and 15.0, Ultra 14.6 and 16.9. Since Low and Medium trace half the
+// pixels' indirect light and draw four ReSTIR candidates (ADR-0093): Low 3.5 and 4.3 ms, Medium 5.6 and 6.7,
+// where High took 13.1 and 15.6 in the same run.
+constexpr std::array<double, 4> kShareOfHigh{0.28, 0.43, 1.0, 1.2};
 // A preset must fit the frame with this margin: the factory's busiest views cost more than the start.
 constexpr double kMargin = 1.25;
 

@@ -2131,6 +2131,16 @@ Done:
 - A bug sweep under AddressSanitizer (ADR-0091).
 - The assessment: [docs/ASSESSMENT.md](docs/ASSESSMENT.md).
 
+## Phase 18 — Performance
+
+**Goal:** The assessment's list of what would make the frame faster, measured step by step (ADR-0092).
+
+Done:
+
+- Indirect light at fewer pixels; four ReSTIR candidates on Low and Medium (ADR-0093).
+
+Next: clustered decals and water, async compute, reflections, the denoiser, GPU-driven rendering.
+
 ---
 
 # 27. First Vertical Slice

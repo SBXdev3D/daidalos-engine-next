@@ -2,7 +2,7 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-// ReSTIR DI's first pass (ADR-0044): each pixel draws a few lights by power, keeps one in proportion to
+// ReSTIR DI's first pass (ADR-0044): each pixel draws a few lights by power (8, or 4 on Low and Medium, ADR-0093), keeps one in proportion to
 // what it would send (DrawCandidates), and tests it with a shadow ray before anything reuses it: indoors,
 // most lights are behind a wall, and an occluded sample would spread to the neighbours. It also writes the
 // pixel's face normal and depth, which the spatial reuse reads its neighbours' from, and the next frame's
@@ -25,7 +25,8 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     }
     const Receiver receiver = ReceiverOf(frame, surface);
     uint random = Pcg(PixelIndex(pixel) * 9781u + g_restir.seed * 26699u + 1u);
-    Reservoir reservoir = DrawCandidates(frame, receiver, random);
+    const uint candidates = clamp((g_restir.flags >> 8) & 0xFF, 1u, 32u);
+    Reservoir reservoir = DrawCandidates(frame, receiver, random, candidates);
     if (reservoir.light != kNoLight &&
         !Unoccluded(frame, receiver, ContactLight(frame, reservoir.light, reservoir.u, receiver),
                     g_restir.instanceBuffer, g_restir.materialBuffer)) {

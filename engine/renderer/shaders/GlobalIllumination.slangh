@@ -34,7 +34,8 @@ struct GiPushConstants {
     uint height;
     uint seed;    // Changes every frame.
     uint mode;    // The trace pass: 0 for the indirect light, 1 shows the cache at each pixel's surface.
-    uint spacing; // The update pass: pixels between paths, across and down.
+    uint spacing; // The update pass: pixels between paths, across and down. The trace pass: which pixels
+                  // trace (TracedPixel).
     uint reset;   // The resolve pass: 1 empties the cache.
     uint reflections;   // Storage image: the light each pixel's specular lobe reflects (ADR-0042).
     float maxRoughness; // Rougher surfaces trace no reflection ray: the indirect light stands in for it.
@@ -42,6 +43,11 @@ struct GiPushConstants {
     // each, the rays per pixel.
     uint counts;
     float clamp; // The luminance bounced light is clamped to, pre-exposed; 0 for none.
+    // The fill pass (ADR-0093): storage images of this frame's history and last frame's, and 1 if last frame
+    // wrote it.
+    uint history;
+    uint previousHistory;
+    uint historyValid;
 };
 
 [[vk::push_constant]] GiPushConstants g_gi;
@@ -348,6 +354,31 @@ RayDesc PixelBounceRay(FrameData frame, float3 position, float3 faceNormal, floa
     ray.TMin = 0.0;
     ray.TMax = 1e6;
     return ray;
+}
+
+// Which pixels trace this frame, by g_gi.spacing (ADR-0093): 1 all of them; 2 half, in a checkerboard; 4 one
+// of each two by two. They take turns, so that two or four frames trace every pixel.
+static const int2 kQuarterTurns[4] = { int2(0, 0), int2(1, 1), int2(1, 0), int2(0, 1) };
+
+// The pixel a thread of the trace pass traces.
+int2 TracedPixel(uint2 thread) {
+    if (g_gi.spacing == 2) {
+        return int2(thread.x * 2 + ((thread.y + g_gi.seed) & 1), thread.y);
+    }
+    if (g_gi.spacing == 4) {
+        return int2(thread) * 2 + kQuarterTurns[g_gi.seed & 3];
+    }
+    return int2(thread);
+}
+
+bool IsTraced(int2 pixel) {
+    if (g_gi.spacing == 2) {
+        return ((uint(pixel.x) + uint(pixel.y) + g_gi.seed) & 1) == 0;
+    }
+    if (g_gi.spacing == 4) {
+        return all(pixel == (pixel / 2) * 2 + kQuarterTurns[g_gi.seed & 3]);
+    }
+    return true;
 }
 
 // The surface's own orientation behind a pixel of the G-buffer (GBuffer.slangh).

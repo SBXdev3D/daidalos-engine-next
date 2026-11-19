@@ -37,7 +37,7 @@ struct RestirPushConstants {
     uint specular;
     uint debug;
     uint seed;   // Changes every frame.
-    uint flags;  // kRestir*.
+    uint flags;  // kRestir*, and the candidates per pixel in the second byte (ADR-0093).
     uint currentGuides; // This frame's guides, sampled, once the candidates have written them.
     uint layers;        // The G-buffer's clear coat and sheen (ADR-0056).
 };
