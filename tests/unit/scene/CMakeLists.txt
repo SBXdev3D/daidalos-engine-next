@@ -10,6 +10,7 @@ dai_add_test(NAME daidalos_scene_tests
         HierarchyTests.cpp
         LevelFileTests.cpp
         LightAnimationTests.cpp
+        ModelBatchTests.cpp
         ParticleEffectFileTests.cpp
         ScheduleTests.cpp
         SystemsTests.cpp

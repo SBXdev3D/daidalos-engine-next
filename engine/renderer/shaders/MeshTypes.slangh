@@ -68,7 +68,7 @@ struct FrameData {
     uint fogAliasBuffer;  // The fog's alias table of the sources, by power near the camera (ADR-0051).
     uint decalBuffer;     // The frame's decals (ADR-0060, Decals.slangh), and how many.
     uint decalCount;
-    uint debugFlags;      // Tints of the lit scene: kDebugDecals, kDebugWetness.
+    uint debugFlags;      // Tints of the lit scene: kDebugDecals, kDebugWetness, kDebugLightingOnly.
     uint wetVolumeBuffer; // The boxes of wet air (ADR-0061, Wetness.slangh), and the ripples on their water.
     uint wetVolumeCount;
     uint rippleBuffer;
@@ -102,6 +102,17 @@ float3 WorldPosition(FrameData frame, float2 uv, float depth) {
 }
 
 // Meters in front of the camera, from a reverse-Z depth: 1 at the near plane, 0 at the far plane.
+// FrameData::debugFlags: every surface a mid grey without metal, to see the light alone (ADR-0105).
+static const uint kDebugLightingOnly = 4;
+
+// Makes a surface grey for the lighting-only view.
+void LightingOnly(FrameData frame, inout float3 baseColor, inout float metallic) {
+    if ((frame.debugFlags & kDebugLightingOnly) != 0) {
+        baseColor = float3(0.5, 0.5, 0.5);
+        metallic = 0.0;
+    }
+}
+
 float LinearDepth(FrameData frame, float depth) {
     return frame.nearPlane * frame.farPlane / (depth * (frame.farPlane - frame.nearPlane) + frame.nearPlane);
 }

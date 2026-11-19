@@ -61,6 +61,11 @@ enum class DebugView {
     Decals,
     /// The lit scene, tinted blue as wet as surfaces are (ADR-0061).
     Wetness,
+    /// The base color of the G-buffer, unlit (ADR-0105): what each surface is painted, decals and water included.
+    BaseColor,
+    /// The scene lit as it is, every surface a mid grey without metal (ADR-0105): the light alone, without the
+    /// textures, in reflections and bounced light too.
+    LightingOnly,
 };
 
 /// How indirect light is traced (ADR-0045).

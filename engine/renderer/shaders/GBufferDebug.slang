@@ -8,10 +8,12 @@
 // Normals: the world normal of each pixel, normal maps included, as stored: times 0.5 plus 0.5.
 
 // Layers (ADR-0056): the clear coat in red, the sheen's brightest color in green, black for neither.
+// Base color (ADR-0105): what each surface is painted, unlit.
 
 static const uint kShowMotion = 0;
 static const uint kShowNormals = 1;
 static const uint kShowLayers = 2;
+static const uint kShowBaseColor = 3;
 
 struct GBufferDebugPushConstants {
     uint texture;
@@ -37,7 +39,7 @@ float4 PSMain(float4 position : SV_Position) : SV_Target {
         return float4(coat, sheen, 0.0, 1.0);
     }
     const float4 value = g_textures[g_push.texture].Load(int3(int2(position.xy), 0));
-    if (g_push.mode == kShowNormals) {
+    if (g_push.mode == kShowNormals || g_push.mode == kShowBaseColor) {
         return float4(value.rgb, 1.0);
     }
     return float4(saturate(0.5 + value.xy * g_push.extent / 32.0), 0.5, 1.0);

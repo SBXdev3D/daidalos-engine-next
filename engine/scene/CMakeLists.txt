@@ -11,6 +11,7 @@ dai_add_module(NAME scene
         include/daidalos/scene/Components.hpp
         include/daidalos/scene/GltfMaterials.hpp
         include/daidalos/scene/Level.hpp
+        include/daidalos/scene/ModelBatch.hpp
         include/daidalos/scene/Perception.hpp
         include/daidalos/scene/SaveGame.hpp
         include/daidalos/scene/Sequence.hpp
@@ -30,6 +31,7 @@ dai_add_module(NAME scene
         src/JsonTree.hpp
         src/LevelFile.cpp
         src/LightAnimation.cpp
+        src/ModelBatch.cpp
         src/ParticleEffectFile.cpp
         src/Scene.cpp
         src/Schedule.cpp

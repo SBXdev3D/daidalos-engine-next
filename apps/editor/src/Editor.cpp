@@ -241,21 +241,40 @@ core::Result<void> Editor::OnStart(app::Application& app) {
     return {};
 }
 
-core::Result<void> Editor::Open(app::Application& app, const std::string& levelPath) {
+core::Result<void> Editor::Open(app::Application& app, const std::string& levelPath,
+                                std::optional<EditorCamera> camera) {
     core::Result<scene::Level> level = scene::LoadLevelFile(m_assetRoot / std::filesystem::path(levelPath));
     if (!level) {
         return tl::unexpected(level.error());
     }
-    // The editor is silent: effects and lights play, the game's sounds do not.
-    auto scene = std::make_unique<scene::Scene>(app.Renderer(), m_assetRoot, nullptr);
-    scene::Scene& target = *scene;
-    for (const std::string& model : scene::LevelModels(*level, levelPath)) {
-        if (core::Result<const scene::Model*> loaded = target.Assets().LoadModel(model); !loaded) {
-            DAI_LOG_WARNING(kModule, "{}", core::Format(loaded.error()));
-        }
+    if (m_loading != nullptr) {
+        m_loading->batch->Cancel();
     }
+    // The editor is silent: effects and lights play, the game's sounds do not. The level open stays in the view,
+    // and the new one replaces it once its models are in (ADR-0105).
+    auto loading = std::make_unique<Loading>();
+    loading->path = levelPath;
+    loading->level = std::move(*level);
+    loading->scene = std::make_unique<scene::Scene>(app.Renderer(), m_assetRoot, nullptr);
+    loading->camera = camera;
+    Loading* waiting = loading.get();
+    m_loading = std::move(loading);
+    m_loading->batch = scene::ModelBatch::Start(
+        m_loading->scene->Assets(), app.Workers(), scene::LevelModels(m_loading->level, levelPath),
+        [waiting](const scene::ModelBatch& /*batch*/) { waiting->ready = true; });
+    m_status = std::format("Opening {}", levelPath);
+    return {};
+}
+
+void Editor::FinishOpen(app::Application& app) {
+    std::unique_ptr<Loading> loading = std::move(m_loading);
+    for (const core::Error& failure : loading->batch->Failures()) {
+        DAI_LOG_WARNING(kModule, "{}", core::Format(failure));
+    }
+    const std::string levelPath = loading->path;
+    scene::Scene& target = *loading->scene;
     m_instance = std::make_unique<scene::LevelInstance>(target, levelPath);
-    m_instance->Build(*level);
+    m_instance->Build(loading->level);
     m_cameraEntity = target.World().Create();
     target.World().Add<ecs::LocalTransform>(m_cameraEntity);
     target.World().Add<scene::Camera>(
@@ -263,15 +282,19 @@ core::Result<void> Editor::Open(app::Application& app, const std::string& levelP
     target.SetActiveCamera(m_cameraEntity);
     m_picker.Rebuild(target.World());
 
-    for (const scene::LevelEntity& entity : level->entities) {
-        if (entity.game && entity.game->kind == "player") {
-            m_camera.position = entity.transform.translation + glm::vec3(0.0f, 0.3f, 0.0f);
-            m_camera.yaw = 0.0f;
-            m_camera.pitch = -0.1f;
-            break;
+    if (loading->camera) {
+        m_camera = *loading->camera;
+    } else {
+        for (const scene::LevelEntity& entity : loading->level.entities) {
+            if (entity.game && entity.game->kind == "player") {
+                m_camera.position = entity.transform.translation + glm::vec3(0.0f, 0.3f, 0.0f);
+                m_camera.yaw = 0.0f;
+                m_camera.pitch = -0.1f;
+                break;
+            }
         }
     }
-    m_level = std::move(*level);
+    m_level = std::move(loading->level);
     m_levelPath = levelPath;
     m_decalImages.clear();
     m_stroking = false;
@@ -284,15 +307,45 @@ core::Result<void> Editor::Open(app::Application& app, const std::string& levelP
     m_autosavedRevision = m_history.Current();
     m_sinceAutosave = 0.0f;
     m_scene = &target;
-    app.SetScene(std::move(scene));
+    app.SetScene(std::move(loading->scene));
     if (m_browser != nullptr) {
         m_browser->Open(std::filesystem::path(levelPath).parent_path().generic_string());
     }
-    m_status = std::format("Opened {}: {} entities", levelPath, m_level.entities.size());
+    m_status = std::format("Opened {}: {} entities in {:.1f} s", levelPath, m_level.entities.size(), loading->seconds);
     DAI_LOG_INFO(kModule, "{}", m_status);
     UpdateTitle(app);
     CheckAutosave();
-    return {};
+}
+
+void Editor::DrawLoading() {
+    if (m_loading == nullptr) {
+        return;
+    }
+    if (!ImGui::IsPopupOpen("Loading")) {
+        ImGui::OpenPopup("Loading");
+    }
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(520.0f, 0.0f), ImGuiCond_Always);
+    if (!ImGui::BeginPopupModal("Loading", nullptr,
+                                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove |
+                                    ImGuiWindowFlags_NoTitleBar)) {
+        return;
+    }
+    const scene::ModelBatch& batch = *m_loading->batch;
+    ImGui::Text("Opening %s", m_loading->path.c_str());
+    const std::string count = std::format("{} of {} models", batch.Loaded(), batch.Total());
+    ImGui::ProgressBar(batch.Fraction(), ImVec2(-1.0f, 0.0f), count.c_str());
+    const std::string latest = batch.Latest().empty() ? std::string("Reading the first model...") : batch.Latest();
+    ImGui::TextDisabled("%s", latest.c_str());
+    ImGui::TextDisabled("%.1f s", m_loading->seconds);
+    if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        // The level open stays; the new one's models finish loading on the workers and go with its scene.
+        m_loading->batch->Cancel();
+        m_status = std::format("Did not open {}", m_loading->path);
+        m_loading.reset();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
 }
 
 bool Editor::Save(const std::string& levelPath) {
@@ -319,12 +372,10 @@ bool Editor::Save(const std::string& levelPath) {
     if (target != m_levelPath) {
         // The copy is the document now. Its paths resolve from its own directory, so it opens again, seen from
         // where the camera is.
-        const EditorCamera camera = m_camera;
-        if (core::Result<void> opened = Open(*m_app, target); !opened) {
+        if (core::Result<void> opened = Open(*m_app, target, m_camera); !opened) {
             m_status = core::Format(opened.error());
             return false;
         }
-        m_camera = camera;
     }
     m_savedRevision = m_history.Current();
     m_status = std::format("Saved {}", m_levelPath);
@@ -459,6 +510,9 @@ std::string Editor::RelativeToLevel(const std::string& path) const {
 }
 
 void Editor::PlaceAsset(app::Application& app, const AssetEntry& asset, std::optional<glm::vec2> at) {
+    if (m_loading != nullptr) {
+        return;
+    }
     const std::optional<glm::vec3> position = at ? std::optional<glm::vec3>(PlaceAt(*at)) : std::nullopt;
     const std::string name = std::filesystem::path(asset.name).stem().generic_string();
     scene::LevelEntity entity;
@@ -1172,6 +1226,7 @@ bool Editor::OnCloseRequested(app::Application& app) {
 void Editor::OnStop(app::Application& /*app*/) {
     // What holds GPU resources goes while the renderer is still there: the application destroys it when Run
     // returns, before the editor itself goes.
+    m_loading.reset();
     m_browser.reset();
     m_instance.reset();
     // The sandbox reads its level again when F5 starts it over: the play copy stays while it runs.
@@ -1263,6 +1318,12 @@ void Editor::Play(bool fromCamera) {
 }
 
 void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
+    if (m_loading != nullptr) {
+        m_loading->seconds += static_cast<float>(time.unclampedDelta.count());
+        if (m_loading->ready) {
+            FinishOpen(app);
+        }
+    }
     ImGuizmo::BeginFrame();
     DrawMenu(app);
     DrawDockspace();
@@ -1282,6 +1343,7 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
     DrawPaint();
     DrawStatus(app, time);
     DrawDialogs(app);
+    DrawLoading();
     if (m_browser != nullptr) {
         if (const std::optional<AssetEntry> chosen = m_browser->Draw()) {
             PlaceAsset(app, *chosen, std::nullopt);
@@ -1299,7 +1361,8 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
         }
     }
 
-    if (m_scene != nullptr) {
+    // While a level loads, the one open shows but does not move or change.
+    if (m_scene != nullptr && m_loading == nullptr) {
         UpdateCamera(app, static_cast<float>(time.unclampedDelta.count()));
         DrawGrid();
         DrawMarkers();
@@ -1316,7 +1379,9 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
             Pick(app);
         }
     }
-    HandleShortcuts(app);
+    if (m_loading == nullptr) {
+        HandleShortcuts(app);
+    }
     DrawHelp();
 
     // What the inspector asked for, once it is drawn.
@@ -1397,6 +1462,17 @@ void Editor::HandleShortcuts(app::Application& /*app*/) {
         }
         return;
     }
+    if (io.KeyAlt) {
+        // Alt+1 to Alt+4: the viewport's lighting (ADR-0105).
+        constexpr std::array<Lighting, 4> kModes{Lighting::Lit, Lighting::Unlit, Lighting::LightingOnly,
+                                                 Lighting::EditorLight};
+        for (std::size_t mode = 0; mode < kModes.size(); ++mode) {
+            if (pressed(static_cast<ImGuiKey>(ImGuiKey_1 + static_cast<int>(mode)))) {
+                SetLighting(kModes[mode]);
+            }
+        }
+        return;
+    }
     for (int slot = 1; slot <= 9; ++slot) {
         if (pressed(static_cast<ImGuiKey>(ImGuiKey_1 + slot - 1))) {
             Bookmark(slot, false);
@@ -1472,6 +1548,7 @@ void Editor::FrameSelection() {
     m_camera.position = center - m_camera.Forward() * distance;
 }
 void Editor::OnRender(app::Application& app, renderer::SceneView& view) {
+    LightFromCamera(view);
     // The scene fills the dockspace's central node, in pixels (ADR-0055).
     const platform::Extent size = app.MainWindow().Size();
     const platform::Extent pixels = app.MainWindow().PixelSize();
@@ -1483,6 +1560,103 @@ void Editor::OnRender(app::Application& app, renderer::SceneView& view) {
                                            .y = static_cast<std::uint32_t>(std::max(m_viewportMin.y, 0.0f) * scaleY),
                                            .width = static_cast<std::uint32_t>(extent.x * scaleX),
                                            .height = static_cast<std::uint32_t>(extent.y * scaleY)};
+    }
+}
+
+void Editor::SetDebugView(std::string_view name) {
+    if (m_app != nullptr) {
+        if (core::Result<void> set = m_app->CVars().Set("renderer.debug_view", name); !set) {
+            m_status = core::Format(set.error());
+        }
+    }
+}
+
+std::string Editor::DebugViewName() const {
+    const core::CVarEntry* entry = m_app != nullptr ? m_app->CVars().Find("renderer.debug_view") : nullptr;
+    const std::string* name = entry != nullptr ? std::get_if<std::string>(&entry->value) : nullptr;
+    return name != nullptr ? *name : std::string("off");
+}
+
+void Editor::SetLighting(Lighting lighting) {
+    m_lighting = lighting;
+    switch (lighting) {
+    case Lighting::Lit:
+    case Lighting::EditorLight:
+        SetDebugView("off");
+        break;
+    case Lighting::Unlit:
+        SetDebugView("base_color");
+        break;
+    case Lighting::LightingOnly:
+        SetDebugView("lighting_only");
+        break;
+    }
+    constexpr std::array<const char*, 4> kNames{"Lit", "Unlit", "Lighting only", "Editor light"};
+    m_status = std::format("Lighting: {}", kNames[static_cast<std::size_t>(lighting)]);
+}
+
+void Editor::LightFromCamera(renderer::SceneView& view) const {
+    if (m_lighting != Lighting::EditorLight) {
+        return;
+    }
+    // The level's lights go dark (emissive surfaces still glow); one soft lamp rides above the camera, as a
+    // miner's lamp, bright enough for the eye's adaptation to make the room readable. Fog would scatter it into
+    // a veil in front of everything, so it goes too.
+    view.lights.clear();
+    view.fogVolumes.clear();
+    view.atmosphere.fog.density = 0.0f;
+    renderer::Light lamp;
+    lamp.type = renderer::LightType::Point;
+    lamp.position = m_camera.position + glm::vec3(0.0f, 0.25f, 0.0f);
+    lamp.color = glm::vec3(1.0f, 0.96f, 0.9f) * 800.0f;
+    lamp.range = 80.0f;
+    lamp.radius = 0.5f;
+    lamp.id = 0xED170001ULL;
+    view.lights.push_back(lamp);
+}
+
+void Editor::DrawLightingMenu() {
+    const std::string debug = DebugViewName();
+    const auto mode = [this, &debug](const char* label, const char* keys, Lighting lighting) {
+        const bool shown = m_lighting == lighting && (lighting == Lighting::Unlit          ? debug == "base_color"
+                                                      : lighting == Lighting::LightingOnly ? debug == "lighting_only"
+                                                                                           : debug == "off");
+        if (ImGui::MenuItem(label, keys, shown)) {
+            SetLighting(lighting);
+        }
+    };
+    mode("Lit", "Alt+1", Lighting::Lit);
+    mode("Unlit", "Alt+2", Lighting::Unlit);
+    mode("Lighting only", "Alt+3", Lighting::LightingOnly);
+    mode("Editor light", "Alt+4", Lighting::EditorLight);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("The level's lights off, one lamp at the camera: to place things in the dark");
+    }
+    ImGui::Separator();
+    if (ImGui::BeginMenu("Debug views")) {
+        constexpr std::array<std::array<const char*, 2>, 14> kViews{{
+            {"normals", "Normals"},
+            {"indirect", "Indirect light"},
+            {"radiance_cache", "Radiance cache"},
+            {"reflections", "Reflections"},
+            {"lights", "Lights chosen per pixel"},
+            {"bloom", "Bloom"},
+            {"fog", "Fog"},
+            {"layers", "Clear coat and sheen"},
+            {"decals", "Decals"},
+            {"wetness", "Wetness"},
+            {"motion", "Motion vectors"},
+            {"rays", "Ray tracing instances"},
+            {"path", "Path tracer (reference)"},
+            {"base_color", "Base color"},
+        }};
+        for (const auto& [name, label] : kViews) {
+            if (ImGui::MenuItem(label, nullptr, debug == name)) {
+                m_lighting = Lighting::Lit;
+                SetDebugView(debug == name ? "off" : name);
+            }
+        }
+        ImGui::EndMenu();
     }
 }
 
@@ -1710,6 +1884,11 @@ void Editor::DrawMenu(app::Application& app) {
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("View")) {
+        if (ImGui::BeginMenu("Lighting")) {
+            DrawLightingMenu();
+            ImGui::EndMenu();
+        }
+        ImGui::Separator();
         ImGui::MenuItem("Grid", "G", &m_grid);
         ImGui::MenuItem("Snapping", "X", &m_snap);
         ImGui::SetNextItemWidth(140.0f);
@@ -1781,6 +1960,19 @@ void Editor::DrawMenu(app::Application& app) {
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("X: gizmos move by %.2f m, turn by %.0f degrees and scale by %.2f (View sets the steps)",
                           m_snapSteps.x, m_snapSteps.y, m_snapSteps.z);
+    }
+    ImGui::TextDisabled("|");
+    constexpr std::array<const char*, 4> kLighting{"Lit", "Unlit", "Lighting only", "Editor light"};
+    const std::string debug = DebugViewName();
+    const bool debugShown = debug != "off" && debug != "base_color" && debug != "lighting_only";
+    const std::string lighting =
+        std::format("{}##lighting", debugShown ? debug.c_str() : kLighting[static_cast<std::size_t>(m_lighting)]);
+    if (ImGui::BeginMenu(lighting.c_str())) {
+        DrawLightingMenu();
+        ImGui::EndMenu();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("How the view is lit (Alt+1 to Alt+4), and the renderer's debug views");
     }
     ImGui::EndMainMenuBar();
 }
@@ -2400,13 +2592,14 @@ void Editor::DrawHelp() {
         return;
     }
     if (ImGui::Begin("Shortcuts", &m_showHelp, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize)) {
-        constexpr std::array<std::array<const char*, 2>, 25> kKeys{{
+        constexpr std::array<std::array<const char*, 2>, 26> kKeys{{
             {"Right mouse + WASD, Q, E", "Fly; Shift goes faster, the wheel sets the speed"},
             {"Wheel, middle mouse", "Walk forward and back, pan"},
             {"Click, Ctrl+click", "Select, add to the selection"},
             {"W, E, R", "Move, rotate, scale"},
             {"X, or Ctrl while dragging", "Snapping on and off"},
             {"G", "The grid"},
+            {"Alt+1 to Alt+4", "Lit, unlit, lighting only, the editor's light"},
             {"B", "Paint decals and wet patches (drag over surfaces)"},
             {"F, double-click in the hierarchy", "Frame the selection"},
             {"Esc, Ctrl+A", "Select nothing, everything"},

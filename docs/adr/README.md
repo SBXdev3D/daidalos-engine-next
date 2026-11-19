@@ -107,3 +107,5 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0101](0101-texture-detail-by-ray-cone.md) | Rays read textures at the mip their cone's footprint covers, a pixel wide from the camera and growing with distance; mirrors keep their detail | Accepted |
 | [0102](0102-ray-shaders-measured.md) | The ray passes timed one by one and their registers read from the driver (`renderer.log_pipeline_statistics`); nothing left to remove at the same image; Phase 19 done | Accepted |
 | [0103](0103-realistic-items.md) | Items and weapons from Poly Haven at their real size, resting on desks, shelves, crates and floors; a bolt-action rifle replaces the shotgun; a glint in the flashlight's beam shows items in the dark | Accepted |
+| [0104](0104-level-editor-phase.md) | Phase 20: the level editor proposal in fourteen steps, from the loader and lighting modes to a tidier interface | Accepted |
+| [0105](0105-loader-and-lighting-modes.md) | Levels open in the background with a progress window and Cancel (`scene::ModelBatch`, shared with the sandbox); lit, unlit, lighting only and an editor light at the camera; the debug views in a menu | Accepted |
