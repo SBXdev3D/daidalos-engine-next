@@ -70,7 +70,7 @@ struct WeaponSpec {
 // slowly, and kills a zombie with one hit. The sounds are still the legacy handgun's and shotgun's.
 constexpr std::array<WeaponSpec, kWeaponKinds> kWeapons{{
     {"Showcase/service_pistol/service_pistol.gltf", "handgun_fire.wav", "handgun_reload.wav", 12, 108, 10, 1, 0.025f,
-     0.35f, 1.5f, glm::vec3(0.12f, -0.14f, -0.38f), 1.0f, glm::vec3(0.174f, 0.062f, 0.0f), 1.5f, 90.0f, 0.03f, 7.0f},
+     0.35f, 1.5f, glm::vec3(0.11f, -0.165f, -0.27f), 1.0f, glm::vec3(0.174f, 0.062f, 0.0f), 1.5f, 90.0f, 0.03f, 7.0f},
     {"Showcase/bolt_action_rifle_7_62/bolt_action_rifle_7_62.gltf", "shotgun_fire.wav", "shotgun_reload.wav", 5, 30, 50,
      1, 0.004f, 1.3f, 3.0f, glm::vec3(0.12f, -0.16f, -0.42f), 1.0f, glm::vec3(0.6f, 0.03f, 0.0f), 2.5f, 90.0f, 0.07f,
      5.0f},
