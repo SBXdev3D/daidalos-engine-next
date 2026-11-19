@@ -30,17 +30,18 @@ constexpr std::array<QualitySettings, 4> kPresets{{
     {.renderScale = 0.67, .minRenderScale = 0.5, .reflectionRoughness = 0.45, .fogSlices = 48},
     // High: what the engine is tuned for.
     {},
-    // Ultra: two rays of indirect light, two surfaces lit before the cache, reflections on rough
-    // surfaces, finer fog, never below two thirds of the resolution.
-    {.minRenderScale = 0.67, .giBounces = 2, .giRays = 2, .reflectionRoughness = 0.9, .fogSlices = 128, .fogTile = 8},
+    // Ultra: two surfaces lit before the cache, reflections on rough surfaces, finer fog, never below two
+    // thirds of the resolution. A second ray of indirect light doubled its cost (+4.2 to 5.2 ms) for noise the
+    // denoiser already removes, and was dropped (ADR-0090).
+    {.minRenderScale = 0.67, .giBounces = 2, .reflectionRoughness = 0.9, .fogSlices = 128, .fogTile = 8},
 }};
 
 constexpr std::array<std::string_view, 4> kNames{"low", "medium", "high", "ultra"};
 
-// A frame's GPU time at each preset over High's at full scale, measured in the dressed factory (ADR-0087), in
-// the start room and the loading floor at 1080p on an RTX 3090: Low 3.9 and 4.9 ms, Medium 6.7 and 8.1, High
-// 13.6 and 15.1, Ultra 19.3 and 23.7.
-constexpr std::array<double, 4> kShareOfHigh{0.31, 0.52, 1.0, 1.5};
+// A frame's GPU time at each preset over High's at full scale, measured in the dressed factory with its
+// visibility cells (ADR-0090), in the start room and the loading floor at 1080p on an RTX 3090: Low 3.7 and
+// 4.7 ms, Medium 6.4 and 7.6, High 11.7 and 15.0, Ultra 14.6 and 16.9.
+constexpr std::array<double, 4> kShareOfHigh{0.32, 0.53, 1.0, 1.2};
 // A preset must fit the frame with this margin: the factory's busiest views cost more than the start.
 constexpr double kMargin = 1.25;
 
