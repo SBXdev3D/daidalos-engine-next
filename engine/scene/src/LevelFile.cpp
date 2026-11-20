@@ -506,6 +506,46 @@ core::Result<LevelEntity> ReadEntity(const JsonObject& object, std::size_t index
     DAI_LEVEL_TRY(component("lightning", entity.lightning, &ReadLightning));
     std::optional<LevelEditing> editing;
     DAI_LEVEL_TRY(component("editor", editing, &ReadEditing));
+    if (const Json* overrides = reader.Take("overrides")) {
+        const JsonArray* array = std::get_if<JsonArray>(&overrides->value);
+        if (array == nullptr) {
+            return Invalid(reader.Where() + ".overrides", "must be an array");
+        }
+        for (std::size_t slot = 0; slot < array->size(); ++slot) {
+            const JsonObject* fields = std::get_if<JsonObject>(&(*array)[slot].value);
+            if (fields == nullptr) {
+                return Invalid(std::format("{}.overrides[{}]", reader.Where(), slot), "must be an object");
+            }
+            Reader part(*fields, std::format("{}.overrides[{}]", reader.Where(), slot));
+            PrefabOverride change;
+            DAI_LEVEL_TRY(part.Id("part", change.part));
+            DAI_LEVEL_TRY(part.Flag("removed", change.removed));
+            core::Result<std::optional<Reader>> moved = part.Object("transform");
+            DAI_LEVEL_TRY(moved);
+            if (moved->has_value()) {
+                core::Result<math::Transform> value = ReadTransform(std::move(**moved));
+                DAI_LEVEL_TRY(value);
+                change.transform = *value;
+            }
+            core::Result<std::optional<Reader>> lit = part.Object("light");
+            DAI_LEVEL_TRY(lit);
+            if (lit->has_value()) {
+                core::Result<Light> value = ReadLight(std::move(**lit));
+                DAI_LEVEL_TRY(value);
+                change.light = std::move(*value);
+            }
+            if (part.Take("model") != nullptr) {
+                const Json* model = &fields->at("model");
+                const std::string* text = std::get_if<std::string>(&model->value);
+                if (text == nullptr) {
+                    return Invalid(part.Where() + ".model", "must be a string");
+                }
+                change.model = *text;
+            }
+            DAI_LEVEL_TRY(part.Finish());
+            entity.overrides.push_back(std::move(change));
+        }
+    }
     entity.editing = editing.value_or(LevelEditing{});
     if (const Json* game = reader.Take("game")) {
         const JsonObject* tags = std::get_if<JsonObject>(&game->value);
@@ -746,15 +786,37 @@ Json WriteEntity(const LevelEntity& entity) {
     Put(object, "model", entity.model, std::string{});
     Put(object, "prefab", entity.prefab, std::string{});
     const math::Transform identity;
-    if (entity.transform != identity) {
+    const auto transformOf = [&identity](const math::Transform& value) {
         JsonObject transform;
-        Put(transform, "translation", entity.transform.translation, identity.translation);
-        const glm::quat& rotation = entity.transform.rotation;
+        Put(transform, "translation", value.translation, identity.translation);
+        const glm::quat& rotation = value.rotation;
         if (rotation != identity.rotation) {
             transform.emplace("rotation", Vector(glm::vec4(rotation.x, rotation.y, rotation.z, rotation.w)));
         }
-        Put(transform, "scale", entity.transform.scale, identity.scale);
-        object.emplace("transform", Json{std::move(transform)});
+        Put(transform, "scale", value.scale, identity.scale);
+        return Json{std::move(transform)};
+    };
+    if (entity.transform != identity) {
+        object.emplace("transform", transformOf(entity.transform));
+    }
+    if (!entity.overrides.empty()) {
+        JsonArray overrides;
+        for (const PrefabOverride& change : entity.overrides) {
+            JsonObject part;
+            part.emplace("part", Json{static_cast<double>(change.part)});
+            Put(part, "removed", change.removed, false);
+            if (change.transform) {
+                part.emplace("transform", transformOf(*change.transform));
+            }
+            if (change.light) {
+                part.emplace("light", WriteLight(*change.light));
+            }
+            if (change.model) {
+                part.emplace("model", Json{*change.model});
+            }
+            overrides.push_back(Json{std::move(part)});
+        }
+        object.emplace("overrides", Json{std::move(overrides)});
     }
     if (entity.light) {
         object.emplace("light", WriteLight(*entity.light));
@@ -924,7 +986,7 @@ bool LevelEntity::operator==(const LevelEntity& other) const {
            wind == other.wind && particles == other.particles && attractor == other.attractor &&
            weather == other.weather && ribbon == other.ribbon && lightning == other.lightning && game == other.game &&
            visibility == other.visibility && decal == other.decal && wet == other.wet && cell == other.cell &&
-           trigger == other.trigger && body == other.body && editing == other.editing;
+           trigger == other.trigger && body == other.body && editing == other.editing && overrides == other.overrides;
 }
 
 const LevelEntity* Level::Find(std::uint64_t id) const {

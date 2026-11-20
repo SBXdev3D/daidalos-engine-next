@@ -1099,12 +1099,151 @@ void Editor::UnpackPrefab(std::uint64_t id) {
         m_status = core::Format(prefab.error());
         return;
     }
+    // The copy's own changes are kept in what it leaves behind (ADR-0113).
+    *prefab = scene::ApplyOverrides(*prefab, entity->overrides);
     scene::Relocate(*prefab, path, m_levelPath);
     const std::string label = EntityLabel(*entity);
     m_history.Commit(Snapshot());
     Change(std::format("Unpack {}", label), [&](scene::Level& level) { Unpack(level, id, std::move(*prefab)); });
     m_history.Commit(Snapshot());
     m_status = std::format("Unpacked {}: its entities are the level's now", label);
+}
+
+bool Editor::InspectPrefabParts(scene::LevelEntity& edited) {
+    if (m_instance == nullptr || m_scene == nullptr) {
+        return false;
+    }
+    const std::string path = m_instance->Resolve(edited.prefab);
+    core::Result<std::shared_ptr<const scene::Level>> prefab = m_scene->Assets().LoadPrefab(path);
+    if (!prefab) {
+        ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", core::Format(prefab.error()).c_str());
+        return false;
+    }
+    const scene::Level& parts = **prefab;
+    bool changed = false;
+    ImGui::Text("%zu parts, %zu changed in this copy", parts.entities.size(), edited.overrides.size());
+    for (const scene::LevelEntity& part : parts.entities) {
+        const auto found = std::ranges::find(edited.overrides, part.id, &scene::PrefabOverride::part);
+        const bool overridden = found != edited.overrides.end();
+        const bool removed = overridden && found->removed;
+        if (m_openPart && part.id == m_selectedPart) {
+            ImGui::SetNextItemOpen(true);
+            ImGui::SetScrollHereY(0.3f);
+        }
+        const std::string label = std::format("{}{}{}###part{}", EntityLabel(part), overridden ? " *" : "",
+                                              removed ? " (left out)" : "", part.id);
+        if (overridden) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.35f, 1.0f));
+        }
+        const bool open = ImGui::TreeNode(label.c_str());
+        if (overridden) {
+            ImGui::PopStyleColor();
+        }
+        if (!open) {
+            continue;
+        }
+        // The part as this copy has it, edited, then turned back into what differs from the prefab.
+        scene::LevelEntity effective = part;
+        if (overridden) {
+            const scene::Level one = scene::ApplyOverrides(scene::Level{.entities = {part}}, {*found});
+            if (!one.entities.empty()) {
+                effective = one.entities.front();
+            }
+        }
+        bool partChanged = false;
+        bool leftOut = removed;
+        partChanged |= ImGui::Checkbox("Left out of this copy", &leftOut);
+        ImGui::BeginDisabled(leftOut);
+        partChanged |= ImGui::DragFloat3("Position (m)", &effective.transform.translation.x, 0.01f);
+        glm::vec3 degrees = glm::degrees(glm::eulerAngles(effective.transform.rotation));
+        if (ImGui::DragFloat3("Rotation (deg)", &degrees.x, 0.25f)) {
+            effective.transform.rotation = glm::normalize(glm::quat(glm::radians(degrees)));
+            partChanged = true;
+        }
+        partChanged |= ImGui::DragFloat3("Scale", &effective.transform.scale.x, 0.01f);
+        if (!effective.model.empty()) {
+            partChanged |= InputString("Model", effective.model);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Relative to the prefab's file");
+            }
+        }
+        if (effective.light) {
+            // Only the light shows: the rest of the part stays the prefab's.
+            scene::LevelEntity lit;
+            lit.light = effective.light;
+            if (InspectComponents(lit)) {
+                effective.light = lit.light;
+                partChanged = true;
+            }
+        }
+        ImGui::EndDisabled();
+        if (overridden && ImGui::SmallButton("Back to the prefab")) {
+            edited.overrides.erase(found);
+            changed = true;
+            ImGui::TreePop();
+            break;
+        }
+        if (partChanged) {
+            std::optional<scene::PrefabOverride> change = scene::OverrideOf(part, effective);
+            if (leftOut) {
+                change = change.value_or(scene::PrefabOverride{.part = part.id});
+                change->removed = true;
+            }
+            if (overridden) {
+                edited.overrides.erase(found);
+            }
+            if (change) {
+                edited.overrides.push_back(*change);
+                std::ranges::sort(edited.overrides, {}, &scene::PrefabOverride::part);
+            }
+            changed = true;
+            ImGui::TreePop();
+            break;
+        }
+        ImGui::TreePop();
+    }
+    m_openPart = false;
+    if (!edited.overrides.empty()) {
+        if (ImGui::Button("Back to the prefab, all of it")) {
+            edited.overrides.clear();
+            changed = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Apply to the prefab")) {
+            m_pendingApplyOverrides = edited.id;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Writes this copy's changes into %s, for every copy", path.c_str());
+        }
+    }
+    return changed;
+}
+
+void Editor::ApplyOverridesToPrefab(std::uint64_t id) {
+    const scene::LevelEntity* entity = m_level.Find(id);
+    if (entity == nullptr || entity->prefab.empty() || entity->overrides.empty() || m_instance == nullptr) {
+        return;
+    }
+    const std::string path = m_instance->Resolve(entity->prefab);
+    const std::filesystem::path file = m_assetRoot / std::filesystem::path(path);
+    core::Result<scene::Level> prefab = scene::LoadLevelFile(file);
+    if (!prefab) {
+        m_status = core::Format(prefab.error());
+        return;
+    }
+    if (core::Result<void> saved = scene::SaveLevelFile(file, scene::ApplyOverrides(*prefab, entity->overrides));
+        !saved) {
+        m_status = core::Format(saved.error());
+        return;
+    }
+    // The prefab has the changes now: this copy needs them no more, and every copy reads the file again.
+    scene::LevelEntity cleared = *entity;
+    cleared.overrides.clear();
+    m_history.Commit(Snapshot());
+    Apply(cleared, std::format("Apply {}'s changes to its prefab", EntityLabel(cleared)));
+    m_history.Commit(Snapshot());
+    ReloadPrefabs();
+    m_status = std::format("Wrote the changes into {}: every copy shows them", path);
 }
 
 void Editor::ReloadPrefabs() {
@@ -1788,6 +1927,9 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
     }
     if (m_pendingUnpack != 0) {
         UnpackPrefab(std::exchange(m_pendingUnpack, 0));
+    }
+    if (m_pendingApplyOverrides != 0) {
+        ApplyOverridesToPrefab(std::exchange(m_pendingApplyOverrides, 0));
     }
     if (m_pendingSequence != 0) {
         EditSequence(std::exchange(m_pendingSequence, 0));
@@ -2867,7 +3009,8 @@ void Editor::DrawInspector() {
         if (ImGui::Button("Unpack")) {
             m_pendingUnpack = edited.id;
         }
-        ImGui::TextDisabled("Its entities are edited in the prefab's file, and change everywhere it is placed.");
+        ImGui::TextDisabled("The prefab's file changes every copy; the parts below change this copy only.");
+        changed |= InspectPrefabParts(edited);
     }
     changed |= InspectComponents(edited);
     if (edited.trigger) {
@@ -5135,6 +5278,9 @@ void Editor::Pick(app::Application& app) {
         if (const std::optional<PickHit> hit = m_picker.Cast(world, origin, direction, locked)) {
             nearest = m_instance->IdOf(hit->entity);
             drawn = hit->entity;
+            // A prefab's part: the inspector opens it, to change it in this copy (ADR-0113).
+            m_selectedPart = m_instance->PartOf(nearest, hit->entity);
+            m_openPart = m_selectedPart != 0;
         }
     }
     if (io.KeyCtrl) {

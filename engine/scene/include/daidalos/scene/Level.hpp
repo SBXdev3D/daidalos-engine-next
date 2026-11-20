@@ -112,6 +112,18 @@ struct LevelEditing {
     [[nodiscard]] bool operator==(const LevelEditing&) const = default;
 };
 
+/// A change one placed copy of a prefab makes to a part of the prefab (ADR-0113): the part, by its id in the
+/// prefab's file, moved, lit otherwise, given another model, or left out with what hangs from it. What it does not
+/// say comes from the prefab, so a change to the prefab's file still shows in every copy.
+struct PrefabOverride {
+    std::uint64_t part = 0;
+    bool removed = false;
+    std::optional<math::Transform> transform;
+    std::optional<Light> light;
+    std::optional<std::string> model;
+    [[nodiscard]] bool operator==(const PrefabOverride&) const = default;
+};
+
 /// One entity of a level file.
 struct LevelEntity {
     /// Stable, positive, unique in the level.
@@ -125,6 +137,8 @@ struct LevelEntity {
     /// A prefab (ADR-0078): a level file, relative to the level's directory, whose entities are made under this
     /// one, as a model's nodes are; or empty. They are not entities of this level and have no ids in it.
     std::string prefab;
+    /// What this copy of the prefab changes in it (ADR-0113).
+    std::vector<PrefabOverride> overrides;
     std::optional<Light> light;
     std::optional<FogVolume> fog;
     std::optional<WindVolume> wind;
@@ -215,6 +229,13 @@ void Relocate(Level& level, std::string_view fromLevelPath, std::string_view toL
 /// The deepest that prefabs place prefabs, so that one placing itself, directly or not, ends.
 inline constexpr std::size_t kMaxPrefabDepth = 8;
 
+/// A prefab's entities as one copy places them (ADR-0113): its overrides applied, removed parts and what hangs from
+/// them left out. Overrides of parts the prefab no longer has are ignored.
+[[nodiscard]] Level ApplyOverrides(const Level& prefab, const std::vector<PrefabOverride>& overrides);
+
+/// The override that makes a prefab's part into edited, or nothing when they are the same in what overrides keep.
+[[nodiscard]] std::optional<PrefabOverride> OverrideOf(const LevelEntity& part, const LevelEntity& edited);
+
 /// What LevelInstance::Sync did.
 struct LevelSync {
     /// Entities made, new or again, and destroyed.
@@ -255,6 +276,9 @@ public:
     [[nodiscard]] ecs::Entity Find(std::uint64_t id) const;
     /// The level id of an entity or of the nearest ancestor made from one, or 0: what was clicked.
     [[nodiscard]] std::uint64_t IdOf(ecs::Entity entity) const;
+    /// The part of the prefab an entity places that a drawn entity belongs to: the part's id in the prefab's file,
+    /// the nearest part above it, or 0 (ADR-0113).
+    [[nodiscard]] std::uint64_t PartOf(std::uint64_t placer, ecs::Entity drawn) const;
     [[nodiscard]] const std::string& Directory() const { return m_directory; }
     /// A path relative to the level's directory, as a path under the asset root.
     [[nodiscard]] std::string Resolve(std::string_view relative) const;

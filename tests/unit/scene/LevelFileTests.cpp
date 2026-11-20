@@ -328,3 +328,50 @@ TEST(LevelFileTest, VisibilityCellsKeepTheirBox) {
     ASSERT_TRUE(read.has_value()) << core::Format(read.error());
     EXPECT_EQ(*read, level);
 }
+
+TEST(LevelFileTest, PrefabCopiesKeepTheirOverrides) {
+    Level level;
+    LevelEntity placer{.id = 1, .name = "Lamp", .prefab = "Prefabs/lamp.prefab.json"};
+    math::Transform moved;
+    moved.translation = glm::vec3(0.0f, 2.0f, 0.0f);
+    placer.overrides.push_back(scene::PrefabOverride{.part = 2, .transform = moved});
+    placer.overrides.push_back(scene::PrefabOverride{.part = 3, .removed = true});
+    placer.overrides.push_back(scene::PrefabOverride{.part = 4, .light = scene::Light{.intensity = 3.0f}});
+    placer.overrides.push_back(scene::PrefabOverride{.part = 5, .model = "other.gltf"});
+    level.entities.push_back(placer);
+    const core::Result<Level> read = ParseLevel(WriteLevel(level));
+    ASSERT_TRUE(read.has_value()) << core::Format(read.error());
+    EXPECT_EQ(*read, level);
+}
+
+TEST(LevelFileTest, OverridesChangeOnlyWhatTheySay) {
+    Level prefab;
+    prefab.entities.push_back(LevelEntity{.id = 1, .name = "Base", .model = "base.gltf"});
+    prefab.entities.push_back(LevelEntity{.id = 2, .name = "Arm", .parent = 1, .model = "arm.gltf"});
+    prefab.entities.push_back(LevelEntity{.id = 3, .name = "Bulb", .parent = 2});
+    prefab.entities.back().light = scene::Light{.intensity = 10.0f};
+    prefab.entities.push_back(LevelEntity{.id = 4, .name = "Sign", .model = "sign.gltf"});
+
+    math::Transform raised;
+    raised.translation = glm::vec3(0.0f, 1.0f, 0.0f);
+    const std::vector<scene::PrefabOverride> overrides{
+        {.part = 1, .transform = raised},
+        {.part = 2, .removed = true},
+        {.part = 4, .model = "warning.gltf"},
+        {.part = 99, .removed = true}, // A part the prefab no longer has.
+    };
+    const Level placed = scene::ApplyOverrides(prefab, overrides);
+    ASSERT_EQ(placed.entities.size(), 2U); // The arm went with its bulb.
+    EXPECT_EQ(placed.Find(1)->transform.translation, raised.translation);
+    EXPECT_EQ(placed.Find(1)->model, "base.gltf");
+    EXPECT_EQ(placed.Find(4)->model, "warning.gltf");
+
+    LevelEntity edited = prefab.entities[2];
+    edited.light->intensity = 20.0f;
+    const std::optional<scene::PrefabOverride> change = scene::OverrideOf(prefab.entities[2], edited);
+    ASSERT_TRUE(change.has_value());
+    EXPECT_EQ(change->part, 3U);
+    EXPECT_FLOAT_EQ(change->light->intensity, 20.0f);
+    EXPECT_FALSE(change->transform.has_value());
+    EXPECT_FALSE(scene::OverrideOf(prefab.entities[2], prefab.entities[2]).has_value());
+}
