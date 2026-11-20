@@ -1,6 +1,8 @@
 # Proposal: a better level editor
 
-*2026-11-20. Not approved, not started. Built from the assessment's editor list (`docs/ASSESSMENT.md`), the owner's requests and a comparison with Unreal Engine, Unity and Godot. Sizes are guesses from reading the code, not plans.*
+*2026-11-20. Built from the assessment's editor list (`docs/ASSESSMENT.md`), the owner's requests and a comparison with Unreal Engine, Unity and Godot. Sizes are guesses from reading the code, not plans.*
+
+**Status: approved and done as Phase 20 (ADR-0104 to ADR-0118), every item but section D.** Steps: 20.1 loader and lighting (ADR-0105), 20.2 seeing the level (ADR-0106), 20.3 organising (ADR-0107), 20.4 views and snapping (ADR-0108), 20.5 undo and tabs (ADR-0109), 20.6 simulate and play (ADR-0110), 20.7 map check and statistics (ADR-0111), 20.8 commands, search and context menus (ADR-0112), 20.9 prefab overrides (ADR-0113), 20.10 effect editor (ADR-0114), 20.11 blocks (ADR-0115), 20.12 sound, scatter and camera preview (ADR-0116), 20.13 references and import settings (ADR-0117), 20.14 the interface (ADR-0118). Where a step did less than its item says (split panes keep the last image of the panes not live; light overrides replace the whole light), its ADR says so.
 
 ## Where the editor is
 

@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 
 namespace daidalos::debugui {
@@ -41,6 +42,9 @@ public:
     ~DebugUi();
 
     void ProcessEvent(const platform::Event& event);
+    /// Draws with a TrueType font at a size in pixels instead of Dear ImGui's own, as an editor does (ADR-0118).
+    /// Call it between frames. Fails, keeping the font in use, if the file cannot be read.
+    [[nodiscard]] core::Result<void> UseFont(const std::filesystem::path& file, float pixels);
 
     /// The window size is in screen coordinates, as mouse positions are.
     void BeginFrame(std::chrono::duration<double> delta, platform::Extent windowSize, platform::Extent pixelSize);

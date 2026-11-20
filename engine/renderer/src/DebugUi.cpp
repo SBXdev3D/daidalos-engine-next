@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <format>
 #include <span>
 #include <type_traits>
 #include <utility>
@@ -244,6 +245,41 @@ DebugUi::DebugUi(std::unique_ptr<Impl> impl) : m_impl(std::move(impl)) {}
 DebugUi::DebugUi(DebugUi&& other) noexcept = default;
 DebugUi& DebugUi::operator=(DebugUi&& other) noexcept = default;
 DebugUi::~DebugUi() = default;
+
+core::Result<void> DebugUi::UseFont(const std::filesystem::path& file, float pixels) {
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(file, error)) {
+        return core::MakeError(core::ErrorCode::NotFound, "debugui", std::format("No font {}", file.string()));
+    }
+    ImGuiIO& io = ImGui::GetIO();
+    ImFont* font = io.Fonts->AddFontFromFileTTF(file.string().c_str(), pixels);
+    if (font == nullptr) {
+        return core::MakeError(core::ErrorCode::ParseError, "debugui", std::format("Cannot read {}", file.string()));
+    }
+    io.FontDefault = font;
+    // The atlas again, with the new font in it, on the GPU in place of the old one.
+    unsigned char* data = nullptr;
+    int width = 0;
+    int height = 0;
+    io.Fonts->GetTexDataAsRGBA32(&data, &width, &height);
+    rhi::Device& device = *m_impl->device;
+    DAI_TRY_ASSIGN(
+        rhi::TextureHandle texture,
+        device.CreateTexture({.extent = {static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)},
+                              .format = rhi::Format::Rgba8Unorm,
+                              .usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDst,
+                              .name = "DebugUi font"}));
+    const auto byteCount = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4;
+    if (core::Result<void> uploaded = device.UploadTexture(texture, std::as_bytes(std::span(data, byteCount)));
+        !uploaded) {
+        device.DestroyTexture(texture);
+        return uploaded;
+    }
+    device.DestroyTexture(m_impl->font);
+    m_impl->font = texture;
+    io.Fonts->SetTexID(ToTextureId(device.BindlessIndex(texture)));
+    return {};
+}
 
 void DebugUi::ProcessEvent(const platform::Event& event) {
     ImGuiIO& io = ImGui::GetIO();
