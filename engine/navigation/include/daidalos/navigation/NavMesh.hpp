@@ -60,6 +60,8 @@ public:
     void SetBlocked(const glm::vec3& low, const glm::vec3& high, bool blocked);
 
     [[nodiscard]] std::size_t PolygonCount() const;
+    /// The edges of every polygon, as pairs of points, for an editor to draw the mesh (ADR-0106).
+    [[nodiscard]] std::vector<glm::vec3> Edges() const;
     /// Seconds the build took.
     [[nodiscard]] double BuildSeconds() const;
 

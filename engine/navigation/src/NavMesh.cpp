@@ -277,6 +277,30 @@ std::size_t NavMesh::PolygonCount() const {
     return count;
 }
 
+std::vector<glm::vec3> NavMesh::Edges() const {
+    std::vector<glm::vec3> edges;
+    const dtNavMesh& mesh = *m_impl->mesh;
+    for (int tileIndex = 0; tileIndex < mesh.getMaxTiles(); ++tileIndex) {
+        const dtMeshTile* tile = mesh.getTile(tileIndex);
+        if (tile == nullptr || tile->header == nullptr) {
+            continue;
+        }
+        for (int polyIndex = 0; polyIndex < tile->header->polyCount; ++polyIndex) {
+            const dtPoly& poly = tile->polys[polyIndex];
+            if (poly.getType() != DT_POLYTYPE_GROUND) {
+                continue;
+            }
+            for (int vertex = 0; vertex < poly.vertCount; ++vertex) {
+                const float* from = &tile->verts[poly.verts[vertex] * 3];
+                const float* to = &tile->verts[poly.verts[(vertex + 1) % poly.vertCount] * 3];
+                edges.emplace_back(from[0], from[1], from[2]);
+                edges.emplace_back(to[0], to[1], to[2]);
+            }
+        }
+    }
+    return edges;
+}
+
 double NavMesh::BuildSeconds() const {
     return m_impl->seconds;
 }

@@ -8,13 +8,35 @@
 // apart from the surface's colors, diffuse and specular, for the denoiser (ADR-0039); the composite puts
 // them back together. A chosen light that the shadow ray finds hidden is dropped from the reservoir, so that
 // the next frame does not reuse it.
-// With kRestirDebug, it also shows each pixel's light, one hue per light.
+// With kRestirDebug, it also shows each pixel's light, one hue per light; with kRestirLightCount too, how many
+// of the frame's lights reach it (ADR-0106): blue for one, through green and yellow, red for 16 or more.
 
 #include "Restir.slangh"
 
 float3 Hue(uint light) {
     const float hue = frac(float(Pcg(light + 1u) & 0xFFFF) / 65536.0);
     return saturate(abs(frac(hue + float3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0);
+}
+
+// The analytic lights whose range reaches a point, whatever their shadows.
+uint LightsReaching(FrameData frame, float3 position) {
+    uint count = 0;
+    for (uint index = 0; index < frame.lightCount; ++index) {
+        const LightData light = LightAt(g_lights[frame.lightBuffer][index], position);
+        if (distance(light.position, position) < light.range) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+// Black for none, blue for one, then green, yellow and red at 16 and more.
+float3 Heat(uint count) {
+    if (count == 0) {
+        return float3(0.0, 0.0, 0.0);
+    }
+    const float t = saturate(float(count - 1) / 15.0);
+    return saturate(float3(t * 2.0 - 0.5, 1.5 - abs(t * 2.0 - 1.0) * 1.5, 1.0 - t * 2.0)) * 0.9 + 0.1;
 }
 
 [numthreads(8, 8, 1)]
@@ -78,7 +100,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     g_storageImages[g_restir.diffuse][id.xy] = float4(diffuseLight, (stochastic ? 1.0 : 0.0) + (moving ? 2.0 : 0.0));
     g_storageImages[g_restir.specular][id.xy] = float4(specularLight / albedo, albedo);
     if ((g_restir.flags & kRestirDebug) != 0) {
-        g_storageImages[g_restir.debug][id.xy] =
-            float4(reservoir.light != kNoLight ? Hue(reservoir.light) : float3(0.0, 0.0, 0.0), 1.0);
+        const float3 shown = (g_restir.flags & kRestirLightCount) != 0
+                                 ? Heat(LightsReaching(frame, surface.position))
+                                 : (reservoir.light != kNoLight ? Hue(reservoir.light) : float3(0.0, 0.0, 0.0));
+        g_storageImages[g_restir.debug][id.xy] = float4(shown, 1.0);
     }
 }

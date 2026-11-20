@@ -57,6 +57,8 @@ struct DirectLightingSettings {
     bool unbiased = false;
     /// Each pixel's chosen light is also written to DebugOutput, one hue per light.
     bool debug = false;
+    /// With debug, DebugOutput shows how many lights reach each pixel instead (ADR-0106).
+    bool lightCount = false;
     /// Lights each pixel draws before it keeps one, from 1 to 32 (ADR-0093).
     std::uint32_t candidates = 8;
 };

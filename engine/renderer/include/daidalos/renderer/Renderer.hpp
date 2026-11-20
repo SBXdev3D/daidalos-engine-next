@@ -66,6 +66,9 @@ enum class DebugView {
     /// The scene lit as it is, every surface a mid grey without metal (ADR-0105): the light alone, without the
     /// textures, in reflections and bounced light too.
     LightingOnly,
+    /// How many lights reach each pixel by their range, shadows ignored (ADR-0106): black for none, blue for one,
+    /// through green and yellow to red at 16 and more.
+    LightCount,
 };
 
 /// How indirect light is traced (ADR-0045).
@@ -259,6 +262,18 @@ struct CapturedFrame {
     std::vector<float> scene;
 };
 
+/// A small grid of the scene's depth (ADR-0106), read back a frame or two after it was drawn: an editor draws what
+/// lies behind a surface faint.
+struct DepthPicture {
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    /// Meters along the camera's forward axis, rows from the top; 1e9 where the sky shows. Each cell is the
+    /// farthest of the pixels it covers.
+    std::vector<float> meters;
+    /// The view and projection the frame was drawn with, without jitter.
+    glm::mat4 viewProjection{1.0f};
+};
+
 /// How long a pass took on the GPU.
 struct PassTime {
     std::string_view name;
@@ -324,6 +339,11 @@ public:
     void SetDebugView(DebugView view);
     /// The path tracer starts over when they change; see RendererConfig.
     void SetPathTracer(std::uint32_t bounces, std::uint32_t samples);
+
+    /// Writes a small grid of each frame's depth for the CPU (ADR-0106), off by default.
+    void SetDepthProbe(bool enabled);
+    /// The latest grid of depth read back, while the probe is on.
+    [[nodiscard]] const std::optional<DepthPicture>& LatestDepth() const;
 
     /// Reads the next frame drawn back (ADR-0077), which TakeCapture returns once the GPU has finished it, a
     /// frame or two later.

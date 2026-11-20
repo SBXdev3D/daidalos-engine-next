@@ -87,3 +87,18 @@ TEST(NavMeshTest, AShutDoorBlocksTheWay) {
 TEST(NavMeshTest, NoTrianglesIsAnError) {
     EXPECT_FALSE(navigation::NavMesh::Build({}, {}).has_value());
 }
+
+TEST(NavMeshTest, EdgesOutlineTheFloor) {
+    const Level level;
+    const core::Result<navigation::NavMesh> mesh = navigation::NavMesh::Build(level.positions, level.indices);
+    ASSERT_TRUE(mesh.has_value()) << core::Format(mesh.error());
+    const std::vector<glm::vec3> edges = mesh->Edges();
+    ASSERT_GE(edges.size(), 6u);
+    EXPECT_EQ(edges.size() % 2, 0u);
+    for (const glm::vec3& point : edges) {
+        // On the floor, inside it by the walker's width.
+        EXPECT_NEAR(point.y, 0.0f, 0.5f);
+        EXPECT_LE(std::abs(point.x), 10.0f);
+        EXPECT_LE(std::abs(point.z), 10.0f);
+    }
+}

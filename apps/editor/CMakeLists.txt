@@ -18,6 +18,8 @@ dai_add_app(NAME editor
         src/Inspector.cpp
         src/Inspector.hpp
         src/Main.cpp
+        src/Overlays.cpp
+        src/Overlays.hpp
         src/MaterialPanel.cpp
         src/MaterialPanel.hpp
         src/Paint.cpp
