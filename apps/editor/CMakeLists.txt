@@ -7,6 +7,8 @@ dai_add_app(NAME editor
         src/AssetBrowser.hpp
         src/Clipboard.cpp
         src/Clipboard.hpp
+        src/Commands.cpp
+        src/Commands.hpp
         src/Cues.cpp
         src/Cues.hpp
         src/Editor.cpp

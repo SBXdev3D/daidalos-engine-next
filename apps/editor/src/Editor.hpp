@@ -32,6 +32,7 @@ struct ImDrawList;
 #include <vector>
 
 #include "AssetBrowser.hpp"
+#include "Commands.hpp"
 #include "Game.hpp"
 #include "History.hpp"
 #include "MapCheck.hpp"
@@ -321,6 +322,25 @@ private:
     void DrawMapCheck();
     void DrawStatistics(daidalos::app::Application& app);
 
+    // Commands, keys, search and context menus (ADR-0112).
+    /// Every command, with its default keys, then the keymap the player saved.
+    void RegisterCommands();
+    void LoadKeymap();
+    void SaveKeymap();
+    /// The keys of a command as menus show them, or null.
+    [[nodiscard]] const char* Keys(std::string_view id);
+    /// Runs a command by id, if it can run.
+    void Run(std::string_view id);
+    [[nodiscard]] bool ChordPressed(const KeyChord& chord, bool repeats) const;
+    void OpenPalette();
+    void DrawPalette(daidalos::app::Application& app);
+    /// What can be done to the selection: the view's and the hierarchy's right-click menus.
+    void DrawEntityMenu();
+    /// A right click in the view that does not move: the selection's menu, and creating there.
+    void ViewportContextMenu(daidalos::app::Application& app);
+    /// The Create menu's items, which create in front of the camera, or at m_createAt.
+    void DrawCreateItems();
+
     // The interface.
     void DrawMenu(daidalos::app::Application& app);
     void DrawDialogs(daidalos::app::Application& app);
@@ -453,6 +473,30 @@ private:
     DepthTest m_depth;
     std::optional<daidalos::navigation::NavMesh> m_navigation;
     std::vector<glm::vec3> m_navigationEdges;
+
+    std::vector<Command> m_commands;
+    Keymap m_keymap;
+    /// Dear ImGui's keys by their names, as chords name them.
+    std::map<std::string, int> m_keysByName;
+    std::map<std::string, std::string> m_chordTexts;
+    /// The command whose keys the Shortcuts window waits for.
+    std::optional<std::string> m_capturing;
+    std::string m_keyFilter;
+    bool m_paletteOpen = false;
+    /// The palette's field takes the keyboard on the frame it opens.
+    bool m_paletteFocus = false;
+    std::string m_paletteQuery;
+    std::size_t m_paletteChoice = 0;
+    std::optional<std::string> m_paletteSetting;
+    std::vector<AssetEntry> m_paletteAssets;
+    std::chrono::steady_clock::time_point m_paletteAssetsAt{};
+    /// A right press in the view, how far the mouse went and for how long while held.
+    std::optional<glm::vec2> m_rightPress;
+    float m_rightTravel = 0.0f;
+    float m_rightSeconds = 0.0f;
+    /// Where the right click hit, to create or paste at.
+    glm::vec3 m_contextPoint{0.0f};
+    std::optional<glm::vec3> m_createAt;
 
     std::vector<Problem> m_problems;
     bool m_showNotes = false;

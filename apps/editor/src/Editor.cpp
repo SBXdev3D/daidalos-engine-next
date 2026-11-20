@@ -254,6 +254,7 @@ core::Result<void> Editor::OnStart(app::Application& app) {
         return {};
     }
     m_tabs.push_back(std::make_unique<Tab>());
+    RegisterCommands();
     m_browser = std::make_unique<AssetBrowser>(m_assetRoot, app.Renderer().Device(), app.Workers());
     LoadBookmarks();
     if (!sequence.empty()) {
@@ -547,7 +548,7 @@ void Editor::Create(std::string_view label, scene::LevelEntity entity, std::opti
     if (entity.name.empty()) {
         entity.name = std::string(label);
     }
-    entity.transform.translation = position.value_or(InFront());
+    entity.transform.translation = position.value_or(std::exchange(m_createAt, std::nullopt).value_or(InFront()));
     Change(std::format("Create {}", label), [&entity](scene::Level& level) { level.entities.push_back(entity); });
     m_history.Commit(Snapshot());
     Select(entity.id);
@@ -1675,6 +1676,7 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
         }
     }
     ImGuizmo::BeginFrame();
+    m_createAt.reset();
     const std::optional<renderer::DepthPicture>& depth = app.Renderer().LatestDepth();
     m_depth = DepthTest(depth ? &*depth : nullptr);
     if (m_scene != nullptr) {
@@ -1709,6 +1711,7 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
     DrawPaint();
     DrawStatus(app, time);
     DrawDialogs(app);
+    DrawPalette(app);
     DrawLoading();
     if (m_browser != nullptr) {
         if (const std::optional<AssetEntry> chosen = m_browser->Draw()) {
@@ -1748,6 +1751,9 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
             }
         }
         UsePane(m_active);
+        if (!switching && !m_show.gameView) {
+            ViewportContextMenu(app);
+        }
         if (switching) {
             // The click chose a pane: it does nothing else.
         } else if (m_measuring) {
@@ -1807,220 +1813,6 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
         scene::Camera& camera = m_scene->World().Get<scene::Camera>(m_cameraEntity);
         camera.verticalFov = eye.verticalFov;
         camera.nearPlane = eye.nearPlane;
-    }
-}
-
-void Editor::HandleShortcuts(app::Application& /*app*/) {
-    const ImGuiIO& io = ImGui::GetIO();
-    if (io.WantTextInput || m_flying || !m_openPopup.empty() ||
-        ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) {
-        return;
-    }
-    const auto pressed = [](ImGuiKey key) { return ImGui::IsKeyPressed(key, false); };
-    if (io.KeyCtrl) {
-        if (pressed(ImGuiKey_S)) {
-            if (io.KeyShift) {
-                m_pathField = m_levelPath;
-                m_openPopup = "Save As";
-            } else {
-                Save();
-            }
-        } else if (pressed(ImGuiKey_O)) {
-            m_levelFiles = FindLevelFiles(m_assetRoot);
-            m_openInNewTab = io.KeyShift;
-            m_openPopup = "Open";
-        } else if (pressed(ImGuiKey_W)) {
-            if (m_tabs.size() > 1) {
-                m_pendingCloseTab = m_activeTab;
-            }
-        } else if (pressed(ImGuiKey_Tab)) {
-            if (m_tabs.size() > 1) {
-                SwitchTab((m_activeTab + (io.KeyShift ? m_tabs.size() - 1 : 1)) % m_tabs.size());
-                m_selectTab = true;
-            }
-        } else if (pressed(ImGuiKey_N)) {
-            m_pathField = "Levels/New.level.json";
-            m_openPopup = "New";
-        } else if (ImGui::IsKeyPressed(ImGuiKey_Z, true)) {
-            if (io.KeyShift) {
-                Redo();
-            } else {
-                Undo();
-            }
-        } else if (ImGui::IsKeyPressed(ImGuiKey_Y, true)) {
-            Redo();
-        } else if (pressed(ImGuiKey_F5)) {
-            Play(true);
-        } else if (pressed(ImGuiKey_D)) {
-            Duplicate();
-        } else if (pressed(ImGuiKey_C)) {
-            if (io.KeyShift) {
-                RunMapCheck();
-                ImGui::SetWindowFocus("Map check");
-            } else {
-                CopySelection();
-            }
-        } else if (pressed(ImGuiKey_X)) {
-            CopySelection();
-            DeleteSelected();
-        } else if (pressed(ImGuiKey_V)) {
-            Paste();
-        } else if (pressed(ImGuiKey_A)) {
-            SelectAll();
-        } else if (pressed(ImGuiKey_R)) {
-            m_realtime = !m_realtime;
-            m_status = m_realtime ? "Real time: the scene moves" : "The scene holds still: Ctrl+R lets it move";
-        }
-        for (int slot = 1; slot <= 9; ++slot) {
-            if (pressed(static_cast<ImGuiKey>(ImGuiKey_1 + slot - 1))) {
-                Bookmark(slot, true);
-            }
-        }
-        return;
-    }
-    if (io.KeyAlt) {
-        if (pressed(ImGuiKey_H)) {
-            ShowEverything();
-            return;
-        }
-        if (pressed(ImGuiKey_S)) {
-            if (m_simulating) {
-                StopSimulating();
-            } else {
-                StartSimulating();
-            }
-            return;
-        }
-        if (pressed(ImGuiKey_P)) {
-            StartPlaying(*m_app, io.KeyShift);
-            return;
-        }
-        // Alt+1 to Alt+4: the viewport's lighting (ADR-0105).
-        constexpr std::array<Lighting, 4> kModes{Lighting::Lit, Lighting::Unlit, Lighting::LightingOnly,
-                                                 Lighting::EditorLight};
-        for (std::size_t mode = 0; mode < kModes.size(); ++mode) {
-            if (pressed(static_cast<ImGuiKey>(ImGuiKey_1 + static_cast<int>(mode)))) {
-                SetLighting(kModes[mode]);
-            }
-        }
-        return;
-    }
-    for (int slot = 1; slot <= 9 && !io.KeyShift; ++slot) {
-        if (pressed(static_cast<ImGuiKey>(ImGuiKey_1 + slot - 1))) {
-            Bookmark(slot, false);
-        }
-    }
-    if (io.KeyShift) {
-        // Shift+1 to Shift+4: what the live pane looks from; Shift+5: one view or four (ADR-0108).
-        constexpr std::array<ViewKind, 4> kKinds{ViewKind::Perspective, ViewKind::Top, ViewKind::Front, ViewKind::Side};
-        for (std::size_t kind = 0; kind < kKinds.size(); ++kind) {
-            if (pressed(static_cast<ImGuiKey>(ImGuiKey_1 + static_cast<int>(kind)))) {
-                SetViewKind(kKinds[kind]);
-                return;
-            }
-        }
-        if (pressed(ImGuiKey_5)) {
-            SetSplit(!m_split);
-            return;
-        }
-    }
-    if (pressed(ImGuiKey_Keypad7)) {
-        SetViewKind(ViewKind::Top);
-    }
-    if (pressed(ImGuiKey_Keypad1)) {
-        SetViewKind(ViewKind::Front);
-    }
-    if (pressed(ImGuiKey_Keypad3)) {
-        SetViewKind(ViewKind::Side);
-    }
-    if (pressed(ImGuiKey_Keypad5)) {
-        SetViewKind(ViewKind::Perspective);
-    }
-    if (Pane& live = m_panes[m_active]; live.kind != ViewKind::Perspective) {
-        // [ and ] move an axis view's cut, by a quarter meter, or a meter with Shift.
-        const float step = io.KeyShift ? 1.0f : 0.25f;
-        if (ImGui::IsKeyPressed(ImGuiKey_LeftBracket, true)) {
-            live.ortho.cut = std::clamp(live.ortho.cut - step, kMinCut, kMaxCut);
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_RightBracket, true)) {
-            live.ortho.cut = std::clamp(live.ortho.cut + step, kMinCut, kMaxCut);
-        }
-    }
-    if (pressed(ImGuiKey_End)) {
-        DropToFloor();
-    }
-    if (pressed(ImGuiKey_G)) {
-        if (io.KeyShift) {
-            m_show.grid = !m_show.grid;
-        } else {
-            m_show.gameView = !m_show.gameView;
-            m_status = m_show.gameView ? "Game view: G shows the editor's drawing again" : "Editor view";
-        }
-    }
-    if (pressed(ImGuiKey_X)) {
-        m_snap = !m_snap;
-        m_status = m_snap ? "Snapping on" : "Snapping off";
-    }
-    if (pressed(ImGuiKey_F1)) {
-        m_showHelp = !m_showHelp;
-    }
-    if (pressed(ImGuiKey_F5)) {
-        Play(false);
-    }
-    if (pressed(ImGuiKey_W)) {
-        m_operation = ImGuizmo::TRANSLATE;
-    }
-    if (pressed(ImGuiKey_E)) {
-        m_operation = ImGuizmo::ROTATE;
-    }
-    if (pressed(ImGuiKey_R)) {
-        m_operation = ImGuizmo::SCALE;
-    }
-    if (pressed(ImGuiKey_B)) {
-        m_painting = !m_painting;
-        m_measuring = false;
-    }
-    if (pressed(ImGuiKey_H)) {
-        if (io.KeyShift) {
-            ToggleIsolate();
-        } else {
-            SetHidden(SelectionRoots(), true);
-        }
-    }
-    if (pressed(ImGuiKey_L)) {
-        const scene::LevelEntity* selected = Selected();
-        SetLocked(SelectionRoots(), selected == nullptr || !selected->editing.locked);
-    }
-    if (pressed(ImGuiKey_M)) {
-        m_measuring = !m_measuring;
-        m_painting = false;
-        m_measureFrom.reset();
-        m_measureTo.reset();
-        m_status = m_measuring ? "Measuring: drag between two surfaces; M or Esc stops" : "";
-    }
-    if (m_simulating && pressed(ImGuiKey_K)) {
-        KeepSimulation();
-    }
-    if (pressed(ImGuiKey_F10)) {
-        m_stepFrames = 1;
-        m_realtime = false;
-    }
-    if (pressed(ImGuiKey_Escape)) {
-        if (m_simulating) {
-            StopSimulating();
-        } else if (m_painting) {
-            m_painting = false;
-        } else if (m_measuring) {
-            m_measuring = false;
-        } else {
-            Select(0);
-        }
-    }
-    if (pressed(ImGuiKey_Delete)) {
-        DeleteSelected();
-    }
-    if (pressed(ImGuiKey_F)) {
-        FrameSelection();
     }
 }
 
@@ -2172,27 +1964,27 @@ void Editor::DrawMenu(app::Application& app) {
         return;
     }
     if (ImGui::BeginMenu("File")) {
-        if (ImGui::MenuItem("New...", "Ctrl+N")) {
+        if (ImGui::MenuItem("New...", Keys("file.new"))) {
             m_pathField = "Levels/New.level.json";
             m_openPopup = "New";
         }
-        if (ImGui::MenuItem("Open in a new tab...", "Ctrl+Shift+O")) {
+        if (ImGui::MenuItem("Open in a new tab...", Keys("file.open_tab"))) {
             m_levelFiles = FindLevelFiles(m_assetRoot);
             m_openInNewTab = true;
             m_openPopup = "Open";
         }
-        if (ImGui::MenuItem("Close the tab", "Ctrl+W", false, m_tabs.size() > 1)) {
+        if (ImGui::MenuItem("Close the tab", Keys("file.close_tab"), false, m_tabs.size() > 1)) {
             m_pendingCloseTab = m_activeTab;
         }
-        if (ImGui::MenuItem("Open...", "Ctrl+O")) {
+        if (ImGui::MenuItem("Open...", Keys("file.open"))) {
             m_openInNewTab = false;
             m_levelFiles = FindLevelFiles(m_assetRoot);
             m_openPopup = "Open";
         }
-        if (ImGui::MenuItem("Save", "Ctrl+S")) {
+        if (ImGui::MenuItem("Save", Keys("file.save"))) {
             Save();
         }
-        if (ImGui::MenuItem("Save As...", "Ctrl+Shift+S")) {
+        if (ImGui::MenuItem("Save As...", Keys("file.save_as"))) {
             m_pathField = m_levelPath;
             m_openPopup = "Save As";
         }
@@ -2215,45 +2007,45 @@ void Editor::DrawMenu(app::Application& app) {
             Redo();
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Cut", "Ctrl+X", false, !m_selection.empty())) {
+        if (ImGui::MenuItem("Cut", Keys("edit.cut"), false, !m_selection.empty())) {
             CopySelection();
             DeleteSelected();
         }
-        if (ImGui::MenuItem("Copy", "Ctrl+C", false, !m_selection.empty())) {
+        if (ImGui::MenuItem("Copy", Keys("edit.copy"), false, !m_selection.empty())) {
             CopySelection();
         }
-        if (ImGui::MenuItem("Paste", "Ctrl+V")) {
+        if (ImGui::MenuItem("Paste", Keys("edit.paste"))) {
             Paste();
         }
-        if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, !m_selection.empty())) {
+        if (ImGui::MenuItem("Duplicate", Keys("edit.duplicate"), false, !m_selection.empty())) {
             Duplicate();
         }
-        if (ImGui::MenuItem("Delete", "Del", false, !m_selection.empty())) {
+        if (ImGui::MenuItem("Delete", Keys("edit.delete"), false, !m_selection.empty())) {
             DeleteSelected();
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Select all", "Ctrl+A")) {
+        if (ImGui::MenuItem("Select all", Keys("edit.select_all"))) {
             SelectAll();
         }
-        if (ImGui::MenuItem("Select none", "Esc", false, !m_selection.empty())) {
+        if (ImGui::MenuItem("Select none", Keys("edit.cancel"), false, !m_selection.empty())) {
             Select(0);
         }
         ImGui::Separator();
         ImGui::Separator();
-        if (ImGui::MenuItem("Hide", "H", false, !m_selection.empty())) {
+        if (ImGui::MenuItem("Hide", Keys("edit.hide"), false, !m_selection.empty())) {
             SetHidden(SelectionRoots(), true);
         }
-        if (ImGui::MenuItem("Show everything", "Alt+H")) {
+        if (ImGui::MenuItem("Show everything", Keys("edit.show_all"))) {
             ShowEverything();
         }
-        if (ImGui::MenuItem(m_isolated.empty() ? "Isolate" : "Stop isolating", "Shift+H", false,
+        if (ImGui::MenuItem(m_isolated.empty() ? "Isolate" : "Stop isolating", Keys("edit.isolate"), false,
                             !m_selection.empty() || !m_isolated.empty())) {
             ToggleIsolate();
         }
-        if (ImGui::MenuItem("Drop to the floor", "End", false, !m_selection.empty())) {
+        if (ImGui::MenuItem("Drop to the floor", Keys("edit.drop"), false, !m_selection.empty())) {
             DropToFloor();
         }
-        if (ImGui::MenuItem("Lock or unlock", "L", false, !m_selection.empty())) {
+        if (ImGui::MenuItem("Lock or unlock", Keys("edit.lock"), false, !m_selection.empty())) {
             const scene::LevelEntity* selected = Selected();
             SetLocked(SelectionRoots(), selected == nullptr || !selected->editing.locked);
         }
@@ -2305,168 +2097,42 @@ void Editor::DrawMenu(app::Application& app) {
             UnpackPrefab(m_selected);
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Frame the selection", "F", false, Selected() != nullptr)) {
+        if (ImGui::MenuItem("Frame the selection", Keys("edit.frame"), false, Selected() != nullptr)) {
             FrameSelection();
         }
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Create")) {
-        if (ImGui::MenuItem("Empty")) {
-            Create("Empty", {});
-        }
-        ImGui::Separator();
-        if (ImGui::MenuItem("Point light")) {
-            scene::LevelEntity entity;
-            entity.light = scene::Light{.type = renderer::LightType::Point, .intensity = 50.0f, .range = 8.0f};
-            Create("Point light", std::move(entity));
-        }
-        if (ImGui::MenuItem("Spot light")) {
-            scene::LevelEntity entity;
-            entity.light = scene::Light{.type = renderer::LightType::Spot, .intensity = 200.0f, .range = 12.0f};
-            Create("Spot light", std::move(entity));
-        }
-        // Decals: the box faces away from the camera, onto what is in front of it (ADR-0060).
-        if (ImGui::BeginMenu("Decals")) {
-            const auto decal = [this](const char* name, const char* texture, glm::vec3 size, float roughness) {
-                scene::LevelEntity entity;
-                entity.decal = scene::Decal{.texture = texture, .roughness = roughness};
-                entity.transform.scale = size;
-                entity.transform.rotation = math::FromYawPitchRoll(m_camera.yaw, 0.0f, 0.0f);
-                Create(name, std::move(entity));
-            };
-            if (ImGui::MenuItem("Blood splatter")) {
-                decal("Blood splatter", "Decals/blood_splatter.png", {1.2f, 1.2f, 0.6f}, 0.25f);
-            }
-            if (ImGui::MenuItem("Blood drips")) {
-                decal("Blood drips", "Decals/blood_drips.png", {0.9f, 1.6f, 0.6f}, 0.3f);
-            }
-            if (ImGui::MenuItem("Grime")) {
-                decal("Grime", "Decals/grime.png", {2.0f, 2.0f, 1.0f}, 0.9f);
-            }
-            if (ImGui::MenuItem("Mold")) {
-                decal("Mold", "Decals/mold.png", {1.5f, 1.5f, 0.8f}, 0.85f);
-            }
-            if (ImGui::MenuItem("Scorch mark")) {
-                decal("Scorch mark", "Decals/scorch.png", {1.4f, 1.4f, 0.8f}, 0.95f);
-            }
-            ImGui::EndMenu();
-        }
-        // Presets: lights a horror level keeps asking for (ADR-0057).
-        if (ImGui::BeginMenu("Light presets")) {
-            const auto preset = [this](const char* name, scene::Light light) {
-                scene::LevelEntity entity;
-                entity.light = std::move(light);
-                Create(name, std::move(entity));
-            };
-            if (ImGui::MenuItem("Candle")) {
-                preset("Candle", {.intensity = 1.0f,
-                                  .temperature = 1850.0f,
-                                  .range = 4.0f,
-                                  .radius = 0.01f,
-                                  .animation = {.pattern = scene::LightPattern::Flicker}});
-            }
-            if (ImGui::MenuItem("Lighter")) {
-                preset("Lighter", {.intensity = 0.6f,
-                                   .temperature = 1900.0f,
-                                   .range = 3.0f,
-                                   .radius = 0.008f,
-                                   .animation = {.pattern = scene::LightPattern::Flicker, .rate = 1.6f}});
-            }
-            if (ImGui::MenuItem("Buzzing tube")) {
-                preset("Buzzing tube", {.intensity = 120.0f,
-                                        .temperature = 5200.0f,
-                                        .range = 9.0f,
-                                        .radius = 0.3f,
-                                        .profile = "Lights/downlight.ies",
-                                        .animation = {.pattern = scene::LightPattern::Buzz}});
-            }
-            if (ImGui::MenuItem("Failing lamp")) {
-                preset("Failing lamp", {.intensity = 80.0f,
-                                        .temperature = 2900.0f,
-                                        .range = 8.0f,
-                                        .profile = "Lights/bare_bulb.ies",
-                                        .animation = {.pattern = scene::LightPattern::Failing}});
-            }
-            if (ImGui::MenuItem("Emergency light")) {
-                preset("Emergency light",
-                       {.type = renderer::LightType::Spot,
-                        .color = {1.0f, 0.08f, 0.04f},
-                        .intensity = 400.0f,
-                        .range = 14.0f,
-                        .innerAngle = glm::radians(15.0f),
-                        .outerAngle = glm::radians(30.0f),
-                        .animation = {.pattern = scene::LightPattern::Pulse, .rate = 0.8f, .circuit = "emergency"}});
-            }
-            if (ImGui::MenuItem("Hazard strobe")) {
-                preset("Hazard strobe", {.color = {1.0f, 0.55f, 0.1f},
-                                         .intensity = 300.0f,
-                                         .range = 10.0f,
-                                         .animation = {.pattern = scene::LightPattern::Strobe, .rate = 1.5f}});
-            }
-            if (ImGui::MenuItem("Lamp behind a fan")) {
-                preset("Lamp behind a fan", {.type = renderer::LightType::Spot,
-                                             .intensity = 600.0f,
-                                             .temperature = 3200.0f,
-                                             .range = 16.0f,
-                                             .innerAngle = glm::radians(30.0f),
-                                             .outerAngle = glm::radians(40.0f),
-                                             .cookie = "Lights/fan_cookie.png"});
-            }
-            ImGui::EndMenu();
-        }
-        ImGui::Separator();
-        if (ImGui::MenuItem("Fog volume")) {
-            scene::LevelEntity entity;
-            entity.fog = scene::FogVolume{};
-            entity.transform.scale = glm::vec3(4.0f, 2.0f, 4.0f);
-            Create("Fog volume", std::move(entity));
-        }
-        if (ImGui::MenuItem("Trigger")) {
-            scene::LevelEntity entity;
-            entity.trigger = scene::Trigger{.sequence = "Sequences/scare.sequence.json"};
-            entity.transform.scale = glm::vec3(3.0f, 2.5f, 3.0f);
-            Create("Trigger", std::move(entity));
-        }
-        if (ImGui::MenuItem("Wet area")) {
-            scene::LevelEntity entity;
-            entity.wet = scene::WetVolume{.puddles = 0.4f, .puddleHeight = 0.6f, .rain = 0.0f, .streaks = 0.3f};
-            entity.transform.scale = glm::vec3(6.0f, 3.0f, 6.0f);
-            Create("Wet area", std::move(entity));
-        }
-        if (ImGui::MenuItem("Wind volume")) {
-            scene::LevelEntity entity;
-            entity.wind = scene::WindVolume{};
-            entity.transform.scale = glm::vec3(4.0f);
-            Create("Wind volume", std::move(entity));
-        }
+        DrawCreateItems();
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Play")) {
-        if (ImGui::MenuItem("In the editor", "Alt+P", false, m_scene != nullptr)) {
+        if (ImGui::MenuItem("In the editor", Keys("play.editor"), false, m_scene != nullptr)) {
             StartPlaying(app, false);
         }
-        if (ImGui::MenuItem("In the editor, from the camera", "Alt+Shift+P", false, m_scene != nullptr)) {
+        if (ImGui::MenuItem("In the editor, from the camera", Keys("play.editor_camera"), false, m_scene != nullptr)) {
             StartPlaying(app, true);
         }
-        if (ImGui::MenuItem(m_simulating ? "Stop simulating" : "Simulate", "Alt+S", m_simulating, m_scene != nullptr)) {
+        if (ImGui::MenuItem(m_simulating ? "Stop simulating" : "Simulate", Keys("play.simulate"), m_simulating,
+                            m_scene != nullptr)) {
             if (m_simulating) {
                 StopSimulating();
             } else {
                 StartSimulating();
             }
         }
-        if (ImGui::MenuItem("Keep where loose objects are", "K", false, m_simulating)) {
+        if (ImGui::MenuItem("Keep where loose objects are", Keys("play.keep"), false, m_simulating)) {
             KeepSimulation();
         }
-        if (ImGui::MenuItem("Step one frame", "F10")) {
+        if (ImGui::MenuItem("Step one frame", Keys("view.step"))) {
             m_stepFrames = 1;
             m_realtime = false;
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("In the sandbox, from the start", "F5")) {
+        if (ImGui::MenuItem("In the sandbox, from the start", Keys("play.sandbox"))) {
             Play(false);
         }
-        if (ImGui::MenuItem("In the sandbox, from the camera", "Ctrl+F5")) {
+        if (ImGui::MenuItem("In the sandbox, from the camera", Keys("play.sandbox_camera"))) {
             Play(true);
         }
         if (ImGui::MenuItem("Stop", nullptr, false, m_play.Running())) {
@@ -2489,7 +2155,7 @@ void Editor::DrawMenu(app::Application& app) {
                 SetViewKind(kind);
             }
         }
-        if (ImGui::MenuItem("Four views", "Shift+5", m_split)) {
+        if (ImGui::MenuItem("Four views", Keys("view.split"), m_split)) {
             SetSplit(!m_split);
         }
         ImGui::Separator();
@@ -2500,7 +2166,7 @@ void Editor::DrawMenu(app::Application& app) {
         }
         ImGui::MenuItem("Turn to the surface", nullptr, &m_alignToSurface);
         ImGui::Separator();
-        ImGui::MenuItem("Grid", "Shift+G", &m_show.grid);
+        ImGui::MenuItem("Grid", Keys("view.grid"), &m_show.grid);
         ImGui::MenuItem("Snapping", "X", &m_snap);
         ImGui::SetNextItemWidth(140.0f);
         ImGui::DragFloat("Move step (m)", &m_snapSteps.x, 0.01f, 0.01f, 10.0f, "%.2f");
@@ -2519,7 +2185,7 @@ void Editor::DrawMenu(app::Application& app) {
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Check")) {
-        if (ImGui::MenuItem("Check the level", "Ctrl+Shift+C")) {
+        if (ImGui::MenuItem("Check the level", Keys("check.level"))) {
             RunMapCheck();
             ImGui::SetWindowFocus("Map check");
         }
@@ -2530,7 +2196,10 @@ void Editor::DrawMenu(app::Application& app) {
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Help")) {
-        ImGui::MenuItem("Shortcuts", "F1", &m_showHelp);
+        ImGui::MenuItem("Shortcuts and keys", Keys("help.shortcuts"), &m_showHelp);
+        if (ImGui::MenuItem("Search everything", Keys("help.palette"))) {
+            OpenPalette();
+        }
         ImGui::EndMenu();
     }
     ImGui::TextDisabled("|");
@@ -2721,6 +2390,30 @@ void Editor::DrawDialogs(app::Application& app) {
     pathDialog(
         "Make prefab", "Save the prefab", false, [this](const std::string& path) { MakePrefab(path); },
         kPrefabExtension);
+
+    place(460.0f);
+    if (ImGui::BeginPopupModal("Rename", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::IsWindowAppearing()) {
+            ImGui::SetKeyboardFocusHere();
+        }
+        InputString("##name", m_pathField);
+        if (ImGui::Button("Rename") || ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+            ImGui::CloseCurrentPopup();
+            if (const scene::LevelEntity* selected = Selected()) {
+                scene::LevelEntity renamed = *selected;
+                renamed.name = m_pathField;
+                m_history.Commit(Snapshot());
+                Apply(renamed, std::format("Rename {} to {}", EntityLabel(*selected), m_pathField));
+                m_history.Commit(Snapshot());
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
 
     place(460.0f);
     if (ImGui::BeginPopupModal("Folder", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
@@ -2998,6 +2691,24 @@ void Editor::DrawFolder(const std::string& folder, const std::vector<std::string
             }
             ImGui::EndDragDropTarget();
         }
+        if (ImGui::BeginPopupContextItem()) {
+            if (ImGui::MenuItem("Select what it holds")) {
+                Select(0);
+                for (const std::uint64_t held_ : held) {
+                    ToggleSelect(held_);
+                }
+            }
+            if (ImGui::MenuItem(allHidden ? "Show what it holds" : "Hide what it holds")) {
+                SetHidden(held, !allHidden);
+            }
+            if (ImGui::MenuItem(allLocked ? "Unlock what it holds" : "Lock what it holds")) {
+                SetLocked(held, !allLocked);
+            }
+            if (ImGui::MenuItem("Take everything out of it")) {
+                MoveToFolder(held, ParentFolder(inner));
+            }
+            ImGui::EndPopup();
+        }
         if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
             // A click on a folder selects what it holds.
             Select(0);
@@ -3070,6 +2781,14 @@ void Editor::DrawHierarchyNode(std::uint64_t id, const std::vector<std::vector<s
     }
     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
         FrameSelection();
+    }
+    if (ImGui::BeginPopupContextItem()) {
+        // A right click acts on the selection, which the row joins if it is not in it.
+        if (!IsSelected(id)) {
+            Select(id);
+        }
+        DrawEntityMenu();
+        ImGui::EndPopup();
     }
     // Dragged onto another entity, it goes under it; onto a folder, into it.
     if (ImGui::BeginDragDropSource()) {
@@ -4403,12 +4122,805 @@ void Editor::DrawStatistics(app::Application& app) {
     ImGui::End();
 }
 
+void Editor::DrawCreateItems() {
+    if (ImGui::MenuItem("Empty")) {
+        Create("Empty", {});
+    }
+    ImGui::Separator();
+    if (ImGui::MenuItem("Point light")) {
+        scene::LevelEntity entity;
+        entity.light = scene::Light{.type = renderer::LightType::Point, .intensity = 50.0f, .range = 8.0f};
+        Create("Point light", std::move(entity));
+    }
+    if (ImGui::MenuItem("Spot light")) {
+        scene::LevelEntity entity;
+        entity.light = scene::Light{.type = renderer::LightType::Spot, .intensity = 200.0f, .range = 12.0f};
+        Create("Spot light", std::move(entity));
+    }
+    // Decals: the box faces away from the camera, onto what is in front of it (ADR-0060).
+    if (ImGui::BeginMenu("Decals")) {
+        const auto decal = [this](const char* name, const char* texture, glm::vec3 size, float roughness) {
+            scene::LevelEntity entity;
+            entity.decal = scene::Decal{.texture = texture, .roughness = roughness};
+            entity.transform.scale = size;
+            entity.transform.rotation = math::FromYawPitchRoll(m_camera.yaw, 0.0f, 0.0f);
+            Create(name, std::move(entity));
+        };
+        if (ImGui::MenuItem("Blood splatter")) {
+            decal("Blood splatter", "Decals/blood_splatter.png", {1.2f, 1.2f, 0.6f}, 0.25f);
+        }
+        if (ImGui::MenuItem("Blood drips")) {
+            decal("Blood drips", "Decals/blood_drips.png", {0.9f, 1.6f, 0.6f}, 0.3f);
+        }
+        if (ImGui::MenuItem("Grime")) {
+            decal("Grime", "Decals/grime.png", {2.0f, 2.0f, 1.0f}, 0.9f);
+        }
+        if (ImGui::MenuItem("Mold")) {
+            decal("Mold", "Decals/mold.png", {1.5f, 1.5f, 0.8f}, 0.85f);
+        }
+        if (ImGui::MenuItem("Scorch mark")) {
+            decal("Scorch mark", "Decals/scorch.png", {1.4f, 1.4f, 0.8f}, 0.95f);
+        }
+        ImGui::EndMenu();
+    }
+    // Presets: lights a horror level keeps asking for (ADR-0057).
+    if (ImGui::BeginMenu("Light presets")) {
+        const auto preset = [this](const char* name, scene::Light light) {
+            scene::LevelEntity entity;
+            entity.light = std::move(light);
+            Create(name, std::move(entity));
+        };
+        if (ImGui::MenuItem("Candle")) {
+            preset("Candle", {.intensity = 1.0f,
+                              .temperature = 1850.0f,
+                              .range = 4.0f,
+                              .radius = 0.01f,
+                              .animation = {.pattern = scene::LightPattern::Flicker}});
+        }
+        if (ImGui::MenuItem("Lighter")) {
+            preset("Lighter", {.intensity = 0.6f,
+                               .temperature = 1900.0f,
+                               .range = 3.0f,
+                               .radius = 0.008f,
+                               .animation = {.pattern = scene::LightPattern::Flicker, .rate = 1.6f}});
+        }
+        if (ImGui::MenuItem("Buzzing tube")) {
+            preset("Buzzing tube", {.intensity = 120.0f,
+                                    .temperature = 5200.0f,
+                                    .range = 9.0f,
+                                    .radius = 0.3f,
+                                    .profile = "Lights/downlight.ies",
+                                    .animation = {.pattern = scene::LightPattern::Buzz}});
+        }
+        if (ImGui::MenuItem("Failing lamp")) {
+            preset("Failing lamp", {.intensity = 80.0f,
+                                    .temperature = 2900.0f,
+                                    .range = 8.0f,
+                                    .profile = "Lights/bare_bulb.ies",
+                                    .animation = {.pattern = scene::LightPattern::Failing}});
+        }
+        if (ImGui::MenuItem("Emergency light")) {
+            preset("Emergency light",
+                   {.type = renderer::LightType::Spot,
+                    .color = {1.0f, 0.08f, 0.04f},
+                    .intensity = 400.0f,
+                    .range = 14.0f,
+                    .innerAngle = glm::radians(15.0f),
+                    .outerAngle = glm::radians(30.0f),
+                    .animation = {.pattern = scene::LightPattern::Pulse, .rate = 0.8f, .circuit = "emergency"}});
+        }
+        if (ImGui::MenuItem("Hazard strobe")) {
+            preset("Hazard strobe", {.color = {1.0f, 0.55f, 0.1f},
+                                     .intensity = 300.0f,
+                                     .range = 10.0f,
+                                     .animation = {.pattern = scene::LightPattern::Strobe, .rate = 1.5f}});
+        }
+        if (ImGui::MenuItem("Lamp behind a fan")) {
+            preset("Lamp behind a fan", {.type = renderer::LightType::Spot,
+                                         .intensity = 600.0f,
+                                         .temperature = 3200.0f,
+                                         .range = 16.0f,
+                                         .innerAngle = glm::radians(30.0f),
+                                         .outerAngle = glm::radians(40.0f),
+                                         .cookie = "Lights/fan_cookie.png"});
+        }
+        ImGui::EndMenu();
+    }
+    ImGui::Separator();
+    if (ImGui::MenuItem("Fog volume")) {
+        scene::LevelEntity entity;
+        entity.fog = scene::FogVolume{};
+        entity.transform.scale = glm::vec3(4.0f, 2.0f, 4.0f);
+        Create("Fog volume", std::move(entity));
+    }
+    if (ImGui::MenuItem("Trigger")) {
+        scene::LevelEntity entity;
+        entity.trigger = scene::Trigger{.sequence = "Sequences/scare.sequence.json"};
+        entity.transform.scale = glm::vec3(3.0f, 2.5f, 3.0f);
+        Create("Trigger", std::move(entity));
+    }
+    if (ImGui::MenuItem("Wet area")) {
+        scene::LevelEntity entity;
+        entity.wet = scene::WetVolume{.puddles = 0.4f, .puddleHeight = 0.6f, .rain = 0.0f, .streaks = 0.3f};
+        entity.transform.scale = glm::vec3(6.0f, 3.0f, 6.0f);
+        Create("Wet area", std::move(entity));
+    }
+    if (ImGui::MenuItem("Wind volume")) {
+        scene::LevelEntity entity;
+        entity.wind = scene::WindVolume{};
+        entity.transform.scale = glm::vec3(4.0f);
+        Create("Wind volume", std::move(entity));
+    }
+}
+
+void Editor::RegisterCommands() {
+    m_commands.clear();
+    const auto add = [this](std::string id, std::string name, std::string_view chord, std::function<void()> run,
+                            std::function<bool()> enabled = {}, bool repeats = false) {
+        m_commands.push_back(Command{.id = std::move(id),
+                                     .name = std::move(name),
+                                     .defaultChord = ParseChord(chord).value_or(KeyChord{}),
+                                     .run = std::move(run),
+                                     .enabled = std::move(enabled),
+                                     .repeats = repeats});
+    };
+    const auto selection = [this] { return !m_selection.empty(); };
+    // Files and tabs.
+    add("file.new", "New level...", "Ctrl+N", [this] {
+        m_pathField = "Levels/New.level.json";
+        m_openPopup = "New";
+    });
+    add("file.open", "Open a level...", "Ctrl+O", [this] {
+        m_levelFiles = FindLevelFiles(m_assetRoot);
+        m_openInNewTab = false;
+        m_openPopup = "Open";
+    });
+    add("file.open_tab", "Open in a new tab...", Keys("file.open_tab"), [this] {
+        m_levelFiles = FindLevelFiles(m_assetRoot);
+        m_openInNewTab = true;
+        m_openPopup = "Open";
+    });
+    add("file.save", "Save", Keys("file.save"), [this] { Save(); });
+    add("file.save_as", "Save as...", "Ctrl+Shift+S", [this] {
+        m_pathField = m_levelPath;
+        m_openPopup = "Save As";
+    });
+    add("file.reload", "Reload from disk", "", [this] { Guard(*m_app, Pending::Reload); });
+    add(
+        "file.close_tab", "Close the tab", Keys("file.close_tab"), [this] { m_pendingCloseTab = m_activeTab; },
+        [this] { return m_tabs.size() > 1; });
+    add(
+        "file.next_tab", "Next tab", "Ctrl+Tab",
+        [this] {
+            SwitchTab((m_activeTab + 1) % m_tabs.size());
+            m_selectTab = true;
+        },
+        [this] { return m_tabs.size() > 1; });
+    add(
+        "file.previous_tab", "Previous tab", "Ctrl+Shift+Tab",
+        [this] {
+            SwitchTab((m_activeTab + m_tabs.size() - 1) % m_tabs.size());
+            m_selectTab = true;
+        },
+        [this] { return m_tabs.size() > 1; });
+    // Editing.
+    add("edit.undo", "Undo", "Ctrl+Z", [this] { Undo(); }, [this] { return m_history.CanUndo(); }, true);
+    add("edit.redo", "Redo", "Ctrl+Y", [this] { Redo(); }, [this] { return m_history.CanRedo(); }, true);
+    add(
+        "edit.redo_also", "Redo (second key)", "Ctrl+Shift+Z", [this] { Redo(); },
+        [this] { return m_history.CanRedo(); }, true);
+    add("edit.duplicate", "Duplicate", Keys("edit.duplicate"), [this] { Duplicate(); }, selection);
+    add("edit.copy", "Copy", Keys("edit.copy"), [this] { CopySelection(); }, selection);
+    add(
+        "edit.cut", "Cut", Keys("edit.cut"),
+        [this] {
+            CopySelection();
+            DeleteSelected();
+        },
+        selection);
+    add("edit.paste", "Paste", Keys("edit.paste"), [this] { Paste(); });
+    add("edit.delete", "Delete", "Delete", [this] { DeleteSelected(); }, selection);
+    add("edit.select_all", "Select everything", "Ctrl+A", [this] { SelectAll(); });
+    add("edit.cancel", "Select nothing, or stop the tool or the simulation", "Escape", [this] {
+        if (m_simulating) {
+            StopSimulating();
+        } else if (m_painting) {
+            m_painting = false;
+        } else if (m_measuring) {
+            m_measuring = false;
+        } else {
+            Select(0);
+        }
+    });
+    add("edit.frame", "Frame the selection", Keys("edit.frame"), [this] { FrameSelection(); }, selection);
+    add(
+        "edit.rename", "Rename...", "F2",
+        [this] {
+            m_pathField = Selected() != nullptr ? Selected()->name : std::string();
+            m_openPopup = "Rename";
+        },
+        [this] { return Selected() != nullptr; });
+    add("edit.hide", "Hide", Keys("edit.hide"), [this] { SetHidden(SelectionRoots(), true); }, selection);
+    add("edit.isolate", "Isolate, or show the rest again", Keys("edit.isolate"), [this] { ToggleIsolate(); });
+    add("edit.show_all", "Show everything", Keys("edit.show_all"), [this] { ShowEverything(); });
+    add(
+        "edit.lock", "Lock or unlock", Keys("edit.lock"),
+        [this] {
+            const scene::LevelEntity* selected = Selected();
+            SetLocked(SelectionRoots(), selected == nullptr || !selected->editing.locked);
+        },
+        selection);
+    add("edit.drop", "Drop to the floor", Keys("edit.drop"), [this] { DropToFloor(); }, selection);
+    add(
+        "edit.folder", "Put in a folder...", "",
+        [this] {
+            m_pathField = Selected() != nullptr ? Selected()->editing.folder : std::string();
+            m_openPopup = "Folder";
+        },
+        selection);
+    add(
+        "edit.make_prefab", "Make a prefab...", "",
+        [this] {
+            m_pathField = "Prefabs/New.prefab.json";
+            m_openPopup = "Make prefab";
+        },
+        selection);
+    // Tools.
+    add("tool.move", "Move", "W", [this] { m_operation = ImGuizmo::TRANSLATE; });
+    add("tool.rotate", "Rotate", "E", [this] { m_operation = ImGuizmo::ROTATE; });
+    add("tool.scale", "Scale", "R", [this] { m_operation = ImGuizmo::SCALE; });
+    add("tool.paint", "Paint decals and wet patches", "B", [this] {
+        m_painting = !m_painting;
+        m_measuring = false;
+    });
+    add("tool.measure", "Measure", "M", [this] {
+        m_measuring = !m_measuring;
+        m_painting = false;
+        m_measureFrom.reset();
+        m_measureTo.reset();
+        m_status = m_measuring ? "Measuring: drag between two surfaces; M or Esc stops" : "";
+    });
+    add("tool.snap", "Snapping", "X", [this] {
+        m_snap = !m_snap;
+        m_status = m_snap ? "Snapping on" : "Snapping off";
+    });
+    add("tool.local", "Local or world axes", "", [this] { m_local = !m_local; });
+    add("tool.surface_snap", "Snap to surfaces while moving", "", [this] { m_surfaceSnap = !m_surfaceSnap; });
+    // Views.
+    add("view.game", "Game view", Keys("view.game"), [this] {
+        m_show.gameView = !m_show.gameView;
+        m_status = m_show.gameView ? "Game view: G shows the editor's drawing again" : "Editor view";
+    });
+    add("view.grid", "Grid", Keys("view.grid"), [this] { m_show.grid = !m_show.grid; });
+    add("view.realtime", "Real time", Keys("view.realtime"), [this] {
+        m_realtime = !m_realtime;
+        m_status = m_realtime ? "Real time: the scene moves" : "The scene holds still: Ctrl+R lets it move";
+    });
+    add("view.step", "Step one frame", Keys("view.step"), [this] {
+        m_stepFrames = 1;
+        m_realtime = false;
+    });
+    add("view.lit", "Lit", "Alt+1", [this] { SetLighting(Lighting::Lit); });
+    add("view.unlit", "Unlit", "Alt+2", [this] { SetLighting(Lighting::Unlit); });
+    add("view.lighting_only", "Lighting only", "Alt+3", [this] { SetLighting(Lighting::LightingOnly); });
+    add("view.editor_light", "Editor light", "Alt+4", [this] { SetLighting(Lighting::EditorLight); });
+    add("view.perspective", "Perspective view", "Shift+1", [this] { SetViewKind(ViewKind::Perspective); });
+    add("view.top", "Top view", "Shift+2", [this] { SetViewKind(ViewKind::Top); });
+    add("view.front", "Front view", "Shift+3", [this] { SetViewKind(ViewKind::Front); });
+    add("view.side", "Side view", "Shift+4", [this] { SetViewKind(ViewKind::Side); });
+    add("view.split", "Four views", Keys("view.split"), [this] { SetSplit(!m_split); });
+    add("view.perspective_keypad", "Perspective view (keypad)", "Keypad5",
+        [this] { SetViewKind(ViewKind::Perspective); });
+    add("view.top_keypad", "Top view (keypad)", "Keypad7", [this] { SetViewKind(ViewKind::Top); });
+    add("view.front_keypad", "Front view (keypad)", "Keypad1", [this] { SetViewKind(ViewKind::Front); });
+    add("view.side_keypad", "Side view (keypad)", "Keypad3", [this] { SetViewKind(ViewKind::Side); });
+    const auto axis = [this] { return m_panes[m_active].kind != ViewKind::Perspective; };
+    const auto cut = [this](float step) {
+        OrthoView& view = m_panes[m_active].ortho;
+        view.cut = std::clamp(view.cut + step, kMinCut, kMaxCut);
+    };
+    add("view.cut_nearer", "Cut nearer", "LeftBracket", [cut] { cut(-0.25f); }, axis, true);
+    add("view.cut_farther", "Cut farther", "RightBracket", [cut] { cut(0.25f); }, axis, true);
+    add("view.cut_nearer_more", "Cut a meter nearer", "Shift+LeftBracket", [cut] { cut(-1.0f); }, axis, true);
+    add("view.cut_farther_more", "Cut a meter farther", "Shift+RightBracket", [cut] { cut(1.0f); }, axis, true);
+    // Playing.
+    add("play.sandbox", "Play in the sandbox", "F5", [this] { Play(false); });
+    add("play.sandbox_camera", "Play in the sandbox, from the camera", "Ctrl+F5", [this] { Play(true); });
+    add("play.editor", "Play in the editor", "Alt+P", [this] { StartPlaying(*m_app, false); });
+    add("play.editor_camera", "Play in the editor, from the camera", "Alt+Shift+P",
+        [this] { StartPlaying(*m_app, true); });
+    add("play.simulate", "Simulate, or stop", "Alt+S", [this] {
+        if (m_simulating) {
+            StopSimulating();
+        } else {
+            StartSimulating();
+        }
+    });
+    add(
+        "play.keep", "Keep where loose objects are", Keys("play.keep"), [this] { KeepSimulation(); },
+        [this] { return m_simulating; });
+    // The rest.
+    add("check.level", "Check the level", Keys("check.level"), [this] {
+        RunMapCheck();
+        ImGui::SetWindowFocus("Map check");
+    });
+    add("help.shortcuts", "Shortcuts and keys", "F1", [this] { m_showHelp = !m_showHelp; });
+    add("help.palette", "Search everything", "Ctrl+P", [this] { OpenPalette(); });
+    for (int slot = 1; slot <= 9; ++slot) {
+        add(std::format("bookmark.go{}", slot), std::format("Go to camera bookmark {}", slot), std::format("{}", slot),
+            [this, slot] { Bookmark(slot, false); });
+        add(std::format("bookmark.set{}", slot), std::format("Set camera bookmark {}", slot),
+            std::format("Ctrl+{}", slot), [this, slot] { Bookmark(slot, true); });
+    }
+    // Every Dear ImGui key by its name, for the keymap.
+    m_keysByName.clear();
+    for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_NamedKey_END; ++key) {
+        m_keysByName.emplace(ImGui::GetKeyName(static_cast<ImGuiKey>(key)), static_cast<ImGuiKey>(key));
+    }
+    LoadKeymap();
+}
+
+void Editor::LoadKeymap() {
+    std::ifstream file(platform::ExecutableDirectory() / "editor_keys.txt");
+    std::stringstream text;
+    text << file.rdbuf();
+    m_keymap = ParseKeymap(text.str());
+    m_chordTexts.clear();
+}
+
+void Editor::SaveKeymap() {
+    std::ofstream file(platform::ExecutableDirectory() / "editor_keys.txt");
+    file << WriteKeymap(m_keymap);
+    m_chordTexts.clear();
+}
+
+const char* Editor::Keys(std::string_view id) {
+    if (m_chordTexts.empty()) {
+        for (const Command& command : m_commands) {
+            m_chordTexts[command.id] = FormatChord(ChordOf(command, m_keymap));
+        }
+    }
+    const auto found = m_chordTexts.find(std::string(id));
+    return found != m_chordTexts.end() && !found->second.empty() ? found->second.c_str() : nullptr;
+}
+
+void Editor::Run(std::string_view id) {
+    for (const Command& command : m_commands) {
+        if (command.id == id && (!command.enabled || command.enabled())) {
+            command.run();
+            return;
+        }
+    }
+}
+
+bool Editor::ChordPressed(const KeyChord& chord, bool repeats) const {
+    const auto key = m_keysByName.find(chord.key);
+    if (chord.Empty() || key == m_keysByName.end()) {
+        return false;
+    }
+    const ImGuiIO& io = ImGui::GetIO();
+    return io.KeyCtrl == chord.ctrl && io.KeyShift == chord.shift && io.KeyAlt == chord.alt &&
+           ImGui::IsKeyPressed(static_cast<ImGuiKey>(key->second), repeats);
+}
+
+void Editor::HandleShortcuts(app::Application& /*app*/) {
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.WantTextInput || m_flying || !m_openPopup.empty() || m_capturing ||
+        ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) {
+        return;
+    }
+    // The first command whose keys were pressed runs (ADR-0112).
+    for (const Command& command : m_commands) {
+        if (ChordPressed(ChordOf(command, m_keymap), command.repeats) && (!command.enabled || command.enabled())) {
+            command.run();
+            return;
+        }
+    }
+}
+
+void Editor::DrawHelp() {
+    if (!m_showHelp) {
+        return;
+    }
+    ImGui::SetNextWindowSize(ImVec2(620.0f, 560.0f), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Shortcuts", &m_showHelp, ImGuiWindowFlags_NoDocking)) {
+        ImGui::End();
+        return;
+    }
+    ImGui::TextDisabled("Right mouse + WASD, Q, E: fly (Shift faster, the wheel sets the speed). Middle mouse: pan.");
+    ImGui::TextDisabled("Click, Ctrl+click: select. Right click without moving: what can be done there.");
+    ImGui::TextDisabled("Keys of other editors' habits can be given here; editor_keys.txt keeps them.");
+    ImGui::SetNextItemWidth(-1.0f);
+    InputString("##find keys", m_keyFilter);
+    const auto clashes = Clashes(m_commands, m_keymap);
+    // Waiting for a key: the next one pressed with its modifiers is the command's, Backspace takes it away, Escape
+    // leaves it.
+    if (m_capturing) {
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.35f, 1.0f),
+                           "Press the keys for \"%s\" (Backspace: none, Escape: leave it)", m_capturing->c_str());
+        const ImGuiIO& io = ImGui::GetIO();
+        for (const auto& [name, code] : m_keysByName) {
+            const auto key = static_cast<ImGuiKey>(code);
+            const bool modifier = key == ImGuiKey_LeftCtrl || key == ImGuiKey_RightCtrl || key == ImGuiKey_LeftShift ||
+                                  key == ImGuiKey_RightShift || key == ImGuiKey_LeftAlt || key == ImGuiKey_RightAlt ||
+                                  key == ImGuiKey_LeftSuper || key == ImGuiKey_RightSuper || key == ImGuiMod_Ctrl ||
+                                  key == ImGuiMod_Shift || key == ImGuiMod_Alt || key == ImGuiMod_Super ||
+                                  key >= ImGuiKey_MouseLeft;
+            if (modifier || !ImGui::IsKeyPressed(key, false)) {
+                continue;
+            }
+            if (key == ImGuiKey_Escape) {
+                m_capturing.reset();
+            } else if (key == ImGuiKey_Backspace) {
+                m_keymap[*m_capturing] = KeyChord{};
+                SaveKeymap();
+                m_capturing.reset();
+            } else {
+                m_keymap[*m_capturing] =
+                    KeyChord{.key = name, .ctrl = io.KeyCtrl, .shift = io.KeyShift, .alt = io.KeyAlt};
+                SaveKeymap();
+                m_capturing.reset();
+            }
+            break;
+        }
+    }
+    if (ImGui::BeginTable("keys", 3,
+                          ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp,
+                          ImVec2(0.0f, -1.0f))) {
+        ImGui::TableSetupColumn("What", ImGuiTableColumnFlags_WidthStretch, 3.0f);
+        ImGui::TableSetupColumn("Keys", ImGuiTableColumnFlags_WidthStretch, 1.4f);
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+        ImGui::TableSetupScrollFreeze(0, 1);
+        ImGui::TableHeadersRow();
+        for (const Command& command : m_commands) {
+            if (!m_keyFilter.empty() && !FuzzyScore(command.name, m_keyFilter) &&
+                !FuzzyScore(command.id, m_keyFilter)) {
+                continue;
+            }
+            const std::string chord = FormatChord(ChordOf(command, m_keymap));
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(command.name.c_str());
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s", command.id.c_str());
+            }
+            ImGui::TableNextColumn();
+            const bool clash = !chord.empty() && clashes.contains(chord);
+            if (clash) {
+                ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", chord.c_str());
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Another command has these keys too: the first in this list runs");
+                }
+            } else {
+                ImGui::TextUnformatted(chord.empty() ? "-" : chord.c_str());
+            }
+            ImGui::TableNextColumn();
+            ImGui::PushID(command.id.c_str());
+            if (ImGui::SmallButton("Change")) {
+                m_capturing = command.id;
+            }
+            if (m_keymap.contains(command.id)) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Reset")) {
+                    m_keymap.erase(command.id);
+                    SaveKeymap();
+                }
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    ImGui::End();
+}
+
+void Editor::OpenPalette() {
+    m_paletteOpen = true;
+    m_paletteFocus = true;
+    m_paletteQuery.clear();
+    m_paletteChoice = 0;
+    m_paletteSetting.reset();
+    // The assets under the root, walked once a minute at most.
+    const auto now = std::chrono::steady_clock::now();
+    if (m_paletteAssets.empty() || now - m_paletteAssetsAt > std::chrono::minutes(1)) {
+        m_paletteAssets.clear();
+        std::vector<std::string> folders{""};
+        while (!folders.empty() && m_paletteAssets.size() < 20000) {
+            const std::string folder = std::move(folders.back());
+            folders.pop_back();
+            for (AssetEntry& entry : ListFolder(m_assetRoot, folder)) {
+                if (entry.kind == AssetKind::Folder) {
+                    if (entry.name != "Source") {
+                        folders.push_back(entry.path);
+                    }
+                } else if (entry.kind != AssetKind::Other) {
+                    m_paletteAssets.push_back(std::move(entry));
+                }
+            }
+        }
+        m_paletteAssetsAt = now;
+    }
+}
+
+void Editor::DrawPalette(app::Application& app) {
+    if (!m_paletteOpen) {
+        return;
+    }
+    // Search everything (Ctrl+P): commands, entities, assets and settings, at the top of the window.
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x + viewport->Size.x * 0.5f, viewport->Pos.y + 60.0f),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(std::min(720.0f, viewport->Size.x - 40.0f), 0.0f), ImGuiCond_Always);
+    if (m_paletteFocus) {
+        ImGui::SetNextWindowFocus();
+    }
+    if (!ImGui::Begin("##palette", nullptr,
+                      ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
+                          ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::End();
+        return;
+    }
+    if (m_paletteSetting) {
+        // A setting chosen: its new value.
+        ImGui::Text("%s", m_paletteSetting->c_str());
+        if (const core::CVarEntry* entry = app.CVars().Find(*m_paletteSetting)) {
+            ImGui::TextDisabled("%s", entry->description.c_str());
+        }
+        ImGui::SetNextItemWidth(-1.0f);
+        if (std::exchange(m_paletteFocus, false)) {
+            ImGui::SetKeyboardFocusHere();
+        }
+        InputString("##value", m_paletteQuery);
+        if (ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+            if (core::Result<void> set = app.CVars().Set(*m_paletteSetting, m_paletteQuery); !set) {
+                m_status = core::Format(set.error());
+            } else {
+                m_status = std::format("{} = {}", *m_paletteSetting, m_paletteQuery);
+            }
+            m_paletteOpen = false;
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            m_paletteOpen = false;
+        }
+        ImGui::End();
+        return;
+    }
+    ImGui::SetNextItemWidth(-1.0f);
+    if (std::exchange(m_paletteFocus, false)) {
+        ImGui::SetKeyboardFocusHere();
+    }
+    if (InputString("##search", m_paletteQuery)) {
+        m_paletteChoice = 0;
+    }
+    if (m_paletteQuery.empty()) {
+        ImGui::TextDisabled("Commands, entities, assets and settings. Up and Down choose, Enter does it.");
+    }
+    struct Result {
+        int score = 0;
+        enum class Kind { Command, Entity, Asset, Setting } kind = Kind::Command;
+        std::string label;
+        std::string detail;
+        std::size_t index = 0;
+        std::uint64_t entity = 0;
+        std::string setting;
+    };
+    std::vector<Result> results;
+    for (std::size_t index = 0; index < m_commands.size(); ++index) {
+        const Command& command = m_commands[index];
+        if (command.enabled && !command.enabled()) {
+            continue;
+        }
+        if (const std::optional<int> score = FuzzyScore(command.name, m_paletteQuery)) {
+            results.push_back({*score + 4,
+                               Result::Kind::Command,
+                               command.name,
+                               FormatChord(ChordOf(command, m_keymap)),
+                               index,
+                               0,
+                               {}});
+        }
+    }
+    if (!m_paletteQuery.empty()) {
+        for (const scene::LevelEntity& entity : m_level.entities) {
+            const std::string label = EntityLabel(entity);
+            if (const std::optional<int> score = FuzzyScore(label, m_paletteQuery)) {
+                results.push_back({*score, Result::Kind::Entity, label, KindLabel(entity), 0, entity.id, {}});
+            }
+        }
+        for (std::size_t index = 0; index < m_paletteAssets.size(); ++index) {
+            if (const std::optional<int> score = FuzzyScore(m_paletteAssets[index].path, m_paletteQuery)) {
+                results.push_back(
+                    {*score - 2, Result::Kind::Asset, m_paletteAssets[index].path, "asset", index, 0, {}});
+            }
+        }
+        app.CVars().ForEach([&](const core::CVarEntry& entry) {
+            if (const std::optional<int> score = FuzzyScore(entry.name, m_paletteQuery)) {
+                const std::string value = std::visit(
+                    [](const auto& held) {
+                        if constexpr (std::is_same_v<std::decay_t<decltype(held)>, std::string>) {
+                            return held;
+                        } else if constexpr (std::is_same_v<std::decay_t<decltype(held)>, bool>) {
+                            return std::string(held ? "true" : "false");
+                        } else {
+                            return std::format("{}", held);
+                        }
+                    },
+                    entry.value);
+                results.push_back({*score - 3, Result::Kind::Setting, entry.name, "= " + value, 0, 0, entry.name});
+            }
+        });
+    }
+    std::ranges::stable_sort(results, [](const Result& a, const Result& b) { return a.score > b.score; });
+    if (results.size() > 40) {
+        results.resize(40);
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_DownArrow, true)) {
+        m_paletteChoice = std::min(m_paletteChoice + 1, results.empty() ? 0 : results.size() - 1);
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_UpArrow, true) && m_paletteChoice > 0) {
+        --m_paletteChoice;
+    }
+    std::optional<std::size_t> chosen;
+    constexpr std::array<const char*, 4> kKinds{"command", "entity", "asset", "setting"};
+    for (std::size_t row = 0; row < results.size(); ++row) {
+        const Result& result = results[row];
+        const std::string label = std::format("{}##result{}", result.label, row);
+        if (ImGui::Selectable(label.c_str(), row == m_paletteChoice)) {
+            chosen = row;
+        }
+        if (row == m_paletteChoice) {
+            ImGui::SetScrollHereY();
+        }
+        ImGui::SameLine(ImGui::GetWindowWidth() - 220.0f);
+        ImGui::TextDisabled("%s  %s", kKinds[static_cast<std::size_t>(result.kind)], result.detail.c_str());
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_Enter) && !results.empty()) {
+        chosen = m_paletteChoice;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        m_paletteOpen = false;
+    }
+    ImGui::End();
+    if (chosen && *chosen < results.size()) {
+        const Result result = results[*chosen];
+        m_paletteOpen = false;
+        switch (result.kind) {
+        case Result::Kind::Command:
+            m_commands[result.index].run();
+            break;
+        case Result::Kind::Entity:
+            Select(result.entity);
+            FrameSelection();
+            break;
+        case Result::Kind::Asset:
+            PlaceAsset(app, m_paletteAssets[result.index], std::nullopt);
+            break;
+        case Result::Kind::Setting:
+            m_paletteOpen = true;
+            m_paletteSetting = result.setting;
+            m_paletteQuery = result.detail.substr(2);
+            m_paletteFocus = true;
+            break;
+        }
+    }
+}
+
+void Editor::DrawEntityMenu() {
+    // What can be done to the selection, from a right click in the view or the hierarchy (ADR-0112).
+    const auto item = [this](const char* label, std::string_view id) {
+        bool enabled = true;
+        for (const Command& command : m_commands) {
+            if (command.id == id && command.enabled) {
+                enabled = command.enabled();
+            }
+        }
+        if (ImGui::MenuItem(label, Keys(id), false, enabled)) {
+            Run(id);
+        }
+    };
+    if (const scene::LevelEntity* selected = Selected()) {
+        ImGui::TextDisabled("%s", EntityLabel(*selected).c_str());
+        ImGui::Separator();
+    }
+    item("Frame", "edit.frame");
+    item("Rename...", "edit.rename");
+    ImGui::Separator();
+    item("Duplicate", "edit.duplicate");
+    item("Copy", "edit.copy");
+    item("Cut", "edit.cut");
+    item("Paste", "edit.paste");
+    item("Delete", "edit.delete");
+    ImGui::Separator();
+    item("Hide", "edit.hide");
+    item("Isolate", "edit.isolate");
+    item(Selected() != nullptr && Selected()->editing.locked ? "Unlock" : "Lock", "edit.lock");
+    item("Drop to the floor", "edit.drop");
+    item("Put in a folder...", "edit.folder");
+    item("Make a prefab...", "edit.make_prefab");
+    if (const scene::LevelEntity* selected = Selected(); selected != nullptr && !selected->prefab.empty()) {
+        if (ImGui::MenuItem("Open the prefab")) {
+            m_pendingOpenPrefab = m_instance != nullptr ? m_instance->Resolve(selected->prefab) : std::string{};
+        }
+        if (ImGui::MenuItem("Unpack the prefab")) {
+            m_pendingUnpack = selected->id;
+        }
+    }
+    if (const scene::LevelEntity* selected = Selected(); selected != nullptr && selected->trigger) {
+        if (ImGui::MenuItem("Edit its sequence")) {
+            m_pendingSequence = selected->id;
+        }
+    }
+}
+
+void Editor::ViewportContextMenu(app::Application& app) {
+    const input::InputState& input = app.Input();
+    const ImGuiIO& io = ImGui::GetIO();
+    // A right click that does not move opens the menu; a drag flies or pans, as before.
+    if (input.WasPressed(platform::MouseButton::Right) && MouseInViewport() && !io.WantCaptureMouse) {
+        m_rightPress = glm::vec2(io.MousePos.x, io.MousePos.y);
+        m_rightTravel = 0.0f;
+        m_rightSeconds = 0.0f;
+    }
+    if (m_rightPress && input.IsDown(platform::MouseButton::Right)) {
+        m_rightTravel += glm::length(input.MouseDelta());
+        m_rightSeconds += io.DeltaTime;
+    }
+    if (m_rightPress && !input.IsDown(platform::MouseButton::Right)) {
+        const glm::vec2 at = *std::exchange(m_rightPress, std::nullopt);
+        if (m_rightTravel < 4.0f && m_rightSeconds < 0.35f) {
+            // What is under the click becomes the selection, unless it is selected already, and its surface the
+            // place to create or paste at.
+            const auto [origin, direction] = RayAt(at);
+            ecs::World& world = m_scene->World();
+            ecs::PropagateTransforms(world);
+            const std::optional<PickHit> hit = m_picker.Cast(world, origin, direction);
+            m_contextPoint = hit ? hit->position : origin + direction * 6.0f;
+            if (hit) {
+                if (const std::uint64_t id = m_instance->IdOf(hit->entity); id != 0 && !IsSelected(id)) {
+                    Select(id);
+                }
+            }
+            ImGui::OpenPopup("ViewportMenu");
+        }
+    }
+    if (ImGui::BeginPopup("ViewportMenu")) {
+        if (!m_selection.empty()) {
+            DrawEntityMenu();
+            ImGui::Separator();
+        }
+        if (ImGui::MenuItem("Paste here", nullptr)) {
+            Paste();
+            // The pasted entities go where the click was, together.
+            const std::vector<std::uint64_t> roots = SelectionRoots();
+            const std::vector<glm::vec3> positions = RootPositions(roots);
+            if (!positions.empty()) {
+                std::vector<std::pair<std::uint64_t, glm::vec3>> offsets;
+                for (std::size_t index = 0; index < roots.size(); ++index) {
+                    offsets.emplace_back(roots[index], m_contextPoint - positions.front());
+                }
+                MoveBy(offsets, "Paste here");
+            }
+        }
+        if (ImGui::BeginMenu("Create here")) {
+            m_createAt = m_contextPoint;
+            DrawCreateItems();
+            ImGui::EndMenu();
+        }
+        if (ImGui::MenuItem("Measure from here", Keys("tool.measure"))) {
+            m_measuring = true;
+            m_painting = false;
+            m_measureFrom = m_contextPoint;
+            m_measureTo = m_contextPoint;
+        }
+        ImGui::EndPopup();
+    }
+}
+
 void Editor::DrawShowMenu() {
-    ImGui::MenuItem("Game view", "G", &m_show.gameView);
+    ImGui::MenuItem("Game view", Keys("view.game"), &m_show.gameView);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Only the game's image: no grid, markers, boxes or gizmo");
     }
-    ImGui::MenuItem("Real time", "Ctrl+R", &m_realtime);
+    ImGui::MenuItem("Real time", Keys("view.realtime"), &m_realtime);
     ImGui::Separator();
     ImGui::TextDisabled("Markers");
     for (std::size_t category = 0; category < kCategoryCount; ++category) {
@@ -4419,7 +4931,7 @@ void Editor::DrawShowMenu() {
     }
     ImGui::Separator();
     ImGui::TextDisabled("Over the view");
-    ImGui::MenuItem("Grid", "Shift+G", &m_show.grid);
+    ImGui::MenuItem("Grid", Keys("view.grid"), &m_show.grid);
     ImGui::MenuItem("Every light's reach", nullptr, &m_show.lightReach);
     ImGui::MenuItem("Collision boxes", nullptr, &m_show.collision);
     if (ImGui::MenuItem("Navigation mesh", nullptr, &m_show.navigation) && m_show.navigation) {
@@ -4584,63 +5096,6 @@ void Editor::DrawGrid() {
     draw->PopClipRect();
 }
 
-void Editor::DrawHelp() {
-    if (!m_showHelp) {
-        return;
-    }
-    if (ImGui::Begin("Shortcuts", &m_showHelp, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize)) {
-        constexpr std::array<std::array<const char*, 2>, 37> kKeys{{
-            {"Right mouse + WASD, Q, E", "Fly; Shift goes faster, the wheel sets the speed"},
-            {"Wheel, middle mouse", "Walk forward and back, pan"},
-            {"Click, Ctrl+click", "Select, add to the selection"},
-            {"W, E, R", "Move, rotate, scale"},
-            {"X, or Ctrl while dragging", "Snapping on and off"},
-            {"G, Shift+G", "Game view (nothing of the editor's drawn), the grid"},
-            {"Ctrl+R", "The scene's time runs or holds still"},
-            {"H, Shift+H, Alt+H", "Hide the selection, show it alone, show everything"},
-            {"L", "Lock the selection against clicks in the view, or unlock it"},
-            {"M", "Measure: drag between two surfaces"},
-            {"Shift+1 to Shift+4", "Perspective, top, front, side; Shift+5 four views"},
-            {"[ and ]", "Move an axis view's cut through ceilings and walls"},
-            {"End, V, Ctrl+Shift drag", "Drop to the floor, snap to a corner, onto a surface"},
-            {"Alt+1 to Alt+4", "Lit, unlit, lighting only, the editor's light"},
-            {"B", "Paint decals and wet patches (drag over surfaces)"},
-            {"F, double-click in the hierarchy", "Frame the selection"},
-            {"Esc, Ctrl+A", "Select nothing, everything"},
-            {"Del", "Delete the selection"},
-            {"Ctrl+D", "Duplicate"},
-            {"Ctrl+C, Ctrl+X, Ctrl+V", "Copy, cut, paste (between levels too)"},
-            {"Ctrl+Z, Ctrl+Y", "Undo, redo"},
-            {"1 to 9", "Go to a camera bookmark"},
-            {"Ctrl+1 to Ctrl+9", "Set a camera bookmark"},
-            {"Ctrl+N, Ctrl+O", "New level, open a level"},
-            {"Ctrl+Shift+O, Ctrl+W, Ctrl+Tab", "Open in a new tab, close the tab, go to the next"},
-            {"Ctrl+S, Ctrl+Shift+S", "Save, save as"},
-            {"F5, Ctrl+F5", "Play in the sandbox from the start, from the camera"},
-            {"Alt+P, Alt+Shift+P", "Play in the editor's window; Shift+Esc stops"},
-            {"Alt+S, K, F10", "Simulate; keep where loose objects are; step a frame"},
-            {"Ctrl+Shift+C", "Check the level: missing files, broken links, misplaced entities"},
-            {"F1", "This window"},
-            {"Drag in the hierarchy", "Move an entity under another, or to the root below"},
-            {"Double-click an asset", "Place it in front of the camera"},
-            {"Drag an asset into the view", "Place it where it is let go"},
-            {"Edit > Make prefab", "Save the selection as a prefab, placed where it was"},
-            {"Click a surface", "Its material in the Materials panel, edited live"},
-            {"Drop files on the window", "Import glTF models and skies"},
-        }};
-        if (ImGui::BeginTable("keys", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
-            for (const auto& [key, action] : kKeys) {
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::TextUnformatted(key);
-                ImGui::TableNextColumn();
-                ImGui::TextUnformatted(action);
-            }
-            ImGui::EndTable();
-        }
-    }
-    ImGui::End();
-}
 void Editor::Pick(app::Application& app) {
     const ImGuiIO& io = ImGui::GetIO();
     if (!app.Input().WasPressed(platform::MouseButton::Left) || !MouseInViewport() || io.WantCaptureMouse ||
