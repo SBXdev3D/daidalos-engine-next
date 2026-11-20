@@ -296,6 +296,7 @@ core::Result<void> Editor::Open(app::Application& app, const std::string& levelP
 }
 
 void Editor::FinishOpen(app::Application& app) {
+    StopSimulating();
     std::unique_ptr<Loading> loading = std::move(m_loading);
     for (const core::Error& failure : loading->batch->Failures()) {
         DAI_LOG_WARNING(kModule, "{}", core::Format(failure));
@@ -492,6 +493,11 @@ std::vector<std::uint64_t> Editor::SelectionRoots() const {
     return roots;
 }
 void Editor::Change(std::string_view label, const std::function<void(scene::Level&)>& edit) {
+    if (m_simulating) {
+        // The simulation's scene is not the level's: what would be edited is where physics put it (ADR-0110).
+        m_status = "Stop simulating to edit (Alt+S, or K to keep where loose objects are)";
+        return;
+    }
     m_history.Begin(Snapshot(), label);
     const scene::Level before = m_level;
     edit(m_level);
@@ -625,6 +631,10 @@ void Editor::PlaceAsset(app::Application& app, const AssetEntry& asset, std::opt
 }
 
 void Editor::OnEvent(app::Application& app, const platform::Event& event) {
+    if (m_game != nullptr) {
+        m_game->OnEvent(app, event);
+        return;
+    }
     const auto* dropped = std::get_if<platform::FileDropped>(&event);
     if (dropped == nullptr || m_browser == nullptr) {
         return;
@@ -1523,6 +1533,8 @@ void Editor::Proceed(app::Application& app) {
 }
 
 bool Editor::OnCloseRequested(app::Application& app) {
+    StopPlaying(app);
+    StopSimulating();
     m_history.Commit(Snapshot());
     if (!Dirty()) {
         // Another tab with changes is shown, and asked about.
@@ -1539,7 +1551,8 @@ bool Editor::OnCloseRequested(app::Application& app) {
     return false;
 }
 
-void Editor::OnStop(app::Application& /*app*/) {
+void Editor::OnStop(app::Application& app) {
+    StopPlaying(app);
     // What holds GPU resources goes while the renderer is still there: the application destroys it when Run
     // returns, before the editor itself goes.
     m_loading.reset();
@@ -1651,6 +1664,10 @@ void Editor::Play(bool fromCamera) {
 }
 
 void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
+    // While the game plays, it has the window and the frame (ADR-0110).
+    if (UpdateGame(app, time)) {
+        return;
+    }
     if (m_loading != nullptr) {
         m_loading->seconds += static_cast<float>(time.unclampedDelta.count());
         if (m_loading->ready) {
@@ -1660,8 +1677,14 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
     ImGuizmo::BeginFrame();
     const std::optional<renderer::DepthPicture>& depth = app.Renderer().LatestDepth();
     m_depth = DepthTest(depth ? &*depth : nullptr);
-    if (m_scene != nullptr && m_scene->IsPaused() == m_realtime) {
-        m_scene->SetPaused(!m_realtime);
+    if (m_scene != nullptr) {
+        // Paused unless real time, but for the frames F10 steps; physics only while simulating.
+        const bool paused = !m_realtime && m_stepFrames == 0;
+        m_stepFrames = std::max(m_stepFrames - 1, 0);
+        if (m_scene->IsPaused() != paused) {
+            m_scene->SetPaused(paused);
+        }
+        m_scene->SetPhysicsPaused(!m_simulating);
     }
     DrawMenu(app);
     DrawDockspace();
@@ -1853,6 +1876,18 @@ void Editor::HandleShortcuts(app::Application& /*app*/) {
             ShowEverything();
             return;
         }
+        if (pressed(ImGuiKey_S)) {
+            if (m_simulating) {
+                StopSimulating();
+            } else {
+                StartSimulating();
+            }
+            return;
+        }
+        if (pressed(ImGuiKey_P)) {
+            StartPlaying(*m_app, io.KeyShift);
+            return;
+        }
         // Alt+1 to Alt+4: the viewport's lighting (ADR-0105).
         constexpr std::array<Lighting, 4> kModes{Lighting::Lit, Lighting::Unlit, Lighting::LightingOnly,
                                                  Lighting::EditorLight};
@@ -1956,8 +1991,17 @@ void Editor::HandleShortcuts(app::Application& /*app*/) {
         m_measureTo.reset();
         m_status = m_measuring ? "Measuring: drag between two surfaces; M or Esc stops" : "";
     }
+    if (m_simulating && pressed(ImGuiKey_K)) {
+        KeepSimulation();
+    }
+    if (pressed(ImGuiKey_F10)) {
+        m_stepFrames = 1;
+        m_realtime = false;
+    }
     if (pressed(ImGuiKey_Escape)) {
-        if (m_painting) {
+        if (m_simulating) {
+            StopSimulating();
+        } else if (m_painting) {
             m_painting = false;
         } else if (m_measuring) {
             m_measuring = false;
@@ -2008,6 +2052,12 @@ void Editor::FrameSelection() {
     m_camera.position = center - m_camera.Forward() * distance;
 }
 void Editor::OnRender(app::Application& app, renderer::SceneView& view) {
+    if (m_game != nullptr) {
+        // The game has the whole window, as in the sandbox.
+        view.viewport.reset();
+        m_game->OnRender(app, view);
+        return;
+    }
     LightFromCamera(view);
     FilterView(view);
     // A pane that becomes live, or changes its view, does not follow from the last frame (ADR-0108).
@@ -2385,10 +2435,31 @@ void Editor::DrawMenu(app::Application& app) {
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Play")) {
-        if (ImGui::MenuItem("From the start", "F5")) {
+        if (ImGui::MenuItem("In the editor", "Alt+P", false, m_scene != nullptr)) {
+            StartPlaying(app, false);
+        }
+        if (ImGui::MenuItem("In the editor, from the camera", "Alt+Shift+P", false, m_scene != nullptr)) {
+            StartPlaying(app, true);
+        }
+        if (ImGui::MenuItem(m_simulating ? "Stop simulating" : "Simulate", "Alt+S", m_simulating, m_scene != nullptr)) {
+            if (m_simulating) {
+                StopSimulating();
+            } else {
+                StartSimulating();
+            }
+        }
+        if (ImGui::MenuItem("Keep where loose objects are", "K", false, m_simulating)) {
+            KeepSimulation();
+        }
+        if (ImGui::MenuItem("Step one frame", "F10")) {
+            m_stepFrames = 1;
+            m_realtime = false;
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("In the sandbox, from the start", "F5")) {
             Play(false);
         }
-        if (ImGui::MenuItem("From the camera", "Ctrl+F5")) {
+        if (ImGui::MenuItem("In the sandbox, from the camera", "Ctrl+F5")) {
             Play(true);
         }
         if (ImGui::MenuItem("Stop", nullptr, false, m_play.Running())) {
@@ -3026,6 +3097,14 @@ void Editor::DrawInspector() {
     }
     bool changed = InputString("Name", edited.name);
 
+    if (m_simulating && m_instance != nullptr) {
+        // What the simulation made of it, which the level keeps only with K.
+        if (const ecs::Entity live = m_instance->Find(edited.id); !live.IsNull()) {
+            const glm::vec3 at(m_scene->World().Get<ecs::WorldTransform>(live).matrix[3]);
+            ImGui::TextColored(ImVec4(0.5f, 0.85f, 1.0f, 1.0f), "Simulated at %.2f %.2f %.2f", at.x, at.y, at.z);
+        }
+    }
+    ImGui::BeginDisabled(m_simulating);
     if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
         changed |= ImGui::DragFloat3("Position (m)", &edited.transform.translation.x, 0.01f);
         if (m_eulerOf != edited.id || !ImGui::IsAnyItemActive()) {
@@ -3058,6 +3137,7 @@ void Editor::DrawInspector() {
             ImGui::SetTooltip("Opens the timeline of what the trigger plays (ADR-0079)");
         }
     }
+    ImGui::EndDisabled();
     if (changed) {
         Apply(edited, std::format("Edit {}", EntityLabel(edited)));
     }
@@ -3839,6 +3919,7 @@ void Editor::SwitchTab(std::size_t index) {
     if (index == m_activeTab || index >= m_tabs.size() || m_loading != nullptr) {
         return;
     }
+    StopSimulating();
     m_history.Commit(Snapshot());
     Tab& from = *m_tabs[m_activeTab];
     Tab& to = *m_tabs[index];
@@ -3934,6 +4015,161 @@ void Editor::DrawTabs() {
     }
 }
 
+void Editor::StartSimulating() {
+    if (m_scene == nullptr || m_simulating || m_game != nullptr) {
+        return;
+    }
+    m_history.Commit(Snapshot());
+    m_simulating = true;
+    m_realtime = true;
+    // Physics runs, and the camera stands in for the player: triggers it walks into play their scares.
+    m_scene->SetPhysicsPaused(false);
+    if (!m_cameraEntity.IsNull() && !m_scene->World().Has<scene::TriggerActivator>(m_cameraEntity)) {
+        m_scene->World().Add<scene::TriggerActivator>(m_cameraEntity);
+    }
+    m_status = "Simulating: physics, effects and triggers run. Alt+S or Esc stops, K keeps where loose objects are, "
+               "Ctrl+R pauses, F10 steps a frame";
+}
+
+void Editor::StopSimulating() {
+    if (!m_simulating || m_scene == nullptr) {
+        return;
+    }
+    m_simulating = false;
+    m_stepFrames = 0;
+    m_scene->SetPhysicsPaused(true);
+    m_scene->World().Remove<scene::TriggerActivator>(m_cameraEntity);
+    m_scene->StopCinematic();
+    // Everything goes back as the level has it.
+    RemakeScene();
+    m_status = "Stopped simulating: the level is as it was";
+}
+
+void Editor::KeepSimulation() {
+    if (!m_simulating || m_instance == nullptr) {
+        return;
+    }
+    // Where physics left the loose objects, relative to what holds them, kept as one step (Unreal's K).
+    ecs::World& world = m_scene->World();
+    ecs::PropagateTransforms(world);
+    std::vector<std::pair<std::uint64_t, math::Transform>> kept;
+    for (const scene::LevelEntity& entity : m_level.entities) {
+        if (!entity.body || entity.body->mass <= 0.0f) {
+            continue;
+        }
+        const ecs::Entity created = m_instance->Find(entity.id);
+        if (created.IsNull()) {
+            continue;
+        }
+        const ecs::Entity parent = world.Parent(created);
+        const glm::mat4 parentWorld = parent.IsNull() ? glm::mat4(1.0f) : world.Get<ecs::WorldTransform>(parent).matrix;
+        kept.emplace_back(entity.id,
+                          Decompose(glm::inverse(parentWorld) * world.Get<ecs::WorldTransform>(created).matrix));
+    }
+    StopSimulating();
+    m_history.Commit(Snapshot());
+    Change(std::format("Keep where {} loose objects fell", kept.size()), [&kept](scene::Level& level) {
+        for (const auto& [id, transform] : kept) {
+            if (scene::LevelEntity* entity = level.Find(id)) {
+                entity->transform = transform;
+            }
+        }
+    });
+    m_history.Commit(Snapshot());
+    m_status = std::format("Kept where {} loose objects came to rest", kept.size());
+}
+
+void Editor::StartPlaying(app::Application& app, bool fromCamera) {
+    if (m_scene == nullptr || m_game != nullptr || m_loading != nullptr) {
+        return;
+    }
+    StopSimulating();
+    m_history.Commit(Snapshot());
+    // The level as it is, saved or not, beside its file so that its paths resolve, as F5 writes it.
+    std::string name = std::filesystem::path(m_levelPath).filename().generic_string();
+    if (name.ends_with(kLevelExtension)) {
+        name.resize(name.size() - kLevelExtension.size());
+    }
+    const std::string playPath =
+        (std::filesystem::path(m_levelPath).parent_path() / (name + ".play.level.json")).generic_string();
+    m_gameFile = m_assetRoot / std::filesystem::path(playPath);
+    if (core::Result<void> saved = scene::SaveLevelFile(m_gameFile, m_level); !saved) {
+        m_status = core::Format(saved.error());
+        return;
+    }
+    // The game reads its settings when it starts: the level, no menu, and where to start.
+    const auto set = [&app](std::string_view setting, std::string_view value) {
+        static_cast<void>(app.CVars().Set(setting, value));
+    };
+    set("sandbox.scene", playPath);
+    set("sandbox.menu", "false");
+    set("sandbox.calibrated", "true");
+    set("sandbox.continue", "false");
+    set("sandbox.start",
+        fromCamera ? std::format("{} {} {} {} {}", m_camera.position.x, m_camera.position.y, m_camera.position.z,
+                                 glm::degrees(m_camera.yaw), glm::degrees(m_camera.pitch))
+                   : std::string());
+    // The editor's scene waits aside, alive, while the game plays its own (ADR-0110).
+    m_stashedScene = app.ExchangeScene(nullptr);
+    m_stopGame = false;
+    m_game = sandbox::Game::Create(sandbox::GameOptions{.embedded = true, .quit = [this] { m_stopGame = true; }});
+    if (core::Result<void> started = m_game->OnStart(app); !started) {
+        m_status = core::Format(started.error());
+        DAI_LOG_ERROR(kModule, "{}", m_status);
+        m_game.reset();
+        std::unique_ptr<scene::Scene> failed = app.ExchangeScene(std::move(m_stashedScene));
+        failed.reset();
+        return;
+    }
+    m_status = "Playing in the editor: Shift+Esc stops";
+    DAI_LOG_INFO(kModule, "Playing {} in the editor", playPath);
+}
+
+void Editor::StopPlaying(app::Application& app) {
+    if (m_game == nullptr) {
+        return;
+    }
+    m_game->OnStop(app);
+    // The game's scene goes, after the game that drew it; the editor's comes back as it was left.
+    std::unique_ptr<scene::Scene> played = app.ExchangeScene(std::move(m_stashedScene));
+    m_game.reset();
+    played.reset();
+    app.MainWindow().SetMouseCaptured(false);
+    app.Rumble().Stop();
+    m_shownTitle.clear();
+    m_cutView = true;
+    m_flying = false;
+    std::error_code error;
+    std::filesystem::remove(m_gameFile, error);
+    m_status = "Stopped playing";
+}
+
+bool Editor::UpdateGame(app::Application& app, const core::FrameTime& time) {
+    if (m_game == nullptr) {
+        return false;
+    }
+    const input::InputState& input = app.Input();
+    if (m_stopGame || (input.WasPressed(platform::Key::Escape) && input.IsDown(platform::Key::LeftShift))) {
+        StopPlaying(app);
+        return false;
+    }
+    m_game->OnUpdate(app, time);
+    if (m_game->Failure()) {
+        m_status = core::Format(*m_game->Failure());
+        StopPlaying(app);
+        return false;
+    }
+    // A reminder in a corner: the game has the whole window.
+    const char* reminder = "Playing in the editor - Shift+Esc stops";
+    const ImVec2 size = ImGui::CalcTextSize(reminder);
+    ImDrawList* draw = ImGui::GetForegroundDrawList();
+    const ImVec2 corner(ImGui::GetMainViewport()->Size.x - size.x - 16.0f, 10.0f);
+    draw->AddRectFilled({corner.x - 6.0f, corner.y - 3.0f}, {corner.x + size.x + 6.0f, corner.y + size.y + 3.0f},
+                        IM_COL32(0, 0, 0, 140), 3.0f);
+    draw->AddText(corner, IM_COL32(255, 200, 60, 230), reminder);
+    return true;
+}
+
 void Editor::DrawShowMenu() {
     ImGui::MenuItem("Game view", "G", &m_show.gameView);
     if (ImGui::IsItemHovered()) {
@@ -3968,6 +4204,10 @@ void Editor::DrawShowMenu() {
 }
 
 void Editor::DrawGizmo() {
+    if (m_simulating) {
+        m_gizmoUsing = false;
+        return;
+    }
     scene::LevelEntity* selected = Selected();
     const ecs::Entity entity =
         selected != nullptr && m_instance != nullptr ? m_instance->Find(m_selected) : ecs::Entity{};
@@ -4116,7 +4356,7 @@ void Editor::DrawHelp() {
         return;
     }
     if (ImGui::Begin("Shortcuts", &m_showHelp, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize)) {
-        constexpr std::array<std::array<const char*, 2>, 34> kKeys{{
+        constexpr std::array<std::array<const char*, 2>, 36> kKeys{{
             {"Right mouse + WASD, Q, E", "Fly; Shift goes faster, the wheel sets the speed"},
             {"Wheel, middle mouse", "Walk forward and back, pan"},
             {"Click, Ctrl+click", "Select, add to the selection"},
@@ -4143,7 +4383,9 @@ void Editor::DrawHelp() {
             {"Ctrl+N, Ctrl+O", "New level, open a level"},
             {"Ctrl+Shift+O, Ctrl+W, Ctrl+Tab", "Open in a new tab, close the tab, go to the next"},
             {"Ctrl+S, Ctrl+Shift+S", "Save, save as"},
-            {"F5, Ctrl+F5", "Play from the start, from the camera"},
+            {"F5, Ctrl+F5", "Play in the sandbox from the start, from the camera"},
+            {"Alt+P, Alt+Shift+P", "Play in the editor's window; Shift+Esc stops"},
+            {"Alt+S, K, F10", "Simulate; keep where loose objects are; step a frame"},
             {"F1", "This window"},
             {"Drag in the hierarchy", "Move an entity under another, or to the root below"},
             {"Double-click an asset", "Place it in front of the camera"},

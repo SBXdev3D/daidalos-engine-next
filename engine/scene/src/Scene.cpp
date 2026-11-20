@@ -56,6 +56,9 @@ void Scene::RunFixedStep(core::Seconds step) {
         return;
     }
     m_fixedSystems.Run(m_world, step);
+    if (m_physicsPaused) {
+        return;
+    }
     const auto seconds = static_cast<float>(step.count());
     SyncKinematicBodies(m_world, m_physics, seconds);
     m_physics.Step(seconds);

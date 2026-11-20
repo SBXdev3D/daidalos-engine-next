@@ -137,6 +137,9 @@ public:
 
     void SetPaused(bool paused);
     [[nodiscard]] bool IsPaused() const { return m_paused; }
+    /// Physics holds still while everything else runs: an editor's scene, until it simulates (ADR-0110).
+    void SetPhysicsPaused(bool paused) { m_physicsPaused = paused; }
+    [[nodiscard]] bool IsPhysicsPaused() const { return m_physicsPaused; }
 
     /// Runs the fixed systems, then moves the physics to where they left the entities. Does nothing
     /// while paused.
@@ -161,6 +164,7 @@ private:
     // In this order, so that entities are gone before the assets they refer to.
     AssetLibrary m_assets;
     ecs::World m_world;
+    bool m_physicsPaused = false;
     physics::PhysicsWorld m_physics;
     std::optional<navigation::NavMesh> m_navigation;
     std::vector<Noise> m_noises;

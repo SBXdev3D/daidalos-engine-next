@@ -22,6 +22,8 @@ int main(int argc, char** argv) {
     config.arguments.assign(argv + 1, argv + argc);
     config.window.title = "Daidalos Editor";
     config.rendering = true;
+    // The game played in the editor's window is heard (ADR-0110); the editor's own scenes stay silent.
+    config.audio = true;
 
     app::Application application(config);
     editor::Editor editor;

@@ -32,6 +32,7 @@ struct ImDrawList;
 #include <vector>
 
 #include "AssetBrowser.hpp"
+#include "Game.hpp"
 #include "History.hpp"
 #include "MaterialPanel.hpp"
 #include "Organise.hpp"
@@ -301,6 +302,19 @@ private:
     /// Leaves out of the frame what the Show menu hides: decals, particles, fog.
     void FilterView(daidalos::renderer::SceneView& view) const;
 
+    // Simulating and playing in the editor (ADR-0110).
+    /// Physics, effects and triggers run in the view, the camera standing in for the player; edits wait.
+    void StartSimulating();
+    /// Everything back as the level has it.
+    void StopSimulating();
+    /// Stops simulating and keeps where physics left the loose objects, as one step (K).
+    void KeepSimulation();
+    /// The game plays the level, as it is, in the editor's window, from its start or the camera.
+    void StartPlaying(daidalos::app::Application& app, bool fromCamera);
+    void StopPlaying(daidalos::app::Application& app);
+    /// Runs the game's frame while it plays; false when nothing plays.
+    bool UpdateGame(daidalos::app::Application& app, const daidalos::core::FrameTime& time);
+
     // The interface.
     void DrawMenu(daidalos::app::Application& app);
     void DrawDialogs(daidalos::app::Application& app);
@@ -433,6 +447,15 @@ private:
     DepthTest m_depth;
     std::optional<daidalos::navigation::NavMesh> m_navigation;
     std::vector<glm::vec3> m_navigationEdges;
+
+    bool m_simulating = false;
+    /// Frames the scene runs while paused, one per F10.
+    int m_stepFrames = 0;
+    std::unique_ptr<sandbox::Game> m_game;
+    /// The editor's scene while the game plays its own.
+    std::unique_ptr<daidalos::scene::Scene> m_stashedScene;
+    bool m_stopGame = false;
+    std::filesystem::path m_gameFile;
 
     daidalos::platform::ChildProcess m_play;
     std::filesystem::path m_playFile;

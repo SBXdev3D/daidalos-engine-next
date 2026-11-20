@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <daidalos/core/Assert.hpp>
 #include <daidalos/core/Result.hpp>
 
 #include <concepts>
@@ -95,6 +96,17 @@ public:
     template <CVarType T>
     CVar<T> Register(std::string_view name, std::type_identity_t<T> defaultValue, std::string_view description) {
         return CVar<T>(Add(name, CVarValue(std::move(defaultValue)), description));
+    }
+
+    /// The variable if it is registered already, with its value; otherwise Register's. For code that may start
+    /// more than once in one run, as a game played in an editor (ADR-0110). The type must be the same.
+    template <CVarType T>
+    CVar<T> Obtain(std::string_view name, std::type_identity_t<T> defaultValue, std::string_view description) {
+        if (const CVarEntry* existing = Find(name)) {
+            DAI_ASSERT(std::holds_alternative<T>(existing->value), "CVar obtained with another type");
+            return CVar<T>(*existing);
+        }
+        return Register<T>(name, std::move(defaultValue), description);
     }
 
     /// Sets a variable from text, parsed according to its type. A value for an unknown name is kept

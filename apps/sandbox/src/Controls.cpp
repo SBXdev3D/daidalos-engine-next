@@ -63,9 +63,9 @@ void RegisterControls(core::CVarRegistry& cvars) {
     for (const Control& control : kControls) {
         for (const Device device : {Device::KeyboardMouse, Device::Gamepad}) {
             if (cvars.Find(BindingSetting(control, device)) == nullptr) {
-                (void)cvars.Register<std::string>(BindingSetting(control, device),
-                                                  std::string(DefaultOf(control, device)),
-                                                  "A control's binding, a button's name; empty for none (ADR-0076)");
+                (void)cvars.Obtain<std::string>(BindingSetting(control, device),
+                                                std::string(DefaultOf(control, device)),
+                                                "A control's binding, a button's name; empty for none (ADR-0076)");
             }
         }
     }

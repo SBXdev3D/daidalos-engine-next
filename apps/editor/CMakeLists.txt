@@ -38,6 +38,7 @@ dai_add_app(NAME editor
         daidalos::app
         daidalos::scene
         imguizmo::imguizmo
+        sandbox_game
     CONFIG
         editor.cfg)
 
