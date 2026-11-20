@@ -11,6 +11,7 @@
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -45,6 +46,8 @@ struct PickHit {
     glm::vec3 position{0.0f};
     /// The triangle's normal in the world, turned toward the ray's origin.
     glm::vec3 normal{0.0f, 1.0f, 0.0f};
+    /// The triangle's corners in the world, which vertex snapping goes to (ADR-0108).
+    std::array<glm::vec3, 3> corners{};
 };
 
 /// Finds what a ray from the viewport hits, on the CPU (ADR-0055): the triangles that models keep for physics,

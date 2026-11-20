@@ -9,6 +9,7 @@ dai_add_test(NAME daidalos_editor_tests
         OverlaysTests.cpp
         PaintTests.cpp
         ThumbnailTests.cpp
+        ViewsTests.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Clipboard.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Cues.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/History.cpp
@@ -18,6 +19,7 @@ dai_add_test(NAME daidalos_editor_tests
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Picking.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Paint.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Thumbnail.cpp
+        ${PROJECT_SOURCE_DIR}/apps/editor/src/Views.cpp
     DEPS
         daidalos::scene)
 target_include_directories(daidalos_editor_tests PRIVATE ${PROJECT_SOURCE_DIR}/apps/editor/src)
