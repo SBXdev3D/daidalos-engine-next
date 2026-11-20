@@ -215,6 +215,18 @@ core::Result<void> Editor::OnStart(app::Application& app) {
         app.CVars()
             .Register<std::string>("editor.sequence", "", "A .sequence.json file under assets/ to open in its panel")
             .Get();
+    m_frameLimit = app.CVars()
+                       .Register<std::int64_t>("editor.frames", 0,
+                                               "Quit after this many frames, for the smoke test; 0 runs until closed")
+                       .Get();
+    const std::string effect =
+        app.CVars()
+            .Register<std::string>("editor.effect", "",
+                                   "An .effect.json or .ribbon.json file under assets/ to open in the Effect panel")
+            .Get();
+    if (!effect.empty()) {
+        m_pendingEffect = effect;
+    }
     m_autosaveSeconds = static_cast<float>(
         app.CVars()
             .Register<double>("editor.autosave", 120.0,
@@ -1804,6 +1816,9 @@ void Editor::Play(bool fromCamera) {
 }
 
 void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
+    if (m_frameLimit > 0 && ++m_frames >= m_frameLimit) {
+        app.RequestQuit();
+    }
     // While the game plays, it has the window and the frame (ADR-0110).
     if (UpdateGame(app, time)) {
         return;
@@ -1841,6 +1856,12 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
         }
         m_materials.Draw(m_scene->Assets(), m_assetRoot);
     }
+    if (const ImGuiWindow* inspector = ImGui::FindWindowByName("Inspector");
+        inspector != nullptr && inspector->DockId != 0 &&
+        ImGui::FindWindowSettingsByID(ImHashStr("Effect")) == nullptr) {
+        ImGui::SetNextWindowDockID(inspector->DockId, ImGuiCond_FirstUseEver);
+    }
+    m_effects.Draw(m_assetRoot);
     UpdateSequences(static_cast<float>(time.unclampedDelta.count()));
     TrackPanelEdits();
     DrawHistory();
@@ -1855,6 +1876,9 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
     if (m_browser != nullptr) {
         if (const std::optional<AssetEntry> chosen = m_browser->Draw()) {
             PlaceAsset(app, *chosen, std::nullopt);
+        }
+        if (const std::optional<AssetEntry> edit = m_browser->TakeEdit()) {
+            m_pendingEffect = edit->path;
         }
         // An asset dragged out of the browser is placed where it is let go over the view.
         if (const std::optional<AssetEntry> dragged = m_browser->Dragged();
@@ -1930,6 +1954,11 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
     }
     if (m_pendingApplyOverrides != 0) {
         ApplyOverridesToPrefab(std::exchange(m_pendingApplyOverrides, 0));
+    }
+    if (!m_pendingEffect.empty() && m_loading == nullptr) {
+        m_effects.Open(m_assetRoot, std::exchange(m_pendingEffect, {}));
+        m_status = m_effects.Status();
+        ImGui::SetWindowFocus("Effect");
     }
     if (m_pendingSequence != 0) {
         EditSequence(std::exchange(m_pendingSequence, 0));
@@ -3013,6 +3042,14 @@ void Editor::DrawInspector() {
         changed |= InspectPrefabParts(edited);
     }
     changed |= InspectComponents(edited);
+    if ((edited.particles || edited.ribbon) && m_instance != nullptr) {
+        if (ImGui::Button("Edit its effect")) {
+            m_pendingEffect = m_instance->Resolve(edited.particles ? edited.particles->effect : edited.ribbon->effect);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Opens its effect file in the Effect panel: every emitter of it changes as it is edited");
+        }
+    }
     if (edited.trigger) {
         if (ImGui::Button(edited.trigger->sequence.empty() ? "Make its sequence" : "Edit its sequence")) {
             m_pendingSequence = edited.id;
@@ -3640,8 +3677,12 @@ void Editor::DropToFloor() {
 }
 
 Document Editor::Snapshot() const {
-    return Document{
-        .level = m_level, .materials = m_materialValues, .sequencePath = m_sequencePath, .sequence = m_sequenceShadow};
+    return Document{.level = m_level,
+                    .materials = m_materialValues,
+                    .sequencePath = m_sequencePath,
+                    .sequence = m_sequenceShadow,
+                    .effectPath = m_effectPath,
+                    .effectText = m_effectShadow};
 }
 
 void Editor::TrackPanelEdits() {
@@ -3659,6 +3700,14 @@ void Editor::TrackPanelEdits() {
     } else if (m_sequences.Sequence() != m_sequenceShadow) {
         m_history.Begin(Snapshot(), "Edit the sequence");
         m_sequenceShadow = m_sequences.Sequence();
+    }
+    // The effect panel's, as its file was written (ADR-0114).
+    if (m_effects.Path() != m_effectPath) {
+        m_effectPath = m_effects.Path();
+        m_effectShadow = m_effects.Text();
+    } else if (m_effects.Text() != m_effectShadow) {
+        m_history.Begin(Snapshot(), "Edit the effect");
+        m_effectShadow = m_effects.Text();
     }
 }
 
@@ -3702,6 +3751,17 @@ void Editor::GoTo(Document document) {
     }
     m_sequencePath = m_sequences.Path();
     m_sequenceShadow = m_sequences.Sequence();
+    // The effect: its text written back, the file opened again first if another is open now.
+    if (!document.effectPath.empty()) {
+        if (document.effectPath != m_effects.Path()) {
+            m_effects.Open(m_assetRoot, document.effectPath);
+        }
+        if (document.effectText != m_effects.Text()) {
+            m_effects.SetText(m_assetRoot, document.effectText);
+        }
+    }
+    m_effectPath = m_effects.Path();
+    m_effectShadow = m_effects.Text();
 }
 
 void Editor::DrawHistory() {
@@ -4418,19 +4478,19 @@ void Editor::RegisterCommands() {
         m_openInNewTab = false;
         m_openPopup = "Open";
     });
-    add("file.open_tab", "Open in a new tab...", Keys("file.open_tab"), [this] {
+    add("file.open_tab", "Open in a new tab...", "Ctrl+Shift+O", [this] {
         m_levelFiles = FindLevelFiles(m_assetRoot);
         m_openInNewTab = true;
         m_openPopup = "Open";
     });
-    add("file.save", "Save", Keys("file.save"), [this] { Save(); });
+    add("file.save", "Save", "Ctrl+S", [this] { Save(); });
     add("file.save_as", "Save as...", "Ctrl+Shift+S", [this] {
         m_pathField = m_levelPath;
         m_openPopup = "Save As";
     });
     add("file.reload", "Reload from disk", "", [this] { Guard(*m_app, Pending::Reload); });
     add(
-        "file.close_tab", "Close the tab", Keys("file.close_tab"), [this] { m_pendingCloseTab = m_activeTab; },
+        "file.close_tab", "Close the tab", "Ctrl+W", [this] { m_pendingCloseTab = m_activeTab; },
         [this] { return m_tabs.size() > 1; });
     add(
         "file.next_tab", "Next tab", "Ctrl+Tab",
@@ -4452,16 +4512,16 @@ void Editor::RegisterCommands() {
     add(
         "edit.redo_also", "Redo (second key)", "Ctrl+Shift+Z", [this] { Redo(); },
         [this] { return m_history.CanRedo(); }, true);
-    add("edit.duplicate", "Duplicate", Keys("edit.duplicate"), [this] { Duplicate(); }, selection);
-    add("edit.copy", "Copy", Keys("edit.copy"), [this] { CopySelection(); }, selection);
+    add("edit.duplicate", "Duplicate", "Ctrl+D", [this] { Duplicate(); }, selection);
+    add("edit.copy", "Copy", "Ctrl+C", [this] { CopySelection(); }, selection);
     add(
-        "edit.cut", "Cut", Keys("edit.cut"),
+        "edit.cut", "Cut", "Ctrl+X",
         [this] {
             CopySelection();
             DeleteSelected();
         },
         selection);
-    add("edit.paste", "Paste", Keys("edit.paste"), [this] { Paste(); });
+    add("edit.paste", "Paste", "Ctrl+V", [this] { Paste(); });
     add("edit.delete", "Delete", "Delete", [this] { DeleteSelected(); }, selection);
     add("edit.select_all", "Select everything", "Ctrl+A", [this] { SelectAll(); });
     add("edit.cancel", "Select nothing, or stop the tool or the simulation", "Escape", [this] {
@@ -4475,7 +4535,7 @@ void Editor::RegisterCommands() {
             Select(0);
         }
     });
-    add("edit.frame", "Frame the selection", Keys("edit.frame"), [this] { FrameSelection(); }, selection);
+    add("edit.frame", "Frame the selection", "F", [this] { FrameSelection(); }, selection);
     add(
         "edit.rename", "Rename...", "F2",
         [this] {
@@ -4483,17 +4543,17 @@ void Editor::RegisterCommands() {
             m_openPopup = "Rename";
         },
         [this] { return Selected() != nullptr; });
-    add("edit.hide", "Hide", Keys("edit.hide"), [this] { SetHidden(SelectionRoots(), true); }, selection);
-    add("edit.isolate", "Isolate, or show the rest again", Keys("edit.isolate"), [this] { ToggleIsolate(); });
-    add("edit.show_all", "Show everything", Keys("edit.show_all"), [this] { ShowEverything(); });
+    add("edit.hide", "Hide", "H", [this] { SetHidden(SelectionRoots(), true); }, selection);
+    add("edit.isolate", "Isolate, or show the rest again", "Shift+H", [this] { ToggleIsolate(); });
+    add("edit.show_all", "Show everything", "Alt+H", [this] { ShowEverything(); });
     add(
-        "edit.lock", "Lock or unlock", Keys("edit.lock"),
+        "edit.lock", "Lock or unlock", "L",
         [this] {
             const scene::LevelEntity* selected = Selected();
             SetLocked(SelectionRoots(), selected == nullptr || !selected->editing.locked);
         },
         selection);
-    add("edit.drop", "Drop to the floor", Keys("edit.drop"), [this] { DropToFloor(); }, selection);
+    add("edit.drop", "Drop to the floor", "End", [this] { DropToFloor(); }, selection);
     add(
         "edit.folder", "Put in a folder...", "",
         [this] {
@@ -4530,16 +4590,16 @@ void Editor::RegisterCommands() {
     add("tool.local", "Local or world axes", "", [this] { m_local = !m_local; });
     add("tool.surface_snap", "Snap to surfaces while moving", "", [this] { m_surfaceSnap = !m_surfaceSnap; });
     // Views.
-    add("view.game", "Game view", Keys("view.game"), [this] {
+    add("view.game", "Game view", "G", [this] {
         m_show.gameView = !m_show.gameView;
         m_status = m_show.gameView ? "Game view: G shows the editor's drawing again" : "Editor view";
     });
-    add("view.grid", "Grid", Keys("view.grid"), [this] { m_show.grid = !m_show.grid; });
-    add("view.realtime", "Real time", Keys("view.realtime"), [this] {
+    add("view.grid", "Grid", "Shift+G", [this] { m_show.grid = !m_show.grid; });
+    add("view.realtime", "Real time", "Ctrl+R", [this] {
         m_realtime = !m_realtime;
         m_status = m_realtime ? "Real time: the scene moves" : "The scene holds still: Ctrl+R lets it move";
     });
-    add("view.step", "Step one frame", Keys("view.step"), [this] {
+    add("view.step", "Step one frame", "F10", [this] {
         m_stepFrames = 1;
         m_realtime = false;
     });
@@ -4551,7 +4611,7 @@ void Editor::RegisterCommands() {
     add("view.top", "Top view", "Shift+2", [this] { SetViewKind(ViewKind::Top); });
     add("view.front", "Front view", "Shift+3", [this] { SetViewKind(ViewKind::Front); });
     add("view.side", "Side view", "Shift+4", [this] { SetViewKind(ViewKind::Side); });
-    add("view.split", "Four views", Keys("view.split"), [this] { SetSplit(!m_split); });
+    add("view.split", "Four views", "Shift+5", [this] { SetSplit(!m_split); });
     add("view.perspective_keypad", "Perspective view (keypad)", "Keypad5",
         [this] { SetViewKind(ViewKind::Perspective); });
     add("view.top_keypad", "Top view (keypad)", "Keypad7", [this] { SetViewKind(ViewKind::Top); });
@@ -4580,10 +4640,10 @@ void Editor::RegisterCommands() {
         }
     });
     add(
-        "play.keep", "Keep where loose objects are", Keys("play.keep"), [this] { KeepSimulation(); },
+        "play.keep", "Keep where loose objects are", "K", [this] { KeepSimulation(); },
         [this] { return m_simulating; });
     // The rest.
-    add("check.level", "Check the level", Keys("check.level"), [this] {
+    add("check.level", "Check the level", "Ctrl+Shift+C", [this] {
         RunMapCheck();
         ImGui::SetWindowFocus("Map check");
     });

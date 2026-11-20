@@ -26,6 +26,7 @@ bool SameValues(const resources::MaterialData& a, const resources::MaterialData&
 
 bool Document::operator==(const Document& other) const {
     return level == other.level && sequencePath == other.sequencePath && sequence == other.sequence &&
+           effectPath == other.effectPath && effectText == other.effectText &&
            std::ranges::equal(materials, other.materials, [](const auto& a, const auto& b) {
                return a.first == b.first && SameValues(a.second, b.second);
            });

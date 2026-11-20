@@ -11,6 +11,9 @@ dai_add_app(NAME editor
         src/Commands.hpp
         src/Cues.cpp
         src/Cues.hpp
+        src/EffectCurves.cpp
+        src/EffectPanel.cpp
+        src/EffectPanel.hpp
         src/Editor.cpp
         src/Editor.hpp
         src/History.cpp
@@ -51,3 +54,12 @@ if(TARGET sandbox)
     target_compile_definitions(editor PRIVATE DAI_SANDBOX_PATH="$<TARGET_FILE:sandbox>")
     add_dependencies(editor sandbox)
 endif()
+
+# The editor started on the factory, an effect open, for a few seconds with the validation layers on: a start
+# that crashes or logs an error fails (ADR-0114). It takes the GPU and a window.
+add_test(NAME editor.smoke
+         COMMAND editor +renderer.validation true +editor.frames 200 +editor.effect Factory/Effects/candle.effect.json
+         WORKING_DIRECTORY $<TARGET_FILE_DIR:editor>)
+set_tests_properties(editor.smoke PROPERTIES
+    LABELS smoke RUN_SERIAL TRUE TIMEOUT 300
+    FAIL_REGULAR_EXPRESSION "[[]error[]]|[[]critical[]]|Validation Error")

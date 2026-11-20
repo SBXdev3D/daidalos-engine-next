@@ -4,6 +4,7 @@ dai_add_test(NAME daidalos_editor_tests
         ClipboardTests.cpp
         CommandsTests.cpp
         CuesTests.cpp
+        EffectCurvesTests.cpp
         HistoryTests.cpp
         ImportTests.cpp
         MapCheckTests.cpp
@@ -15,6 +16,7 @@ dai_add_test(NAME daidalos_editor_tests
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Clipboard.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Commands.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Cues.cpp
+        ${PROJECT_SOURCE_DIR}/apps/editor/src/EffectCurves.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/History.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Import.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/MapCheck.cpp

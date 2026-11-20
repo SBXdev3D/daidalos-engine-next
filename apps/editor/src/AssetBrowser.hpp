@@ -14,6 +14,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "Import.hpp"
@@ -37,6 +38,8 @@ public:
 
     /// Draws the panel. Returns the asset double-clicked, to be placed or opened.
     [[nodiscard]] std::optional<AssetEntry> Draw();
+    /// An effect or a ribbon its menu asked to edit (ADR-0114), once.
+    [[nodiscard]] std::optional<AssetEntry> TakeEdit() { return std::exchange(m_edit, std::nullopt); }
     /// The asset being dragged out of the panel, if any: placed where it is let go.
     [[nodiscard]] const std::optional<AssetEntry>& Dragged() const { return m_dragged; }
     void EndDrag() { m_dragged.reset(); }
@@ -67,6 +70,7 @@ private:
     std::size_t m_drawing = 0;
     /// Outlives the browser in the jobs still running, which then deliver nothing.
     std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
+    std::optional<AssetEntry> m_edit;
 };
 
 } // namespace editor
