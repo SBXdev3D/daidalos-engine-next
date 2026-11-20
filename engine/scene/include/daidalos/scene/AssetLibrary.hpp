@@ -83,6 +83,8 @@ struct Model {
     std::vector<Skin> skins;
     /// Null for a model without animations.
     std::shared_ptr<const animation::ClipSet> clips;
+    /// Its import settings say the game makes all of it walls and floors (ADR-0117).
+    bool levelCollision = false;
 };
 
 /// A particle effect loaded from its file (ADR-0053), and how its emitters emit unless they say otherwise.
@@ -191,6 +193,7 @@ private:
     struct DecodedModel {
         resources::ModelData data;
         std::vector<DecodedImage> images;
+        bool levelCollision = false;
     };
     struct PendingLoad {
         core::WorkerPool* workers = nullptr;

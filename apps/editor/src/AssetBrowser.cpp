@@ -340,6 +340,16 @@ void AssetBrowser::DrawTile(const AssetEntry& entry, std::optional<AssetEntry>& 
         if (ImGui::MenuItem("Copy its path")) {
             ImGui::SetClipboardText(entry.path.c_str());
         }
+        ImGui::Separator();
+        if (ImGui::MenuItem("What uses it")) {
+            m_request = AssetRequest{AssetRequest::Kind::References, entry};
+        }
+        if (entry.kind != AssetKind::Sky && ImGui::MenuItem("Rename or move...")) {
+            m_request = AssetRequest{AssetRequest::Kind::Move, entry};
+        }
+        if (entry.kind == AssetKind::Model && ImGui::MenuItem("Import settings...")) {
+            m_request = AssetRequest{AssetRequest::Kind::Import, entry};
+        }
         ImGui::EndPopup();
     }
     if (entry.kind != AssetKind::Folder && entry.kind != AssetKind::Level && entry.kind != AssetKind::Sequence &&

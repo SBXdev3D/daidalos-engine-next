@@ -1,6 +1,7 @@
 # The level editor's logic that needs no window: its undo history, clipboard, imports and paint stamps (ADR-0055, ADR-0078).
 dai_add_test(NAME daidalos_editor_tests
     SOURCES
+        AssetReferencesTests.cpp
         ClipboardTests.cpp
         CommandsTests.cpp
         CuesTests.cpp
@@ -13,6 +14,7 @@ dai_add_test(NAME daidalos_editor_tests
         PaintTests.cpp
         ThumbnailTests.cpp
         ViewsTests.cpp
+        ${PROJECT_SOURCE_DIR}/apps/editor/src/AssetReferences.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Clipboard.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Commands.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Cues.cpp

@@ -9,6 +9,7 @@
 #include <daidalos/resources/AssetPath.hpp>
 #include <daidalos/resources/LightProfile.hpp>
 #include <daidalos/scene/AssetLibrary.hpp>
+#include <daidalos/scene/ImportSettings.hpp>
 
 #include <glm/gtc/packing.hpp>
 
@@ -92,8 +93,11 @@ core::Result<AssetLibrary::DecodedModel> AssetLibrary::Decode(const std::filesys
     DAI_PROFILE_SCOPE("scene::DecodeModel");
     DAI_TRY_ASSIGN(std::filesystem::path file, resources::ResolveAssetPath(root, key));
     DAI_TRY_ASSIGN(resources::ModelData data, resources::LoadModelFile(file));
+    // Its import settings, beside it (ADR-0117).
+    const ModelImportSettings settings = ReadImportSettings(file);
+    ApplyImportSettings(data, settings);
 
-    DecodedModel decoded{std::move(data), {}};
+    DecodedModel decoded{std::move(data), {}, settings.levelCollision};
     decoded.images.reserve(decoded.data.images.size());
     for (std::uint32_t index = 0; index < decoded.data.images.size(); ++index) {
         const resources::ImageSource& source = decoded.data.images[index];
@@ -147,6 +151,7 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
     // What is created on the way stays in the library, also if a later step fails.
     Model model;
     model.path = key;
+    model.levelCollision = decoded.levelCollision;
     std::vector<renderer::MaterialHandle> materials;
     materials.reserve(data.materials.size());
     for (const resources::MaterialData& material : data.materials) {

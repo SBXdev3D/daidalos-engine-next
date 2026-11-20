@@ -25,6 +25,13 @@ namespace editor {
 /// prefabs, decals and levels, as tiles. Models show a clay thumbnail, skies their front face and decals their image,
 /// made on workers and shown once ready. A tile is placed by a double click or by dragging it into the viewport; files
 /// dropped on the window from the system are imported into the open folder.
+/// What an asset's right-click menu asks of the editor (ADR-0117).
+struct AssetRequest {
+    enum class Kind { References, Move, Import };
+    Kind kind = Kind::References;
+    AssetEntry asset;
+};
+
 class AssetBrowser {
 public:
     AssetBrowser(std::filesystem::path assetRoot, daidalos::rhi::Device& device, daidalos::core::WorkerPool& workers);
@@ -40,6 +47,7 @@ public:
     [[nodiscard]] std::optional<AssetEntry> Draw();
     /// An effect or a ribbon its menu asked to edit (ADR-0114), once.
     [[nodiscard]] std::optional<AssetEntry> TakeEdit() { return std::exchange(m_edit, std::nullopt); }
+    [[nodiscard]] std::optional<AssetRequest> TakeRequest() { return std::exchange(m_request, std::nullopt); }
     /// The asset being dragged out of the panel, if any: placed where it is let go.
     [[nodiscard]] const std::optional<AssetEntry>& Dragged() const { return m_dragged; }
     void EndDrag() { m_dragged.reset(); }
@@ -70,6 +78,7 @@ private:
     std::size_t m_drawing = 0;
     /// Outlives the browser in the jobs still running, which then deliver nothing.
     std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
+    std::optional<AssetRequest> m_request;
     std::optional<AssetEntry> m_edit;
 };
 

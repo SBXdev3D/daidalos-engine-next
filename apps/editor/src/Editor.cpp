@@ -1931,6 +1931,7 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
     DrawPaint();
     DrawStatus(app, time);
     DrawDialogs(app);
+    DrawAssetDialogs();
     DrawPalette(app);
     DrawLoading();
     if (m_browser != nullptr) {
@@ -1939,6 +1940,24 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
         }
         if (const std::optional<AssetEntry> edit = m_browser->TakeEdit()) {
             m_pendingEffect = edit->path;
+        }
+        if (std::optional<AssetRequest> request = m_browser->TakeRequest()) {
+            m_assetRequest = std::move(request);
+            switch (m_assetRequest->kind) {
+            case AssetRequest::Kind::References:
+                m_references = FindReferences(m_assetRoot, m_assetRequest->asset.path);
+                m_openPopup = "What uses it";
+                break;
+            case AssetRequest::Kind::Move:
+                m_pathField = m_assetRequest->asset.path;
+                m_openPopup = "Rename or move";
+                break;
+            case AssetRequest::Kind::Import:
+                m_importSettings =
+                    scene::ReadImportSettings(m_assetRoot / std::filesystem::path(m_assetRequest->asset.path));
+                m_openPopup = "Import settings";
+                break;
+            }
         }
         // An asset dragged out of the browser is placed where it is let go over the view.
         if (const std::optional<AssetEntry> dragged = m_browser->Dragged();
@@ -5340,6 +5359,118 @@ void Editor::DrawCameraPreview() {
             ImVec2(width, height));
     }
     ImGui::End();
+}
+
+void Editor::MoveAssetTo(const std::string& from, const std::string& to) {
+    if (m_tabs.size() > 1) {
+        m_status = "Close the other tabs first: their levels would keep the old path";
+        return;
+    }
+    core::Result<std::vector<std::string>> rewritten = MoveAsset(m_assetRoot, from, to, m_levelPath);
+    if (!rewritten) {
+        m_status = core::Format(rewritten.error());
+        return;
+    }
+    // The level open names it through the editor, as a step to save.
+    scene::Level repointed = m_level;
+    const std::size_t changed = RepointLevel(repointed, m_levelPath, from, to);
+    if (changed > 0) {
+        m_history.Commit(Snapshot());
+        Change(std::format("Point at {}", to), [&repointed](scene::Level& level) { level = repointed; });
+        m_history.Commit(Snapshot());
+    }
+    if (m_browser != nullptr) {
+        m_browser->Open(std::filesystem::path(to).parent_path().generic_string());
+    }
+    m_paletteAssets.clear();
+    m_status = std::format("Moved {} to {}: {} files rewritten{}", from, to, rewritten->size(),
+                           changed > 0 ? ", and this level's paths (save to keep them)" : "");
+    DAI_LOG_INFO(kModule, "{}", m_status);
+}
+
+void Editor::DrawAssetDialogs() {
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(620.0f, 0.0f), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("What uses it", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        const std::string& asset = m_assetRequest ? m_assetRequest->asset.path : std::string();
+        ImGui::Text("%s", asset.c_str());
+        if (m_references.empty()) {
+            ImGui::TextDisabled("Nothing under assets/ names it: no level, prefab, effect or sequence.");
+        }
+        ImGui::BeginChild("references",
+                          ImVec2(0.0f, std::min(360.0f, 24.0f + 20.0f * static_cast<float>(m_references.size()))),
+                          ImGuiChildFlags_Borders);
+        for (const AssetReference& reference : m_references) {
+            ImGui::TextUnformatted(reference.file.c_str());
+            ImGui::SameLine(320.0f);
+            ImGui::TextDisabled("%s", reference.where.c_str());
+        }
+        ImGui::EndChild();
+        if (ImGui::Button("Close") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(560.0f, 0.0f), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("Rename or move", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        const std::string from = m_assetRequest ? m_assetRequest->asset.path : std::string();
+        ImGui::TextWrapped("%s: its new path under assets/. Every level, prefab, effect and sequence that names it "
+                           "is rewritten to name the new one.",
+                           from.c_str());
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::IsWindowAppearing()) {
+            ImGui::SetKeyboardFocusHere();
+        }
+        InputString("##to", m_pathField);
+        std::string to = m_pathField;
+        std::ranges::replace(to, '\\', '/');
+        if (ImGui::Button("Move") || ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+            ImGui::CloseCurrentPopup();
+            MoveAssetTo(from, to);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(480.0f, 0.0f), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("Import settings", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        const std::string model = m_assetRequest ? m_assetRequest->asset.path : std::string();
+        ImGui::Text("%s", model.c_str());
+        ImGui::DragFloat("Scale", &m_importSettings.scale, 0.001f, 0.0001f, 1000.0f, "%.4f",
+                         ImGuiSliderFlags_Logarithmic);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("0.01 for a model made in centimeters");
+        }
+        ImGui::Checkbox("Walls and floors in the game", &m_importSettings.levelCollision);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("The game walks on all of it and shoots at it, as level geometry (ADR-0083)");
+        }
+        ImGui::TextDisabled("Kept beside the model as %s.import.json; levels opened next show it.",
+                            std::filesystem::path(model).filename().generic_string().c_str());
+        if (ImGui::Button("Save")) {
+            ImGui::CloseCurrentPopup();
+            const std::filesystem::path file = scene::ImportSettingsPath(m_assetRoot / std::filesystem::path(model));
+            std::error_code error;
+            if (m_importSettings == scene::ModelImportSettings{}) {
+                std::filesystem::remove(file, error);
+            } else {
+                std::ofstream(file, std::ios::binary) << scene::WriteImportSettings(m_importSettings);
+            }
+            m_status = std::format("Import settings of {} saved: reopen the level to see them", model);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
 }
 
 void Editor::DrawShowMenu() {
