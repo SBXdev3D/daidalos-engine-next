@@ -33,7 +33,7 @@ Category CategoryOf(const daidalos::scene::LevelEntity& entity) {
     if (entity.game) {
         return Category::Game;
     }
-    if (!entity.model.empty() || !entity.prefab.empty()) {
+    if (!entity.model.empty() || !entity.prefab.empty() || entity.block) {
         return Category::Models;
     }
     return Category::Other;

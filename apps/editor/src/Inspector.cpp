@@ -347,8 +347,40 @@ bool InspectTrigger(scene::Trigger& trigger) {
     return changed;
 }
 
+/// A block's shape, size and color (ADR-0115).
+bool InspectBlock(scene::LevelBlock& block) {
+    bool changed = false;
+    constexpr std::array<const char*, 4> kShapes{"Box", "Stairs", "Ramp", "Cylinder"};
+    int shape = static_cast<int>(block.shape);
+    if (ImGui::Combo("Shape", &shape, kShapes.data(), static_cast<int>(kShapes.size()))) {
+        block.shape = static_cast<scene::BlockShape>(shape);
+        changed = true;
+    }
+    changed |= ImGui::DragFloat3("Size (m)", &block.size.x, 0.05f, 0.05f, 200.0f, "%.2f");
+    if (block.shape == scene::BlockShape::Stairs) {
+        int steps = static_cast<int>(block.steps);
+        if (ImGui::SliderInt("Steps", &steps, 1, 64)) {
+            block.steps = static_cast<std::uint32_t>(steps);
+            changed = true;
+        }
+        ImGui::TextDisabled("Each step is %.2f m high, %.2f m deep", block.size.y / static_cast<float>(block.steps),
+                            block.size.z / static_cast<float>(block.steps));
+    }
+    if (block.shape == scene::BlockShape::Cylinder) {
+        int sides = static_cast<int>(block.sides);
+        if (ImGui::SliderInt("Sides", &sides, 3, 128)) {
+            block.sides = static_cast<std::uint32_t>(sides);
+            changed = true;
+        }
+    }
+    changed |= ImGui::ColorEdit3("Color", &block.color.x);
+    ImGui::TextDisabled("Stands on its origin; stairs and ramps rise towards -Z. The game walks on it.");
+    return changed;
+}
+
 bool InspectComponents(scene::LevelEntity& entity) {
     bool changed = false;
+    changed |= Section("Block", entity.block, InspectBlock);
     if (!entity.model.empty() || ImGui::GetIO().KeyAlt) {
         if (ImGui::CollapsingHeader("Model", ImGuiTreeNodeFlags_DefaultOpen)) {
             changed |= InputString("glTF file", entity.model);
@@ -380,6 +412,10 @@ bool InspectComponents(scene::LevelEntity& entity) {
         ImGui::OpenPopup("add component");
     }
     if (ImGui::BeginPopup("add component")) {
+        if (!entity.block && ImGui::MenuItem("Block")) {
+            entity.block = scene::LevelBlock{};
+            changed = true;
+        }
         if (!entity.body && ImGui::MenuItem("Loose object")) {
             entity.body = scene::Body{};
             changed = true;
@@ -502,6 +538,9 @@ const char* KindLabel(const scene::LevelEntity& entity) {
     }
     if (!entity.model.empty()) {
         return "M";
+    }
+    if (entity.block) {
+        return "B";
     }
     return ".";
 }

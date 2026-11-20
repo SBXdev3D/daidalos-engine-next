@@ -112,6 +112,22 @@ struct LevelEditing {
     [[nodiscard]] bool operator==(const LevelEditing&) const = default;
 };
 
+/// The shapes of a block (ADR-0115).
+enum class BlockShape : std::uint8_t { Box, Stairs, Ramp, Cylinder };
+
+/// A block of plain geometry to try a room before modelling it (ADR-0115): a box, stairs, a ramp or a cylinder,
+/// size meters across, high and deep, standing on the entity's origin. The game walks on it and shoots at it as
+/// it does the level's own geometry.
+struct LevelBlock {
+    BlockShape shape = BlockShape::Box;
+    glm::vec3 size{2.0f, 2.0f, 2.0f};
+    /// Stairs' steps, and a cylinder's sides.
+    std::uint32_t steps = 8;
+    std::uint32_t sides = 16;
+    glm::vec3 color{0.55f, 0.55f, 0.58f};
+    [[nodiscard]] bool operator==(const LevelBlock&) const = default;
+};
+
 /// A change one placed copy of a prefab makes to a part of the prefab (ADR-0113): the part, by its id in the
 /// prefab's file, moved, lit otherwise, given another model, or left out with what hangs from it. What it does not
 /// say comes from the prefab, so a change to the prefab's file still shows in every copy.
@@ -139,6 +155,8 @@ struct LevelEntity {
     std::string prefab;
     /// What this copy of the prefab changes in it (ADR-0113).
     std::vector<PrefabOverride> overrides;
+    /// Geometry of its own, for blocking out (ADR-0115).
+    std::optional<LevelBlock> block;
     std::optional<Light> light;
     std::optional<FogVolume> fog;
     std::optional<WindVolume> wind;
