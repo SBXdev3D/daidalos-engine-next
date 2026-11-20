@@ -34,6 +34,7 @@ struct ImDrawList;
 #include "AssetBrowser.hpp"
 #include "Game.hpp"
 #include "History.hpp"
+#include "MapCheck.hpp"
 #include "MaterialPanel.hpp"
 #include "Organise.hpp"
 #include "Overlays.hpp"
@@ -315,6 +316,11 @@ private:
     /// Runs the game's frame while it plays; false when nothing plays.
     bool UpdateGame(daidalos::app::Application& app, const daidalos::core::FrameTime& time);
 
+    // Checking and measuring the level (ADR-0111).
+    void RunMapCheck();
+    void DrawMapCheck();
+    void DrawStatistics(daidalos::app::Application& app);
+
     // The interface.
     void DrawMenu(daidalos::app::Application& app);
     void DrawDialogs(daidalos::app::Application& app);
@@ -447,6 +453,12 @@ private:
     DepthTest m_depth;
     std::optional<daidalos::navigation::NavMesh> m_navigation;
     std::vector<glm::vec3> m_navigationEdges;
+
+    std::vector<Problem> m_problems;
+    bool m_showNotes = false;
+    /// The level and its state the problems were found in.
+    History::Revision m_checkedRevision = 0;
+    std::string m_checkedLevel;
 
     bool m_simulating = false;
     /// Frames the scene runs while paused, one per F10.

@@ -1703,6 +1703,8 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
     UpdateSequences(static_cast<float>(time.unclampedDelta.count()));
     TrackPanelEdits();
     DrawHistory();
+    DrawMapCheck();
+    DrawStatistics(app);
     DrawTabs();
     DrawPaint();
     DrawStatus(app, time);
@@ -1852,7 +1854,12 @@ void Editor::HandleShortcuts(app::Application& /*app*/) {
         } else if (pressed(ImGuiKey_D)) {
             Duplicate();
         } else if (pressed(ImGuiKey_C)) {
-            CopySelection();
+            if (io.KeyShift) {
+                RunMapCheck();
+                ImGui::SetWindowFocus("Map check");
+            } else {
+                CopySelection();
+            }
         } else if (pressed(ImGuiKey_X)) {
             CopySelection();
             DeleteSelected();
@@ -2511,6 +2518,13 @@ void Editor::DrawMenu(app::Application& app) {
         }
         ImGui::EndMenu();
     }
+    if (ImGui::BeginMenu("Check")) {
+        if (ImGui::MenuItem("Check the level", "Ctrl+Shift+C")) {
+            RunMapCheck();
+            ImGui::SetWindowFocus("Map check");
+        }
+        ImGui::EndMenu();
+    }
     if (ImGui::BeginMenu("Show")) {
         DrawShowMenu();
         ImGui::EndMenu();
@@ -2803,11 +2817,19 @@ void Editor::DrawDockspace() {
         ImGui::DockBuilderDockWindow("Assets", bottom);
         ImGui::DockBuilderDockWindow("Status", bottom);
         ImGui::DockBuilderDockWindow("History", bottom);
+        ImGui::DockBuilderDockWindow("Map check", bottom);
+        ImGui::DockBuilderDockWindow("Statistics", right);
         ImGui::DockBuilderFinish(dockspace);
     }
     m_layoutBuilt = true;
     // A layout saved before the browser or the history existed: they join the status.
-    for (const char* window : {"Assets", "History"}) {
+    if (ImGui::FindWindowSettingsByID(ImHashStr("Statistics")) == nullptr) {
+        if (const ImGuiWindow* inspector = ImGui::FindWindowByName("Inspector");
+            inspector != nullptr && inspector->DockId != 0) {
+            ImGui::DockBuilderDockWindow("Statistics", inspector->DockId);
+        }
+    }
+    for (const char* window : {"Assets", "History", "Map check"}) {
         if (ImGui::FindWindowSettingsByID(ImHashStr(window)) == nullptr) {
             if (const ImGuiWindow* status = ImGui::FindWindowByName("Status");
                 status != nullptr && status->DockId != 0) {
@@ -4170,6 +4192,217 @@ bool Editor::UpdateGame(app::Application& app, const core::FrameTime& time) {
     return true;
 }
 
+void Editor::RunMapCheck() {
+    const std::filesystem::path root = m_assetRoot;
+    CheckSources sources{.exists =
+                             [&root](const std::string& path) {
+                                 std::error_code error;
+                                 return std::filesystem::exists(root / std::filesystem::path(path), error);
+                             },
+                         .sequence = [&root](const std::string& path) -> std::optional<scene::Sequence> {
+                             std::ifstream file(root / std::filesystem::path(path), std::ios::binary);
+                             if (!file) {
+                                 return std::nullopt;
+                             }
+                             std::stringstream text;
+                             text << file.rdbuf();
+                             core::Result<scene::Sequence> sequence = scene::ParseSequence(text.str(), path);
+                             return sequence ? std::optional<scene::Sequence>(std::move(*sequence)) : std::nullopt;
+                         }};
+    m_problems = CheckLevel(m_level, m_levelPath, sources);
+    // What only the scene knows: a light inside a wall, closed in on almost every side within a hand's width.
+    if (m_instance != nullptr) {
+        ecs::World& world = m_scene->World();
+        ecs::PropagateTransforms(world);
+        constexpr std::array<glm::vec3, 6> kAround{glm::vec3(1, 0, 0),  glm::vec3(-1, 0, 0), glm::vec3(0, 1, 0),
+                                                   glm::vec3(0, -1, 0), glm::vec3(0, 0, 1),  glm::vec3(0, 0, -1)};
+        for (const scene::LevelEntity& entity : m_level.entities) {
+            const ecs::Entity created = entity.light ? m_instance->Find(entity.id) : ecs::Entity{};
+            if (created.IsNull()) {
+                continue;
+            }
+            const glm::vec3 at(world.Get<ecs::WorldTransform>(created).matrix[3]);
+            // A lamp's light sits inside its own shade or cage: what holds the light is passed through.
+            const auto ownLamp = [this, &entity](ecs::Entity drawn) {
+                const std::uint64_t id = m_instance->IdOf(drawn);
+                return id == entity.id || (id != 0 && IsAncestor(m_level, id, entity.id));
+            };
+            int closed = 0;
+            for (const glm::vec3& direction : kAround) {
+                const std::optional<PickHit> hit = m_picker.Cast(world, at, direction, ownLamp);
+                closed += hit && hit->distance < 0.25f ? 1 : 0;
+            }
+            if (closed >= 5) {
+                m_problems.push_back(
+                    {Problem::Severity::Warning, entity.id,
+                     std::format("{} is closed in on {} sides: inside a wall?", EntityLabel(entity), closed)});
+            }
+        }
+    }
+    m_checkedRevision = m_history.Current();
+    m_checkedLevel = m_levelPath;
+    const auto errors = std::ranges::count_if(
+        m_problems, [](const Problem& problem) { return problem.severity == Problem::Severity::Error; });
+    const auto warnings = std::ranges::count_if(
+        m_problems, [](const Problem& problem) { return problem.severity == Problem::Severity::Warning; });
+    // Notes after the rest, as CheckLevel sorts them; the scene's own findings are warnings.
+    std::ranges::stable_sort(m_problems, [](const Problem& a, const Problem& b) { return a.severity < b.severity; });
+    m_status = std::format("Map check: {} errors, {} warnings", errors, warnings);
+}
+
+void Editor::DrawMapCheck() {
+    if (!ImGui::Begin("Map check")) {
+        ImGui::End();
+        return;
+    }
+    if (m_checkedLevel != m_levelPath) {
+        RunMapCheck();
+    }
+    if (ImGui::Button("Check again")) {
+        RunMapCheck();
+    }
+    ImGui::SameLine();
+    const auto count = [this](Problem::Severity severity) {
+        return std::ranges::count_if(m_problems,
+                                     [severity](const Problem& problem) { return problem.severity == severity; });
+    };
+    const auto errors = count(Problem::Severity::Error);
+    const auto warnings = count(Problem::Severity::Warning);
+    const auto notes = count(Problem::Severity::Note);
+    if (errors + warnings == 0) {
+        ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "No problems found");
+    } else {
+        ImGui::Text("%td errors, %td warnings", errors, warnings);
+    }
+    ImGui::SameLine();
+    ImGui::Checkbox(std::format("{} notes", notes).c_str(), &m_showNotes);
+    if (m_checkedRevision != m_history.Current()) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(the level changed since)");
+    }
+    ImGui::Separator();
+    ImGui::BeginChild("problems");
+    for (std::size_t index = 0; index < m_problems.size(); ++index) {
+        const Problem& problem = m_problems[index];
+        if (problem.severity == Problem::Severity::Note && !m_showNotes) {
+            continue;
+        }
+        constexpr std::array<const char*, 3> kSeverities{"Error", "Warning", "Note"};
+        const std::array<ImVec4, 3> colors{ImVec4(1.0f, 0.45f, 0.4f, 1.0f), ImVec4(1.0f, 0.8f, 0.35f, 1.0f),
+                                           ImVec4(0.6f, 0.75f, 0.9f, 1.0f)};
+        const auto severity = static_cast<std::size_t>(problem.severity);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors[severity]);
+        ImGui::TextUnformatted(kSeverities[severity]);
+        ImGui::PopStyleColor();
+        ImGui::SameLine(80.0f);
+        const std::string label = std::format("{}##problem{}", problem.message, index);
+        if (ImGui::Selectable(label.c_str(), problem.entity != 0 && IsSelected(problem.entity)) &&
+            problem.entity != 0 && m_level.Find(problem.entity) != nullptr) {
+            // A click goes there.
+            Select(problem.entity);
+            FrameSelection();
+        }
+        if (problem.entity != 0 && ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Click to select it and look at it");
+        }
+    }
+    ImGui::EndChild();
+    ImGui::End();
+}
+
+void Editor::DrawStatistics(app::Application& app) {
+    if (!ImGui::Begin("Statistics")) {
+        ImGui::End();
+        return;
+    }
+    // Green within budget, amber near it, red over it.
+    const auto meter = [](const char* label, double value, double budget, const char* unit, int decimals = 1) {
+        const double share = budget > 0.0 ? value / budget : 0.0;
+        const ImVec4 color = share > 1.0   ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f)
+                             : share > 0.8 ? ImVec4(1.0f, 0.8f, 0.35f, 1.0f)
+                                           : ImVec4(0.5f, 0.9f, 0.5f, 1.0f);
+        ImGui::TextUnformatted(label);
+        ImGui::SameLine(190.0f);
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, color);
+        const std::string text = std::format("{:.{}f} / {:.0f} {}", value, decimals, budget, unit);
+        ImGui::ProgressBar(static_cast<float>(std::min(share, 1.0)), ImVec2(-1.0f, 0.0f), text.c_str());
+        ImGui::PopStyleColor();
+    };
+    const renderer::FrameStats stats = app.Renderer().Stats();
+    if (ImGui::CollapsingHeader("Frame", ImGuiTreeNodeFlags_DefaultOpen)) {
+        double gpu = 0.0;
+        std::vector<renderer::PassTime> passes;
+        for (const renderer::PassTime& pass : app.Renderer().GpuTimes()) {
+            if (!pass.beside) {
+                gpu += pass.milliseconds;
+                passes.push_back(pass);
+            }
+        }
+        meter("GPU frame", gpu, 1000.0 / 60.0, "ms");
+        ImGui::TextDisabled("The budget is 60 frames a second on this machine, at %ux%u (%.0f%%)", stats.renderWidth,
+                            stats.renderHeight, stats.renderScale * 100.0f);
+        std::ranges::sort(passes, [](const renderer::PassTime& a, const renderer::PassTime& b) {
+            return a.milliseconds > b.milliseconds;
+        });
+        for (std::size_t index = 0; index < std::min<std::size_t>(passes.size(), 6); ++index) {
+            ImGui::BulletText("%.*s: %.2f ms", static_cast<int>(passes[index].name.size()), passes[index].name.data(),
+                              passes[index].milliseconds);
+        }
+        ImGui::Text("Draws: %u in view, %u drawn, %llu triangles", stats.draws, stats.drawnDraws,
+                    static_cast<unsigned long long>(stats.triangles));
+        ImGui::Text("Lights: %u (lamps and glowing triangles)", stats.lights);
+        ImGui::Text("Particles: %u alive", stats.particlesAlive);
+    }
+    if (ImGui::CollapsingHeader("Level", ImGuiTreeNodeFlags_DefaultOpen)) {
+        std::array<std::size_t, kCategoryCount> counts{};
+        std::size_t points = 0;
+        std::size_t spots = 0;
+        std::size_t decals = 0;
+        std::size_t wet = 0;
+        for (const scene::LevelEntity& entity : m_level.entities) {
+            ++counts[static_cast<std::size_t>(CategoryOf(entity))];
+            points += entity.light && entity.light->type == renderer::LightType::Point ? 1 : 0;
+            spots += entity.light && entity.light->type == renderer::LightType::Spot ? 1 : 0;
+            decals += entity.decal ? 1 : 0;
+            wet += entity.wet ? 1 : 0;
+        }
+        ImGui::Text("%zu entities", m_level.entities.size());
+        for (std::size_t category = 0; category < kCategoryCount; ++category) {
+            ImGui::BulletText("%s: %zu", std::string(CategoryName(static_cast<Category>(category))).c_str(),
+                              counts[category]);
+        }
+        ImGui::Text("Lights: %zu point, %zu spot", points, spots);
+        // The renderer draws the 64 nearest decals and the 16 nearest wet areas (ADR-0060, ADR-0078).
+        meter("Decals (64 at once)", static_cast<double>(decals), 64.0, "", 0);
+        meter("Wet areas (16 at once)", static_cast<double>(wet), 16.0, "", 0);
+        ImGui::TextDisabled("Beyond those, the nearest to the camera are drawn.");
+    }
+    if (ImGui::CollapsingHeader("Memory", ImGuiTreeNodeFlags_DefaultOpen)) {
+        const rhi::MemoryStats memory = app.Renderer().Device().Memory();
+        constexpr double kMegabyte = 1024.0 * 1024.0;
+        if (memory.budgetBytes > 0) {
+            meter("GPU memory", static_cast<double>(memory.usedBytes) / kMegabyte,
+                  static_cast<double>(memory.budgetBytes) / kMegabyte, "MB");
+        } else {
+            ImGui::Text("GPU memory: %.0f MB", static_cast<double>(memory.usedBytes) / kMegabyte);
+        }
+        ImGui::Text("Ray tracing structures: %.1f MB",
+                    static_cast<double>(memory.accelerationStructureBytes) / kMegabyte);
+        ImGui::Text("%zu textures, %zu buffers, %zu meshes, %zu materials", memory.textures, memory.buffers,
+                    stats.meshes, stats.materials);
+        if (m_scene != nullptr) {
+            std::size_t models = 0;
+            std::size_t textures = 0;
+            for (const scene::AssetLibrary::AssetInfo& asset : m_scene->Assets().Describe()) {
+                models += asset.kind == scene::AssetLibrary::AssetInfo::Kind::Model ? 1 : 0;
+                textures += asset.kind == scene::AssetLibrary::AssetInfo::Kind::Texture ? 1 : 0;
+            }
+            ImGui::Text("Loaded for the level: %zu models, %zu images", models, textures);
+        }
+    }
+    ImGui::End();
+}
+
 void Editor::DrawShowMenu() {
     ImGui::MenuItem("Game view", "G", &m_show.gameView);
     if (ImGui::IsItemHovered()) {
@@ -4356,7 +4589,7 @@ void Editor::DrawHelp() {
         return;
     }
     if (ImGui::Begin("Shortcuts", &m_showHelp, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize)) {
-        constexpr std::array<std::array<const char*, 2>, 36> kKeys{{
+        constexpr std::array<std::array<const char*, 2>, 37> kKeys{{
             {"Right mouse + WASD, Q, E", "Fly; Shift goes faster, the wheel sets the speed"},
             {"Wheel, middle mouse", "Walk forward and back, pan"},
             {"Click, Ctrl+click", "Select, add to the selection"},
@@ -4386,6 +4619,7 @@ void Editor::DrawHelp() {
             {"F5, Ctrl+F5", "Play in the sandbox from the start, from the camera"},
             {"Alt+P, Alt+Shift+P", "Play in the editor's window; Shift+Esc stops"},
             {"Alt+S, K, F10", "Simulate; keep where loose objects are; step a frame"},
+            {"Ctrl+Shift+C", "Check the level: missing files, broken links, misplaced entities"},
             {"F1", "This window"},
             {"Drag in the hierarchy", "Move an entity under another, or to the root below"},
             {"Double-click an asset", "Place it in front of the camera"},

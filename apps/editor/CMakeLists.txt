@@ -18,6 +18,8 @@ dai_add_app(NAME editor
         src/Inspector.cpp
         src/Inspector.hpp
         src/Main.cpp
+        src/MapCheck.cpp
+        src/MapCheck.hpp
         src/Organise.cpp
         src/Organise.hpp
         src/Overlays.cpp
