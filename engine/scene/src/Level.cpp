@@ -86,14 +86,67 @@ void LevelInstance::Place(const LevelEntity& entity, ecs::Entity holder) {
     chain.push_back(path);
     std::unique_ptr<LevelInstance> placed(new LevelInstance(*m_scene, path, std::move(chain)));
     ecs::World& world = m_scene->World();
-    for (const LevelEntity* part : CreationOrder(**prefab)) {
+    // This copy's own changes to the prefab (ADR-0113).
+    const Level parts = entity.overrides.empty() ? **prefab : ApplyOverrides(**prefab, entity.overrides);
+    for (const LevelEntity* part : CreationOrder(parts)) {
         placed->Make(*part);
         if (part->parent == 0) {
             [[maybe_unused]] const core::Result<void> attached = world.SetParent(placed->Find(part->id), holder);
         }
     }
-    placed->Link(**prefab);
+    placed->Link(parts);
     m_prefabs[entity.id] = std::move(placed);
+}
+
+Level ApplyOverrides(const Level& prefab, const std::vector<PrefabOverride>& overrides) {
+    Level placed = prefab;
+    std::set<std::uint64_t> removed;
+    for (const PrefabOverride& change : overrides) {
+        LevelEntity* part = placed.Find(change.part);
+        if (part == nullptr) {
+            continue;
+        }
+        if (change.removed) {
+            removed.insert(change.part);
+        }
+        if (change.transform) {
+            part->transform = *change.transform;
+        }
+        if (change.light) {
+            part->light = *change.light;
+        }
+        if (change.model) {
+            part->model = *change.model;
+        }
+    }
+    // What hangs from a removed part goes with it.
+    for (bool grew = !removed.empty(); grew;) {
+        grew = false;
+        for (const LevelEntity& part : placed.entities) {
+            if (removed.contains(part.parent) && removed.insert(part.id).second) {
+                grew = true;
+            }
+        }
+    }
+    std::erase_if(placed.entities, [&removed](const LevelEntity& part) { return removed.contains(part.id); });
+    return placed;
+}
+
+std::optional<PrefabOverride> OverrideOf(const LevelEntity& part, const LevelEntity& edited) {
+    PrefabOverride change{.part = part.id};
+    if (edited.transform != part.transform) {
+        change.transform = edited.transform;
+    }
+    if (edited.light != part.light && edited.light) {
+        change.light = edited.light;
+    }
+    if (edited.model != part.model) {
+        change.model = edited.model;
+    }
+    if (!change.transform && !change.light && !change.model) {
+        return std::nullopt;
+    }
+    return change;
 }
 
 std::size_t LevelInstance::RemakePrefabs(const Level& level) {
@@ -545,6 +598,22 @@ ecs::Entity LevelInstance::Find(std::uint64_t id) const {
         return {};
     }
     return found->second;
+}
+
+std::uint64_t LevelInstance::PartOf(std::uint64_t placer, ecs::Entity drawn) const {
+    const auto placed = m_prefabs.find(placer);
+    if (placed == m_prefabs.end()) {
+        return 0;
+    }
+    const ecs::World& world = m_scene->World();
+    for (ecs::Entity entity = drawn; !entity.IsNull(); entity = world.Parent(entity)) {
+        for (const auto& [id, part] : placed->second->m_entities) {
+            if (part == entity) {
+                return id;
+            }
+        }
+    }
+    return 0;
 }
 
 std::uint64_t LevelInstance::IdOf(ecs::Entity entity) const {

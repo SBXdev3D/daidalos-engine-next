@@ -174,6 +174,11 @@ private:
     void UnpackPrefab(std::uint64_t id);
     /// Reads the prefabs again, after one was saved in another editor.
     void ReloadPrefabs();
+    /// The parts of the prefab an entity places, each editable for this copy alone (ADR-0113). Returns true when
+    /// the entity's overrides changed.
+    bool InspectPrefabParts(daidalos::scene::LevelEntity& edited);
+    /// Writes an entity's overrides into its prefab's file, for every copy, and clears them.
+    void ApplyOverridesToPrefab(std::uint64_t id);
 
     // Materials and sequences (ADR-0079).
     /// Shows the materials of the selection's model in their panel, unless a click chose one already.
@@ -414,6 +419,10 @@ private:
     /// What the inspector's buttons asked for, done after it is drawn.
     std::string m_pendingOpenPrefab;
     std::uint64_t m_pendingUnpack = 0;
+    std::uint64_t m_pendingApplyOverrides = 0;
+    /// The part of the selected prefab copy last clicked in the view, which the inspector opens (ADR-0113).
+    std::uint64_t m_selectedPart = 0;
+    bool m_openPart = false;
     std::mt19937 m_random{0x5eed};
     History m_history;
     History::Revision m_savedRevision = 0;
