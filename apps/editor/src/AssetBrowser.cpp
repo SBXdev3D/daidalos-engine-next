@@ -326,6 +326,18 @@ void AssetBrowser::DrawTile(const AssetEntry& entry, std::optional<AssetEntry>& 
         }
     }
     (void)clicked;
+    if (entry.kind != AssetKind::Folder && ImGui::BeginPopupContextItem("tile menu")) {
+        if (ImGui::MenuItem(entry.kind == AssetKind::Level ? "Open" : "Place in front of the camera")) {
+            chosen = entry;
+        }
+        if ((entry.kind == AssetKind::Effect || entry.kind == AssetKind::Ribbon) && ImGui::MenuItem("Edit")) {
+            m_edit = entry;
+        }
+        if (ImGui::MenuItem("Copy its path")) {
+            ImGui::SetClipboardText(entry.path.c_str());
+        }
+        ImGui::EndPopup();
+    }
     if (entry.kind != AssetKind::Folder && entry.kind != AssetKind::Level && entry.kind != AssetKind::Sequence &&
         ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
         m_dragged = entry;

@@ -9,6 +9,7 @@ dai_add_module(NAME scene
         include/daidalos/ecs/World.hpp
         include/daidalos/scene/AssetLibrary.hpp
         include/daidalos/scene/Components.hpp
+        include/daidalos/scene/EffectDocument.hpp
         include/daidalos/scene/GltfMaterials.hpp
         include/daidalos/scene/Level.hpp
         include/daidalos/scene/ModelBatch.hpp
@@ -21,6 +22,7 @@ dai_add_module(NAME scene
         include/daidalos/scene/Systems.hpp
         src/Animation.cpp
         src/AssetLibrary.cpp
+        src/EffectDocument.cpp
         src/Level.cpp
         src/Perception.cpp
         src/SaveGame.cpp

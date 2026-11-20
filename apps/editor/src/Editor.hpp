@@ -33,6 +33,7 @@ struct ImDrawList;
 
 #include "AssetBrowser.hpp"
 #include "Commands.hpp"
+#include "EffectPanel.hpp"
 #include "Game.hpp"
 #include "History.hpp"
 #include "MapCheck.hpp"
@@ -411,6 +412,11 @@ private:
     std::size_t m_strokeStamps = 0;
     MaterialPanel m_materials;
     SequencePanel m_sequences;
+    EffectPanel m_effects;
+    /// The effect last seen in its panel, which an edit is compared with.
+    std::string m_effectPath;
+    std::string m_effectShadow;
+    std::string m_pendingEffect;
     /// Seconds since a preview of the open sequence started, while it plays.
     std::optional<float> m_previewTime;
     /// The selection the material panel last followed: a click's choice of material holds while it stays.
@@ -512,6 +518,10 @@ private:
     /// The level and its state the problems were found in.
     History::Revision m_checkedRevision = 0;
     std::string m_checkedLevel;
+
+    /// editor.frames: the smoke test's run, in frames, and those drawn.
+    std::int64_t m_frameLimit = 0;
+    std::int64_t m_frames = 0;
 
     bool m_simulating = false;
     /// Frames the scene runs while paused, one per F10.

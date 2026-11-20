@@ -131,6 +131,9 @@ struct Document {
     /// The sequence file open in its panel, and its cues; empty for none.
     std::string sequencePath;
     daidalos::scene::Sequence sequence;
+    /// The effect open in its panel (ADR-0114), as its file was written; empty for none.
+    std::string effectPath;
+    std::string effectText;
 
     [[nodiscard]] bool operator==(const Document& other) const;
 };
