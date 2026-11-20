@@ -4,10 +4,13 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+#include <optional>
+
 #include "History.hpp"
 
 using namespace daidalos;
-using editor::History;
+using History = editor::UndoHistory<daidalos::scene::Level>;
 using scene::Level;
 using scene::LevelEntity;
 
@@ -112,3 +115,46 @@ TEST(History, KeepsALimitedNumberOfSteps) {
 }
 
 } // namespace
+
+TEST(History, MaterialAndSequenceEditsAreStepsOfTheDocument) {
+    editor::History history;
+    editor::Document document;
+    const editor::MaterialKey key{nullptr, 2};
+    document.materials[key].roughnessFactor = 0.5f;
+    document.sequencePath = "Sequences/scare.sequence.json";
+
+    history.Begin(document, "Edit a material");
+    editor::Document after = document;
+    after.materials[key].roughnessFactor = 0.9f;
+    history.Commit(after);
+    ASSERT_TRUE(history.CanUndo());
+
+    history.Begin(after, "Edit the sequence");
+    editor::Document later = after;
+    later.sequence.cues.push_back(daidalos::scene::Cue{});
+    history.Commit(later);
+
+    std::optional<editor::Document> back = history.Undo(later);
+    ASSERT_TRUE(back.has_value());
+    EXPECT_TRUE(back->sequence.cues.empty());
+    back = history.Undo(*back);
+    ASSERT_TRUE(back.has_value());
+    EXPECT_FLOAT_EQ(back->materials.at(key).roughnessFactor, 0.5f);
+}
+
+TEST(History, MaterialsCompareByTheirValues) {
+    daidalos::resources::MaterialData a;
+    daidalos::resources::MaterialData b;
+    a.attenuationDistance = std::numeric_limits<float>::infinity();
+    b.attenuationDistance = std::numeric_limits<float>::infinity();
+    EXPECT_TRUE(editor::SameValues(a, b));
+    b.metallicFactor = 0.0f;
+    EXPECT_FALSE(editor::SameValues(a, b));
+    editor::Document first;
+    editor::Document second;
+    first.materials[{nullptr, 0}] = a;
+    second.materials[{nullptr, 0}] = a;
+    EXPECT_EQ(first, second);
+    second.materials[{nullptr, 0}] = b;
+    EXPECT_FALSE(first == second);
+}

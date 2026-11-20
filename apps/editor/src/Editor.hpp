@@ -56,7 +56,7 @@ public:
 
 private:
     /// What waits for an answer about unsaved changes.
-    enum class Pending { None, Open, New, Reload, Quit };
+    enum class Pending { None, Open, New, Reload, Quit, CloseTab };
     /// How the viewport lights the level (ADR-0105).
     enum class Lighting { Lit, Unlit, LightingOnly, EditorLight };
 
@@ -71,13 +71,15 @@ private:
         float seconds = 0.0f;
         /// The batch finished: the level is made at the start of the next frame, outside the workers' delivery.
         bool ready = false;
+        /// It opens in a tab of its own, beside the documents open (ADR-0109).
+        bool newTab = false;
     };
 
     // The document.
     /// Reads the level file and starts loading its models; the level opens once they are in (FinishOpen). An
     /// error is returned only when the file cannot be read.
     daidalos::core::Result<void> Open(daidalos::app::Application& app, const std::string& levelPath,
-                                      std::optional<EditorCamera> camera = std::nullopt);
+                                      std::optional<EditorCamera> camera = std::nullopt, bool newTab = false);
     /// Makes the loaded level's entities and puts its scene in the view.
     void FinishOpen(daidalos::app::Application& app);
     /// The loader's window, with its progress and Cancel.
@@ -94,8 +96,24 @@ private:
     void Change(std::string_view label, const std::function<void(daidalos::scene::Level&)>& edit);
     /// Puts an edited entity in the level, through Change.
     void Apply(const daidalos::scene::LevelEntity& after, std::string_view label);
-    /// Goes to a level given by the history, and makes the scene follow.
-    void GoTo(daidalos::scene::Level level);
+    // The history of every document, and tabs (ADR-0109).
+    struct Tab;
+    /// What the history keeps of the editor now: the level, the edited materials, the open sequence.
+    [[nodiscard]] Document Snapshot() const;
+    /// Goes to a state given by the history, and makes the scene, the materials and the sequence follow.
+    void GoTo(Document document);
+    /// The material and sequence panels' edits of the frame, as steps of the history.
+    void TrackPanelEdits();
+    /// The steps of the history, to go back to one.
+    void DrawHistory();
+    [[nodiscard]] bool TabDirty(const Tab& tab) const;
+    /// Moves the shown document's state into a tab, or a tab's into the editor.
+    void StashTab(Tab& tab);
+    void RestoreTab(Tab& tab);
+    void SwitchTab(std::size_t index);
+    /// Closes a tab, unsaved changes already asked about; the last one stays.
+    void CloseTab(std::size_t index);
+    void DrawTabs();
     void Undo();
     void Redo();
     /// Creates an entity at a point, or a few meters in front of the camera, and selects it.
@@ -226,6 +244,24 @@ private:
         daidalos::rhi::TextureHandle snapshot;
         std::optional<daidalos::renderer::DepthPicture> depth;
     };
+    /// A document open in a tab that is not shown: everything the editor holds of it while it is.
+    struct Tab {
+        std::string levelPath;
+        daidalos::scene::Level level;
+        std::unique_ptr<daidalos::scene::LevelInstance> instance;
+        std::unique_ptr<daidalos::scene::Scene> scene;
+        daidalos::ecs::Entity cameraEntity;
+        EditorCamera camera;
+        History history;
+        History::Revision savedRevision = 0;
+        History::Revision autosavedRevision = 0;
+        std::vector<std::uint64_t> selection;
+        std::uint64_t selected = 0;
+        std::set<std::uint64_t> isolated;
+        std::map<MaterialKey, daidalos::resources::MaterialData> materialValues;
+        std::map<MaterialKey, daidalos::resources::MaterialData> materialFirst;
+        std::array<Pane, 4> panes;
+    };
     /// The camera of the pane being drawn or used.
     [[nodiscard]] EditorCamera Eye() const;
     /// Where distances from the view are measured: the camera, or an axis view's focus.
@@ -350,6 +386,23 @@ private:
     std::optional<daidalos::scene::Level> m_recovered;
 
     std::unique_ptr<Loading> m_loading;
+    /// The documents open, one tab each; the shown one's state is in the editor, the others' in their tab.
+    std::vector<std::unique_ptr<Tab>> m_tabs;
+    std::size_t m_activeTab = 0;
+    /// The tab bar follows a tab chosen other than by a click on it.
+    bool m_selectTab = false;
+    std::optional<std::size_t> m_pendingCloseTab;
+    std::size_t m_closingTab = 0;
+    /// The row of tabs over the panes.
+    Rect m_tabBar;
+    /// The values of the materials edited since the level opened, and what each had before its first edit.
+    std::map<MaterialKey, daidalos::resources::MaterialData> m_materialValues;
+    std::map<MaterialKey, daidalos::resources::MaterialData> m_materialFirst;
+    /// The sequence last seen in its panel, which an edit is compared with.
+    std::string m_sequencePath;
+    daidalos::scene::Sequence m_sequenceShadow;
+    /// The Open dialog opens the level in a new tab.
+    bool m_openInNewTab = false;
     Lighting m_lighting = Lighting::Lit;
     ShowFlags m_show;
     std::array<Pane, 4> m_panes{Pane{.kind = ViewKind::Perspective}, Pane{.kind = ViewKind::Top},

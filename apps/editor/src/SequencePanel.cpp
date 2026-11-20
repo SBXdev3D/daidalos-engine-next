@@ -64,6 +64,13 @@ void SequencePanel::Close() {
     m_selected.reset();
 }
 
+void SequencePanel::SetSequence(scene::Sequence sequence) {
+    m_sequence = std::move(sequence);
+    if (m_selected && *m_selected >= m_sequence.cues.size()) {
+        m_selected.reset();
+    }
+}
+
 bool SequencePanel::Save(const std::filesystem::path& assetRoot) {
     if (m_path.empty()) {
         return true;

@@ -123,19 +123,6 @@ bool EditValues(resources::MaterialData& values, const renderer::MaterialDesc& d
 
 } // namespace
 
-bool SameValues(const resources::MaterialData& a, const resources::MaterialData& b) {
-    const auto distance = [](float x, float y) { return (std::isinf(x) && std::isinf(y)) || x == y; };
-    return a.baseColorFactor == b.baseColorFactor && a.emissiveFactor == b.emissiveFactor &&
-           a.emissiveLight == b.emissiveLight && a.surface == b.surface && a.metallicFactor == b.metallicFactor &&
-           a.roughnessFactor == b.roughnessFactor && a.normalScale == b.normalScale &&
-           a.occlusionStrength == b.occlusionStrength && a.alphaCutoff == b.alphaCutoff &&
-           a.doubleSided == b.doubleSided && a.transmission == b.transmission && a.ior == b.ior &&
-           a.porosity == b.porosity && a.heightScale == b.heightScale && a.clearcoat == b.clearcoat &&
-           a.clearcoatRoughness == b.clearcoatRoughness && a.sheenColor == b.sheenColor &&
-           a.sheenRoughness == b.sheenRoughness && a.thickness == b.thickness &&
-           a.attenuationColor == b.attenuationColor && distance(a.attenuationDistance, b.attenuationDistance);
-}
-
 void MaterialPanel::Show(const scene::Model* model, std::string modelPath, std::optional<std::uint32_t> material) {
     m_model = model;
     m_modelPath = std::move(modelPath);
@@ -204,6 +191,9 @@ bool MaterialPanel::SaveAll(const std::filesystem::path& assetRoot) {
 void MaterialPanel::Revert(scene::AssetLibrary& assets, const scene::Model* model) {
     for (auto entry = m_changed.begin(); entry != m_changed.end();) {
         if (entry->first.first == model) {
+            m_edits.push_back(Edit{.key = entry->first,
+                                   .before = model->materials[entry->first.second].values,
+                                   .after = entry->second.saved});
             assets.UpdateMaterial(*model, entry->first.second, entry->second.saved);
             entry = m_changed.erase(entry);
         } else {
@@ -211,6 +201,22 @@ void MaterialPanel::Revert(scene::AssetLibrary& assets, const scene::Model* mode
         }
     }
     m_status = "Put back the materials as the file has them";
+}
+
+void MaterialPanel::Restore(scene::AssetLibrary& assets, const MaterialKey& key,
+                            const resources::MaterialData& values) {
+    const scene::Model* model = key.first;
+    if (model == nullptr || key.second >= model->materials.size() ||
+        SameValues(model->materials[key.second].values, values)) {
+        return;
+    }
+    if (!m_changed.contains(key)) {
+        m_changed.emplace(key, Changed{model->path, model->materials[key.second].values});
+    }
+    assets.UpdateMaterial(*model, key.second, values);
+    if (SameValues(values, m_changed.at(key).saved)) {
+        m_changed.erase(key);
+    }
 }
 
 void MaterialPanel::Draw(scene::AssetLibrary& assets, const std::filesystem::path& assetRoot) {
@@ -248,6 +254,7 @@ void MaterialPanel::Draw(scene::AssetLibrary& assets, const std::filesystem::pat
         if (!m_changed.contains(key)) {
             m_changed.emplace(key, Changed{m_modelPath, model.materials[m_index].values});
         }
+        m_edits.push_back(Edit{.key = key, .before = model.materials[m_index].values, .after = values});
         assets.UpdateMaterial(model, m_index, values);
         // Back where the file has it: nothing to save.
         if (SameValues(values, m_changed.at(key).saved)) {
