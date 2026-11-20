@@ -1,23 +1,32 @@
+# The game, as a library: the sandbox runs it, and the editor plays levels with it in its own window (ADR-0110).
+add_library(sandbox_game STATIC
+    src/Combat.cpp
+    src/Combat.hpp
+    src/Controls.cpp
+    src/Controls.hpp
+    src/Factory.cpp
+    src/Factory.hpp
+    src/Flashlight.cpp
+    src/Flashlight.hpp
+    src/Game.cpp
+    src/Game.hpp
+    src/Hud.cpp
+    src/Hud.hpp
+    src/Menus.cpp
+    src/Menus.hpp
+    src/PhotoMode.cpp
+    src/PhotoMode.hpp)
+target_include_directories(sandbox_game PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_link_libraries(sandbox_game PUBLIC daidalos::app daidalos::scene)
+target_compile_definitions(sandbox_game PRIVATE DAI_VERSION="${PROJECT_VERSION}")
+set_target_properties(sandbox_game PROPERTIES FOLDER "apps")
+dai_configure_target(sandbox_game)
+
 dai_add_app(NAME sandbox
     SOURCES
-        src/Combat.cpp
-        src/Combat.hpp
-        src/Controls.cpp
-        src/Controls.hpp
-        src/Factory.cpp
-        src/Factory.hpp
-        src/Flashlight.cpp
-        src/Flashlight.hpp
-        src/Hud.cpp
-        src/Hud.hpp
         src/Main.cpp
-        src/Menus.cpp
-        src/Menus.hpp
-        src/PhotoMode.cpp
-        src/PhotoMode.hpp
     DEPS
-        daidalos::app
-        daidalos::scene
+        sandbox_game
     CONFIG
         sandbox.cfg)
 

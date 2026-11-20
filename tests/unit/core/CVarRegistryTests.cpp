@@ -380,3 +380,13 @@ TEST(CVarRegistry, ResetForgetsAValueKeptForAnUnregisteredName) {
     EXPECT_EQ(pending.Get(), 1);
     EXPECT_TRUE(registry.UnregisteredNames().empty());
 }
+
+TEST(CVarRegistry, ObtainGivesBackWhatIsRegistered) {
+    daidalos::core::CVarRegistry registry;
+    const auto first = registry.Obtain<std::int64_t>("game.lives", 3, "Lives");
+    ASSERT_TRUE(registry.Set("game.lives", "5").has_value());
+    // A second start of the same code finds the variable and its value, without registering it twice.
+    const auto second = registry.Obtain<std::int64_t>("game.lives", 3, "Lives");
+    EXPECT_EQ(second.Get(), 5);
+    EXPECT_EQ(first.Get(), 5);
+}
