@@ -52,6 +52,7 @@ static const uint kRestirSpatial = 2;   // Neighbours are reused.
 static const uint kRestirUnbiased = 4;  // Samples are tested for visibility wherever they are weighed.
 static const uint kRestirDebug = 8;     // The shading also shows each pixel's light.
 static const uint kRestirIndirect = 16; // Indirect light is added.
+static const uint kRestirLightCount = 32; // With kRestirDebug: how many lights reach each pixel (ADR-0106).
 
 
 GBufferTextures Textures() {

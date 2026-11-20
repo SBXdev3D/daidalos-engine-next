@@ -57,6 +57,7 @@ constexpr std::uint32_t kSpatial = 2;
 constexpr std::uint32_t kUnbiased = 4;
 constexpr std::uint32_t kDebug = 8;
 constexpr std::uint32_t kIndirect = 16;
+constexpr std::uint32_t kLightCount = 32;
 
 constexpr std::uint32_t kGroupSize = 8;
 constexpr rhi::Format kGuideFormat = rhi::Format::Rgba16Float;
@@ -149,8 +150,9 @@ void DirectLighting::AddTo(RenderGraph& graph, const DirectLightingInputs& input
     const auto sampled = [this](rhi::TextureHandle texture) { return m_device->BindlessIndex(texture); };
     const auto storage = [this](rhi::TextureHandle texture) { return m_device->StorageImageIndex(texture); };
     std::uint32_t flags = (settings.spatial ? kSpatial : 0) | (settings.unbiased ? kUnbiased : 0) |
-                          (settings.debug ? kDebug : 0) | (m_hasHistory ? kTemporal : 0) |
-                          (inputs.indirect ? kIndirect : 0) | (std::clamp(settings.candidates, 1U, 32U) << 8U);
+                          (settings.debug ? kDebug : 0) | (settings.lightCount ? kLightCount : 0) |
+                          (m_hasHistory ? kTemporal : 0) | (inputs.indirect ? kIndirect : 0) |
+                          (std::clamp(settings.candidates, 1U, 32U) << 8U);
     RestirPushConstants push{inputs.frameBuffer, inputs.instanceBuffer, inputs.materialBuffer, sampled(inputs.depth),
                              sampled(inputs.normals), sampled(inputs.baseColor), sampled(inputs.emission),
                              sampled(inputs.motion), extent.width, extent.height, m_device->StorageIndex(m_reservoirs),

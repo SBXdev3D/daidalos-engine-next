@@ -160,6 +160,25 @@ std::string EntityLabel(const scene::LevelEntity& entity) {
     return entity.name.empty() ? std::format("entity {}", entity.id) : entity.name;
 }
 
+/// The renderer's debug views (renderer.debug_view), by name, with their label in the menu.
+constexpr std::array<std::array<const char*, 2>, 15> kDebugViews{{
+    {"light_count", "Lights reaching each pixel"},
+    {"normals", "Normals"},
+    {"indirect", "Indirect light"},
+    {"radiance_cache", "Radiance cache"},
+    {"reflections", "Reflections"},
+    {"lights", "Lights chosen per pixel"},
+    {"bloom", "Bloom"},
+    {"fog", "Fog"},
+    {"layers", "Clear coat and sheen"},
+    {"decals", "Decals"},
+    {"wetness", "Wetness"},
+    {"motion", "Motion vectors"},
+    {"rays", "Ray tracing instances"},
+    {"path", "Path tracer (reference)"},
+    {"base_color", "Base color"},
+}};
+
 } // namespace
 
 glm::mat4 EditorCamera::World() const {
@@ -180,6 +199,15 @@ glm::vec3 EditorCamera::Forward() const {
 core::Result<void> Editor::OnStart(app::Application& app) {
     m_app = &app;
     m_assetRoot = FindAssetRoot();
+    // Overlays are drawn faint where the scene hides them (ADR-0106).
+    app.Renderer().SetDepthProbe(true);
+    const std::string shown =
+        app.CVars()
+            .Register<std::string>("editor.show", "",
+                                   "Overlays turned on at start, separated by commas: light_reach, collision, "
+                                   "navigation, portals, game_view; and no_grid, no_decals, no_particles, no_fog")
+            .Get();
+    ApplyShowFlags(m_show, shown);
     const std::string level =
         app.CVars()
             .Register<std::string>("editor.level", "Factory/Factory.level.json", "Level file to open, under assets/")
@@ -1325,6 +1353,11 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
         }
     }
     ImGuizmo::BeginFrame();
+    const std::optional<renderer::DepthPicture>& depth = app.Renderer().LatestDepth();
+    m_depth = DepthTest(depth ? &*depth : nullptr);
+    if (m_scene != nullptr && m_scene->IsPaused() == m_realtime) {
+        m_scene->SetPaused(!m_realtime);
+    }
     DrawMenu(app);
     DrawDockspace();
     DrawHierarchy();
@@ -1364,9 +1397,12 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
     // While a level loads, the one open shows but does not move or change.
     if (m_scene != nullptr && m_loading == nullptr) {
         UpdateCamera(app, static_cast<float>(time.unclampedDelta.count()));
-        DrawGrid();
-        DrawMarkers();
-        DrawSelectedCue();
+        if (!m_show.gameView) {
+            DrawGrid();
+            DrawMarkers();
+            DrawShownExtras();
+            DrawSelectedCue();
+        }
         if (m_painting) {
             DrawBrush();
             PaintStrokes(app);
@@ -1375,7 +1411,9 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
                 m_stroking = false;
                 m_history.Commit(m_level);
             }
-            DrawGizmo();
+            if (!m_show.gameView) {
+                DrawGizmo();
+            }
             Pick(app);
         }
     }
@@ -1454,6 +1492,9 @@ void Editor::HandleShortcuts(app::Application& /*app*/) {
             Paste();
         } else if (pressed(ImGuiKey_A)) {
             SelectAll();
+        } else if (pressed(ImGuiKey_R)) {
+            m_realtime = !m_realtime;
+            m_status = m_realtime ? "Real time: the scene moves" : "The scene holds still: Ctrl+R lets it move";
         }
         for (int slot = 1; slot <= 9; ++slot) {
             if (pressed(static_cast<ImGuiKey>(ImGuiKey_1 + slot - 1))) {
@@ -1479,7 +1520,12 @@ void Editor::HandleShortcuts(app::Application& /*app*/) {
         }
     }
     if (pressed(ImGuiKey_G)) {
-        m_grid = !m_grid;
+        if (io.KeyShift) {
+            m_show.grid = !m_show.grid;
+        } else {
+            m_show.gameView = !m_show.gameView;
+            m_status = m_show.gameView ? "Game view: G shows the editor's drawing again" : "Editor view";
+        }
     }
     if (pressed(ImGuiKey_X)) {
         m_snap = !m_snap;
@@ -1549,6 +1595,7 @@ void Editor::FrameSelection() {
 }
 void Editor::OnRender(app::Application& app, renderer::SceneView& view) {
     LightFromCamera(view);
+    FilterView(view);
     // The scene fills the dockspace's central node, in pixels (ADR-0055).
     const platform::Extent size = app.MainWindow().Size();
     const platform::Extent pixels = app.MainWindow().PixelSize();
@@ -1634,23 +1681,7 @@ void Editor::DrawLightingMenu() {
     }
     ImGui::Separator();
     if (ImGui::BeginMenu("Debug views")) {
-        constexpr std::array<std::array<const char*, 2>, 14> kViews{{
-            {"normals", "Normals"},
-            {"indirect", "Indirect light"},
-            {"radiance_cache", "Radiance cache"},
-            {"reflections", "Reflections"},
-            {"lights", "Lights chosen per pixel"},
-            {"bloom", "Bloom"},
-            {"fog", "Fog"},
-            {"layers", "Clear coat and sheen"},
-            {"decals", "Decals"},
-            {"wetness", "Wetness"},
-            {"motion", "Motion vectors"},
-            {"rays", "Ray tracing instances"},
-            {"path", "Path tracer (reference)"},
-            {"base_color", "Base color"},
-        }};
-        for (const auto& [name, label] : kViews) {
+        for (const auto& [name, label] : kDebugViews) {
             if (ImGui::MenuItem(label, nullptr, debug == name)) {
                 m_lighting = Lighting::Lit;
                 SetDebugView(debug == name ? "off" : name);
@@ -1889,7 +1920,7 @@ void Editor::DrawMenu(app::Application& app) {
             ImGui::EndMenu();
         }
         ImGui::Separator();
-        ImGui::MenuItem("Grid", "G", &m_grid);
+        ImGui::MenuItem("Grid", "Shift+G", &m_show.grid);
         ImGui::MenuItem("Snapping", "X", &m_snap);
         ImGui::SetNextItemWidth(140.0f);
         ImGui::DragFloat("Move step (m)", &m_snapSteps.x, 0.01f, 0.01f, 10.0f, "%.2f");
@@ -1905,6 +1936,10 @@ void Editor::DrawMenu(app::Application& app) {
             m_layoutBuilt = false;
             ImGui::ClearIniSettings();
         }
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Show")) {
+        DrawShowMenu();
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Help")) {
@@ -1965,8 +2000,13 @@ void Editor::DrawMenu(app::Application& app) {
     constexpr std::array<const char*, 4> kLighting{"Lit", "Unlit", "Lighting only", "Editor light"};
     const std::string debug = DebugViewName();
     const bool debugShown = debug != "off" && debug != "base_color" && debug != "lighting_only";
-    const std::string lighting =
-        std::format("{}##lighting", debugShown ? debug.c_str() : kLighting[static_cast<std::size_t>(m_lighting)]);
+    const char* shownLabel = kLighting[static_cast<std::size_t>(m_lighting)];
+    for (const auto& [name, label] : kDebugViews) {
+        if (debugShown && debug == name) {
+            shownLabel = label;
+        }
+    }
+    const std::string lighting = std::format("{}##lighting", shownLabel);
     if (ImGui::BeginMenu(lighting.c_str())) {
         DrawLightingMenu();
         ImGui::EndMenu();
@@ -2411,6 +2451,78 @@ std::optional<glm::vec2> Editor::Project(const glm::vec3& point) const {
     return m_viewportMin + glm::vec2((ndc.x * 0.5f + 0.5f) * extent.x, (0.5f - ndc.y * 0.5f) * extent.y);
 }
 
+void Editor::Line3D(ImDrawList* draw, const glm::vec3& from, const glm::vec3& to, unsigned color,
+                    float thickness) const {
+    // In pieces of about half a meter, at most 16, each as faint as the scene makes its middle.
+    const int pieces = std::clamp(static_cast<int>(glm::distance(from, to) * 2.0f), 1, 16);
+    const auto alpha = static_cast<float>((color >> IM_COL32_A_SHIFT) & 0xFFU);
+    std::optional<glm::vec2> previous = Project(from);
+    for (int piece = 1; piece <= pieces; ++piece) {
+        const glm::vec3 a = glm::mix(from, to, static_cast<float>(piece - 1) / static_cast<float>(pieces));
+        const glm::vec3 b = glm::mix(from, to, static_cast<float>(piece) / static_cast<float>(pieces));
+        const std::optional<glm::vec2> next = Project(b);
+        if (previous && next) {
+            const float shown = m_depth.Visibility((a + b) * 0.5f);
+            const auto faded = static_cast<ImU32>(std::clamp(alpha * shown, 0.0f, 255.0f)) << IM_COL32_A_SHIFT;
+            draw->AddLine({previous->x, previous->y}, {next->x, next->y}, (color & ~IM_COL32_A_MASK) | faded,
+                          thickness);
+        }
+        previous = next;
+    }
+}
+
+void Editor::Box3D(ImDrawList* draw, const glm::mat4& matrix, const glm::vec3& min, const glm::vec3& max,
+                   unsigned color, float thickness) const {
+    for (const auto& edge : kCubeEdges) {
+        Line3D(draw, math::TransformPoint(matrix, CubeCorner(edge[0], min, max)),
+               math::TransformPoint(matrix, CubeCorner(edge[1], min, max)), color, thickness);
+    }
+}
+
+void Editor::DrawReach(ImDrawList* draw, const scene::LevelEntity& entity, const glm::mat4& matrix,
+                       unsigned color) const {
+    if (!entity.light || entity.light->type == renderer::LightType::Directional) {
+        return;
+    }
+    const glm::vec3 position(matrix[3]);
+    const float range = entity.light->range;
+    constexpr int kSteps = 32;
+    if (entity.light->type == renderer::LightType::Spot) {
+        // The outer cone, to the range: its rim and four lines from the light.
+        const glm::vec3 axis = glm::normalize(glm::vec3(matrix * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f)));
+        const glm::vec3 side = glm::normalize(std::abs(axis.y) < 0.99f ? glm::cross(axis, glm::vec3(0.0f, 1.0f, 0.0f))
+                                                                       : glm::cross(axis, glm::vec3(1.0f, 0.0f, 0.0f)));
+        const glm::vec3 up = glm::cross(side, axis);
+        const float angle = std::clamp(entity.light->outerAngle, 0.01f, 1.55f);
+        const float radius = std::sin(angle) * range;
+        const glm::vec3 center = position + axis * range * std::cos(angle);
+        glm::vec3 previous = center + side * radius;
+        for (int step = 1; step <= kSteps; ++step) {
+            const float turn = static_cast<float>(step) / kSteps * glm::two_pi<float>();
+            const glm::vec3 next = center + (side * std::cos(turn) + up * std::sin(turn)) * radius;
+            Line3D(draw, previous, next, color, 1.0f);
+            if (step % (kSteps / 4) == 0) {
+                Line3D(draw, position, next, color, 1.0f);
+            }
+            previous = next;
+        }
+        return;
+    }
+    for (int plane = 0; plane < 3; ++plane) {
+        glm::vec3 previous{0.0f};
+        for (int step = 0; step <= kSteps; ++step) {
+            const float angle = static_cast<float>(step) / kSteps * glm::two_pi<float>();
+            glm::vec3 offset{0.0f};
+            offset[plane] = std::cos(angle) * range;
+            offset[(plane + 1) % 3] = std::sin(angle) * range;
+            if (step > 0) {
+                Line3D(draw, position + previous, position + offset, color, 1.0f);
+            }
+            previous = offset;
+        }
+    }
+}
+
 void Editor::DrawMarkers() {
     if (m_instance == nullptr) {
         return;
@@ -2419,79 +2531,193 @@ void Editor::DrawMarkers() {
     ecs::PropagateTransforms(world);
     ImDrawList* draw = ImGui::GetBackgroundDrawList();
     draw->PushClipRect({m_viewportMin.x, m_viewportMin.y}, {m_viewportMax.x, m_viewportMax.y}, true);
-    const auto line = [&](const glm::vec3& from, const glm::vec3& to, ImU32 color, float thickness) {
-        const std::optional<glm::vec2> a = Project(from);
-        const std::optional<glm::vec2> b = Project(to);
-        if (a && b) {
-            draw->AddLine({a->x, a->y}, {b->x, b->y}, color, thickness);
+    for (const scene::LevelEntity& entity : m_level.entities) {
+        const ecs::Entity created = m_instance->Find(entity.id);
+        if (created.IsNull()) {
+            continue;
         }
-    };
-    const auto box = [&](const glm::mat4& matrix, const glm::vec3& min, const glm::vec3& max, ImU32 color,
-                         float thickness) {
-        for (const auto& edge : kCubeEdges) {
-            line(math::TransformPoint(matrix, CubeCorner(edge[0], min, max)),
-                 math::TransformPoint(matrix, CubeCorner(edge[1], min, max)), color, thickness);
+        const bool selected = IsSelected(entity.id);
+        if (!selected && !m_show.Shows(CategoryOf(entity))) {
+            continue;
         }
-    };
+        const glm::mat4& matrix = world.Get<ecs::WorldTransform>(created).matrix;
+        const float distance = glm::distance(glm::vec3(matrix[3]), m_camera.position);
+        const bool reaching = m_show.lightReach && entity.light.has_value();
+        if (!selected && distance > kMarkerReach && !reaching) {
+            continue;
+        }
+        const float fade = selected ? 1.0f : std::clamp(1.5f - distance / kMarkerReach * 1.5f, 0.15f, 1.0f);
+        const ImU32 alpha = static_cast<ImU32>(fade * 255.0f) << 24;
+        const ImU32 color = selected ? IM_COL32(255, 220, 60, 255) : ((MarkerColor(entity) & 0x00FFFFFFU) | alpha);
+        if (entity.light && (selected || m_show.lightReach)) {
+            DrawReach(draw, entity, matrix,
+                      selected ? IM_COL32(255, 220, 60, 110) : ((MarkerColor(entity) & 0x00FFFFFFU) | 0x50000000U));
+        }
+        if (!selected && distance > kMarkerReach) {
+            continue;
+        }
+        // Volumes show their box; a light shows where it points.
+        if (entity.fog || entity.wind || entity.weather || entity.lightning || entity.decal || entity.wet ||
+            entity.trigger || entity.cell) {
+            Box3D(draw, matrix, glm::vec3(-0.5f), glm::vec3(0.5f),
+                  (color & 0x00FFFFFFU) | (selected ? 0xFF000000U : static_cast<ImU32>(fade * 90.0f) << 24),
+                  selected ? 2.0f : 1.0f);
+        }
+        const glm::vec3 position(matrix[3]);
+        if (entity.light && entity.light->type != renderer::LightType::Point) {
+            const glm::vec3 axis = glm::normalize(glm::vec3(matrix * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f)));
+            Line3D(draw, position, position + axis * (selected ? std::min(entity.light->range, 5.0f) : 0.6f), color,
+                   1.5f);
+        }
+        if (entity.model.empty()) {
+            if (const std::optional<glm::vec2> at = Project(position)) {
+                const float shown = selected ? 1.0f : m_depth.Visibility(position);
+                const auto scaled = [shown](ImU32 value) {
+                    const float a = static_cast<float>((value >> IM_COL32_A_SHIFT) & 0xFFU) * shown;
+                    return (value & ~IM_COL32_A_MASK) | (static_cast<ImU32>(a) << IM_COL32_A_SHIFT);
+                };
+                draw->AddCircleFilled({at->x, at->y}, kMarkerRadius,
+                                      scaled(IM_COL32(20, 20, 20, static_cast<int>(fade * 200.0f))));
+                draw->AddCircle({at->x, at->y}, kMarkerRadius, scaled(color), 0, selected ? 2.5f : 1.5f);
+                const char* label = KindLabel(entity);
+                const ImVec2 size = ImGui::CalcTextSize(label);
+                draw->AddText({at->x - size.x * 0.5f, at->y - size.y * 0.5f}, scaled(color), label);
+            }
+        } else if (selected) {
+            const Bounds bounds = m_picker.WorldBounds(world, created);
+            if (!bounds.Empty()) {
+                Box3D(draw, glm::mat4(1.0f), bounds.min, bounds.max, color, 1.5f);
+            }
+        }
+    }
+    draw->PopClipRect();
+}
+
+void Editor::DrawShownExtras() {
+    if (m_instance == nullptr || (!m_show.collision && !m_show.navigation && !m_show.portals)) {
+        return;
+    }
+    ecs::World& world = m_scene->World();
+    ImDrawList* draw = ImGui::GetBackgroundDrawList();
+    draw->PushClipRect({m_viewportMin.x, m_viewportMin.y}, {m_viewportMax.x, m_viewportMax.y}, true);
+    std::vector<Bounds> rooms;
     for (const scene::LevelEntity& entity : m_level.entities) {
         const ecs::Entity created = m_instance->Find(entity.id);
         if (created.IsNull()) {
             continue;
         }
         const glm::mat4& matrix = world.Get<ecs::WorldTransform>(created).matrix;
-        const bool selected = IsSelected(entity.id);
-        const float distance = glm::distance(glm::vec3(matrix[3]), m_camera.position);
-        if (!selected && distance > kMarkerReach) {
-            continue;
+        if (m_show.collision && entity.body && glm::distance(glm::vec3(matrix[3]), m_camera.position) < 80.0f) {
+            // Static boxes in cyan, bodies that move in magenta.
+            const ImU32 color = entity.body->mass <= 0.0f ? IM_COL32(60, 230, 230, 200) : IM_COL32(230, 80, 230, 200);
+            Box3D(draw, matrix, entity.body->center - entity.body->size * 0.5f,
+                  entity.body->center + entity.body->size * 0.5f, color, 1.5f);
         }
-        const float fade = selected ? 1.0f : std::clamp(1.5f - distance / kMarkerReach * 1.5f, 0.15f, 1.0f);
-        const ImU32 alpha = static_cast<ImU32>(fade * 255.0f) << 24;
-        const ImU32 color = selected ? IM_COL32(255, 220, 60, 255) : ((MarkerColor(entity) & 0x00FFFFFFU) | alpha);
-        // Volumes show their box; a selected light shows where it points and how far it reaches.
-        if (entity.fog || entity.wind || entity.weather || entity.lightning || entity.decal || entity.wet ||
-            entity.trigger || entity.cell) {
-            box(matrix, glm::vec3(-0.5f), glm::vec3(0.5f),
-                (color & 0x00FFFFFFU) | (selected ? 0xFF000000U : static_cast<ImU32>(fade * 90.0f) << 24),
-                selected ? 2.0f : 1.0f);
+        if (m_show.portals && entity.cell && entity.cell->enabled) {
+            rooms.push_back(UnitBoxBounds(matrix));
         }
-        const glm::vec3 position(matrix[3]);
-        if (entity.light && entity.light->type != renderer::LightType::Point) {
-            const glm::vec3 axis = glm::normalize(glm::vec3(matrix * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f)));
-            line(position, position + axis * (selected ? std::min(entity.light->range, 5.0f) : 0.6f), color, 1.5f);
+    }
+    for (const Bounds& opening : Openings(rooms)) {
+        Box3D(draw, glm::mat4(1.0f), opening.min, opening.max, IM_COL32(255, 90, 200, 230), 2.5f);
+    }
+    if (m_show.navigation) {
+        if (!m_navigation) {
+            BuildNavigation();
         }
-        if (selected && entity.light && entity.light->type != renderer::LightType::Directional) {
-            // The range, on three circles.
-            for (int plane = 0; plane < 3; ++plane) {
-                glm::vec3 previous{0.0f};
-                for (int step = 0; step <= 32; ++step) {
-                    const float angle = static_cast<float>(step) / 32.0f * glm::two_pi<float>();
-                    glm::vec3 offset{0.0f};
-                    offset[plane] = std::cos(angle) * entity.light->range;
-                    offset[(plane + 1) % 3] = std::sin(angle) * entity.light->range;
-                    if (step > 0) {
-                        line(position + previous, position + offset, IM_COL32(255, 220, 60, 90), 1.0f);
-                    }
-                    previous = offset;
-                }
-            }
-        }
-        if (entity.model.empty()) {
-            if (const std::optional<glm::vec2> at = Project(position)) {
-                draw->AddCircleFilled({at->x, at->y}, kMarkerRadius,
-                                      IM_COL32(20, 20, 20, static_cast<int>(fade * 200.0f)));
-                draw->AddCircle({at->x, at->y}, kMarkerRadius, color, 0, selected ? 2.5f : 1.5f);
-                const char* label = KindLabel(entity);
-                const ImVec2 size = ImGui::CalcTextSize(label);
-                draw->AddText({at->x - size.x * 0.5f, at->y - size.y * 0.5f}, color, label);
-            }
-        } else if (selected) {
-            const Bounds bounds = m_picker.WorldBounds(world, created);
-            if (!bounds.Empty()) {
-                box(glm::mat4(1.0f), bounds.min, bounds.max, color, 1.5f);
+        const glm::vec3 lift(0.0f, 0.05f, 0.0f);
+        for (std::size_t edge = 0; edge + 1 < m_navigationEdges.size(); edge += 2) {
+            const glm::vec3 middle = (m_navigationEdges[edge] + m_navigationEdges[edge + 1]) * 0.5f;
+            if (glm::distance(middle, m_camera.position) < 60.0f) {
+                Line3D(draw, m_navigationEdges[edge] + lift, m_navigationEdges[edge + 1] + lift,
+                       IM_COL32(80, 220, 120, 170), 1.0f);
             }
         }
     }
     draw->PopClipRect();
+}
+
+void Editor::BuildNavigation() {
+    m_navigationEdges.clear();
+    m_navigation.reset();
+    if (m_scene == nullptr) {
+        return;
+    }
+    // Every model's triangles where it stands, as the game gives its level's to Recast (ADR-0069). Doors are not
+    // known here: they count as walls.
+    ecs::World& world = m_scene->World();
+    ecs::PropagateTransforms(world);
+    std::vector<glm::vec3> positions;
+    std::vector<std::uint32_t> indices;
+    world.Each<scene::ModelInstance>([&](ecs::Entity entity, const scene::ModelInstance& placed) {
+        if (placed.model == nullptr) {
+            return;
+        }
+        const glm::mat4& matrix = world.Get<ecs::WorldTransform>(entity).matrix;
+        for (const scene::Model::Part& part : placed.model->parts) {
+            const auto first = static_cast<std::uint32_t>(positions.size());
+            for (const glm::vec3& position : part.positions) {
+                positions.push_back(math::TransformPoint(matrix, position));
+            }
+            for (const std::uint32_t index : part.indices) {
+                indices.push_back(first + index);
+            }
+        }
+    });
+    core::Result<navigation::NavMesh> mesh = navigation::NavMesh::Build(positions, indices);
+    if (!mesh) {
+        m_status = core::Format(mesh.error());
+        return;
+    }
+    m_navigationEdges = mesh->Edges();
+    m_status = std::format("Navigation: {} polygons in {:.0f} ms", mesh->PolygonCount(), mesh->BuildSeconds() * 1000.0);
+    m_navigation = std::move(*mesh);
+}
+
+void Editor::FilterView(renderer::SceneView& view) const {
+    if (!m_show.decals) {
+        view.decals.clear();
+    }
+    if (!m_show.particles) {
+        view.particleSpawns.clear();
+        view.ribbons.clear();
+    }
+    if (!m_show.fog) {
+        view.fogVolumes.clear();
+        view.atmosphere.fog.density = 0.0f;
+    }
+}
+
+void Editor::DrawShowMenu() {
+    ImGui::MenuItem("Game view", "G", &m_show.gameView);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Only the game's image: no grid, markers, boxes or gizmo");
+    }
+    ImGui::MenuItem("Real time", "Ctrl+R", &m_realtime);
+    ImGui::Separator();
+    ImGui::TextDisabled("Markers");
+    for (std::size_t category = 0; category < kCategoryCount; ++category) {
+        bool shown = m_show.categories[category];
+        if (ImGui::MenuItem(std::string(CategoryName(static_cast<Category>(category))).c_str(), nullptr, &shown)) {
+            m_show.categories[category] = shown;
+        }
+    }
+    ImGui::Separator();
+    ImGui::TextDisabled("Over the view");
+    ImGui::MenuItem("Grid", "Shift+G", &m_show.grid);
+    ImGui::MenuItem("Every light's reach", nullptr, &m_show.lightReach);
+    ImGui::MenuItem("Collision boxes", nullptr, &m_show.collision);
+    if (ImGui::MenuItem("Navigation mesh", nullptr, &m_show.navigation) && m_show.navigation) {
+        m_navigation.reset();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Where zombies can walk, built from the level's models when turned on");
+    }
+    ImGui::MenuItem("Openings between rooms", nullptr, &m_show.portals);
+    ImGui::Separator();
+    ImGui::TextDisabled("In the scene");
+    ImGui::MenuItem("Decals", nullptr, &m_show.decals);
+    ImGui::MenuItem("Particles and ribbons", nullptr, &m_show.particles);
+    ImGui::MenuItem("Fog", nullptr, &m_show.fog);
 }
 
 void Editor::DrawGizmo() {
@@ -2550,7 +2776,7 @@ void Editor::DrawGizmo() {
 }
 
 void Editor::DrawGrid() {
-    if (!m_grid) {
+    if (!m_show.grid || m_show.gameView) {
         return;
     }
     ImDrawList* draw = ImGui::GetBackgroundDrawList();
@@ -2578,7 +2804,8 @@ void Editor::DrawGrid() {
                 const std::optional<glm::vec2> a2 = Project(from);
                 const std::optional<glm::vec2> b2 = Project(to);
                 if (a2 && b2) {
-                    const auto alpha = static_cast<int>(fade * (major ? 110.0f : 45.0f));
+                    const auto alpha =
+                        static_cast<int>(fade * (major ? 110.0f : 45.0f) * m_depth.Visibility((from + to) * 0.5f));
                     draw->AddLine({a2->x, a2->y}, {b2->x, b2->y}, IM_COL32(200, 200, 210, alpha), major ? 1.5f : 1.0f);
                 }
             }
@@ -2592,13 +2819,14 @@ void Editor::DrawHelp() {
         return;
     }
     if (ImGui::Begin("Shortcuts", &m_showHelp, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize)) {
-        constexpr std::array<std::array<const char*, 2>, 26> kKeys{{
+        constexpr std::array<std::array<const char*, 2>, 27> kKeys{{
             {"Right mouse + WASD, Q, E", "Fly; Shift goes faster, the wheel sets the speed"},
             {"Wheel, middle mouse", "Walk forward and back, pan"},
             {"Click, Ctrl+click", "Select, add to the selection"},
             {"W, E, R", "Move, rotate, scale"},
             {"X, or Ctrl while dragging", "Snapping on and off"},
-            {"G", "The grid"},
+            {"G, Shift+G", "Game view (nothing of the editor's drawn), the grid"},
+            {"Ctrl+R", "The scene's time runs or holds still"},
             {"Alt+1 to Alt+4", "Lit, unlit, lighting only, the editor's light"},
             {"B", "Paint decals and wet patches (drag over surfaces)"},
             {"F, double-click in the hierarchy", "Frame the selection"},
@@ -2646,7 +2874,7 @@ void Editor::Pick(app::Application& app) {
     float nearestDistance = kPickDistance;
     ecs::World& world = m_scene->World();
     for (const scene::LevelEntity& entity : m_level.entities) {
-        if (!entity.model.empty()) {
+        if (!entity.model.empty() || (!IsSelected(entity.id) && !m_show.Shows(CategoryOf(entity)))) {
             continue;
         }
         const ecs::Entity created = m_instance->Find(entity.id);

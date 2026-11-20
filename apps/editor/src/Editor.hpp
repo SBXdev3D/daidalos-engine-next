@@ -5,12 +5,15 @@
 #pragma once
 
 #include <daidalos/app/Application.hpp>
+#include <daidalos/navigation/NavMesh.hpp>
 #include <daidalos/platform/Process.hpp>
 #include <daidalos/scene/Level.hpp>
 #include <daidalos/scene/ModelBatch.hpp>
 #include <daidalos/scene/Scene.hpp>
 
 #include <glm/mat4x4.hpp>
+
+struct ImDrawList;
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
@@ -30,6 +33,7 @@
 #include "AssetBrowser.hpp"
 #include "History.hpp"
 #include "MaterialPanel.hpp"
+#include "Overlays.hpp"
 #include "Paint.hpp"
 #include "Picking.hpp"
 #include "SequencePanel.hpp"
@@ -198,6 +202,23 @@ private:
     /// The editor's light: the level's lights off, one soft light at the camera.
     void LightFromCamera(daidalos::renderer::SceneView& view) const;
 
+    // What the view shows (ADR-0106).
+    void DrawShowMenu();
+    /// A line of the world over the view, in pieces, each faint where the scene hides it.
+    void Line3D(ImDrawList* draw, const glm::vec3& from, const glm::vec3& to, unsigned color, float thickness) const;
+    /// The twelve edges of a box from min to max placed by a matrix.
+    void Box3D(ImDrawList* draw, const glm::mat4& matrix, const glm::vec3& min, const glm::vec3& max, unsigned color,
+               float thickness) const;
+    /// A light's reach: three circles for a point light, a cone for a spot light.
+    void DrawReach(ImDrawList* draw, const daidalos::scene::LevelEntity& entity, const glm::mat4& matrix,
+                   unsigned color) const;
+    /// Collision boxes, the navigation mesh and the openings between rooms, as the Show menu asks.
+    void DrawShownExtras();
+    /// Builds the navigation mesh from the triangles of the level's models, as the game does from its own.
+    void BuildNavigation();
+    /// Leaves out of the frame what the Show menu hides: decals, particles, fog.
+    void FilterView(daidalos::renderer::SceneView& view) const;
+
     // The interface.
     void DrawMenu(daidalos::app::Application& app);
     void DrawDialogs(daidalos::app::Application& app);
@@ -246,7 +267,6 @@ private:
     std::string m_hierarchyFilter;
     /// The hierarchy opens the selection's parents and scrolls to it, once, after a pick in the view.
     bool m_scrollToSelection = false;
-    bool m_grid = true;
     bool m_snap = false;
     /// Meters, degrees and scale.
     glm::vec3 m_snapSteps{0.25f, 15.0f, 0.1f};
@@ -285,6 +305,13 @@ private:
 
     std::unique_ptr<Loading> m_loading;
     Lighting m_lighting = Lighting::Lit;
+    ShowFlags m_show;
+    /// Whether the scene's time runs in the view: off, effects, flickers and animations hold still (Ctrl+R).
+    bool m_realtime = true;
+    /// What hides what in the view, from the depth the renderer read back; refreshed each frame.
+    DepthTest m_depth;
+    std::optional<daidalos::navigation::NavMesh> m_navigation;
+    std::vector<glm::vec3> m_navigationEdges;
 
     daidalos::platform::ChildProcess m_play;
     std::filesystem::path m_playFile;

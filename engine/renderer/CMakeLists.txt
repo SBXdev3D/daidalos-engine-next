@@ -58,6 +58,8 @@ dai_add_module(NAME renderer
         src/ShaderCompiler.hpp
         src/Fsr3Upscaler.cpp
         src/Fsr3Upscaler.hpp
+        src/DepthProbe.cpp
+        src/DepthProbe.hpp
         src/TemporalResolvePass.cpp
         src/TemporalResolvePass.hpp
         src/UiPass.cpp
@@ -81,7 +83,7 @@ dai_add_shaders(TARGET daidalos_renderer
         shaders/RestirSpatialUnbiased.slang shaders/RestirShade.slang
         shaders/EmissiveAverage.slang shaders/EmissiveTriangles.slang shaders/ExposureHistogram.slang shaders/Bloom.slang
         shaders/FogLighting.slang shaders/FogIntegrate.slang shaders/FogSmoke.slang shaders/CameraEffects.slang
-        shaders/MaterialGrid.slang
+        shaders/MaterialGrid.slang shaders/DepthProbe.slang
     INCLUDES shaders/Bsdf.slang shaders/RayQueries.slangh shaders/GlobalIllumination.slangh shaders/MeshCommon.slangh shaders/GBufferSurface.slangh shaders/MeshTypes.slangh shaders/Particles.slangh shaders/ParticleSpawning.slangh
         shaders/Denoiser.slangh shaders/Random.slangh shaders/Lights.slangh shaders/GBuffer.slangh shaders/Restir.slangh shaders/RestirSpatial.slangh shaders/Fog.slangh
         shaders/Decals.slangh shaders/Wetness.slangh shaders/ParticleTypes.slangh shaders/MaterialGrid.slangh shaders/GiFill.slangh)

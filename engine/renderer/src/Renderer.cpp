@@ -30,6 +30,7 @@
 #include "Bloom.hpp"
 #include "CameraEffects.hpp"
 #include "Denoiser.hpp"
+#include "DepthProbe.hpp"
 #include "DirectLighting.hpp"
 #include "DynamicResolution.hpp"
 #include "Exposure.hpp"
@@ -129,6 +130,7 @@ struct Renderer::Impl {
         pathTracer.reset();
         volumetricFog.reset();
         exposureMeter.reset();
+        depthProbe.reset();
         capture.reset();
         bloom.reset();
         cameraEffects.reset();
@@ -208,6 +210,8 @@ struct Renderer::Impl {
     /// The upscaler of the last frame resolved.
     Upscaler upscaledBy = Upscaler::Engine;
     std::optional<ExposureMeter> exposureMeter;
+    std::optional<DepthProbe> depthProbe;
+    bool probeDepth = false;
     std::optional<FrameCapture> capture;
     std::optional<Bloom> bloom;
     std::optional<CameraEffects> cameraEffects;
@@ -495,6 +499,8 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     impl->fsr3.emplace(std::move(fsr3));
     DAI_TRY_ASSIGN(ExposureMeter exposureMeter, ExposureMeter::Create(impl->device));
     impl->exposureMeter.emplace(std::move(exposureMeter));
+    DAI_TRY_ASSIGN(DepthProbe depthProbe, DepthProbe::Create(impl->device));
+    impl->depthProbe.emplace(std::move(depthProbe));
     impl->capture.emplace(impl->device);
     DAI_TRY_ASSIGN(Bloom bloom, Bloom::Create(impl->device));
     impl->bloom.emplace(std::move(bloom));
@@ -633,6 +639,14 @@ void Renderer::SetPathTracer(std::uint32_t bounces, std::uint32_t samples) {
     m_impl->pathSettings.maxSamples = samples;
 }
 
+void Renderer::SetDepthProbe(bool enabled) {
+    m_impl->probeDepth = enabled;
+}
+
+const std::optional<DepthPicture>& Renderer::LatestDepth() const {
+    return m_impl->depthProbe->Latest();
+}
+
 void Renderer::RequestCapture() {
     m_impl->capture->Request();
 }
@@ -724,6 +738,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     rhi::Frame& frame = *begun;
     impl.ReadGpuTimes(frame.slot);
     impl.capture->Read(frame.slot);
+    impl.depthProbe->Read(frame.slot);
 
     // Exposure (ADR-0048). The GPU's light is exposed once for the level, at the middle of its range, so
     // that no history goes stale when the eye adapts: the eye and the brightness setting scale the image
@@ -954,7 +969,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     impl.illuminated = illuminate;
     // The light of the frame's lights, and the indirect light, at each pixel of the G-buffer (ADR-0044). A
     // frame that does not follow the last one lit reuses nothing from it.
-    const bool lightsView = impl.debugView == DebugView::Lights;
+    const bool lightsView = impl.debugView == DebugView::Lights || impl.debugView == DebugView::LightCount;
     const bool light = status && hasFrame;
     if (light) {
         if (!impl.lit || view.cut) {
@@ -962,6 +977,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         }
         DirectLightingSettings settings = impl.restir;
         settings.debug = lightsView;
+        settings.lightCount = impl.debugView == DebugView::LightCount;
         impl.directLighting->AddTo(graph,
                                    {.extent = renderExtent,
                                     .frameBuffer = impl.meshPass->FrameDataIndex(),
@@ -1104,6 +1120,11 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                     glm::vec2(static_cast<float>(sceneExtent.width), static_cast<float>(sceneExtent.height))});
                 commands.Draw(3);
             });
+    }
+    if (status && hasFrame && impl.probeDepth) {
+        const Perspective& perspective = impl.meshPass->FramePerspective();
+        impl.depthProbe->AddTo(graph, frame.slot, impl.depth, renderExtent, perspective.nearPlane, perspective.farPlane,
+                               impl.meshPass->ViewProjection());
     }
     if (status && hasFrame && impl.debugView == DebugView::Rays) {
         impl.rayTracing->AddDebugView(graph, impl.hdr, impl.meshPass->FrameDataIndex(),
