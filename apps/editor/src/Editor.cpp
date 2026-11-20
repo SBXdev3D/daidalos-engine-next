@@ -253,6 +253,7 @@ core::Result<void> Editor::OnStart(app::Application& app) {
         app.RequestQuit();
         return {};
     }
+    m_tabs.push_back(std::make_unique<Tab>());
     m_browser = std::make_unique<AssetBrowser>(m_assetRoot, app.Renderer().Device(), app.Workers());
     LoadBookmarks();
     if (!sequence.empty()) {
@@ -268,8 +269,8 @@ core::Result<void> Editor::OnStart(app::Application& app) {
     return {};
 }
 
-core::Result<void> Editor::Open(app::Application& app, const std::string& levelPath,
-                                std::optional<EditorCamera> camera) {
+core::Result<void> Editor::Open(app::Application& app, const std::string& levelPath, std::optional<EditorCamera> camera,
+                                bool newTab) {
     core::Result<scene::Level> level = scene::LoadLevelFile(m_assetRoot / std::filesystem::path(levelPath));
     if (!level) {
         return tl::unexpected(level.error());
@@ -284,6 +285,7 @@ core::Result<void> Editor::Open(app::Application& app, const std::string& levelP
     loading->level = std::move(*level);
     loading->scene = std::make_unique<scene::Scene>(app.Renderer(), m_assetRoot, nullptr);
     loading->camera = camera;
+    loading->newTab = newTab && m_scene != nullptr;
     Loading* waiting = loading.get();
     m_loading = std::move(loading);
     m_loading->batch = scene::ModelBatch::Start(
@@ -300,6 +302,22 @@ void Editor::FinishOpen(app::Application& app) {
     }
     const std::string levelPath = loading->path;
     scene::Scene& target = *loading->scene;
+    if (loading->newTab) {
+        // The document shown goes into its tab, with its scene alive, and the new one gets a tab of its own.
+        m_history.Commit(Snapshot());
+        Tab& shown = *m_tabs[m_activeTab];
+        StashTab(shown);
+        shown.scene = app.ExchangeScene(std::move(loading->scene));
+        m_tabs.push_back(std::make_unique<Tab>());
+        m_activeTab = m_tabs.size() - 1;
+        m_selectTab = true;
+        m_materialValues.clear();
+        m_materialFirst.clear();
+    } else {
+        // The same tab's document is replaced: what its materials' undo knew goes with its models.
+        m_materialValues.clear();
+        m_materialFirst.clear();
+    }
     m_instance = std::make_unique<scene::LevelInstance>(target, levelPath);
     m_isolated.clear();
     m_navigation.reset();
@@ -336,7 +354,10 @@ void Editor::FinishOpen(app::Application& app) {
     m_autosavedRevision = m_history.Current();
     m_sinceAutosave = 0.0f;
     m_scene = &target;
-    app.SetScene(std::move(loading->scene));
+    if (loading->scene != nullptr) {
+        app.SetScene(std::move(loading->scene));
+    }
+    m_cutView = true;
     if (m_browser != nullptr) {
         m_browser->Open(std::filesystem::path(levelPath).parent_path().generic_string());
     }
@@ -387,7 +408,7 @@ bool Editor::Save(const std::string& levelPath) {
         m_status = m_sequences.Status();
         return false;
     }
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     const std::string target = levelPath.empty() ? m_levelPath : levelPath;
     scene::Level level = m_level;
     scene::Relocate(level, m_levelPath, target);
@@ -471,7 +492,7 @@ std::vector<std::uint64_t> Editor::SelectionRoots() const {
     return roots;
 }
 void Editor::Change(std::string_view label, const std::function<void(scene::Level&)>& edit) {
-    m_history.Begin(m_level, label);
+    m_history.Begin(Snapshot(), label);
     const scene::Level before = m_level;
     edit(m_level);
     SyncShown(before, m_isolated);
@@ -495,35 +516,26 @@ void Editor::Apply(const scene::LevelEntity& after, std::string_view label) {
     Change(label, [&after](scene::Level& level) { *level.Find(after.id) = after; });
 }
 
-void Editor::GoTo(scene::Level level) {
-    const scene::Level before = std::move(m_level);
-    m_level = std::move(level);
-    SyncShown(before, m_isolated);
-    std::erase_if(m_selection, [this](std::uint64_t id) { return m_level.Find(id) == nullptr; });
-    m_selected = m_selection.empty() ? 0 : m_selection.back();
-    m_eulerOf = 0;
-}
-
 void Editor::Undo() {
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     const std::string label = m_history.UndoLabel();
-    if (std::optional<scene::Level> level = m_history.Undo(m_level)) {
-        GoTo(std::move(*level));
+    if (std::optional<Document> state = m_history.Undo(Snapshot())) {
+        GoTo(std::move(*state));
         m_status = std::format("Undid: {}", label);
     }
 }
 
 void Editor::Redo() {
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     const std::string label = m_history.RedoLabel();
-    if (std::optional<scene::Level> level = m_history.Redo(m_level)) {
-        GoTo(std::move(*level));
+    if (std::optional<Document> state = m_history.Redo(Snapshot())) {
+        GoTo(std::move(*state));
         m_status = std::format("Redid: {}", label);
     }
 }
 
 void Editor::Create(std::string_view label, scene::LevelEntity entity, std::optional<glm::vec3> position) {
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     entity.id = m_level.NextId();
     entity.parent = 0;
     if (entity.name.empty()) {
@@ -531,7 +543,7 @@ void Editor::Create(std::string_view label, scene::LevelEntity entity, std::opti
     }
     entity.transform.translation = position.value_or(InFront());
     Change(std::format("Create {}", label), [&entity](scene::Level& level) { level.entities.push_back(entity); });
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     Select(entity.id);
     m_status = std::format("Created {}", EntityLabel(entity));
 }
@@ -558,7 +570,7 @@ void Editor::PlaceAsset(app::Application& app, const AssetEntry& asset, std::opt
     case AssetKind::Sky: {
         const std::string sky = RelativeToLevel(asset.path);
         Change("Change the sky", [&sky](scene::Level& level) { level.environment.skyFaces = sky; });
-        m_history.Commit(m_level);
+        m_history.Commit(Snapshot());
         m_status = std::format("The sky is {}", asset.name);
         return;
     }
@@ -652,12 +664,12 @@ void Editor::DeleteSelected() {
     const std::string label = m_selection.size() == 1 && selected != nullptr
                                   ? std::format("Delete {}", EntityLabel(*selected))
                                   : std::format("Delete {} entities", m_selection.size());
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     Change(label, [&doomed](scene::Level& level) {
         std::erase_if(level.entities,
                       [&doomed](const scene::LevelEntity& entity) { return doomed.contains(entity.id); });
     });
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     m_status = std::format("{}: {} entities gone", label, doomed.size());
     Select(0);
 }
@@ -668,9 +680,9 @@ void Editor::Duplicate() {
     }
     const std::vector<scene::LevelEntity> copies = CopyEntities(m_level, SelectionRoots());
     std::vector<std::uint64_t> roots;
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     Change("Duplicate", [&](scene::Level& level) { roots = PasteEntities(level, copies); });
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     Select(0);
     for (const std::uint64_t id : roots) {
         ToggleSelect(id);
@@ -706,9 +718,9 @@ void Editor::Paste() {
     // Copied from another level: the paths are made relative to this one's directory.
     scene::Relocate(*clip, from, m_levelPath);
     std::vector<std::uint64_t> roots;
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     Change("Paste", [&](scene::Level& level) { roots = PasteEntities(level, std::move(clip->entities)); });
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     Select(0);
     for (const std::uint64_t id : roots) {
         ToggleSelect(id);
@@ -743,17 +755,17 @@ void Editor::Reparent(std::uint64_t child, std::uint64_t parent) {
         moved.transform = Decompose(glm::inverse(parentWorld) * childWorld);
     }
     const scene::LevelEntity* target = m_level.Find(parent);
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     Apply(moved, std::format("Move {} under {}", EntityLabel(*entity),
                              target != nullptr ? EntityLabel(*target) : std::string("the root")));
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
 }
 
 void Editor::SetHidden(const std::vector<std::uint64_t>& ids, bool hidden) {
     if (ids.empty()) {
         return;
     }
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     Change(std::format("{} {} entities", hidden ? "Hide" : "Show", ids.size()), [&](scene::Level& level) {
         for (const std::uint64_t id : ids) {
             if (scene::LevelEntity* entity = level.Find(id)) {
@@ -761,7 +773,7 @@ void Editor::SetHidden(const std::vector<std::uint64_t>& ids, bool hidden) {
             }
         }
     });
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     if (hidden) {
         std::erase_if(m_selection, [&ids](std::uint64_t id) { return std::ranges::find(ids, id) != ids.end(); });
         m_selected = m_selection.empty() ? 0 : m_selection.back();
@@ -801,7 +813,7 @@ void Editor::SetLocked(const std::vector<std::uint64_t>& ids, bool locked) {
     if (ids.empty()) {
         return;
     }
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     Change(std::format("{} {} entities", locked ? "Lock" : "Unlock", ids.size()), [&](scene::Level& level) {
         for (const std::uint64_t id : ids) {
             if (scene::LevelEntity* entity = level.Find(id)) {
@@ -809,7 +821,7 @@ void Editor::SetLocked(const std::vector<std::uint64_t>& ids, bool locked) {
             }
         }
     });
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     m_status = locked ? std::format("Locked {} entities: clicks in the view go through them", ids.size())
                       : std::format("Unlocked {} entities", ids.size());
 }
@@ -836,7 +848,7 @@ void Editor::MoveToFolder(const std::vector<std::uint64_t>& ids, const std::stri
         }
         placed.emplace_back(id, transform);
     }
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     Change(folder.empty() ? std::string("Take out of folders") : std::format("Put in {}", folder),
            [&](scene::Level& level) {
                for (const auto& [id, transform] : placed) {
@@ -847,7 +859,7 @@ void Editor::MoveToFolder(const std::vector<std::uint64_t>& ids, const std::stri
                    }
                }
            });
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     m_status = folder.empty() ? std::format("{} entities out of folders", placed.size())
                               : std::format("{} entities in {}", placed.size(), folder);
 }
@@ -877,7 +889,7 @@ void Editor::MoveBy(const std::vector<std::pair<std::uint64_t, glm::vec3>>& offs
         const glm::mat4 parentWorld = parent.IsNull() ? glm::mat4(1.0f) : world.Get<ecs::WorldTransform>(parent).matrix;
         local.emplace_back(id, glm::vec3(glm::inverse(parentWorld) * glm::vec4(offset, 0.0f)));
     }
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     Change(label, [&](scene::Level& level) {
         for (const auto& [id, offset] : local) {
             if (scene::LevelEntity* entity = level.Find(id)) {
@@ -885,7 +897,7 @@ void Editor::MoveBy(const std::vector<std::pair<std::uint64_t, glm::vec3>>& offs
             }
         }
     });
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
 }
 
 void Editor::AlignSelection(int axis, AlignTo to) {
@@ -1051,12 +1063,12 @@ bool Editor::MakePrefab(const std::string& path) {
     for (const scene::LevelEntity& copy : CopyEntities(m_level, m_selection)) {
         gone.insert(copy.id);
     }
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     Change(std::format("Make the prefab {}", placed.name), [&](scene::Level& level) {
         std::erase_if(level.entities, [&gone](const scene::LevelEntity& entity) { return gone.contains(entity.id); });
         level.entities.push_back(placed);
     });
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     Select(placed.id);
     if (m_browser != nullptr) {
         m_browser->Open(m_browser->Folder());
@@ -1078,9 +1090,9 @@ void Editor::UnpackPrefab(std::uint64_t id) {
     }
     scene::Relocate(*prefab, path, m_levelPath);
     const std::string label = EntityLabel(*entity);
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     Change(std::format("Unpack {}", label), [&](scene::Level& level) { Unpack(level, id, std::move(*prefab)); });
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     m_status = std::format("Unpacked {}: its entities are the level's now", label);
 }
 
@@ -1152,7 +1164,7 @@ void Editor::PaintStrokes(app::Application& app) {
     const glm::vec2 mouse(io.MousePos.x, io.MousePos.y);
     if (m_stroking && !app.Input().IsDown(platform::MouseButton::Left)) {
         m_stroking = false;
-        m_history.Commit(m_level);
+        m_history.Commit(Snapshot());
         m_status = std::format("Painted {} stamps", m_strokeStamps);
         return;
     }
@@ -1165,7 +1177,7 @@ void Editor::PaintStrokes(app::Application& app) {
         if (!hit) {
             return;
         }
-        m_history.Commit(m_level);
+        m_history.Commit(Snapshot());
         m_stroking = true;
         m_strokeEntity = 0;
         m_strokeStamps = 0;
@@ -1321,9 +1333,9 @@ void Editor::EditSequence(std::uint64_t id) {
         std::ranges::replace(name, ' ', '_');
         scene::LevelEntity named = *entity;
         named.trigger->sequence = std::format("Sequences/{}.sequence.json", name);
-        m_history.Commit(m_level);
+        m_history.Commit(Snapshot());
         Apply(named, std::format("Give {} a sequence", EntityLabel(named)));
-        m_history.Commit(m_level);
+        m_history.Commit(Snapshot());
         entity = m_level.Find(id);
     }
     if (m_sequences.IsOpen() && m_sequences.Dirty()) {
@@ -1468,7 +1480,7 @@ void Editor::Bookmark(int slot, bool store) {
     }
 }
 void Editor::Guard(app::Application& app, Pending what, std::string path) {
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     m_pending = what;
     m_pendingPath = std::move(path);
     if (Dirty()) {
@@ -1486,6 +1498,9 @@ void Editor::Proceed(app::Application& app) {
         return;
     case Pending::Quit:
         app.RequestQuit();
+        return;
+    case Pending::CloseTab:
+        CloseTab(m_closingTab);
         return;
     case Pending::Reload:
         path = m_levelPath;
@@ -1508,8 +1523,16 @@ void Editor::Proceed(app::Application& app) {
 }
 
 bool Editor::OnCloseRequested(app::Application& app) {
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     if (!Dirty()) {
+        // Another tab with changes is shown, and asked about.
+        for (std::size_t index = 0; index < m_tabs.size(); ++index) {
+            if (index != m_activeTab && TabDirty(*m_tabs[index])) {
+                SwitchTab(index);
+                Guard(app, Pending::Quit);
+                return false;
+            }
+        }
         return true;
     }
     Guard(app, Pending::Quit);
@@ -1521,6 +1544,17 @@ void Editor::OnStop(app::Application& /*app*/) {
     // returns, before the editor itself goes.
     m_loading.reset();
     m_browser.reset();
+    for (std::unique_ptr<Tab>& tab : m_tabs) {
+        if (tab != nullptr) {
+            for (Pane& pane : tab->panes) {
+                if (!pane.snapshot.IsNull() && m_app != nullptr) {
+                    m_app->Renderer().Device().DestroyTexture(pane.snapshot);
+                }
+            }
+            tab->instance.reset();
+            tab->scene.reset();
+        }
+    }
     for (Pane& pane : m_panes) {
         if (!pane.snapshot.IsNull() && m_app != nullptr) {
             m_app->Renderer().Device().DestroyTexture(pane.snapshot);
@@ -1581,7 +1615,7 @@ void Editor::CheckAutosave() {
 }
 
 void Editor::Play(bool fromCamera) {
-    m_history.Commit(m_level);
+    m_history.Commit(Snapshot());
     if (m_play.Running()) {
         m_play.Kill();
     }
@@ -1644,6 +1678,9 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
         m_materials.Draw(m_scene->Assets(), m_assetRoot);
     }
     UpdateSequences(static_cast<float>(time.unclampedDelta.count()));
+    TrackPanelEdits();
+    DrawHistory();
+    DrawTabs();
     DrawPaint();
     DrawStatus(app, time);
     DrawDialogs(app);
@@ -1697,7 +1734,7 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
         } else {
             if (m_stroking) {
                 m_stroking = false;
-                m_history.Commit(m_level);
+                m_history.Commit(Snapshot());
             }
             if (!m_show.gameView) {
                 DrawGizmo();
@@ -1712,7 +1749,11 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
 
     // What the inspector asked for, once it is drawn.
     if (!m_pendingOpenPrefab.empty()) {
-        Guard(app, Pending::Open, std::exchange(m_pendingOpenPrefab, {}));
+        // A prefab opens beside the level that places it (ADR-0109).
+        if (core::Result<void> opened = Open(app, std::exchange(m_pendingOpenPrefab, {}), std::nullopt, true);
+            !opened) {
+            m_status = core::Format(opened.error());
+        }
     }
     if (m_pendingUnpack != 0) {
         UnpackPrefab(std::exchange(m_pendingUnpack, 0));
@@ -1723,7 +1764,7 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
 
     // An edit ends when the mouse lets go of the widget or the gizmo that made it.
     if (m_history.IsOpen() && !ImGui::IsAnyItemActive() && !ImGuizmo::IsUsing() && !m_stroking) {
-        m_history.Commit(m_level);
+        m_history.Commit(Snapshot());
     }
     Autosave(static_cast<float>(time.unclampedDelta.count()));
     if (!m_playFile.empty() && !m_play.Running()) {
@@ -1761,7 +1802,17 @@ void Editor::HandleShortcuts(app::Application& /*app*/) {
             }
         } else if (pressed(ImGuiKey_O)) {
             m_levelFiles = FindLevelFiles(m_assetRoot);
+            m_openInNewTab = io.KeyShift;
             m_openPopup = "Open";
+        } else if (pressed(ImGuiKey_W)) {
+            if (m_tabs.size() > 1) {
+                m_pendingCloseTab = m_activeTab;
+            }
+        } else if (pressed(ImGuiKey_Tab)) {
+            if (m_tabs.size() > 1) {
+                SwitchTab((m_activeTab + (io.KeyShift ? m_tabs.size() - 1 : 1)) % m_tabs.size());
+                m_selectTab = true;
+            }
         } else if (pressed(ImGuiKey_N)) {
             m_pathField = "Levels/New.level.json";
             m_openPopup = "New";
@@ -2068,7 +2119,16 @@ void Editor::DrawMenu(app::Application& app) {
             m_pathField = "Levels/New.level.json";
             m_openPopup = "New";
         }
+        if (ImGui::MenuItem("Open in a new tab...", "Ctrl+Shift+O")) {
+            m_levelFiles = FindLevelFiles(m_assetRoot);
+            m_openInNewTab = true;
+            m_openPopup = "Open";
+        }
+        if (ImGui::MenuItem("Close the tab", "Ctrl+W", false, m_tabs.size() > 1)) {
+            m_pendingCloseTab = m_activeTab;
+        }
         if (ImGui::MenuItem("Open...", "Ctrl+O")) {
+            m_openInNewTab = false;
             m_levelFiles = FindLevelFiles(m_assetRoot);
             m_openPopup = "Open";
         }
@@ -2515,10 +2575,18 @@ void Editor::DrawDialogs(app::Application& app) {
             if (ImGui::Selectable(file.c_str(), file == m_levelPath, ImGuiSelectableFlags_AllowDoubleClick) &&
                 ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                 ImGui::CloseCurrentPopup();
-                Guard(app, Pending::Open, file);
+                if (m_openInNewTab) {
+                    if (core::Result<void> opened = Open(app, file, std::nullopt, true); !opened) {
+                        m_status = core::Format(opened.error());
+                    }
+                } else {
+                    Guard(app, Pending::Open, file);
+                }
             }
         }
         ImGui::EndChild();
+        ImGui::Checkbox("In a new tab", &m_openInNewTab);
+        ImGui::SameLine();
         ImGui::TextDisabled("Level files under assets/. Double-click one to open it.");
         if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
             ImGui::CloseCurrentPopup();
@@ -2591,6 +2659,14 @@ void Editor::DrawDialogs(app::Application& app) {
     place(460.0f);
     if (ImGui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
         ImGui::TextWrapped("%s has changes that are not saved.", m_levelPath.c_str());
+        std::size_t others = 0;
+        for (std::size_t index = 0; index < m_tabs.size(); ++index) {
+            others += index != m_activeTab && TabDirty(*m_tabs[index]) ? 1 : 0;
+        }
+        if (m_pending == Pending::Quit && others > 0) {
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f),
+                               "%zu other tabs have changes too: Don't save drops them.", others);
+        }
         if (ImGui::Button("Save")) {
             ImGui::CloseCurrentPopup();
             if (Save()) {
@@ -2623,7 +2699,7 @@ void Editor::DrawDialogs(app::Application& app) {
                 scene::Level recovered = std::move(*m_recovered);
                 m_recovered.reset();
                 Change("Recover the autosave", [&recovered](scene::Level& level) { level = std::move(recovered); });
-                m_history.Commit(m_level);
+                m_history.Commit(Snapshot());
                 m_status = "Recovered the autosave: save to keep it";
             }
         }
@@ -2655,18 +2731,26 @@ void Editor::DrawDockspace() {
         ImGui::DockBuilderDockWindow("Materials", right);
         ImGui::DockBuilderDockWindow("Assets", bottom);
         ImGui::DockBuilderDockWindow("Status", bottom);
+        ImGui::DockBuilderDockWindow("History", bottom);
         ImGui::DockBuilderFinish(dockspace);
     }
     m_layoutBuilt = true;
-    // A layout saved before the browser existed: it joins the status.
-    if (ImGui::FindWindowSettingsByID(ImHashStr("Assets")) == nullptr) {
-        if (const ImGuiWindow* status = ImGui::FindWindowByName("Status"); status != nullptr && status->DockId != 0) {
-            ImGui::DockBuilderDockWindow("Assets", status->DockId);
+    // A layout saved before the browser or the history existed: they join the status.
+    for (const char* window : {"Assets", "History"}) {
+        if (ImGui::FindWindowSettingsByID(ImHashStr(window)) == nullptr) {
+            if (const ImGuiWindow* status = ImGui::FindWindowByName("Status");
+                status != nullptr && status->DockId != 0) {
+                ImGui::DockBuilderDockWindow(window, status->DockId);
+            }
         }
     }
     if (const ImGuiDockNode* central = ImGui::DockBuilderGetCentralNode(dockspace)) {
         m_central = Rect{{central->Pos.x, central->Pos.y},
                          {central->Pos.x + central->Size.x, central->Pos.y + central->Size.y}};
+        // The tabs of the open documents take a row at the top (ADR-0109).
+        const float row = ImGui::GetFrameHeight() + 6.0f;
+        m_tabBar = Rect{m_central.min, {m_central.max.x, m_central.min.y + row}};
+        m_central.min.y += row;
     }
     LayOutPanes();
     UsePane(m_active);
@@ -3591,6 +3675,265 @@ void Editor::DropToFloor() {
     m_status = std::format("Dropped {} entities onto what is under them", offsets.size());
 }
 
+Document Editor::Snapshot() const {
+    return Document{
+        .level = m_level, .materials = m_materialValues, .sequencePath = m_sequencePath, .sequence = m_sequenceShadow};
+}
+
+void Editor::TrackPanelEdits() {
+    // The material panel's edits of the frame: the state before them opens a step, unless one is open (ADR-0109).
+    for (const MaterialPanel::Edit& edit : m_materials.TakeEdits()) {
+        m_materialFirst.try_emplace(edit.key, edit.before);
+        m_materialValues.try_emplace(edit.key, edit.before);
+        m_history.Begin(Snapshot(), "Edit a material");
+        m_materialValues[edit.key] = edit.after;
+    }
+    // The sequence panel's: compared with what was last seen of the same file.
+    if (m_sequences.Path() != m_sequencePath) {
+        m_sequencePath = m_sequences.Path();
+        m_sequenceShadow = m_sequences.Sequence();
+    } else if (m_sequences.Sequence() != m_sequenceShadow) {
+        m_history.Begin(Snapshot(), "Edit the sequence");
+        m_sequenceShadow = m_sequences.Sequence();
+    }
+}
+
+void Editor::GoTo(Document document) {
+    const scene::Level before = std::move(m_level);
+    m_level = std::move(document.level);
+    SyncShown(before, m_isolated);
+    std::erase_if(m_selection, [this](std::uint64_t id) { return m_level.Find(id) == nullptr; });
+    m_selected = m_selection.empty() ? 0 : m_selection.back();
+    m_eulerOf = 0;
+    // Materials: each one edited takes the state's value, or what it had before its first edit.
+    if (m_scene != nullptr) {
+        std::set<MaterialKey> keys;
+        for (const auto& [key, values] : m_materialValues) {
+            keys.insert(key);
+        }
+        for (const auto& [key, values] : document.materials) {
+            keys.insert(key);
+        }
+        for (const MaterialKey& key : keys) {
+            const auto wanted = document.materials.find(key);
+            const auto first = m_materialFirst.find(key);
+            if (wanted != document.materials.end()) {
+                m_materials.Restore(m_scene->Assets(), key, wanted->second);
+            } else if (first != m_materialFirst.end()) {
+                m_materials.Restore(m_scene->Assets(), key, first->second);
+            }
+        }
+    }
+    m_materialValues = std::move(document.materials);
+    // What Restore did is the history's own move, not an edit to record.
+    static_cast<void>(m_materials.TakeEdits());
+    // The sequence: the state's file and cues, opened again if another is open now.
+    if (!document.sequencePath.empty()) {
+        if (document.sequencePath != m_sequences.Path()) {
+            m_sequences.Open(m_assetRoot, document.sequencePath);
+        }
+        if (document.sequence != m_sequences.Sequence()) {
+            m_sequences.SetSequence(document.sequence);
+        }
+    }
+    m_sequencePath = m_sequences.Path();
+    m_sequenceShadow = m_sequences.Sequence();
+}
+
+void Editor::DrawHistory() {
+    if (!ImGui::Begin("History")) {
+        ImGui::End();
+        return;
+    }
+    // Every step that can be undone, oldest first; a click goes back to just after it.
+    const std::vector<std::string> labels = m_history.UndoLabels();
+    if (ImGui::Selectable("(as opened)", labels.empty())) {
+        while (m_history.CanUndo()) {
+            Undo();
+        }
+    }
+    std::optional<std::size_t> backTo;
+    for (std::size_t step = 0; step < labels.size(); ++step) {
+        const std::string label = std::format("{}##step{}", labels[step], step);
+        if (ImGui::Selectable(label.c_str(), step + 1 == labels.size())) {
+            backTo = step;
+        }
+    }
+    if (labels.empty()) {
+        ImGui::TextDisabled("Every edit of the level, its materials and its sequence shows here.");
+    }
+    if (m_history.CanRedo()) {
+        ImGui::TextDisabled("Redo (Ctrl+Y): %s", m_history.RedoLabel().c_str());
+    }
+    ImGui::End();
+    if (backTo) {
+        for (std::size_t undone = labels.size() - 1 - *backTo; undone > 0; --undone) {
+            Undo();
+        }
+    }
+}
+
+bool Editor::TabDirty(const Tab& tab) const {
+    return tab.history.Current() != tab.savedRevision;
+}
+
+void Editor::StashTab(Tab& tab) {
+    tab.levelPath = std::move(m_levelPath);
+    tab.level = std::move(m_level);
+    tab.instance = std::move(m_instance);
+    tab.cameraEntity = m_cameraEntity;
+    tab.camera = m_camera;
+    tab.history = std::move(m_history);
+    tab.savedRevision = m_savedRevision;
+    tab.autosavedRevision = m_autosavedRevision;
+    tab.selection = std::move(m_selection);
+    tab.selected = m_selected;
+    tab.isolated = std::move(m_isolated);
+    tab.materialValues = std::move(m_materialValues);
+    tab.materialFirst = std::move(m_materialFirst);
+    tab.panes = m_panes;
+    for (Pane& pane : m_panes) {
+        // A pane's last image belongs to the document it showed.
+        pane.snapshot = {};
+        pane.depth.reset();
+    }
+    m_history = History{};
+    m_level = {};
+    m_selection.clear();
+    m_selected = 0;
+    m_scene = nullptr;
+}
+
+void Editor::RestoreTab(Tab& tab) {
+    m_levelPath = std::move(tab.levelPath);
+    m_level = std::move(tab.level);
+    m_instance = std::move(tab.instance);
+    m_cameraEntity = tab.cameraEntity;
+    m_camera = tab.camera;
+    m_history = std::move(tab.history);
+    m_savedRevision = tab.savedRevision;
+    m_autosavedRevision = tab.autosavedRevision;
+    m_selection = std::move(tab.selection);
+    m_selected = tab.selected;
+    m_isolated = std::move(tab.isolated);
+    m_materialValues = std::move(tab.materialValues);
+    m_materialFirst = std::move(tab.materialFirst);
+    m_panes = tab.panes;
+    tab.panes = {};
+    m_scene = m_app->CurrentScene();
+    if (m_scene != nullptr) {
+        m_picker.Rebuild(m_scene->World());
+    }
+    m_navigation.reset();
+    m_navigationEdges.clear();
+    m_materials.Clear();
+    m_followedSelection = ~std::uint64_t{0};
+    m_eulerOf = 0;
+    m_stroking = false;
+    m_decalImages.clear();
+    m_cutView = true;
+    m_sinceAutosave = 0.0f;
+}
+
+void Editor::SwitchTab(std::size_t index) {
+    if (index == m_activeTab || index >= m_tabs.size() || m_loading != nullptr) {
+        return;
+    }
+    m_history.Commit(Snapshot());
+    Tab& from = *m_tabs[m_activeTab];
+    Tab& to = *m_tabs[index];
+    StashTab(from);
+    from.scene = m_app->ExchangeScene(std::move(to.scene));
+    m_activeTab = index;
+    m_selectTab = true;
+    RestoreTab(to);
+    if (m_browser != nullptr) {
+        m_browser->Open(std::filesystem::path(m_levelPath).parent_path().generic_string());
+    }
+    m_status = std::format("{}", m_levelPath);
+    UpdateTitle(*m_app);
+}
+
+void Editor::CloseTab(std::size_t index) {
+    if (index >= m_tabs.size() || m_tabs.size() < 2 || m_loading != nullptr) {
+        return;
+    }
+    if (index == m_activeTab) {
+        SwitchTab(index == 0 ? 1 : index - 1);
+    }
+    // What the tab holds goes: its entities before its scene.
+    Tab& closed = *m_tabs[index];
+    const std::string path = closed.levelPath;
+    for (Pane& pane : closed.panes) {
+        if (!pane.snapshot.IsNull()) {
+            m_app->Renderer().Device().DestroyTexture(pane.snapshot);
+        }
+    }
+    closed.instance.reset();
+    closed.scene.reset();
+    m_tabs.erase(m_tabs.begin() + static_cast<std::ptrdiff_t>(index));
+    if (m_activeTab > index) {
+        --m_activeTab;
+    }
+    m_status = std::format("Closed {}", path);
+}
+
+void Editor::DrawTabs() {
+    // A row of tabs over the view, one per open document.
+    ImGui::SetNextWindowPos({m_tabBar.min.x, m_tabBar.min.y});
+    ImGui::SetNextWindowSize({m_tabBar.Size().x, m_tabBar.Size().y});
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                                   ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
+                                   ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4.0f, 2.0f));
+    if (ImGui::Begin("##documents", nullptr, flags) &&
+        ImGui::BeginTabBar("documents", ImGuiTabBarFlags_Reorderable | ImGuiTabBarFlags_FittingPolicyScroll)) {
+        std::optional<std::size_t> chosen;
+        std::optional<std::size_t> closing;
+        for (std::size_t index = 0; index < m_tabs.size(); ++index) {
+            const bool active = index == m_activeTab;
+            const std::string& path = active ? m_levelPath : m_tabs[index]->levelPath;
+            const bool dirty = active ? Dirty() : TabDirty(*m_tabs[index]);
+            const std::string name = std::filesystem::path(path).filename().generic_string();
+            const std::string label = std::format("{}{}###tab{}", name.empty() ? "(untitled)" : name, dirty ? " *" : "",
+                                                  static_cast<const void*>(m_tabs[index].get()));
+            bool open = true;
+            ImGuiTabItemFlags itemFlags = ImGuiTabItemFlags_None;
+            if (active && m_selectTab) {
+                itemFlags |= ImGuiTabItemFlags_SetSelected;
+            }
+            if (ImGui::BeginTabItem(label.c_str(), m_tabs.size() > 1 ? &open : nullptr, itemFlags)) {
+                if (!active && !m_selectTab) {
+                    chosen = index;
+                }
+                ImGui::EndTabItem();
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s", path.c_str());
+            }
+            if (!open) {
+                closing = index;
+            }
+        }
+        m_selectTab = false;
+        ImGui::EndTabBar();
+        if (closing) {
+            m_pendingCloseTab = *closing;
+        } else if (chosen) {
+            SwitchTab(*chosen);
+        }
+    }
+    ImGui::End();
+    ImGui::PopStyleVar();
+    if (m_pendingCloseTab) {
+        const std::size_t index = *std::exchange(m_pendingCloseTab, std::nullopt);
+        // Unsaved changes are asked about in the tab being closed.
+        SwitchTab(index);
+        m_closingTab = index;
+        Guard(*m_app, Pending::CloseTab);
+    }
+}
+
 void Editor::DrawShowMenu() {
     ImGui::MenuItem("Game view", "G", &m_show.gameView);
     if (ImGui::IsItemHovered()) {
@@ -3773,7 +4116,7 @@ void Editor::DrawHelp() {
         return;
     }
     if (ImGui::Begin("Shortcuts", &m_showHelp, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize)) {
-        constexpr std::array<std::array<const char*, 2>, 33> kKeys{{
+        constexpr std::array<std::array<const char*, 2>, 34> kKeys{{
             {"Right mouse + WASD, Q, E", "Fly; Shift goes faster, the wheel sets the speed"},
             {"Wheel, middle mouse", "Walk forward and back, pan"},
             {"Click, Ctrl+click", "Select, add to the selection"},
@@ -3798,6 +4141,7 @@ void Editor::DrawHelp() {
             {"1 to 9", "Go to a camera bookmark"},
             {"Ctrl+1 to Ctrl+9", "Set a camera bookmark"},
             {"Ctrl+N, Ctrl+O", "New level, open a level"},
+            {"Ctrl+Shift+O, Ctrl+W, Ctrl+Tab", "Open in a new tab, close the tab, go to the next"},
             {"Ctrl+S, Ctrl+Shift+S", "Save, save as"},
             {"F5, Ctrl+F5", "Play from the start, from the camera"},
             {"F1", "This window"},

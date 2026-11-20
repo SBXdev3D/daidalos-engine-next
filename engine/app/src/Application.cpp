@@ -243,6 +243,16 @@ void Application::SetScene(std::unique_ptr<scene::Scene> scene) {
     }
 }
 
+std::unique_ptr<scene::Scene> Application::ExchangeScene(std::unique_ptr<scene::Scene> scene) {
+    // A scene set but not yet applied goes first, so that the one given back is the one shown.
+    ApplyPendingScene();
+    std::unique_ptr<scene::Scene> previous = std::move(m_currentScene);
+    m_currentScene = std::move(scene);
+    m_sceneFrames = 0;
+    m_probeMilliseconds = 0.0;
+    return previous;
+}
+
 void Application::ApplyPendingScene() {
     if (m_scenePending) {
         m_scenePending = false;

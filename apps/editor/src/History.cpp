@@ -4,79 +4,31 @@
 
 #include "History.hpp"
 
-#include <utility>
+#include <algorithm>
+#include <cmath>
 
 using namespace daidalos;
 
 namespace editor {
 
-namespace {
-
-const std::string kNothing;
-
-} // namespace
-
-void History::Begin(const scene::Level& current, std::string_view label) {
-    if (!m_open) {
-        m_open = Step{.label = std::string(label), .level = current, .revision = m_revision};
-    }
+bool SameValues(const resources::MaterialData& a, const resources::MaterialData& b) {
+    const auto distance = [](float x, float y) { return (std::isinf(x) && std::isinf(y)) || x == y; };
+    return a.baseColorFactor == b.baseColorFactor && a.emissiveFactor == b.emissiveFactor &&
+           a.emissiveLight == b.emissiveLight && a.surface == b.surface && a.metallicFactor == b.metallicFactor &&
+           a.roughnessFactor == b.roughnessFactor && a.normalScale == b.normalScale &&
+           a.occlusionStrength == b.occlusionStrength && a.alphaCutoff == b.alphaCutoff &&
+           a.doubleSided == b.doubleSided && a.transmission == b.transmission && a.ior == b.ior &&
+           a.porosity == b.porosity && a.heightScale == b.heightScale && a.clearcoat == b.clearcoat &&
+           a.clearcoatRoughness == b.clearcoatRoughness && a.sheenColor == b.sheenColor &&
+           a.sheenRoughness == b.sheenRoughness && a.thickness == b.thickness &&
+           a.attenuationColor == b.attenuationColor && distance(a.attenuationDistance, b.attenuationDistance);
 }
 
-void History::Commit(const scene::Level& current) {
-    if (!m_open) {
-        return;
-    }
-    Step step = std::move(*m_open);
-    m_open.reset();
-    if (step.level == current) {
-        return;
-    }
-    m_undo.push_back(std::move(step));
-    if (m_undo.size() > kMaxSteps) {
-        m_undo.erase(m_undo.begin());
-    }
-    m_redo.clear();
-    m_revision = m_nextRevision++;
-}
-
-const std::string& History::UndoLabel() const {
-    return m_undo.empty() ? kNothing : m_undo.back().label;
-}
-
-const std::string& History::RedoLabel() const {
-    return m_redo.empty() ? kNothing : m_redo.back().label;
-}
-
-std::optional<scene::Level> History::Undo(const scene::Level& current) {
-    Commit(current);
-    if (m_undo.empty()) {
-        return std::nullopt;
-    }
-    Step step = std::move(m_undo.back());
-    m_undo.pop_back();
-    m_redo.push_back(Step{.label = step.label, .level = current, .revision = m_revision});
-    m_revision = step.revision;
-    return std::move(step.level);
-}
-
-std::optional<scene::Level> History::Redo(const scene::Level& current) {
-    Commit(current);
-    if (m_redo.empty()) {
-        return std::nullopt;
-    }
-    Step step = std::move(m_redo.back());
-    m_redo.pop_back();
-    m_undo.push_back(Step{.label = step.label, .level = current, .revision = m_revision});
-    m_revision = step.revision;
-    return std::move(step.level);
-}
-
-void History::Clear() {
-    m_open.reset();
-    m_undo.clear();
-    m_redo.clear();
-    m_revision = 0;
-    m_nextRevision = 1;
+bool Document::operator==(const Document& other) const {
+    return level == other.level && sequencePath == other.sequencePath && sequence == other.sequence &&
+           std::ranges::equal(materials, other.materials, [](const auto& a, const auto& b) {
+               return a.first == b.first && SameValues(a.second, b.second);
+           });
 }
 
 } // namespace editor

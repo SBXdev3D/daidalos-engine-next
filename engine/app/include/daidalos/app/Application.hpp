@@ -121,6 +121,10 @@ public:
     /// before the renderer, also when OnStart fails. Once in place, its systems run every frame and
     /// its world is extracted for rendering.
     void SetScene(std::unique_ptr<scene::Scene> scene);
+    /// Puts a scene in place of the current one at once and gives the current one back, alive: an editor's tabs
+    /// keep the scenes of the documents not shown (ADR-0109). Call it from a handler's OnUpdate, not from a
+    /// scene's own systems.
+    [[nodiscard]] std::unique_ptr<scene::Scene> ExchangeScene(std::unique_ptr<scene::Scene> scene);
     /// Null without a scene.
     [[nodiscard]] scene::Scene* CurrentScene() noexcept { return m_currentScene.get(); }
 

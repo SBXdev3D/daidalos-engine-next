@@ -18,8 +18,8 @@
 namespace editor {
 
 /// The sequence panel (ADR-0079): a trigger's .sequence.json as a timeline of cues to add, move, change and
-/// delete, played in the editor's scene, and saved. Its edits are not steps of the level's undo history;
-/// Revert reads the file again.
+/// delete, played in the editor's scene, and saved. Its edits are steps of the editor's history (ADR-0109): the
+/// editor compares the sequence each frame, and puts one back through SetSequence.
 class SequencePanel {
 public:
     /// What the editor gives the panel each frame.
@@ -40,6 +40,8 @@ public:
     [[nodiscard]] const daidalos::scene::Sequence& Sequence() const { return m_sequence; }
     [[nodiscard]] bool Dirty() const { return m_sequence != m_saved; }
     bool Save(const std::filesystem::path& assetRoot);
+    /// Replaces the cues, as undo or redo does; the file is not touched.
+    void SetSequence(daidalos::scene::Sequence sequence);
     void Close();
 
     /// The window. Returns what it asks the editor to do: play the sequence as it is, or put the scene back.
