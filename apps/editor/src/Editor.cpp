@@ -302,7 +302,9 @@ void Editor::FinishOpen(app::Application& app) {
     const std::string levelPath = loading->path;
     scene::Scene& target = *loading->scene;
     m_instance = std::make_unique<scene::LevelInstance>(target, levelPath);
-    m_instance->Build(loading->level);
+    m_isolated.clear();
+    m_navigation.reset();
+    m_instance->Build(ShownLevel(loading->level, m_isolated));
     m_cameraEntity = target.World().Create();
     target.World().Add<ecs::LocalTransform>(m_cameraEntity);
     target.World().Add<scene::Camera>(
@@ -473,8 +475,16 @@ void Editor::Change(std::string_view label, const std::function<void(scene::Leve
     m_history.Begin(m_level, label);
     const scene::Level before = m_level;
     edit(m_level);
-    if (m_instance != nullptr && m_instance->Sync(before, m_level).models) {
+    SyncShown(before, m_isolated);
+}
+
+void Editor::SyncShown(const scene::Level& before, const std::set<std::uint64_t>& isolatedBefore) {
+    // Hidden entities, and those left out while others are isolated, are not in the scene (ADR-0107).
+    std::erase_if(m_isolated, [this](std::uint64_t id) { return m_level.Find(id) == nullptr; });
+    if (m_instance != nullptr &&
+        m_instance->Sync(ShownLevel(before, isolatedBefore), ShownLevel(m_level, m_isolated)).models) {
         m_picker.Rebuild(m_scene->World());
+        m_navigation.reset();
     }
 }
 
@@ -489,9 +499,7 @@ void Editor::Apply(const scene::LevelEntity& after, std::string_view label) {
 void Editor::GoTo(scene::Level level) {
     const scene::Level before = std::move(m_level);
     m_level = std::move(level);
-    if (m_instance != nullptr && m_instance->Sync(before, m_level).models) {
-        m_picker.Rebuild(m_scene->World());
-    }
+    SyncShown(before, m_isolated);
     std::erase_if(m_selection, [this](std::uint64_t id) { return m_level.Find(id) == nullptr; });
     m_selected = m_selection.empty() ? 0 : m_selection.back();
     m_eulerOf = 0;
@@ -740,6 +748,263 @@ void Editor::Reparent(std::uint64_t child, std::uint64_t parent) {
     Apply(moved, std::format("Move {} under {}", EntityLabel(*entity),
                              target != nullptr ? EntityLabel(*target) : std::string("the root")));
     m_history.Commit(m_level);
+}
+
+void Editor::SetHidden(const std::vector<std::uint64_t>& ids, bool hidden) {
+    if (ids.empty()) {
+        return;
+    }
+    m_history.Commit(m_level);
+    Change(std::format("{} {} entities", hidden ? "Hide" : "Show", ids.size()), [&](scene::Level& level) {
+        for (const std::uint64_t id : ids) {
+            if (scene::LevelEntity* entity = level.Find(id)) {
+                entity->editing.hidden = hidden;
+            }
+        }
+    });
+    m_history.Commit(m_level);
+    if (hidden) {
+        std::erase_if(m_selection, [&ids](std::uint64_t id) { return std::ranges::find(ids, id) != ids.end(); });
+        m_selected = m_selection.empty() ? 0 : m_selection.back();
+        m_status = std::format("Hid {} entities: Alt+H shows everything", ids.size());
+    }
+}
+
+void Editor::ShowEverything() {
+    std::vector<std::uint64_t> hidden;
+    for (const scene::LevelEntity& entity : m_level.entities) {
+        if (entity.editing.hidden) {
+            hidden.push_back(entity.id);
+        }
+    }
+    const std::set<std::uint64_t> isolatedBefore = std::exchange(m_isolated, {});
+    if (!isolatedBefore.empty()) {
+        SyncShown(m_level, isolatedBefore);
+    }
+    SetHidden(hidden, false);
+    m_status = "Everything shows";
+}
+
+void Editor::ToggleIsolate() {
+    const std::set<std::uint64_t> before = m_isolated;
+    if (m_isolated.empty()) {
+        const std::vector<std::uint64_t> roots = SelectionRoots();
+        m_isolated.insert(roots.begin(), roots.end());
+        m_status = std::format("Showing {} entities alone: Shift+H shows the rest again", roots.size());
+    } else {
+        m_isolated.clear();
+        m_status = "Showing the whole level again";
+    }
+    SyncShown(m_level, before);
+}
+
+void Editor::SetLocked(const std::vector<std::uint64_t>& ids, bool locked) {
+    if (ids.empty()) {
+        return;
+    }
+    m_history.Commit(m_level);
+    Change(std::format("{} {} entities", locked ? "Lock" : "Unlock", ids.size()), [&](scene::Level& level) {
+        for (const std::uint64_t id : ids) {
+            if (scene::LevelEntity* entity = level.Find(id)) {
+                entity->editing.locked = locked;
+            }
+        }
+    });
+    m_history.Commit(m_level);
+    m_status = locked ? std::format("Locked {} entities: clicks in the view go through them", ids.size())
+                      : std::format("Unlocked {} entities", ids.size());
+}
+
+void Editor::MoveToFolder(const std::vector<std::uint64_t>& ids, const std::string& folder) {
+    if (ids.empty() || m_instance == nullptr) {
+        return;
+    }
+    // Folders hold entities at the root: one under another leaves it, where it stands in the world.
+    ecs::World& world = m_scene->World();
+    ecs::PropagateTransforms(world);
+    std::vector<std::pair<std::uint64_t, math::Transform>> placed;
+    for (const std::uint64_t id : ids) {
+        const scene::LevelEntity* entity = m_level.Find(id);
+        if (entity == nullptr) {
+            continue;
+        }
+        math::Transform transform = entity->transform;
+        if (entity->parent != 0) {
+            const ecs::Entity created = m_instance->Find(id);
+            if (!created.IsNull()) {
+                transform = Decompose(world.Get<ecs::WorldTransform>(created).matrix);
+            }
+        }
+        placed.emplace_back(id, transform);
+    }
+    m_history.Commit(m_level);
+    Change(folder.empty() ? std::string("Take out of folders") : std::format("Put in {}", folder),
+           [&](scene::Level& level) {
+               for (const auto& [id, transform] : placed) {
+                   if (scene::LevelEntity* entity = level.Find(id)) {
+                       entity->parent = 0;
+                       entity->transform = transform;
+                       entity->editing.folder = folder;
+                   }
+               }
+           });
+    m_history.Commit(m_level);
+    m_status = folder.empty() ? std::format("{} entities out of folders", placed.size())
+                              : std::format("{} entities in {}", placed.size(), folder);
+}
+
+std::vector<glm::vec3> Editor::RootPositions(const std::vector<std::uint64_t>& roots) {
+    std::vector<glm::vec3> positions;
+    ecs::World& world = m_scene->World();
+    ecs::PropagateTransforms(world);
+    for (const std::uint64_t id : roots) {
+        const ecs::Entity created = m_instance->Find(id);
+        positions.push_back(created.IsNull() ? glm::vec3(0.0f)
+                                             : glm::vec3(world.Get<ecs::WorldTransform>(created).matrix[3]));
+    }
+    return positions;
+}
+
+void Editor::MoveBy(const std::vector<std::pair<std::uint64_t, glm::vec3>>& offsets, std::string_view label) {
+    ecs::World& world = m_scene->World();
+    std::vector<std::pair<std::uint64_t, glm::vec3>> local;
+    for (const auto& [id, offset] : offsets) {
+        const ecs::Entity created = m_instance->Find(id);
+        if (created.IsNull()) {
+            continue;
+        }
+        // A world offset, in the space of what holds the entity.
+        const ecs::Entity parent = world.Parent(created);
+        const glm::mat4 parentWorld = parent.IsNull() ? glm::mat4(1.0f) : world.Get<ecs::WorldTransform>(parent).matrix;
+        local.emplace_back(id, glm::vec3(glm::inverse(parentWorld) * glm::vec4(offset, 0.0f)));
+    }
+    m_history.Commit(m_level);
+    Change(label, [&](scene::Level& level) {
+        for (const auto& [id, offset] : local) {
+            if (scene::LevelEntity* entity = level.Find(id)) {
+                entity->transform.translation += offset;
+            }
+        }
+    });
+    m_history.Commit(m_level);
+}
+
+void Editor::AlignSelection(int axis, AlignTo to) {
+    if (m_instance == nullptr) {
+        return;
+    }
+    std::vector<std::uint64_t> roots = SelectionRoots();
+    std::erase_if(roots, [this](std::uint64_t id) { return LockedInEditor(m_level, id); });
+    const std::vector<glm::vec3> before = RootPositions(roots);
+    const std::vector<glm::vec3> after = Aligned(before, axis, to);
+    std::vector<std::pair<std::uint64_t, glm::vec3>> offsets;
+    for (std::size_t index = 0; index < roots.size(); ++index) {
+        offsets.emplace_back(roots[index], after[index] - before[index]);
+    }
+    constexpr std::array<const char*, 3> kAxes{"X", "Y", "Z"};
+    MoveBy(offsets, std::format("Align {} entities on {}", roots.size(), kAxes[static_cast<std::size_t>(axis)]));
+    m_status = std::format("Aligned {} entities on {}", roots.size(), kAxes[static_cast<std::size_t>(axis)]);
+}
+
+void Editor::SpreadSelection(int axis) {
+    if (m_instance == nullptr) {
+        return;
+    }
+    std::vector<std::uint64_t> roots = SelectionRoots();
+    std::erase_if(roots, [this](std::uint64_t id) { return LockedInEditor(m_level, id); });
+    const std::vector<glm::vec3> before = RootPositions(roots);
+    const std::vector<glm::vec3> after = Spread(before, axis);
+    std::vector<std::pair<std::uint64_t, glm::vec3>> offsets;
+    for (std::size_t index = 0; index < roots.size(); ++index) {
+        offsets.emplace_back(roots[index], after[index] - before[index]);
+    }
+    constexpr std::array<const char*, 3> kAxes{"X", "Y", "Z"};
+    MoveBy(offsets, std::format("Spread {} entities along {}", roots.size(), kAxes[static_cast<std::size_t>(axis)]));
+    m_status = std::format("Spread {} entities along {}", roots.size(), kAxes[static_cast<std::size_t>(axis)]);
+}
+
+Bounds Editor::SelectionBounds() {
+    Bounds bounds;
+    if (m_instance == nullptr) {
+        return bounds;
+    }
+    ecs::World& world = m_scene->World();
+    ecs::PropagateTransforms(world);
+    for (const std::uint64_t id : SelectionRoots()) {
+        const ecs::Entity entity = m_instance->Find(id);
+        if (entity.IsNull()) {
+            continue;
+        }
+        const Bounds own = m_picker.WorldBounds(world, entity);
+        if (own.Empty()) {
+            bounds.Add(glm::vec3(world.Get<ecs::WorldTransform>(entity).matrix[3]));
+        } else {
+            bounds.Add(own);
+        }
+    }
+    return bounds;
+}
+
+void Editor::Measure(app::Application& app) {
+    const ImGuiIO& io = ImGui::GetIO();
+    const glm::vec2 mouse(io.MousePos.x, io.MousePos.y);
+    const auto pointAt = [this, &mouse]() -> glm::vec3 {
+        const std::optional<PickHit> hit = SurfaceAt(mouse);
+        glm::vec3 point = hit ? hit->position : PlaceAt(mouse);
+        if (m_snap != ImGui::GetIO().KeyCtrl) {
+            // Snapped as the gizmo snaps, to the move step.
+            point = glm::round(point / m_snapSteps.x) * m_snapSteps.x;
+        }
+        return point;
+    };
+    if (m_measureHeld && !app.Input().IsDown(platform::MouseButton::Left)) {
+        m_measureHeld = false;
+        return;
+    }
+    if (m_measureHeld) {
+        m_measureTo = pointAt();
+        return;
+    }
+    if (app.Input().WasPressed(platform::MouseButton::Left) && MouseInViewport() && !io.WantCaptureMouse &&
+        m_scene != nullptr) {
+        m_measureHeld = true;
+        m_measureFrom = pointAt();
+        m_measureTo = m_measureFrom;
+    }
+}
+
+void Editor::DrawMeasure() {
+    if (!m_measureFrom || !m_measureTo) {
+        return;
+    }
+    ImDrawList* draw = ImGui::GetBackgroundDrawList();
+    draw->PushClipRect({m_viewportMin.x, m_viewportMin.y}, {m_viewportMax.x, m_viewportMax.y}, true);
+    const glm::vec3 from = *m_measureFrom;
+    const glm::vec3 to = *m_measureTo;
+    const ImU32 color = IM_COL32(255, 230, 90, 255);
+    Line3D(draw, from, to, color, 2.0f);
+    // The three legs along the axes, faint.
+    const glm::vec3 alongX(to.x, from.y, from.z);
+    const glm::vec3 alongXZ(to.x, from.y, to.z);
+    Line3D(draw, from, alongX, IM_COL32(255, 90, 90, 150), 1.0f);
+    Line3D(draw, alongX, alongXZ, IM_COL32(90, 140, 255, 150), 1.0f);
+    Line3D(draw, alongXZ, to, IM_COL32(90, 255, 90, 150), 1.0f);
+    for (const glm::vec3& end : {from, to}) {
+        if (const std::optional<glm::vec2> at = Project(end)) {
+            draw->AddCircleFilled({at->x, at->y}, 4.0f, color);
+        }
+    }
+    if (const std::optional<glm::vec2> middle = Project((from + to) * 0.5f)) {
+        const glm::vec3 delta = to - from;
+        const std::string label =
+            std::format("{:.2f} m  (x {:.2f}, y {:.2f}, z {:.2f})", glm::length(delta), delta.x, delta.y, delta.z);
+        const ImVec2 size = ImGui::CalcTextSize(label.c_str());
+        const ImVec2 corner(middle->x - size.x * 0.5f, middle->y - size.y - 8.0f);
+        draw->AddRectFilled({corner.x - 4.0f, corner.y - 2.0f}, {corner.x + size.x + 4.0f, corner.y + size.y + 2.0f},
+                            IM_COL32(20, 20, 20, 210), 3.0f);
+        draw->AddText(corner, color, label.c_str());
+    }
+    draw->PopClipRect();
 }
 
 bool Editor::MakePrefab(const std::string& path) {
@@ -1074,8 +1339,9 @@ void Editor::RemakeScene() {
     if (m_instance == nullptr) {
         return;
     }
-    m_instance->Sync(m_level, scene::Level{});
-    m_instance->Sync(scene::Level{}, m_level);
+    const scene::Level shown = ShownLevel(m_level, m_isolated);
+    m_instance->Sync(shown, scene::Level{});
+    m_instance->Sync(scene::Level{}, shown);
     m_picker.Rebuild(m_scene->World());
     m_followedSelection = ~std::uint64_t{0};
     m_previewTime.reset();
@@ -1403,7 +1669,10 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
             DrawShownExtras();
             DrawSelectedCue();
         }
-        if (m_painting) {
+        if (m_measuring) {
+            Measure(app);
+            DrawMeasure();
+        } else if (m_painting) {
             DrawBrush();
             PaintStrokes(app);
         } else {
@@ -1504,6 +1773,10 @@ void Editor::HandleShortcuts(app::Application& /*app*/) {
         return;
     }
     if (io.KeyAlt) {
+        if (pressed(ImGuiKey_H)) {
+            ShowEverything();
+            return;
+        }
         // Alt+1 to Alt+4: the viewport's lighting (ADR-0105).
         constexpr std::array<Lighting, 4> kModes{Lighting::Lit, Lighting::Unlit, Lighting::LightingOnly,
                                                  Lighting::EditorLight};
@@ -1548,10 +1821,31 @@ void Editor::HandleShortcuts(app::Application& /*app*/) {
     }
     if (pressed(ImGuiKey_B)) {
         m_painting = !m_painting;
+        m_measuring = false;
+    }
+    if (pressed(ImGuiKey_H)) {
+        if (io.KeyShift) {
+            ToggleIsolate();
+        } else {
+            SetHidden(SelectionRoots(), true);
+        }
+    }
+    if (pressed(ImGuiKey_L)) {
+        const scene::LevelEntity* selected = Selected();
+        SetLocked(SelectionRoots(), selected == nullptr || !selected->editing.locked);
+    }
+    if (pressed(ImGuiKey_M)) {
+        m_measuring = !m_measuring;
+        m_painting = false;
+        m_measureFrom.reset();
+        m_measureTo.reset();
+        m_status = m_measuring ? "Measuring: drag between two surfaces; M or Esc stops" : "";
     }
     if (pressed(ImGuiKey_Escape)) {
         if (m_painting) {
             m_painting = false;
+        } else if (m_measuring) {
+            m_measuring = false;
         } else {
             Select(0);
         }
@@ -1752,6 +2046,57 @@ void Editor::DrawMenu(app::Application& app) {
         }
         if (ImGui::MenuItem("Select none", "Esc", false, !m_selection.empty())) {
             Select(0);
+        }
+        ImGui::Separator();
+        ImGui::Separator();
+        if (ImGui::MenuItem("Hide", "H", false, !m_selection.empty())) {
+            SetHidden(SelectionRoots(), true);
+        }
+        if (ImGui::MenuItem("Show everything", "Alt+H")) {
+            ShowEverything();
+        }
+        if (ImGui::MenuItem(m_isolated.empty() ? "Isolate" : "Stop isolating", "Shift+H", false,
+                            !m_selection.empty() || !m_isolated.empty())) {
+            ToggleIsolate();
+        }
+        if (ImGui::MenuItem("Lock or unlock", "L", false, !m_selection.empty())) {
+            const scene::LevelEntity* selected = Selected();
+            SetLocked(SelectionRoots(), selected == nullptr || !selected->editing.locked);
+        }
+        if (ImGui::MenuItem("Put in a folder...", nullptr, false, !m_selection.empty())) {
+            const scene::LevelEntity* selected = Selected();
+            m_pathField = selected != nullptr ? selected->editing.folder : std::string();
+            m_openPopup = "Folder";
+        }
+        if (ImGui::BeginMenu("Align", m_selection.size() > 1)) {
+            constexpr std::array<const char*, 3> kAxes{"X", "Y", "Z"};
+            for (int axis = 0; axis < 3; ++axis) {
+                if (ImGui::MenuItem(std::format("Lowest {}", kAxes[static_cast<std::size_t>(axis)]).c_str())) {
+                    AlignSelection(axis, AlignTo::Min);
+                }
+                if (ImGui::MenuItem(std::format("Middle {}", kAxes[static_cast<std::size_t>(axis)]).c_str())) {
+                    AlignSelection(axis, AlignTo::Center);
+                }
+                if (ImGui::MenuItem(std::format("Highest {}", kAxes[static_cast<std::size_t>(axis)]).c_str())) {
+                    AlignSelection(axis, AlignTo::Max);
+                }
+                if (axis < 2) {
+                    ImGui::Separator();
+                }
+            }
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Spread evenly", m_selection.size() > 2)) {
+            if (ImGui::MenuItem("Along X")) {
+                SpreadSelection(0);
+            }
+            if (ImGui::MenuItem("Along Y")) {
+                SpreadSelection(1);
+            }
+            if (ImGui::MenuItem("Along Z")) {
+                SpreadSelection(2);
+            }
+            ImGui::EndMenu();
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Make prefab...", nullptr, false, !m_selection.empty())) {
@@ -1977,6 +2322,35 @@ void Editor::DrawMenu(app::Application& app) {
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("B: paint decals and wet patches on surfaces");
     }
+    constexpr std::array<const char*, 3> kPivots{"Pivot: origin", "Pivot: center", "Pivot: bottom"};
+    if (ImGui::BeginMenu(std::format("{}##pivot", kPivots[static_cast<std::size_t>(m_pivot)]).c_str())) {
+        if (ImGui::MenuItem("The primary's origin", nullptr, m_pivot == Pivot::Origin)) {
+            m_pivot = Pivot::Origin;
+        }
+        if (ImGui::MenuItem("The center of the selection", nullptr, m_pivot == Pivot::Center)) {
+            m_pivot = Pivot::Center;
+        }
+        if (ImGui::MenuItem("The bottom of the selection", nullptr, m_pivot == Pivot::Bottom)) {
+            m_pivot = Pivot::Bottom;
+        }
+        ImGui::EndMenu();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Where the gizmo sits, and what the selection turns and scales around");
+    }
+    if (m_measuring) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_CheckMark));
+    }
+    if (ImGui::MenuItem("Measure")) {
+        m_measuring = !m_measuring;
+        m_painting = false;
+    }
+    if (m_measuring) {
+        ImGui::PopStyleColor();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("M: drag between two surfaces in the view to see the distance");
+    }
     if (ImGui::MenuItem(m_local ? "Local" : "World")) {
         m_local = !m_local;
     }
@@ -2099,6 +2473,25 @@ void Editor::DrawDialogs(app::Application& app) {
         kPrefabExtension);
 
     place(460.0f);
+    if (ImGui::BeginPopupModal("Folder", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::TextUnformatted("Folder in the hierarchy, such as Lights/Hall (empty for none):");
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::IsWindowAppearing()) {
+            ImGui::SetKeyboardFocusHere();
+        }
+        InputString("##folder", m_pathField);
+        if (ImGui::Button("Put there") || ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+            ImGui::CloseCurrentPopup();
+            MoveToFolder(SelectionRoots(), TidyFolder(m_pathField));
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    place(460.0f);
     if (ImGui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
         ImGui::TextWrapped("%s has changes that are not saved.", m_levelPath.c_str());
         if (ImGui::Button("Save")) {
@@ -2180,6 +2573,30 @@ void Editor::DrawDockspace() {
     }
 }
 
+void Editor::RowToggles(const std::string& key, bool hidden, bool locked, bool& toggleHidden, bool& toggleLocked) {
+    // Two small buttons at the row's end: o shows, - hides; L is locked, . is not.
+    const float width = ImGui::CalcTextSize("o").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+    ImGui::SameLine(std::max(ImGui::GetContentRegionMax().x - width * 2.0f - ImGui::GetStyle().ItemSpacing.x, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, hidden ? ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled)
+                                                : ImGui::GetStyleColorVec4(ImGuiCol_Text));
+    toggleHidden = ImGui::SmallButton(std::format("{}##hide{}", hidden ? "-" : "o", key).c_str());
+    ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(hidden ? "Hidden in the editor: click to show (Alt+H shows everything)"
+                                 : "Shown: click to hide in the editor (H)");
+    }
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Text,
+                          locked ? ImVec4(1.0f, 0.75f, 0.3f, 1.0f) : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    toggleLocked = ImGui::SmallButton(std::format("{}##lock{}", locked ? "L" : ".", key).c_str());
+    ImGui::PopStyleColor(2);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(locked ? "Locked: clicks in the view go through it. Click to unlock (L)"
+                                 : "Click to lock against clicks in the view (L)");
+    }
+}
+
 void Editor::DrawHierarchy() {
     if (!ImGui::Begin("Hierarchy")) {
         ImGui::End();
@@ -2190,7 +2607,10 @@ void Editor::DrawHierarchy() {
     if (m_hierarchyFilter.empty() && !ImGui::IsItemActive()) {
         const ImVec2 at = ImGui::GetItemRectMin();
         ImGui::GetWindowDrawList()->AddText({at.x + 6.0f, at.y + 3.0f}, ImGui::GetColorU32(ImGuiCol_TextDisabled),
-                                            "Find by name or kind");
+                                            "Find by name, kind or folder");
+    }
+    if (!m_isolated.empty()) {
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Isolated: %zu shown alone (Shift+H)", m_isolated.size());
     }
     ImGui::BeginChild("entities");
     const bool control = ImGui::GetIO().KeyCtrl;
@@ -2200,7 +2620,8 @@ void Editor::DrawHierarchy() {
         for (const scene::LevelEntity& entity : m_level.entities) {
             const std::string name = entity.name.empty() ? std::format("Entity {}", entity.id) : entity.name;
             const std::string kind = entity.game ? entity.game->kind : std::string();
-            if (Lower(name).find(filter) == std::string::npos && Lower(kind).find(filter) == std::string::npos) {
+            if (Lower(name).find(filter) == std::string::npos && Lower(kind).find(filter) == std::string::npos &&
+                Lower(entity.editing.folder).find(filter) == std::string::npos) {
                 continue;
             }
             const std::string label = std::format("[{}] {}##{}", KindLabel(entity), name, entity.id);
@@ -2231,15 +2652,24 @@ void Editor::DrawHierarchy() {
         const std::size_t slot = parent == slots.end() ? m_level.entities.size() : parent->second;
         children[slot].push_back(entity.id);
     }
+    // The entities at the root, by folder (ADR-0107).
+    std::map<std::string, std::vector<std::uint64_t>> byFolder;
     for (const std::uint64_t id : children.back()) {
-        DrawHierarchyNode(id, children, indexOf);
+        byFolder[TidyFolder(m_level.Find(id)->editing.folder)].push_back(id);
     }
-    // The space below the entities takes one dropped there to the root.
+    DrawFolder("", FoldersOf(m_level), byFolder, children, indexOf);
+    // The space below the entities takes one dropped there to the root, out of its folder.
     const ImVec2 space = ImGui::GetContentRegionAvail();
     ImGui::InvisibleButton("root", ImVec2(std::max(space.x, 1.0f), std::max(space.y, 20.0f)));
     if (ImGui::BeginDragDropTarget()) {
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("DAIDALOS_ENTITY")) {
-            Reparent(*static_cast<const std::uint64_t*>(payload->Data), 0);
+            const std::uint64_t dropped = *static_cast<const std::uint64_t*>(payload->Data);
+            if (const scene::LevelEntity* entity = m_level.Find(dropped);
+                entity != nullptr && entity->parent == 0 && !entity->editing.folder.empty()) {
+                MoveToFolder({dropped}, "");
+            } else {
+                Reparent(dropped, 0);
+            }
         }
         ImGui::EndDragDropTarget();
     }
@@ -2250,13 +2680,85 @@ void Editor::DrawHierarchy() {
     ImGui::EndChild();
     ImGui::End();
 }
+
+void Editor::DrawFolder(const std::string& folder, const std::vector<std::string>& folders,
+                        const std::map<std::string, std::vector<std::uint64_t>>& byFolder,
+                        const std::vector<std::vector<std::uint64_t>>& children,
+                        const std::vector<std::size_t>& indexOf) {
+    for (const std::string& inner : folders) {
+        if (ParentFolder(inner) != folder) {
+            continue;
+        }
+        // What the folder holds, at any depth, for its own hide and lock buttons.
+        std::vector<std::uint64_t> held;
+        bool allHidden = true;
+        bool allLocked = true;
+        for (const scene::LevelEntity& entity : m_level.entities) {
+            if (entity.parent == 0 && InFolder(TidyFolder(entity.editing.folder), inner)) {
+                held.push_back(entity.id);
+                allHidden = allHidden && entity.editing.hidden;
+                allLocked = allLocked && entity.editing.locked;
+            }
+        }
+        // A pick in the view opens the folders down to what was picked.
+        if (m_scrollToSelection && m_selected != 0) {
+            std::uint64_t root = m_selected;
+            for (const scene::LevelEntity* entity = m_level.Find(root); entity != nullptr && entity->parent != 0;
+                 entity = m_level.Find(entity->parent)) {
+                root = entity->parent;
+            }
+            if (const scene::LevelEntity* top = m_level.Find(root);
+                top != nullptr && InFolder(TidyFolder(top->editing.folder), inner)) {
+                ImGui::SetNextItemOpen(true);
+            }
+        }
+        const std::string leaf = inner.substr(inner.rfind('/') == std::string::npos ? 0 : inner.rfind('/') + 1);
+        const bool open = ImGui::TreeNodeEx(std::format("[/] {}##folder:{}", leaf, inner).c_str(),
+                                            ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth |
+                                                ImGuiTreeNodeFlags_AllowOverlap);
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("DAIDALOS_ENTITY")) {
+                MoveToFolder({*static_cast<const std::uint64_t*>(payload->Data)}, inner);
+            }
+            ImGui::EndDragDropTarget();
+        }
+        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+            // A click on a folder selects what it holds.
+            Select(0);
+            for (const std::uint64_t id : held) {
+                ToggleSelect(id);
+            }
+        }
+        bool toggleHidden = false;
+        bool toggleLocked = false;
+        RowToggles("folder:" + inner, !held.empty() && allHidden, !held.empty() && allLocked, toggleHidden,
+                   toggleLocked);
+        if (toggleHidden) {
+            SetHidden(held, !allHidden);
+        }
+        if (toggleLocked) {
+            SetLocked(held, !allLocked);
+        }
+        if (open) {
+            DrawFolder(inner, folders, byFolder, children, indexOf);
+            ImGui::TreePop();
+        }
+    }
+    if (const auto found = byFolder.find(folder); found != byFolder.end()) {
+        for (const std::uint64_t id : found->second) {
+            DrawHierarchyNode(id, children, indexOf);
+        }
+    }
+}
+
 void Editor::DrawHierarchyNode(std::uint64_t id, const std::vector<std::vector<std::uint64_t>>& children,
                                const std::vector<std::size_t>& indexOf) {
     const auto found = std::ranges::find(m_level.entities, id, &scene::LevelEntity::id);
     const std::size_t slot = static_cast<std::size_t>(found - m_level.entities.begin());
     const scene::LevelEntity& entity = *found;
     const std::vector<std::uint64_t>& mine = children[slot];
-    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+    ImGuiTreeNodeFlags flags =
+        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_AllowOverlap;
     if (mine.empty()) {
         flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
     }
@@ -2267,9 +2769,18 @@ void Editor::DrawHierarchyNode(std::uint64_t id, const std::vector<std::vector<s
     if (m_scrollToSelection && id != m_selected && !mine.empty() && IsAncestor(m_level, id, m_selected)) {
         ImGui::SetNextItemOpen(true);
     }
+    const bool hidden = entity.editing.hidden;
+    const bool locked = entity.editing.locked;
+    const bool shownElsewhere = HiddenInEditor(m_level, id) && !hidden;
     const std::string label = std::format("[{}] {}##{}", KindLabel(entity),
                                           entity.name.empty() ? std::format("Entity {}", id) : entity.name, id);
+    if (hidden || shownElsewhere) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    }
     const bool open = ImGui::TreeNodeEx(label.c_str(), flags);
+    if (hidden || shownElsewhere) {
+        ImGui::PopStyleColor();
+    }
     if (m_scrollToSelection && id == m_selected) {
         ImGui::SetScrollHereY(0.4f);
     }
@@ -2284,7 +2795,7 @@ void Editor::DrawHierarchyNode(std::uint64_t id, const std::vector<std::vector<s
     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
         FrameSelection();
     }
-    // Dragged onto another entity, it goes under it.
+    // Dragged onto another entity, it goes under it; onto a folder, into it.
     if (ImGui::BeginDragDropSource()) {
         ImGui::SetDragDropPayload("DAIDALOS_ENTITY", &id, sizeof(id));
         ImGui::Text("Move %s under...", label.substr(0, label.find("##")).c_str());
@@ -2296,6 +2807,15 @@ void Editor::DrawHierarchyNode(std::uint64_t id, const std::vector<std::vector<s
         }
         ImGui::EndDragDropTarget();
     }
+    bool toggleHidden = false;
+    bool toggleLocked = false;
+    RowToggles(std::to_string(id), hidden, locked, toggleHidden, toggleLocked);
+    if (toggleHidden) {
+        SetHidden({id}, !hidden);
+    }
+    if (toggleLocked) {
+        SetLocked({id}, !locked);
+    }
     if (open && !mine.empty()) {
         for (const std::uint64_t child : mine) {
             DrawHierarchyNode(child, children, indexOf);
@@ -2303,6 +2823,7 @@ void Editor::DrawHierarchyNode(std::uint64_t id, const std::vector<std::vector<s
         ImGui::TreePop();
     }
 }
+
 void Editor::DrawInspector() {
     if (!ImGui::Begin("Inspector")) {
         ImGui::End();
@@ -2724,14 +3245,22 @@ void Editor::DrawGizmo() {
     scene::LevelEntity* selected = Selected();
     const ecs::Entity entity =
         selected != nullptr && m_instance != nullptr ? m_instance->Find(m_selected) : ecs::Entity{};
-    if (entity.IsNull()) {
+    if (entity.IsNull() || LockedInEditor(m_level, m_selected)) {
         m_gizmoUsing = false;
         return;
     }
     ecs::World& world = m_scene->World();
     ecs::PropagateTransforms(world);
-    const glm::mat4 before = world.Get<ecs::WorldTransform>(entity).matrix;
-    glm::mat4 matrix = before;
+    if (!ImGuizmo::IsUsing()) {
+        // The gizmo sits at the pivot (ADR-0107), turned as the primary is, without its scale.
+        const glm::mat4 primary = world.Get<ecs::WorldTransform>(entity).matrix;
+        const glm::vec3 pivot =
+            PivotPoint(m_pivot, glm::vec3(primary[3]), m_pivot == Pivot::Origin ? Bounds{} : SelectionBounds());
+        m_gizmoStart = glm::translate(glm::mat4(1.0f), pivot) * glm::mat4_cast(Decompose(primary).rotation);
+        m_gizmoMatrix = m_gizmoStart;
+        m_dragStart.clear();
+    }
+    glm::mat4 matrix = m_gizmoMatrix;
     const glm::vec2 extent = m_viewportMax - m_viewportMin;
     ImGuizmo::SetOrthographic(false);
     ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
@@ -2746,23 +3275,33 @@ void Editor::DrawGizmo() {
                        : operation == ImGuizmo::SCALE ? m_snapSteps.z
                                                       : m_snapSteps.x;
     const float steps[3] = {step, step, step};
-    if (!ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection), operation, mode, glm::value_ptr(matrix),
-                              nullptr, snap ? steps : nullptr)) {
-        m_gizmoUsing = ImGuizmo::IsUsing();
+    const bool changed = ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection), operation, mode,
+                                              glm::value_ptr(matrix), nullptr, snap ? steps : nullptr);
+    if (ImGuizmo::IsUsing() && m_dragStart.empty()) {
+        // Where each selected entity was when the drag began: the gizmo's motion since then is applied to it, so
+        // that nothing drifts or compounds over a long drag.
+        for (const std::uint64_t id : SelectionRoots()) {
+            const ecs::Entity created = m_instance->Find(id);
+            if (!created.IsNull() && !LockedInEditor(m_level, id)) {
+                m_dragStart.emplace_back(id, world.Get<ecs::WorldTransform>(created).matrix);
+            }
+        }
+    }
+    m_gizmoUsing = ImGuizmo::IsUsing();
+    if (!changed) {
         return;
     }
-    // The primary selection moved by delta: the others move with it, each where it is.
-    const glm::mat4 delta = matrix * glm::inverse(before);
+    m_gizmoMatrix = matrix;
+    const glm::mat4 delta = matrix * glm::inverse(m_gizmoStart);
     std::vector<std::pair<std::uint64_t, math::Transform>> moved;
-    for (const std::uint64_t id : SelectionRoots()) {
+    for (const auto& [id, start] : m_dragStart) {
         const ecs::Entity created = m_instance->Find(id);
         if (created.IsNull()) {
             continue;
         }
         const ecs::Entity parent = world.Parent(created);
         const glm::mat4 parentWorld = parent.IsNull() ? glm::mat4(1.0f) : world.Get<ecs::WorldTransform>(parent).matrix;
-        const glm::mat4 target = id == m_selected ? matrix : delta * world.Get<ecs::WorldTransform>(created).matrix;
-        moved.emplace_back(id, Decompose(glm::inverse(parentWorld) * target));
+        moved.emplace_back(id, Decompose(glm::inverse(parentWorld) * delta * start));
     }
     const char* label = operation == ImGuizmo::ROTATE ? "Rotate" : operation == ImGuizmo::SCALE ? "Scale" : "Move";
     Change(label, [&moved](scene::Level& level) {
@@ -2772,7 +3311,6 @@ void Editor::DrawGizmo() {
             }
         }
     });
-    m_gizmoUsing = ImGuizmo::IsUsing();
 }
 
 void Editor::DrawGrid() {
@@ -2819,7 +3357,7 @@ void Editor::DrawHelp() {
         return;
     }
     if (ImGui::Begin("Shortcuts", &m_showHelp, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize)) {
-        constexpr std::array<std::array<const char*, 2>, 27> kKeys{{
+        constexpr std::array<std::array<const char*, 2>, 30> kKeys{{
             {"Right mouse + WASD, Q, E", "Fly; Shift goes faster, the wheel sets the speed"},
             {"Wheel, middle mouse", "Walk forward and back, pan"},
             {"Click, Ctrl+click", "Select, add to the selection"},
@@ -2827,6 +3365,9 @@ void Editor::DrawHelp() {
             {"X, or Ctrl while dragging", "Snapping on and off"},
             {"G, Shift+G", "Game view (nothing of the editor's drawn), the grid"},
             {"Ctrl+R", "The scene's time runs or holds still"},
+            {"H, Shift+H, Alt+H", "Hide the selection, show it alone, show everything"},
+            {"L", "Lock the selection against clicks in the view, or unlock it"},
+            {"M", "Measure: drag between two surfaces"},
             {"Alt+1 to Alt+4", "Lit, unlit, lighting only, the editor's light"},
             {"B", "Paint decals and wet patches (drag over surfaces)"},
             {"F, double-click in the hierarchy", "Frame the selection"},
@@ -2874,7 +3415,8 @@ void Editor::Pick(app::Application& app) {
     float nearestDistance = kPickDistance;
     ecs::World& world = m_scene->World();
     for (const scene::LevelEntity& entity : m_level.entities) {
-        if (!entity.model.empty() || (!IsSelected(entity.id) && !m_show.Shows(CategoryOf(entity)))) {
+        if (!entity.model.empty() || (!IsSelected(entity.id) && !m_show.Shows(CategoryOf(entity))) ||
+            LockedInEditor(m_level, entity.id)) {
             continue;
         }
         const ecs::Entity created = m_instance->Find(entity.id);
@@ -2891,7 +3433,12 @@ void Editor::Pick(app::Application& app) {
     }
     if (nearest == 0) {
         const auto [origin, direction] = RayAt(mouse);
-        if (const std::optional<PickHit> hit = m_picker.Cast(world, origin, direction)) {
+        // Locked entities let the click through to what is behind them (ADR-0107).
+        const auto locked = [this](ecs::Entity entity) {
+            const std::uint64_t id = m_instance->IdOf(entity);
+            return id != 0 && LockedInEditor(m_level, id);
+        };
+        if (const std::optional<PickHit> hit = m_picker.Cast(world, origin, direction, locked)) {
             nearest = m_instance->IdOf(hit->entity);
             drawn = hit->entity;
         }

@@ -258,6 +258,15 @@ core::Result<Trigger> ReadTrigger(Reader reader) {
     return trigger;
 }
 
+core::Result<LevelEditing> ReadEditing(Reader reader) {
+    LevelEditing editing;
+    DAI_LEVEL_TRY(reader.Text("folder", editing.folder));
+    DAI_LEVEL_TRY(reader.Flag("hidden", editing.hidden));
+    DAI_LEVEL_TRY(reader.Flag("locked", editing.locked));
+    DAI_LEVEL_TRY(reader.Finish());
+    return editing;
+}
+
 core::Result<VisibilityCell> ReadCell(Reader reader) {
     VisibilityCell cell;
     DAI_LEVEL_TRY(reader.Flag("enabled", cell.enabled));
@@ -495,6 +504,9 @@ core::Result<LevelEntity> ReadEntity(const JsonObject& object, std::size_t index
     DAI_LEVEL_TRY(component("weather", entity.weather, &ReadWeather));
     DAI_LEVEL_TRY(component("ribbon", entity.ribbon, &ReadRibbon));
     DAI_LEVEL_TRY(component("lightning", entity.lightning, &ReadLightning));
+    std::optional<LevelEditing> editing;
+    DAI_LEVEL_TRY(component("editor", editing, &ReadEditing));
+    entity.editing = editing.value_or(LevelEditing{});
     if (const Json* game = reader.Take("game")) {
         const JsonObject* tags = std::get_if<JsonObject>(&game->value);
         if (tags == nullptr) {
@@ -759,6 +771,13 @@ Json WriteEntity(const LevelEntity& entity) {
         Put(wet, "enabled", entity.wet->enabled, fallback.enabled);
         object.emplace("wet", Json{std::move(wet)});
     }
+    if (entity.editing != LevelEditing{}) {
+        JsonObject editor;
+        Put(editor, "folder", entity.editing.folder, std::string{});
+        Put(editor, "hidden", entity.editing.hidden, false);
+        Put(editor, "locked", entity.editing.locked, false);
+        object.emplace("editor", Json{std::move(editor)});
+    }
     if (entity.cell) {
         JsonObject cell;
         Put(cell, "enabled", entity.cell->enabled, true);
@@ -905,7 +924,7 @@ bool LevelEntity::operator==(const LevelEntity& other) const {
            wind == other.wind && particles == other.particles && attractor == other.attractor &&
            weather == other.weather && ribbon == other.ribbon && lightning == other.lightning && game == other.game &&
            visibility == other.visibility && decal == other.decal && wet == other.wet && cell == other.cell &&
-           trigger == other.trigger && body == other.body;
+           trigger == other.trigger && body == other.body && editing == other.editing;
 }
 
 const LevelEntity* Level::Find(std::uint64_t id) const {
