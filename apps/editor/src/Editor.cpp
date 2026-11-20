@@ -296,7 +296,9 @@ core::Result<void> Editor::Open(app::Application& app, const std::string& levelP
     auto loading = std::make_unique<Loading>();
     loading->path = levelPath;
     loading->level = std::move(*level);
-    loading->scene = std::make_unique<scene::Scene>(app.Renderer(), m_assetRoot, nullptr);
+    // Its sounds are heard only when asked (ADR-0116): the scene starts with them paused.
+    loading->scene = std::make_unique<scene::Scene>(app.Renderer(), m_assetRoot, app.Audio());
+    loading->scene->Sounds().SetPaused(true);
     loading->camera = camera;
     loading->newTab = newTab && m_scene != nullptr;
     Loading* waiting = loading.get();
@@ -322,6 +324,9 @@ void Editor::FinishOpen(app::Application& app) {
         Tab& shown = *m_tabs[m_activeTab];
         StashTab(shown);
         shown.scene = app.ExchangeScene(std::move(loading->scene));
+        if (shown.scene != nullptr) {
+            shown.scene->Sounds().SetPaused(true);
+        }
         m_tabs.push_back(std::make_unique<Tab>());
         m_activeTab = m_tabs.size() - 1;
         m_selectTab = true;
@@ -604,6 +609,13 @@ void Editor::PlaceAsset(app::Application& app, const AssetEntry& asset, std::opt
     case AssetKind::Ribbon:
         entity.ribbon = scene::LevelRibbon{.effect = RelativeToLevel(asset.path)};
         entity.name = std::filesystem::path(name).stem().generic_string();
+        break;
+    case AssetKind::Sound:
+        entity.sound = scene::LevelSound{.clip = RelativeToLevel(asset.path)};
+        entity.name = std::filesystem::path(name).stem().generic_string();
+        if (!m_hear) {
+            m_status = "Show > Hear the level plays it here";
+        }
         break;
     case AssetKind::Sequence:
         m_sequences.Open(m_assetRoot, asset.path);
@@ -1292,11 +1304,18 @@ std::optional<PickHit> Editor::SurfaceAt(const glm::vec2& point) {
 
 void Editor::PlaceStamp(const glm::vec3& position, const glm::vec3& normal) {
     std::uniform_real_distribution<float> unit(0.0f, 1.0f);
+    if (m_brush.kind == PaintBrush::Kind::Props && m_brush.models.empty()) {
+        m_status = "No props to scatter: select some, then Take the selection's models";
+        return;
+    }
     const float spin = m_brush.randomSpin ? unit(m_random) * glm::two_pi<float>() : 0.0f;
     const float scale = 1.0f + (unit(m_random) * 2.0f - 1.0f) * std::clamp(m_brush.sizeJitter, 0.0f, 0.9f);
-    scene::LevelEntity stamp = Stamp(m_brush, position, normal, spin, scale);
-    const std::string kind = m_brush.kind == PaintBrush::Kind::Wet
-                                 ? std::string("wet")
+    const auto pick =
+        static_cast<std::size_t>(unit(m_random) * static_cast<float>(std::max<std::size_t>(m_brush.models.size(), 1)));
+    scene::LevelEntity stamp = Stamp(m_brush, position, normal, spin, scale, pick);
+    const std::string kind = m_brush.kind == PaintBrush::Kind::Wet ? std::string("wet")
+                             : m_brush.kind == PaintBrush::Kind::Props
+                                 ? std::string("props")
                                  : std::filesystem::path(m_brush.texture).stem().generic_string();
     const bool first = m_strokeEntity == 0;
     Change(std::format("Paint {}", kind), [&](scene::Level& level) {
@@ -1417,6 +1436,8 @@ void Editor::DrawPaint() {
     ImGui::RadioButton("Decals", &kind, static_cast<int>(PaintBrush::Kind::Decal));
     ImGui::SameLine();
     ImGui::RadioButton("Wet patches", &kind, static_cast<int>(PaintBrush::Kind::Wet));
+    ImGui::SameLine();
+    ImGui::RadioButton("Props", &kind, static_cast<int>(PaintBrush::Kind::Props));
     m_brush.kind = static_cast<PaintBrush::Kind>(kind);
     ImGui::SliderFloat("Size (m)", &m_brush.size, 0.1f, 6.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
     ImGui::SliderFloat("Spacing (m)", &m_brush.spacing, 0.05f, 6.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
@@ -1442,9 +1463,39 @@ void Editor::DrawPaint() {
         ImGui::SliderFloat("Opacity", &m_brush.opacity, 0.0f, 1.0f);
         ImGui::SliderFloat("Roughness", &m_brush.roughness, 0.045f, 1.0f);
         ImGui::TextDisabled("Images come from the level's Decals folder, or a double-click in the browser.");
-    } else {
+    } else if (m_brush.kind == PaintBrush::Kind::Wet) {
         ImGui::SliderFloat("Wetness", &m_brush.wetness, 0.0f, 1.0f);
         ImGui::SliderFloat("Puddles", &m_brush.puddles, 0.0f, 1.0f);
+    } else {
+        // Scattering (ADR-0116): one of these models for each stamp, its size the jitter's.
+        if (ImGui::Button("Take the selection's models")) {
+            m_brush.models.clear();
+            for (const std::uint64_t id : m_selection) {
+                if (const scene::LevelEntity* entity = m_level.Find(id);
+                    entity != nullptr && !entity->model.empty() &&
+                    std::ranges::find(m_brush.models, entity->model) == m_brush.models.end()) {
+                    m_brush.models.push_back(entity->model);
+                }
+            }
+        }
+        std::optional<std::size_t> gone;
+        for (std::size_t index = 0; index < m_brush.models.size(); ++index) {
+            ImGui::PushID(static_cast<int>(index));
+            if (ImGui::SmallButton("x")) {
+                gone = index;
+            }
+            ImGui::SameLine();
+            ImGui::TextUnformatted(m_brush.models[index].c_str());
+            ImGui::PopID();
+        }
+        if (gone) {
+            m_brush.models.erase(m_brush.models.begin() + static_cast<std::ptrdiff_t>(*gone));
+        }
+        if (m_brush.models.empty()) {
+            ImGui::TextDisabled("Select props in the view, then take their models.");
+        }
+        ImGui::Checkbox("Turn to the surface", &m_brush.alignToSurface);
+        ImGui::TextDisabled("Size jitter scales each prop; spacing is how far apart they fall.");
     }
     ImGui::End();
 }
@@ -1709,6 +1760,10 @@ void Editor::OnStop(app::Application& app) {
     // returns, before the editor itself goes.
     m_loading.reset();
     m_browser.reset();
+    if (!m_previewTexture.IsNull() && m_app != nullptr) {
+        m_app->Renderer().Device().DestroyTexture(m_previewTexture);
+        m_previewTexture = {};
+    }
     for (std::unique_ptr<Tab>& tab : m_tabs) {
         if (tab != nullptr) {
             for (Pane& pane : tab->panes) {
@@ -1841,6 +1896,10 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
             m_scene->SetPaused(paused);
         }
         m_scene->SetPhysicsPaused(!m_simulating);
+        // The level heard, if asked: its ambient sounds and what a sequence plays (ADR-0116).
+        if (m_scene->Sounds().IsPaused() == m_hear) {
+            m_scene->Sounds().SetPaused(!m_hear);
+        }
     }
     DrawMenu(app);
     DrawDockspace();
@@ -1867,6 +1926,7 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
     DrawHistory();
     DrawMapCheck();
     DrawStatistics(app);
+    DrawCameraPreview();
     DrawTabs();
     DrawPaint();
     DrawStatus(app, time);
@@ -1895,6 +1955,7 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
 
     // While a level loads, the one open shows but does not move or change.
     if (m_scene != nullptr && m_loading == nullptr) {
+        UpdatePreview(app);
         const bool switching = UpdatePanes(app);
         UsePane(m_active);
         if (!switching) {
@@ -2683,14 +2744,17 @@ void Editor::DrawDockspace() {
         ImGui::DockBuilderDockWindow("History", bottom);
         ImGui::DockBuilderDockWindow("Map check", bottom);
         ImGui::DockBuilderDockWindow("Statistics", right);
+        ImGui::DockBuilderDockWindow("Camera preview", right);
         ImGui::DockBuilderFinish(dockspace);
     }
     m_layoutBuilt = true;
     // A layout saved before the browser or the history existed: they join the status.
-    if (ImGui::FindWindowSettingsByID(ImHashStr("Statistics")) == nullptr) {
-        if (const ImGuiWindow* inspector = ImGui::FindWindowByName("Inspector");
-            inspector != nullptr && inspector->DockId != 0) {
-            ImGui::DockBuilderDockWindow("Statistics", inspector->DockId);
+    for (const char* window : {"Statistics", "Camera preview"}) {
+        if (ImGui::FindWindowSettingsByID(ImHashStr(window)) == nullptr) {
+            if (const ImGuiWindow* inspector = ImGui::FindWindowByName("Inspector");
+                inspector != nullptr && inspector->DockId != 0) {
+                ImGui::DockBuilderDockWindow(window, inspector->DockId);
+            }
         }
     }
     for (const char* window : {"Assets", "History", "Map check"}) {
@@ -3275,6 +3339,21 @@ void Editor::DrawMarkers() {
         const float fade = selected ? 1.0f : std::clamp(1.5f - distance / kMarkerReach * 1.5f, 0.15f, 1.0f);
         const ImU32 alpha = static_cast<ImU32>(fade * 255.0f) << 24;
         const ImU32 color = selected ? IM_COL32(255, 220, 60, 255) : ((MarkerColor(entity) & 0x00FFFFFFU) | alpha);
+        if (entity.sound && selected) {
+            // Where it is heard in full, and where it fades out.
+            for (const float radius : {entity.sound->minDistance, entity.sound->maxDistance}) {
+                glm::vec3 previous{0.0f};
+                for (int step = 0; step <= 32; ++step) {
+                    const float angle = static_cast<float>(step) / 32.0f * glm::two_pi<float>();
+                    const glm::vec3 offset(std::cos(angle) * radius, 0.0f, std::sin(angle) * radius);
+                    if (step > 0) {
+                        Line3D(draw, glm::vec3(matrix[3]) + previous, glm::vec3(matrix[3]) + offset,
+                               IM_COL32(150, 120, 240, 160), 1.0f);
+                    }
+                    previous = offset;
+                }
+            }
+        }
         if (entity.light && (selected || m_show.lightReach)) {
             DrawReach(draw, entity, matrix,
                       selected ? IM_COL32(255, 220, 60, 110) : ((MarkerColor(entity) & 0x00FFFFFFU) | 0x50000000U));
@@ -3484,8 +3563,21 @@ bool Editor::UpdatePanes(app::Application& app) {
         m_active = *std::exchange(m_switchTo, std::nullopt);
         m_cutView = true;
     }
-    if (std::optional<renderer::CapturedFrame> captured = app.Renderer().TakeCapture(); captured && m_captureFor) {
-        TakeSnapshot(*captured, *std::exchange(m_captureFor, std::nullopt));
+    if (std::optional<renderer::CapturedFrame> captured = app.Renderer().TakeCapture()) {
+        if (m_previewCapture) {
+            // The camera preview's picture, cut from the live pane (ADR-0116).
+            m_previewCapture = false;
+            const rhi::TextureHandle old = m_panes[m_active].snapshot;
+            m_panes[m_active].snapshot = {};
+            TakeSnapshot(*captured, m_active);
+            if (!m_previewTexture.IsNull()) {
+                app.Renderer().Device().DestroyTexture(m_previewTexture);
+            }
+            m_previewTexture = std::exchange(m_panes[m_active].snapshot, old);
+            m_previewSize = m_panes[m_active].rect.Size();
+        } else if (m_captureFor) {
+            TakeSnapshot(*captured, *std::exchange(m_captureFor, std::nullopt));
+        }
     }
     if (!m_split) {
         return false;
@@ -3869,6 +3961,9 @@ void Editor::SwitchTab(std::size_t index) {
     Tab& to = *m_tabs[index];
     StashTab(from);
     from.scene = m_app->ExchangeScene(std::move(to.scene));
+    if (from.scene != nullptr) {
+        from.scene->Sounds().SetPaused(true);
+    }
     m_activeTab = index;
     m_selectTab = true;
     RestoreTab(to);
@@ -4055,6 +4150,9 @@ void Editor::StartPlaying(app::Application& app, bool fromCamera) {
                    : std::string());
     // The editor's scene waits aside, alive, while the game plays its own (ADR-0110).
     m_stashedScene = app.ExchangeScene(nullptr);
+    if (m_stashedScene != nullptr) {
+        m_stashedScene->Sounds().SetPaused(true);
+    }
     m_stopGame = false;
     m_game = sandbox::Game::Create(sandbox::GameOptions{.embedded = true, .quit = [this] { m_stopGame = true; }});
     if (core::Result<void> started = m_game->OnStart(app); !started) {
@@ -4553,7 +4651,10 @@ void Editor::RegisterCommands() {
     add("edit.delete", "Delete", "Delete", [this] { DeleteSelected(); }, selection);
     add("edit.select_all", "Select everything", "Ctrl+A", [this] { SelectAll(); });
     add("edit.cancel", "Select nothing, or stop the tool or the simulation", "Escape", [this] {
-        if (m_simulating) {
+        if (m_pilotReturn) {
+            m_camera = *std::exchange(m_pilotReturn, std::nullopt);
+            m_status = "Back where the camera was";
+        } else if (m_simulating) {
             StopSimulating();
         } else if (m_painting) {
             m_painting = false;
@@ -4627,6 +4728,16 @@ void Editor::RegisterCommands() {
         m_realtime = !m_realtime;
         m_status = m_realtime ? "Real time: the scene moves" : "The scene holds still: Ctrl+R lets it move";
     });
+    add("view.sound", "Hear the level", "", [this] {
+        m_hear = !m_hear;
+        m_status = m_hear ? "Hearing the level" : "The level is silent";
+    });
+    add(
+        "view.look_through", "Look through the selection", "", [this] { LookThrough(); },
+        [this] { return Selected() != nullptr; });
+    add(
+        "view.preview", "Take a picture from the selection", "", [this] { StartPreview(); },
+        [this] { return Selected() != nullptr; });
     add("view.step", "Step one frame", "F10", [this] {
         m_stepFrames = 1;
         m_realtime = false;
@@ -5065,6 +5176,8 @@ void Editor::DrawEntityMenu() {
     item("Isolate", "edit.isolate");
     item(Selected() != nullptr && Selected()->editing.locked ? "Unlock" : "Lock", "edit.lock");
     item("Drop to the floor", "edit.drop");
+    item("Look through it", "view.look_through");
+    item("Take a picture from it", "view.preview");
     item("Put in a folder...", "edit.folder");
     item("Make a prefab...", "edit.make_prefab");
     if (const scene::LevelEntity* selected = Selected(); selected != nullptr && !selected->prefab.empty()) {
@@ -5146,12 +5259,99 @@ void Editor::ViewportContextMenu(app::Application& app) {
     }
 }
 
+std::optional<EditorCamera> Editor::CameraOfSelection() {
+    const scene::LevelEntity* selected = Selected();
+    const ecs::Entity entity =
+        selected != nullptr && m_instance != nullptr ? m_instance->Find(m_selected) : ecs::Entity{};
+    if (entity.IsNull()) {
+        return std::nullopt;
+    }
+    ecs::PropagateTransforms(m_scene->World());
+    const glm::mat4& world = m_scene->World().Get<ecs::WorldTransform>(entity).matrix;
+    const glm::vec3 forward = glm::normalize(-glm::vec3(world[2]));
+    EditorCamera camera = m_camera;
+    camera.position = glm::vec3(world[3]);
+    // Yaw 0 looks along -Z and turns left as it grows; pitch looks up as it grows.
+    camera.yaw = std::atan2(-forward.x, -forward.z);
+    camera.pitch = std::asin(std::clamp(forward.y, -1.0f, 1.0f));
+    return camera;
+}
+
+void Editor::LookThrough() {
+    if (const std::optional<EditorCamera> camera = CameraOfSelection()) {
+        if (!m_pilotReturn) {
+            m_pilotReturn = m_camera;
+        }
+        m_camera = *camera;
+        m_cutView = true;
+        m_status = std::format("Looking through {}: Escape goes back", EntityLabel(*Selected()));
+    }
+}
+
+void Editor::StartPreview() {
+    const std::optional<EditorCamera> camera = CameraOfSelection();
+    if (!camera || m_previewFrames > 0 || m_panes[m_active].kind != ViewKind::Perspective) {
+        return;
+    }
+    // A dozen frames from there, so that the denoiser and the eye settle, then the last one is captured.
+    m_previewReturn = m_camera;
+    m_camera = *camera;
+    m_previewFrames = 12;
+    m_previewOf = EntityLabel(*Selected());
+    m_cutView = true;
+}
+
+void Editor::UpdatePreview(app::Application& app) {
+    if (m_previewFrames > 0 && --m_previewFrames == 0) {
+        app.Renderer().RequestCapture();
+        m_previewCapture = true;
+        return;
+    }
+    if (m_previewReturn && m_previewFrames == 0 && m_previewCapture) {
+        // The frame that was captured is drawn: the camera goes back.
+        m_camera = *std::exchange(m_previewReturn, std::nullopt);
+        m_cutView = true;
+    }
+}
+
+void Editor::DrawCameraPreview() {
+    if (!ImGui::Begin("Camera preview")) {
+        ImGui::End();
+        return;
+    }
+    ImGui::BeginDisabled(Selected() == nullptr || m_previewFrames > 0);
+    if (ImGui::Button("Take a picture from the selection")) {
+        StartPreview();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Look through it")) {
+        LookThrough();
+    }
+    ImGui::EndDisabled();
+    if (m_previewTexture.IsNull()) {
+        ImGui::TextWrapped("What a security camera, a spot light or any entity sees, looking along its -Z. "
+                           "Select it, then take a picture.");
+    } else {
+        ImGui::TextDisabled("From %s", m_previewOf.c_str());
+        const float width = ImGui::GetContentRegionAvail().x;
+        const float height = m_previewSize.x > 0.0f ? width * m_previewSize.y / m_previewSize.x : width * 0.56f;
+        ImGui::Image(
+            static_cast<ImTextureID>(debugui::TextureId(m_app->Renderer().Device().BindlessIndex(m_previewTexture))),
+            ImVec2(width, height));
+    }
+    ImGui::End();
+}
+
 void Editor::DrawShowMenu() {
     ImGui::MenuItem("Game view", Keys("view.game"), &m_show.gameView);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Only the game's image: no grid, markers, boxes or gizmo");
     }
     ImGui::MenuItem("Real time", Keys("view.realtime"), &m_realtime);
+    ImGui::MenuItem("Hear the level", Keys("view.sound"), &m_hear);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Its ambient sounds near the camera, and what a sequence's preview plays");
+    }
     ImGui::Separator();
     ImGui::TextDisabled("Markers");
     for (std::size_t category = 0; category < kCategoryCount; ++category) {

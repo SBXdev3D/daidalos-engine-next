@@ -121,6 +121,9 @@ std::vector<Problem> CheckLevel(const scene::Level& level, const std::string& le
         if (entity.ribbon) {
             file(entity.id, std::format("{}'s ribbon", Label(entity)), entity.ribbon->effect);
         }
+        if (entity.sound) {
+            file(entity.id, std::format("{}'s sound", Label(entity)), entity.sound->clip);
+        }
         if (entity.decal) {
             file(entity.id, std::format("{}'s image", Label(entity)), entity.decal->texture);
             file(entity.id, std::format("{}'s normal map", Label(entity)), entity.decal->normal);

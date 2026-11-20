@@ -49,6 +49,8 @@ const char* KindName(AssetKind kind) {
         return "Decal";
     case AssetKind::Sequence:
         return "Sequence";
+    case AssetKind::Sound:
+        return "Sound";
     case AssetKind::Other:
         break;
     }
@@ -75,6 +77,8 @@ ImU32 KindColor(AssetKind kind) {
         return IM_COL32(200, 80, 80, 255);
     case AssetKind::Sequence:
         return IM_COL32(230, 230, 120, 255);
+    case AssetKind::Sound:
+        return IM_COL32(150, 120, 240, 255);
     case AssetKind::Other:
         break;
     }

@@ -347,6 +347,15 @@ private:
     /// The Create menu's items, which create in front of the camera, or at m_createAt.
     void DrawCreateItems();
 
+    // Sound, scatter and camera previews (ADR-0116).
+    /// Moves the camera to the selection, looking where it looks (its -Z); Escape goes back.
+    void LookThrough();
+    /// Draws a few frames from the selection, captures the last for the Camera preview, and goes back.
+    void StartPreview();
+    void UpdatePreview(daidalos::app::Application& app);
+    void DrawCameraPreview();
+    [[nodiscard]] std::optional<EditorCamera> CameraOfSelection();
+
     // The interface.
     void DrawMenu(daidalos::app::Application& app);
     void DrawDialogs(daidalos::app::Application& app);
@@ -522,6 +531,18 @@ private:
     /// editor.frames: the smoke test's run, in frames, and those drawn.
     std::int64_t m_frameLimit = 0;
     std::int64_t m_frames = 0;
+
+    /// The level's sounds are heard (ADR-0116).
+    bool m_hear = false;
+    /// Where the camera was before looking through the selection.
+    std::optional<EditorCamera> m_pilotReturn;
+    /// A picture being taken from the selection: frames left to draw, and where to go back to.
+    int m_previewFrames = 0;
+    std::optional<EditorCamera> m_previewReturn;
+    bool m_previewCapture = false;
+    daidalos::rhi::TextureHandle m_previewTexture;
+    glm::vec2 m_previewSize{0.0f};
+    std::string m_previewOf;
 
     bool m_simulating = false;
     /// Frames the scene runs while paused, one per F10.

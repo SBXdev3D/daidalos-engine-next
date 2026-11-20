@@ -128,6 +128,17 @@ struct LevelBlock {
     [[nodiscard]] bool operator==(const LevelBlock&) const = default;
 };
 
+/// An ambient sound of a level (ADR-0116): a clip that loops where the entity is, from the level's directory, heard
+/// up to its distance; a hum that follows its light fades with it.
+struct LevelSound {
+    std::string clip;
+    float volume = 1.0f;
+    float minDistance = 1.5f;
+    float maxDistance = 20.0f;
+    bool followsLight = false;
+    [[nodiscard]] bool operator==(const LevelSound&) const = default;
+};
+
 /// A change one placed copy of a prefab makes to a part of the prefab (ADR-0113): the part, by its id in the
 /// prefab's file, moved, lit otherwise, given another model, or left out with what hangs from it. What it does not
 /// say comes from the prefab, so a change to the prefab's file still shows in every copy.
@@ -157,6 +168,8 @@ struct LevelEntity {
     std::vector<PrefabOverride> overrides;
     /// Geometry of its own, for blocking out (ADR-0115).
     std::optional<LevelBlock> block;
+    /// A sound that loops there (ADR-0116).
+    std::optional<LevelSound> sound;
     std::optional<Light> light;
     std::optional<FogVolume> fog;
     std::optional<WindVolume> wind;

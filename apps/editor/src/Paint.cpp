@@ -39,11 +39,32 @@ glm::quat SurfaceRotation(const glm::vec3& normal, float spin) {
     return glm::normalize(facing * glm::angleAxis(spin, glm::vec3(0.0f, 0.0f, 1.0f)));
 }
 
+glm::quat UpTo(const glm::vec3& normal) {
+    const glm::vec3 up(0.0f, 1.0f, 0.0f);
+    const float cosine = glm::dot(up, normal);
+    if (cosine < -0.9999f) {
+        return glm::angleAxis(glm::pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+    }
+    const glm::vec3 axis = glm::cross(up, normal);
+    return glm::normalize(glm::quat(1.0f + cosine, axis.x, axis.y, axis.z));
+}
+
 scene::LevelEntity Stamp(const PaintBrush& brush, const glm::vec3& position, const glm::vec3& normal, float spin,
-                         float scale) {
+                         float scale, std::size_t pick) {
     const glm::vec3 n = glm::normalize(normal);
     const float size = std::max(brush.size * scale, 0.01f);
     scene::LevelEntity entity;
+    if (brush.kind == PaintBrush::Kind::Props) {
+        // A prop stands where the stamp falls, turned about its up, or about the surface's normal (ADR-0116).
+        if (!brush.models.empty()) {
+            entity.model = brush.models[pick % brush.models.size()];
+        }
+        entity.transform.translation = position;
+        const glm::quat yaw = glm::angleAxis(spin, glm::vec3(0.0f, 1.0f, 0.0f));
+        entity.transform.rotation = brush.alignToSurface ? glm::normalize(UpTo(n) * yaw) : yaw;
+        entity.transform.scale = glm::vec3(scale);
+        return entity;
+    }
     if (brush.kind == PaintBrush::Kind::Decal) {
         entity.transform.translation = position;
         entity.transform.rotation = SurfaceRotation(n, spin);

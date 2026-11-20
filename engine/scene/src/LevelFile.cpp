@@ -281,6 +281,17 @@ core::Result<LevelBlock> ReadBlock(Reader reader) {
     return block;
 }
 
+core::Result<LevelSound> ReadSound(Reader reader) {
+    LevelSound sound;
+    DAI_LEVEL_TRY(reader.Text("clip", sound.clip));
+    DAI_LEVEL_TRY(reader.Number("volume", sound.volume));
+    DAI_LEVEL_TRY(reader.Number("min_distance", sound.minDistance));
+    DAI_LEVEL_TRY(reader.Number("max_distance", sound.maxDistance));
+    DAI_LEVEL_TRY(reader.Flag("follows_light", sound.followsLight));
+    DAI_LEVEL_TRY(reader.Finish());
+    return sound;
+}
+
 core::Result<LevelEditing> ReadEditing(Reader reader) {
     LevelEditing editing;
     DAI_LEVEL_TRY(reader.Text("folder", editing.folder));
@@ -515,6 +526,7 @@ core::Result<LevelEntity> ReadEntity(const JsonObject& object, std::size_t index
     }
     DAI_LEVEL_TRY(component("light", entity.light, &ReadLight));
     DAI_LEVEL_TRY(component("block", entity.block, &ReadBlock));
+    DAI_LEVEL_TRY(component("sound", entity.sound, &ReadSound));
     DAI_LEVEL_TRY(component("visibility", entity.visibility, &ReadVisibility));
     DAI_LEVEL_TRY(component("decal", entity.decal, &ReadDecal));
     DAI_LEVEL_TRY(component("wet", entity.wet, &ReadWet));
@@ -845,6 +857,16 @@ Json WriteEntity(const LevelEntity& entity) {
     if (entity.light) {
         object.emplace("light", WriteLight(*entity.light));
     }
+    if (entity.sound) {
+        const LevelSound fallback;
+        JsonObject sound;
+        sound.emplace("clip", Json{entity.sound->clip});
+        Put(sound, "volume", entity.sound->volume, fallback.volume);
+        Put(sound, "min_distance", entity.sound->minDistance, fallback.minDistance);
+        Put(sound, "max_distance", entity.sound->maxDistance, fallback.maxDistance);
+        Put(sound, "follows_light", entity.sound->followsLight, fallback.followsLight);
+        object.emplace("sound", Json{std::move(sound)});
+    }
     if (entity.block) {
         const LevelBlock fallback;
         JsonObject block;
@@ -1021,7 +1043,7 @@ bool LevelEntity::operator==(const LevelEntity& other) const {
            weather == other.weather && ribbon == other.ribbon && lightning == other.lightning && game == other.game &&
            visibility == other.visibility && decal == other.decal && wet == other.wet && cell == other.cell &&
            trigger == other.trigger && body == other.body && editing == other.editing && overrides == other.overrides &&
-           block == other.block;
+           block == other.block && sound == other.sound;
 }
 
 const LevelEntity* Level::Find(std::uint64_t id) const {
@@ -1204,6 +1226,9 @@ void Relocate(Level& level, std::string_view fromLevelPath, std::string_view toL
         if (entity.decal) {
             move(entity.decal->texture);
             move(entity.decal->normal);
+        }
+        if (entity.sound) {
+            move(entity.sound->clip);
         }
         if (entity.particles) {
             move(entity.particles->effect);

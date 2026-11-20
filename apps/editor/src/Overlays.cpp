@@ -15,7 +15,7 @@ Category CategoryOf(const daidalos::scene::LevelEntity& entity) {
     if (entity.light) {
         return Category::Lights;
     }
-    if (entity.particles || entity.ribbon || entity.lightning || entity.weather || entity.attractor) {
+    if (entity.particles || entity.ribbon || entity.lightning || entity.weather || entity.attractor || entity.sound) {
         return Category::Effects;
     }
     if (entity.trigger) {
