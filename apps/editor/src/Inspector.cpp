@@ -347,6 +347,20 @@ bool InspectTrigger(scene::Trigger& trigger) {
     return changed;
 }
 
+/// An ambient sound's clip and how far it is heard (ADR-0116).
+bool InspectSound(scene::LevelSound& sound) {
+    bool changed = InputString("Clip", sound.clip);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("A .wav or .ogg file, relative to the level's file; drag one from Assets");
+    }
+    changed |= ImGui::SliderFloat("Volume", &sound.volume, 0.0f, 2.0f);
+    changed |= ImGui::DragFloat("Full within (m)", &sound.minDistance, 0.05f, 0.1f, 100.0f, "%.2f");
+    changed |= ImGui::DragFloat("Fades out at (m)", &sound.maxDistance, 0.1f, 0.5f, 500.0f, "%.1f");
+    changed |= ImGui::Checkbox("Fades with its light", &sound.followsLight);
+    ImGui::TextDisabled("Show > Hear the level plays it in the editor.");
+    return changed;
+}
+
 /// A block's shape, size and color (ADR-0115).
 bool InspectBlock(scene::LevelBlock& block) {
     bool changed = false;
@@ -381,6 +395,7 @@ bool InspectBlock(scene::LevelBlock& block) {
 bool InspectComponents(scene::LevelEntity& entity) {
     bool changed = false;
     changed |= Section("Block", entity.block, InspectBlock);
+    changed |= Section("Sound", entity.sound, InspectSound);
     if (!entity.model.empty() || ImGui::GetIO().KeyAlt) {
         if (ImGui::CollapsingHeader("Model", ImGuiTreeNodeFlags_DefaultOpen)) {
             changed |= InputString("glTF file", entity.model);
@@ -412,6 +427,10 @@ bool InspectComponents(scene::LevelEntity& entity) {
         ImGui::OpenPopup("add component");
     }
     if (ImGui::BeginPopup("add component")) {
+        if (!entity.sound && ImGui::MenuItem("Sound")) {
+            entity.sound = scene::LevelSound{};
+            changed = true;
+        }
         if (!entity.block && ImGui::MenuItem("Block")) {
             entity.block = scene::LevelBlock{};
             changed = true;
@@ -518,6 +537,9 @@ const char* KindLabel(const scene::LevelEntity& entity) {
     if (entity.particles) {
         return "P";
     }
+    if (entity.sound) {
+        return "S";
+    }
     if (entity.fog) {
         return "F";
     }
@@ -553,6 +575,9 @@ unsigned MarkerColor(const scene::LevelEntity& entity) {
     }
     if (entity.particles || entity.ribbon || entity.lightning || entity.weather) {
         return IM_COL32(255, 160, 60, 255);
+    }
+    if (entity.sound) {
+        return IM_COL32(150, 120, 240, 255);
     }
     if (entity.fog || entity.wind) {
         return IM_COL32(140, 200, 255, 255);

@@ -375,3 +375,16 @@ TEST(LevelFileTest, OverridesChangeOnlyWhatTheySay) {
     EXPECT_FALSE(change->transform.has_value());
     EXPECT_FALSE(scene::OverrideOf(prefab.entities[2], prefab.entities[2]).has_value());
 }
+
+TEST(LevelFileTest, AmbientSoundsKeepTheirClipAndReach) {
+    Level level;
+    LevelEntity hum{.id = 1, .name = "Hum"};
+    hum.sound = scene::LevelSound{.clip = "Sounds/hum.wav", .volume = 0.4f, .maxDistance = 12.0f, .followsLight = true};
+    level.entities.push_back(hum);
+    const core::Result<Level> read = ParseLevel(WriteLevel(level));
+    ASSERT_TRUE(read.has_value()) << core::Format(read.error());
+    EXPECT_EQ(*read, level);
+    Level moved = level;
+    scene::Relocate(moved, "Factory/Factory.level.json", "Other/Copy.level.json");
+    EXPECT_EQ(moved.entities[0].sound->clip, "../Factory/Sounds/hum.wav");
+}

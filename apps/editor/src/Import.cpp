@@ -58,6 +58,9 @@ AssetKind KindOf(const std::filesystem::path& file) {
     if (name.ends_with(".sequence.json")) {
         return AssetKind::Sequence;
     }
+    if (name.ends_with(".wav") || name.ends_with(".ogg")) {
+        return AssetKind::Sound;
+    }
     if (name.ends_with(".prefab.json")) {
         return AssetKind::Prefab;
     }

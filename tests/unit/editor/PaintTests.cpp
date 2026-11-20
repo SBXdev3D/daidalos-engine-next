@@ -53,3 +53,20 @@ TEST(PaintTest, AStrokeStampsEverySpacing) {
 }
 
 } // namespace
+
+TEST(PaintTest, PropsStandOnTheSurfaceOrTurnToIt) {
+    editor::PaintBrush brush;
+    brush.kind = editor::PaintBrush::Kind::Props;
+    brush.models = {"Props/can.gltf", "Props/bottle.gltf"};
+    const glm::vec3 wall(1.0f, 0.0f, 0.0f);
+    const daidalos::scene::LevelEntity upright = editor::Stamp(brush, glm::vec3(2.0f, 0.0f, 0.0f), wall, 0.0f, 1.5f, 3);
+    EXPECT_EQ(upright.model, "Props/bottle.gltf");
+    EXPECT_EQ(upright.transform.translation, glm::vec3(2.0f, 0.0f, 0.0f));
+    EXPECT_FLOAT_EQ(upright.transform.scale.y, 1.5f);
+    // Upright, its +Y stays up whatever the surface.
+    EXPECT_NEAR(glm::dot(upright.transform.rotation * glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)), 1.0f,
+                1e-5f);
+    brush.alignToSurface = true;
+    const daidalos::scene::LevelEntity turned = editor::Stamp(brush, glm::vec3(0.0f), wall, 0.7f);
+    EXPECT_NEAR(glm::dot(turned.transform.rotation * glm::vec3(0.0f, 1.0f, 0.0f), wall), 1.0f, 1e-5f);
+}

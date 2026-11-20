@@ -356,6 +356,22 @@ void LevelInstance::Make(const LevelEntity& entity) {
             DAI_LOG_WARNING(kModule, "Level entity {} '{}': {}", entity.id, entity.name, core::Format(model.error()));
         }
     }
+    if (entity.sound && !entity.sound->clip.empty()) {
+        // It loops where the entity is; the scene keeps its voice where the entity goes (ADR-0116).
+        audio::SoundWorld& sounds = m_scene->Sounds();
+        core::Result<audio::ClipHandle> clip = sounds.Load(Resolve(entity.sound->clip));
+        if (clip) {
+            const audio::VoiceHandle voice = sounds.Play(*clip, {.position = entity.transform.translation,
+                                                                 .volume = entity.sound->volume,
+                                                                 .loop = true,
+                                                                 .bus = audio::Bus::Ambience,
+                                                                 .minDistance = entity.sound->minDistance,
+                                                                 .maxDistance = entity.sound->maxDistance});
+            world.Add<SoundEmitter>(created, voice, entity.sound->volume, entity.sound->followsLight);
+        } else {
+            DAI_LOG_WARNING(kModule, "Level entity {} '{}': {}", entity.id, entity.name, core::Format(clip.error()));
+        }
+    }
     if (entity.block) {
         // Its own geometry, made once for each shape, size and color (ADR-0115).
         core::Result<const Model*> model = assets.AddModel(BlockKey(*entity.block), MakeBlockModel(*entity.block));
@@ -585,6 +601,9 @@ void LevelInstance::Destroy(std::uint64_t id) {
         }
         if (const StaticBox* box = world.TryGet<StaticBox>(current)) {
             m_scene->Physics().RemoveBody(box->body);
+        }
+        if (const SoundEmitter* emitter = world.TryGet<SoundEmitter>(current)) {
+            m_scene->Sounds().Stop(emitter->voice);
         }
         for (ecs::Entity child = world.FirstChild(current); !child.IsNull(); child = world.NextSibling(child)) {
             stack.push_back(child);
