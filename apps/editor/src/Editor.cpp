@@ -4329,6 +4329,34 @@ void Editor::DrawCreateItems() {
     if (ImGui::MenuItem("Empty")) {
         Create("Empty", {});
     }
+    // Plain geometry to try a room with before modelling it (ADR-0115).
+    if (ImGui::BeginMenu("Block out")) {
+        const auto block = [this](const char* name, scene::LevelBlock shape) {
+            scene::LevelEntity entity;
+            entity.block = shape;
+            Create(name, std::move(entity));
+        };
+        if (ImGui::MenuItem("Box")) {
+            block("Box", scene::LevelBlock{});
+        }
+        if (ImGui::MenuItem("Wall")) {
+            block("Wall", scene::LevelBlock{.size = {4.0f, 3.0f, 0.2f}});
+        }
+        if (ImGui::MenuItem("Floor")) {
+            block("Floor", scene::LevelBlock{.size = {4.0f, 0.1f, 4.0f}});
+        }
+        if (ImGui::MenuItem("Stairs")) {
+            block("Stairs",
+                  scene::LevelBlock{.shape = scene::BlockShape::Stairs, .size = {1.2f, 1.6f, 2.8f}, .steps = 9});
+        }
+        if (ImGui::MenuItem("Ramp")) {
+            block("Ramp", scene::LevelBlock{.shape = scene::BlockShape::Ramp, .size = {2.0f, 1.0f, 4.0f}});
+        }
+        if (ImGui::MenuItem("Pillar")) {
+            block("Pillar", scene::LevelBlock{.shape = scene::BlockShape::Cylinder, .size = {0.5f, 3.0f, 0.5f}});
+        }
+        ImGui::EndMenu();
+    }
     ImGui::Separator();
     if (ImGui::MenuItem("Point light")) {
         scene::LevelEntity entity;

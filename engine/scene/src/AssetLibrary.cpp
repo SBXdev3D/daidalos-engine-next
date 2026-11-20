@@ -219,6 +219,13 @@ core::Result<Model> AssetLibrary::BuildModel(DecodedModel& decoded, const std::s
     return model;
 }
 
+core::Result<const Model*> AssetLibrary::AddModel(std::string key, resources::ModelData data) {
+    if (const Model* found = m_models.Find(key)) {
+        return found;
+    }
+    return Build(std::move(key), DecodedModel{std::move(data), {}});
+}
+
 core::Result<const Model*> AssetLibrary::Build(std::string key, core::Result<DecodedModel> decoded) {
     if (const Model* found = m_models.Find(key)) {
         return found; // Loaded in the meantime by another request.

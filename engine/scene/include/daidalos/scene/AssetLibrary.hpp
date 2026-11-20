@@ -110,6 +110,9 @@ public:
     /// A missing or invalid model or texture is an error that names the file, and the next request
     /// tries again.
     [[nodiscard]] core::Result<const Model*> LoadModel(std::string_view path);
+    /// A model made in code, such as a block (ADR-0115), kept by key as files are: the second call with a key gives
+    /// back the first one's. Its images, if any, must be embedded.
+    [[nodiscard]] core::Result<const Model*> AddModel(std::string key, resources::ModelData data);
 
     /// Creates a particle effect that the library owns and releases with its other assets.
     [[nodiscard]] core::Result<renderer::ParticleEffectHandle>

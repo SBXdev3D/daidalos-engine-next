@@ -258,6 +258,29 @@ core::Result<Trigger> ReadTrigger(Reader reader) {
     return trigger;
 }
 
+constexpr std::array<std::string_view, 4> kBlockShapes{"box", "stairs", "ramp", "cylinder"};
+
+core::Result<LevelBlock> ReadBlock(Reader reader) {
+    LevelBlock block;
+    std::string shape = "box";
+    DAI_LEVEL_TRY(reader.Text("shape", shape));
+    const auto found = std::ranges::find(kBlockShapes, shape);
+    if (found == kBlockShapes.end()) {
+        return Invalid(reader.Where() + ".shape", "must be box, stairs, ramp or cylinder");
+    }
+    block.shape = static_cast<BlockShape>(found - kBlockShapes.begin());
+    DAI_LEVEL_TRY(reader.Vector("size", block.size));
+    float steps = static_cast<float>(block.steps);
+    float sides = static_cast<float>(block.sides);
+    DAI_LEVEL_TRY(reader.Number("steps", steps));
+    DAI_LEVEL_TRY(reader.Number("sides", sides));
+    block.steps = static_cast<std::uint32_t>(std::clamp(steps, 1.0f, 64.0f));
+    block.sides = static_cast<std::uint32_t>(std::clamp(sides, 3.0f, 128.0f));
+    DAI_LEVEL_TRY(reader.Vector("color", block.color));
+    DAI_LEVEL_TRY(reader.Finish());
+    return block;
+}
+
 core::Result<LevelEditing> ReadEditing(Reader reader) {
     LevelEditing editing;
     DAI_LEVEL_TRY(reader.Text("folder", editing.folder));
@@ -491,6 +514,7 @@ core::Result<LevelEntity> ReadEntity(const JsonObject& object, std::size_t index
         entity.transform = *value;
     }
     DAI_LEVEL_TRY(component("light", entity.light, &ReadLight));
+    DAI_LEVEL_TRY(component("block", entity.block, &ReadBlock));
     DAI_LEVEL_TRY(component("visibility", entity.visibility, &ReadVisibility));
     DAI_LEVEL_TRY(component("decal", entity.decal, &ReadDecal));
     DAI_LEVEL_TRY(component("wet", entity.wet, &ReadWet));
@@ -821,6 +845,16 @@ Json WriteEntity(const LevelEntity& entity) {
     if (entity.light) {
         object.emplace("light", WriteLight(*entity.light));
     }
+    if (entity.block) {
+        const LevelBlock fallback;
+        JsonObject block;
+        block.emplace("shape", Json{std::string(kBlockShapes[static_cast<std::size_t>(entity.block->shape)])});
+        block.emplace("size", Vector(entity.block->size));
+        Put(block, "steps", static_cast<float>(entity.block->steps), static_cast<float>(fallback.steps));
+        Put(block, "sides", static_cast<float>(entity.block->sides), static_cast<float>(fallback.sides));
+        Put(block, "color", entity.block->color, fallback.color);
+        object.emplace("block", Json{std::move(block)});
+    }
     if (entity.wet) {
         const WetVolume fallback;
         JsonObject wet;
@@ -986,7 +1020,8 @@ bool LevelEntity::operator==(const LevelEntity& other) const {
            wind == other.wind && particles == other.particles && attractor == other.attractor &&
            weather == other.weather && ribbon == other.ribbon && lightning == other.lightning && game == other.game &&
            visibility == other.visibility && decal == other.decal && wet == other.wet && cell == other.cell &&
-           trigger == other.trigger && body == other.body && editing == other.editing && overrides == other.overrides;
+           trigger == other.trigger && body == other.body && editing == other.editing && overrides == other.overrides &&
+           block == other.block;
 }
 
 const LevelEntity* Level::Find(std::uint64_t id) const {

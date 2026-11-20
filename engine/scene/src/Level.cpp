@@ -6,6 +6,7 @@
 #include <daidalos/logging/Log.hpp>
 #include <daidalos/math/Transform.hpp>
 #include <daidalos/scene/AssetLibrary.hpp>
+#include <daidalos/scene/Blocks.hpp>
 #include <daidalos/scene/Level.hpp>
 #include <daidalos/scene/Scene.hpp>
 
@@ -260,7 +261,7 @@ LevelSync LevelInstance::Sync(const Level& from, const Level& to) {
         if (!next.contains(entity.id)) {
             Destroy(entity.id);
             ++sync.destroyed;
-            sync.models |= !entity.model.empty() || !entity.prefab.empty();
+            sync.models |= !entity.model.empty() || !entity.prefab.empty() || entity.block.has_value();
         }
     }
     ecs::World& world = m_scene->World();
@@ -286,7 +287,7 @@ LevelSync LevelInstance::Sync(const Level& from, const Level& to) {
         Make(*entity);
         remade.insert(entity->id);
         ++sync.created;
-        sync.models |= !entity->model.empty() || !entity->prefab.empty() ||
+        sync.models |= !entity->model.empty() || !entity->prefab.empty() || entity->block.has_value() ||
                        (old != previous.end() && (!old->second->model.empty() || !old->second->prefab.empty()));
     }
     // An emitter on the surface of a model made again went with the old model: it is put back.
@@ -346,6 +347,18 @@ void LevelInstance::Make(const LevelEntity& entity) {
 
     if (!entity.model.empty()) {
         core::Result<const Model*> model = assets.LoadModel(Resolve(entity.model));
+        if (model) {
+            if (core::Result<ecs::Entity> root = Instantiate(world, **model)) {
+                [[maybe_unused]] const core::Result<void> attached = world.SetParent(*root, created);
+                world.Add<ModelInstance>(created, *model, *root);
+            }
+        } else {
+            DAI_LOG_WARNING(kModule, "Level entity {} '{}': {}", entity.id, entity.name, core::Format(model.error()));
+        }
+    }
+    if (entity.block) {
+        // Its own geometry, made once for each shape, size and color (ADR-0115).
+        core::Result<const Model*> model = assets.AddModel(BlockKey(*entity.block), MakeBlockModel(*entity.block));
         if (model) {
             if (core::Result<ecs::Entity> root = Instantiate(world, **model)) {
                 [[maybe_unused]] const core::Result<void> attached = world.SetParent(*root, created);
