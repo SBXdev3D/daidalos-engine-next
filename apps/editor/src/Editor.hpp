@@ -362,6 +362,13 @@ private:
     void DrawAssetDialogs();
     void MoveAssetTo(const std::string& from, const std::string& to);
 
+    // The look (ADR-0118).
+    enum class Icon { Move, Rotate, Scale, Paint, Measure, Snap, World, Local, Play, Simulate };
+    /// Colors, spacing and the font.
+    void ApplyTheme(daidalos::app::Application& app);
+    /// A square button with an icon drawn in it; true when clicked.
+    bool IconButton(const char* id, Icon icon, bool active, const char* tip);
+
     // The interface.
     void DrawMenu(daidalos::app::Application& app);
     void DrawDialogs(daidalos::app::Application& app);

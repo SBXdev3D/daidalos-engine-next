@@ -87,40 +87,41 @@ This is an honest look at where Daidalos Engine Next stands: the engine, the fac
 
 ### What is strong
 
-The editor is built on the game's renderer, so the viewport is the game's image. It has:
-- a hierarchy, an inspector of every component, and gizmos with snapping;
-- undo and redo, multiple selection, copy and paste between levels, camera bookmarks;
-- an asset browser with thumbnails and drag-and-drop import;
-- prefabs, a paint tool, a live material editor and a sequence timeline;
-- autosave with recovery, and play in the game with F5.
+The editor is built on the game's renderer, so the viewport is the game's image. After Phase 20 (ADR-0104 to ADR-0118) it has:
+- a hierarchy with folders, hiding, locking and isolating; an inspector of every component; gizmos with pivots, snapping to steps, surfaces and corners;
+- perspective, top, front and side views, cut through ceilings and walls, alone or four at once;
+- one undo history for the level, its materials, its sequences and its effects, with a History panel, and documents in tabs;
+- Simulate, and the game played in the editor's window;
+- prefabs with per-copy overrides edited in place, blocks to try a room, a paint tool for decals, water and scattered props;
+- a live material editor, a sequence timeline, an effect editor with curves;
+- a map check, statistics against the budgets, the assets' references and safe moves, import settings;
+- commands with remappable keys, Ctrl+P to search everything, context menus;
+- lighting modes and debug views, overlays drawn in the scene's depth, sound, a camera preview;
+- a loader, autosave with recovery, and a smoke test that starts it.
 
-For a tool built in a few weeks it is broad, and its documents are the same text files the game loads.
+Its documents are the same text files the game loads.
 
 ### Compared with Unreal Engine, Unity and Godot
 
-The editor works, and it is closer to a capable in-house tool than to a commercial editor:
-
 | | Daidalos | Unreal, Unity, Godot |
 |---|---|---|
-| Viewport | Perspective only | Perspective and orthographic top, front and side; split views |
-| Play | A separate process (F5) | In the editor, with live inspection of the running game, pause and step |
-| Prefabs | One level deep in practice, no per-copy overrides, edited by opening their file | Nested prefabs (blueprints, scenes) with overrides, edited in place |
-| Geometry | Models come from Blender | BSP or brushes (Unreal), ProBuilder (Unity), CSG (Godot), terrain and foliage tools |
-| Materials | Parameters of glTF materials | Node graphs |
+| Viewport | Perspective, top, front, side, four panes; the live one drawn, the others their last image | Every pane drawn live; true orthographic projections |
+| Play | In the editor's window or the sandbox; Simulate with pause and step | In the editor, with the running game inspected live |
+| Prefabs | Nested, per-part overrides of transform, light, model, removal | Nested, overrides of any field |
+| Geometry | Blocks (box, stairs, ramp, cylinder) | BSP, ProBuilder, CSG, terrain and foliage |
+| Materials | Parameters of glTF materials, live | Node graphs |
 | Logic | Data sequences | Blueprints, visual scripting, script editors |
-| Animation, particles | Files, hot-reloaded | Graph editors for state machines and effects |
-| Undo | Level edits only; materials and sequences revert to their files | Every edit |
-| Assets | A folder browser | References, dependency viewer, search, import settings per asset |
-| Interface | Dear ImGui, a developer's look | Polished, themable, context menus everywhere |
+| Effects | A panel with curves, previewed by the level's emitters | Graph editors with their own preview viewport |
+| Undo | Level, materials, sequences, effects | Every edit |
+| Assets | References, safe moves, import settings for models | Dependency viewers, redirectors, import settings for every kind |
+| Interface | Dear ImGui, themed, icons, context menus, a command palette | Native toolkits, fully themable |
 
-▲ **Improve, in order of what level designers feel most:**
-1. **Play in the editor,** with the scene paused and inspected live: the largest gap in daily use.
-2. **Orthographic views and snapping to surfaces and vertices:** placing props against walls is the most frequent action.
-3. **Undo for every edit,** materials and sequences included: the history holds levels; it should hold commands on any document.
-4. **Prefab overrides,** once a level wants ten copies that differ.
-5. **Context menus in the viewport and the hierarchy,** and search everywhere (assets, entities, settings).
-6. **An effect editor** with a live preview, as particles are the most edited files after levels.
-7. **Simple geometry tools** (boxes, stairs, ramps) for blocking out rooms before Blender.
+▲ **Improve, in order of what level designers would feel next:**
+1. **Inspect the game while it plays in the editor:** today the game takes the window; its entities could be shown in the hierarchy and inspector, read only.
+2. **Overrides of any field** of a prefab's part, not only its transform, light and model.
+3. **A grid texture for blocks,** and turning a blockout into a glTF for Blender.
+4. **Import settings for textures and sounds,** beside models'.
+5. **Panes drawn live,** if the renderer ever draws more than one view a frame.
 
 ## Performance
 
@@ -183,7 +184,7 @@ The renderer covers what a dark interior needs. For the next level of the factor
 The roadmap is done. A next one could be, in the owner's order of priorities:
 
 1. **The factory's architecture** rebuilt in Blender, the art unified, and the demo played and balanced.
-2. **The editor's play-in-editor and orthographic views.**
+2. **Inspecting the game while it plays in the editor,** and prefab overrides of any field (Phase 20 did the rest of the editor list).
 3. **Blended transparency and material extensions.**
 4. **AMD, Intel, lower-end GPUs and Linux** measured, with the presets and golden tests verified there.
 5. **Clustered decals and async compute,** then GPU-driven rendering when a level needs it.

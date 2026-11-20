@@ -73,7 +73,14 @@ m_level->Build(level);
 - **Prefabs:** Edit > Make prefab saves a group of entities as a `.prefab.json` that levels place, such as the factory's alarm beams.
 - **Materials:** click a surface, and the Materials tab edits its material live. Saving writes it back into the model's glTF file (ADR-0079).
 - **Scares:** a trigger box plays a `.sequence.json` when the player walks in. Its "Edit its sequence" button opens the sequence as a timeline of cues: sound, light, power, particles, camera moves, shakes, mix, subtitles, events (ADR-0071, ADR-0079). Play previews it in the view.
-- **F5** plays the level in the sandbox as it is, saved or not.
+- **Blocking out:** Create > Block out places boxes, walls, floors, stairs, ramps and pillars the game walks on, to try a room before modelling it (ADR-0115).
+- **Prefab copies** can each move, relight, swap or leave out a part of their prefab in the inspector; Apply to the prefab writes it for every copy (ADR-0113).
+- **Sound:** drop a `.wav` or `.ogg` in the view for an ambient sound; Show > Hear the level plays it (ADR-0116).
+- **Effects:** right-click an effect in Assets > Edit, and change it while every emitter shows it (ADR-0114).
+- **Seeing and placing:** Alt+1 to Alt+4 light the view (lit, unlit, lighting only, a lamp at the camera); Shift+1 to Shift+5 give the top, front and side views cut through the ceiling, and four panes; View > Snap to surfaces, End drops to the floor (ADR-0105, ADR-0108).
+- **Checking:** Ctrl+Shift+C lists missing files, broken links and misplaced entities; the Statistics panel shows the frame and the level against their budgets (ADR-0111).
+- **Alt+P** plays the level in the editor's window, Alt+S simulates it with the camera as the player; **F5** plays it in the sandbox as it is, saved or not (ADR-0110).
+- **Ctrl+P** finds any command, entity, asset or setting; F1 lists every key and changes any (ADR-0112).
 
 ## 4. Gameplay
 

@@ -240,11 +240,7 @@ core::Result<void> Editor::OnStart(app::Application& app) {
     static const std::string layout = (platform::ExecutableDirectory() / "editor_layout.ini").generic_string();
     io.IniFilename = layout.c_str();
     ImGui::LoadIniSettingsFromDisk(layout.c_str());
-    ImGuiStyle& style = ImGui::GetStyle();
-    style.WindowRounding = 2.0f;
-    style.FrameRounding = 2.0f;
-    style.TabRounding = 2.0f;
-    style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+    ApplyTheme(app);
     app.MainWindow().SetTextInput(true);
     if (app::DevTools* tools = app.Tools()) {
         tools->SetSummaryShown(false); // The status panel shows the same.
@@ -2454,36 +2450,40 @@ void Editor::DrawMenu(app::Application& app) {
         ImGui::EndMenu();
     }
     ImGui::TextDisabled("|");
-    const auto tool = [this](const char* label, int operation, const char* tip) {
-        const bool active = m_operation == operation;
-        if (active) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_CheckMark));
-        }
-        if (ImGui::MenuItem(label)) {
-            m_operation = operation;
-        }
-        if (active) {
-            ImGui::PopStyleColor();
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("%s", tip);
-        }
-    };
-    tool("Move", ImGuizmo::TRANSLATE, "W");
-    tool("Rotate", ImGuizmo::ROTATE, "E");
-    tool("Scale", ImGuizmo::SCALE, "R");
-    if (m_painting) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_CheckMark));
+    // The tools, as icons (ADR-0118).
+    const std::string moveTip = std::format("Move ({})", Keys("tool.move") != nullptr ? Keys("tool.move") : "");
+    if (IconButton("##move", Icon::Move, m_operation == ImGuizmo::TRANSLATE || m_operation == 0, moveTip.c_str())) {
+        m_operation = ImGuizmo::TRANSLATE;
     }
-    if (ImGui::MenuItem("Paint")) {
+    const std::string rotateTip = std::format("Rotate ({})", Keys("tool.rotate") != nullptr ? Keys("tool.rotate") : "");
+    if (IconButton("##rotate", Icon::Rotate, m_operation == ImGuizmo::ROTATE, rotateTip.c_str())) {
+        m_operation = ImGuizmo::ROTATE;
+    }
+    const std::string scaleTip = std::format("Scale ({})", Keys("tool.scale") != nullptr ? Keys("tool.scale") : "");
+    if (IconButton("##scale", Icon::Scale, m_operation == ImGuizmo::SCALE, scaleTip.c_str())) {
+        m_operation = ImGuizmo::SCALE;
+    }
+    if (IconButton("##local", m_local ? Icon::Local : Icon::World, false,
+                   m_local ? "The gizmo moves along the entity's own axes: click for the world's"
+                           : "The gizmo moves along the world's axes: click for the entity's own")) {
+        m_local = !m_local;
+    }
+    const std::string snapTip =
+        std::format("Snapping ({}): moves by {:.2f} m, turns by {:.0f} degrees, scales by {:.2f}; View sets the steps",
+                    Keys("tool.snap") != nullptr ? Keys("tool.snap") : "", m_snapSteps.x, m_snapSteps.y, m_snapSteps.z);
+    if (IconButton("##snap", Icon::Snap, m_snap, snapTip.c_str())) {
+        m_snap = !m_snap;
+    }
+    ImGui::TextDisabled("|");
+    if (IconButton("##paint", Icon::Paint, m_painting, "Paint decals, wet patches and props on surfaces (B)")) {
         m_painting = !m_painting;
+        m_measuring = false;
     }
-    if (m_painting) {
-        ImGui::PopStyleColor();
+    if (IconButton("##measure", Icon::Measure, m_measuring, "Measure between two surfaces (M)")) {
+        m_measuring = !m_measuring;
+        m_painting = false;
     }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("B: paint decals and wet patches on surfaces");
-    }
+    ImGui::TextDisabled("|");
     constexpr std::array<const char*, 3> kPivots{"Pivot: origin", "Pivot: center", "Pivot: bottom"};
     if (ImGui::BeginMenu(std::format("{}##pivot", kPivots[static_cast<std::size_t>(m_pivot)]).c_str())) {
         if (ImGui::MenuItem("The primary's origin", nullptr, m_pivot == Pivot::Origin)) {
@@ -2500,37 +2500,16 @@ void Editor::DrawMenu(app::Application& app) {
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Where the gizmo sits, and what the selection turns and scales around");
     }
-    if (m_measuring) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_CheckMark));
+    ImGui::TextDisabled("|");
+    if (IconButton("##play", Icon::Play, m_game != nullptr, "Play in the editor (Alt+P); Shift+Esc stops")) {
+        StartPlaying(*m_app, false);
     }
-    if (ImGui::MenuItem("Measure")) {
-        m_measuring = !m_measuring;
-        m_painting = false;
-    }
-    if (m_measuring) {
-        ImGui::PopStyleColor();
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("M: drag between two surfaces in the view to see the distance");
-    }
-    if (ImGui::MenuItem(m_local ? "Local" : "World")) {
-        m_local = !m_local;
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("The axes the gizmo moves along: the entity's own, or the world's");
-    }
-    if (m_snap) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_CheckMark));
-    }
-    if (ImGui::MenuItem("Snap")) {
-        m_snap = !m_snap;
-    }
-    if (m_snap) {
-        ImGui::PopStyleColor();
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("X: gizmos move by %.2f m, turn by %.0f degrees and scale by %.2f (View sets the steps)",
-                          m_snapSteps.x, m_snapSteps.y, m_snapSteps.z);
+    if (IconButton("##simulate", Icon::Simulate, m_simulating, "Simulate physics and triggers (Alt+S)")) {
+        if (m_simulating) {
+            StopSimulating();
+        } else {
+            StartSimulating();
+        }
     }
     ImGui::TextDisabled("|");
     constexpr std::array<const char*, 4> kLighting{"Lit", "Unlit", "Lighting only", "Editor light"};
@@ -5471,6 +5450,203 @@ void Editor::DrawAssetDialogs() {
         }
         ImGui::EndPopup();
     }
+}
+
+void Editor::ApplyTheme(app::Application& app) {
+    // A dark theme with one warm accent, the color the editor already gives the selection (ADR-0118).
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.WindowRounding = 4.0f;
+    style.ChildRounding = 3.0f;
+    style.FrameRounding = 3.0f;
+    style.PopupRounding = 4.0f;
+    style.TabRounding = 3.0f;
+    style.GrabRounding = 3.0f;
+    style.ScrollbarRounding = 6.0f;
+    style.WindowPadding = ImVec2(10.0f, 8.0f);
+    style.FramePadding = ImVec2(8.0f, 4.0f);
+    style.ItemSpacing = ImVec2(8.0f, 5.0f);
+    style.ItemInnerSpacing = ImVec2(6.0f, 4.0f);
+    style.IndentSpacing = 16.0f;
+    style.ScrollbarSize = 12.0f;
+    style.WindowBorderSize = 1.0f;
+    style.FrameBorderSize = 0.0f;
+    style.TabBorderSize = 0.0f;
+    style.SeparatorTextBorderSize = 1.0f;
+    const auto rgb = [](float r, float g, float b, float a = 1.0f) { return ImVec4(r, g, b, a); };
+    const ImVec4 accent = rgb(1.0f, 0.72f, 0.28f);
+    const ImVec4 accentDim = rgb(0.62f, 0.44f, 0.17f);
+    ImVec4* colors = style.Colors;
+    colors[ImGuiCol_Text] = rgb(0.89f, 0.90f, 0.91f);
+    colors[ImGuiCol_TextDisabled] = rgb(0.50f, 0.52f, 0.55f);
+    colors[ImGuiCol_WindowBg] = rgb(0.105f, 0.11f, 0.12f);
+    colors[ImGuiCol_ChildBg] = rgb(0.0f, 0.0f, 0.0f, 0.0f);
+    colors[ImGuiCol_PopupBg] = rgb(0.125f, 0.13f, 0.14f, 0.98f);
+    colors[ImGuiCol_Border] = rgb(0.20f, 0.21f, 0.23f);
+    colors[ImGuiCol_FrameBg] = rgb(0.165f, 0.17f, 0.185f);
+    colors[ImGuiCol_FrameBgHovered] = rgb(0.22f, 0.23f, 0.25f);
+    colors[ImGuiCol_FrameBgActive] = rgb(0.27f, 0.28f, 0.31f);
+    colors[ImGuiCol_TitleBg] = rgb(0.085f, 0.09f, 0.095f);
+    colors[ImGuiCol_TitleBgActive] = rgb(0.12f, 0.125f, 0.135f);
+    colors[ImGuiCol_MenuBarBg] = rgb(0.085f, 0.09f, 0.095f);
+    colors[ImGuiCol_ScrollbarBg] = rgb(0.0f, 0.0f, 0.0f, 0.0f);
+    colors[ImGuiCol_ScrollbarGrab] = rgb(0.25f, 0.26f, 0.28f);
+    colors[ImGuiCol_ScrollbarGrabHovered] = rgb(0.32f, 0.33f, 0.36f);
+    colors[ImGuiCol_ScrollbarGrabActive] = accentDim;
+    colors[ImGuiCol_CheckMark] = accent;
+    colors[ImGuiCol_SliderGrab] = accentDim;
+    colors[ImGuiCol_SliderGrabActive] = accent;
+    colors[ImGuiCol_Button] = rgb(0.18f, 0.19f, 0.21f);
+    colors[ImGuiCol_ButtonHovered] = rgb(0.25f, 0.26f, 0.29f);
+    colors[ImGuiCol_ButtonActive] = accentDim;
+    colors[ImGuiCol_Header] = rgb(0.20f, 0.21f, 0.23f);
+    colors[ImGuiCol_HeaderHovered] = rgb(0.26f, 0.27f, 0.30f);
+    colors[ImGuiCol_HeaderActive] = rgb(0.30f, 0.31f, 0.34f);
+    colors[ImGuiCol_Separator] = rgb(0.20f, 0.21f, 0.23f);
+    colors[ImGuiCol_SeparatorHovered] = accentDim;
+    colors[ImGuiCol_SeparatorActive] = accent;
+    colors[ImGuiCol_ResizeGrip] = rgb(0.0f, 0.0f, 0.0f, 0.0f);
+    colors[ImGuiCol_ResizeGripHovered] = accentDim;
+    colors[ImGuiCol_ResizeGripActive] = accent;
+    colors[ImGuiCol_Tab] = rgb(0.105f, 0.11f, 0.12f);
+    colors[ImGuiCol_TabHovered] = rgb(0.24f, 0.25f, 0.28f);
+    colors[ImGuiCol_TabSelected] = rgb(0.17f, 0.175f, 0.19f);
+    colors[ImGuiCol_TabSelectedOverline] = accent;
+    colors[ImGuiCol_TabDimmed] = rgb(0.095f, 0.10f, 0.11f);
+    colors[ImGuiCol_TabDimmedSelected] = rgb(0.14f, 0.145f, 0.16f);
+    colors[ImGuiCol_TabDimmedSelectedOverline] = accentDim;
+    colors[ImGuiCol_DockingPreview] = rgb(1.0f, 0.72f, 0.28f, 0.35f);
+    colors[ImGuiCol_DockingEmptyBg] = rgb(0.06f, 0.06f, 0.07f);
+    colors[ImGuiCol_PlotHistogram] = accentDim;
+    colors[ImGuiCol_PlotHistogramHovered] = accent;
+    colors[ImGuiCol_TableHeaderBg] = rgb(0.14f, 0.145f, 0.16f);
+    colors[ImGuiCol_TableBorderStrong] = rgb(0.20f, 0.21f, 0.23f);
+    colors[ImGuiCol_TableBorderLight] = rgb(0.16f, 0.17f, 0.18f);
+    colors[ImGuiCol_TableRowBgAlt] = rgb(1.0f, 1.0f, 1.0f, 0.025f);
+    colors[ImGuiCol_TextSelectedBg] = rgb(1.0f, 0.72f, 0.28f, 0.30f);
+    colors[ImGuiCol_DragDropTarget] = accent;
+    colors[ImGuiCol_NavCursor] = accent;
+    colors[ImGuiCol_ModalWindowDimBg] = rgb(0.0f, 0.0f, 0.0f, 0.55f);
+    // The system's interface font, unless editor.font names another; Dear ImGui's own when there is none.
+    const std::string named =
+        app.CVars()
+            .Register<std::string>(
+                "editor.font", "",
+                "A .ttf file for the editor's text; empty takes the system's (Segoe UI, DejaVu Sans)")
+            .Get();
+    const float size =
+        static_cast<float>(app.CVars().Register<double>("editor.font_size", 16.0, "Pixels of the editor's text").Get());
+    std::vector<std::filesystem::path> fonts;
+    if (!named.empty()) {
+        fonts.emplace_back(named);
+    } else {
+        fonts = {"C:/Windows/Fonts/segoeui.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                 "/usr/share/fonts/TTF/DejaVuSans.ttf"};
+    }
+    if (debugui::DebugUi* overlay = app.DebugOverlay()) {
+        for (const std::filesystem::path& font : fonts) {
+            if (overlay->UseFont(font, std::clamp(size, 10.0f, 32.0f))) {
+                break;
+            }
+        }
+    }
+}
+
+bool Editor::IconButton(const char* id, Icon icon, bool active, const char* tip) {
+    // A square button with a drawn icon: the toolbar's tools (ADR-0118).
+    const float size = ImGui::GetFrameHeight();
+    const ImVec2 corner = ImGui::GetCursorScreenPos();
+    const bool pressed = ImGui::InvisibleButton(id, ImVec2(size, size));
+    const bool hovered = ImGui::IsItemHovered();
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    const ImVec2 end(corner.x + size, corner.y + size);
+    if (active || hovered) {
+        draw->AddRectFilled(corner, end,
+                            ImGui::GetColorU32(active ? ImVec4(1.0f, 0.72f, 0.28f, 0.22f)
+                                                      : ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered)),
+                            3.0f);
+    }
+    const ImU32 color = ImGui::GetColorU32(active ? ImGui::GetStyleColorVec4(ImGuiCol_CheckMark)
+                                                  : ImGui::GetStyleColorVec4(ImGuiCol_Text));
+    const ImVec2 c((corner.x + end.x) * 0.5f, (corner.y + end.y) * 0.5f);
+    const float r = size * 0.30f;
+    const float line = std::max(1.5f, size / 14.0f);
+    const auto arrowhead = [&](ImVec2 tip, ImVec2 direction) {
+        const ImVec2 side(-direction.y, direction.x);
+        const float head = r * 0.38f;
+        draw->AddTriangleFilled(tip,
+                                ImVec2(tip.x - direction.x * head + side.x * head * 0.7f,
+                                       tip.y - direction.y * head + side.y * head * 0.7f),
+                                ImVec2(tip.x - direction.x * head - side.x * head * 0.7f,
+                                       tip.y - direction.y * head - side.y * head * 0.7f),
+                                color);
+    };
+    switch (icon) {
+    case Icon::Move:
+        draw->AddLine(ImVec2(c.x - r, c.y), ImVec2(c.x + r, c.y), color, line);
+        draw->AddLine(ImVec2(c.x, c.y - r), ImVec2(c.x, c.y + r), color, line);
+        arrowhead(ImVec2(c.x + r, c.y), ImVec2(1, 0));
+        arrowhead(ImVec2(c.x - r, c.y), ImVec2(-1, 0));
+        arrowhead(ImVec2(c.x, c.y - r), ImVec2(0, -1));
+        arrowhead(ImVec2(c.x, c.y + r), ImVec2(0, 1));
+        break;
+    case Icon::Rotate:
+        draw->PathArcTo(c, r * 0.85f, 0.5f, 5.3f, 20);
+        draw->PathStroke(color, ImDrawFlags_None, line);
+        arrowhead(ImVec2(c.x + std::cos(5.3f) * r * 0.85f, c.y + std::sin(5.3f) * r * 0.85f), ImVec2(0.6f, 0.8f));
+        break;
+    case Icon::Scale:
+        draw->AddRect(ImVec2(c.x - r, c.y - r * 0.2f), ImVec2(c.x + r * 0.2f, c.y + r), color, 1.0f, 0, line);
+        draw->AddLine(ImVec2(c.x - r * 0.1f, c.y + r * 0.1f), ImVec2(c.x + r, c.y - r), color, line);
+        arrowhead(ImVec2(c.x + r, c.y - r), ImVec2(0.707f, -0.707f));
+        break;
+    case Icon::Paint:
+        draw->AddLine(ImVec2(c.x + r, c.y - r), ImVec2(c.x - r * 0.2f, c.y + r * 0.2f), color, line * 1.6f);
+        draw->AddCircleFilled(ImVec2(c.x - r * 0.45f, c.y + r * 0.45f), r * 0.42f, color);
+        break;
+    case Icon::Measure:
+        draw->AddLine(ImVec2(c.x - r, c.y + r * 0.6f), ImVec2(c.x + r, c.y - r * 0.6f), color, line);
+        for (int tick = 0; tick <= 4; ++tick) {
+            const float t = static_cast<float>(tick) / 4.0f;
+            const ImVec2 at(c.x - r + 2.0f * r * t, c.y + r * 0.6f - 1.2f * r * t);
+            const float length = tick % 2 == 0 ? r * 0.45f : r * 0.25f;
+            draw->AddLine(at, ImVec2(at.x + length * 0.5f, at.y + length * 0.85f), color, line * 0.8f);
+        }
+        break;
+    case Icon::Snap:
+        // A magnet.
+        draw->PathArcTo(ImVec2(c.x, c.y + r * 0.1f), r * 0.75f, 0.0f, 3.14159f, 16);
+        draw->PathStroke(color, ImDrawFlags_None, line * 1.8f);
+        draw->AddLine(ImVec2(c.x - r * 0.75f, c.y + r * 0.1f), ImVec2(c.x - r * 0.75f, c.y - r * 0.8f), color,
+                      line * 1.8f);
+        draw->AddLine(ImVec2(c.x + r * 0.75f, c.y + r * 0.1f), ImVec2(c.x + r * 0.75f, c.y - r * 0.8f), color,
+                      line * 1.8f);
+        break;
+    case Icon::World:
+        draw->AddCircle(c, r, color, 20, line);
+        draw->AddEllipse(c, ImVec2(r * 0.45f, r), color, 0.0f, 20, line * 0.8f);
+        draw->AddLine(ImVec2(c.x - r, c.y), ImVec2(c.x + r, c.y), color, line * 0.8f);
+        break;
+    case Icon::Local:
+        draw->AddLine(c, ImVec2(c.x + r, c.y + r * 0.35f), color, line);
+        draw->AddLine(c, ImVec2(c.x, c.y - r), color, line);
+        draw->AddLine(c, ImVec2(c.x - r * 0.8f, c.y + r * 0.6f), color, line);
+        draw->AddRect(ImVec2(c.x - r * 0.35f, c.y - r * 0.35f), ImVec2(c.x + r * 0.35f, c.y + r * 0.35f), color, 0.0f,
+                      0, line * 0.7f);
+        break;
+    case Icon::Play:
+        draw->AddTriangleFilled(ImVec2(c.x - r * 0.65f, c.y - r), ImVec2(c.x + r, c.y),
+                                ImVec2(c.x - r * 0.65f, c.y + r), color);
+        break;
+    case Icon::Simulate:
+        draw->AddCircle(c, r, color, 20, line);
+        draw->AddCircleFilled(ImVec2(c.x, c.y - r * 0.15f), r * 0.32f, color);
+        draw->AddLine(ImVec2(c.x - r * 0.6f, c.y + r * 0.55f), ImVec2(c.x + r * 0.6f, c.y + r * 0.55f), color, line);
+        break;
+    }
+    if (hovered) {
+        ImGui::SetTooltip("%s", tip);
+    }
+    return pressed;
 }
 
 void Editor::DrawShowMenu() {
