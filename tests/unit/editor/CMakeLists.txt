@@ -2,6 +2,7 @@
 dai_add_test(NAME daidalos_editor_tests
     SOURCES
         ClipboardTests.cpp
+        CommandsTests.cpp
         CuesTests.cpp
         HistoryTests.cpp
         ImportTests.cpp
@@ -12,6 +13,7 @@ dai_add_test(NAME daidalos_editor_tests
         ThumbnailTests.cpp
         ViewsTests.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Clipboard.cpp
+        ${PROJECT_SOURCE_DIR}/apps/editor/src/Commands.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Cues.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/History.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Import.cpp
