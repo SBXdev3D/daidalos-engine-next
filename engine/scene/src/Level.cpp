@@ -221,6 +221,8 @@ LevelSync LevelInstance::Sync(const Level& from, const Level& to) {
             }
             LevelEntity moved = *old->second;
             moved.transform = entity->transform;
+            // What only the editor reads (ADR-0107) changes nothing in the scene.
+            moved.editing = entity->editing;
             if (moved == *entity) {
                 // Only the transform: move what is there.
                 static_cast<math::Transform&>(world.Get<ecs::LocalTransform>(existing)) = entity->transform;

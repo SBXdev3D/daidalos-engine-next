@@ -5,6 +5,7 @@ dai_add_test(NAME daidalos_editor_tests
         CuesTests.cpp
         HistoryTests.cpp
         ImportTests.cpp
+        OrganiseTests.cpp
         OverlaysTests.cpp
         PaintTests.cpp
         ThumbnailTests.cpp
@@ -12,6 +13,7 @@ dai_add_test(NAME daidalos_editor_tests
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Cues.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/History.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Import.cpp
+        ${PROJECT_SOURCE_DIR}/apps/editor/src/Organise.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Overlays.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Picking.cpp
         ${PROJECT_SOURCE_DIR}/apps/editor/src/Paint.cpp

@@ -281,6 +281,20 @@ TEST(LevelFileTest, LooseObjectsKeepTheirBody) {
     EXPECT_EQ(*read, level);
 }
 
+TEST(LevelFileTest, EntitiesKeepWhatTheEditorKeeps) {
+    Level level;
+    LevelEntity entity{.id = 1, .name = "Lamp"};
+    entity.editing = scene::LevelEditing{.folder = "Lights/Hall", .hidden = true, .locked = true};
+    level.entities.push_back(entity);
+    level.entities.push_back(LevelEntity{.id = 2, .name = "Plain"});
+    const std::string text = WriteLevel(level);
+    const core::Result<Level> read = ParseLevel(text);
+    ASSERT_TRUE(read.has_value()) << core::Format(read.error());
+    EXPECT_EQ(*read, level);
+    // Written only where it is not the default.
+    EXPECT_EQ(text.find("\"editor\""), text.rfind("\"editor\""));
+}
+
 TEST(LevelFileTest, EntitiesKeepTheirPrefab) {
     Level level;
     level.entities.push_back(LevelEntity{.id = 1, .name = "Alarm", .prefab = "Prefabs/alarm_beams.prefab.json"});

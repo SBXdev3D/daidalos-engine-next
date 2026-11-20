@@ -102,6 +102,16 @@ struct LevelLightning {
     [[nodiscard]] bool operator==(const LevelLightning&) const = default;
 };
 
+/// What only the editor reads of an entity (ADR-0107): the folder the hierarchy shows it in, and whether it is
+/// hidden from the editor's view or locked against clicks there. The game ignores it.
+struct LevelEditing {
+    /// Folders separated by '/', such as "Lights/Hall"; empty at the top.
+    std::string folder;
+    bool hidden = false;
+    bool locked = false;
+    [[nodiscard]] bool operator==(const LevelEditing&) const = default;
+};
+
 /// One entity of a level file.
 struct LevelEntity {
     /// Stable, positive, unique in the level.
@@ -136,6 +146,7 @@ struct LevelEntity {
     /// A loose object (ADR-0073): physics moves it.
     std::optional<Body> body;
     std::optional<Tags> game;
+    LevelEditing editing;
     [[nodiscard]] bool operator==(const LevelEntity&) const;
 };
 

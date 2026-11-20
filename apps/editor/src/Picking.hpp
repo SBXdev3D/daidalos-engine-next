@@ -12,6 +12,7 @@
 #include <glm/vec3.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -53,9 +54,11 @@ class MeshPicker {
 public:
     /// Learns the triangles of every model the world places (scene::ModelInstance), by mesh.
     void Rebuild(daidalos::ecs::World& world);
-    /// The nearest drawn entity the ray hits, if any. direction need not be normalized.
+    /// The nearest drawn entity the ray hits, if any. direction need not be normalized. Entities skip says yes to
+    /// are passed through, such as locked ones (ADR-0107).
     [[nodiscard]] std::optional<PickHit> Cast(daidalos::ecs::World& world, const glm::vec3& origin,
-                                              const glm::vec3& direction) const;
+                                              const glm::vec3& direction,
+                                              const std::function<bool(daidalos::ecs::Entity)>& skip = {}) const;
     /// The box around an entity's own mesh, in world space, or empty.
     [[nodiscard]] Bounds WorldBounds(daidalos::ecs::World& world, daidalos::ecs::Entity entity) const;
 

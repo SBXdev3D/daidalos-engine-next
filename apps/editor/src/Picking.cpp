@@ -111,12 +111,13 @@ const MeshPicker::Mesh* MeshPicker::Find(renderer::MeshHandle mesh) const {
     return found == m_meshes.end() ? nullptr : &found->second;
 }
 
-std::optional<PickHit> MeshPicker::Cast(ecs::World& world, const glm::vec3& origin, const glm::vec3& direction) const {
+std::optional<PickHit> MeshPicker::Cast(ecs::World& world, const glm::vec3& origin, const glm::vec3& direction,
+                                        const std::function<bool(ecs::Entity)>& skip) const {
     std::optional<PickHit> nearest;
     world.Each<scene::MeshRenderer, ecs::WorldTransform>([&](ecs::Entity entity, const scene::MeshRenderer& drawn,
                                                              const ecs::WorldTransform& transform) {
         const Mesh* mesh = Find(drawn.mesh);
-        if (mesh == nullptr) {
+        if (mesh == nullptr || (skip && skip(entity))) {
             return;
         }
         // In the mesh's own space, where its triangles are: distances along the ray stay the same.

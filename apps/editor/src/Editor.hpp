@@ -26,6 +26,7 @@ struct ImDrawList;
 #include <memory>
 #include <optional>
 #include <random>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -33,6 +34,7 @@ struct ImDrawList;
 #include "AssetBrowser.hpp"
 #include "History.hpp"
 #include "MaterialPanel.hpp"
+#include "Organise.hpp"
 #include "Overlays.hpp"
 #include "Paint.hpp"
 #include "Picking.hpp"
@@ -129,6 +131,35 @@ private:
     void SelectAll();
     /// Moves an entity under another, or to the root with 0, where it stays in the world.
     void Reparent(std::uint64_t child, std::uint64_t parent);
+
+    // Organising (ADR-0107).
+    /// Brings the scene from what showed of one level to what shows of the current one.
+    void SyncShown(const daidalos::scene::Level& before, const std::set<std::uint64_t>& isolatedBefore);
+    /// Hides or shows entities in the editor's view, as one step of the history.
+    void SetHidden(const std::vector<std::uint64_t>& ids, bool hidden);
+    void ShowEverything();
+    /// Shows only the selection, or everything again.
+    void ToggleIsolate();
+    void SetLocked(const std::vector<std::uint64_t>& ids, bool locked);
+    /// Moves entities to the root, where they stay in the world, into a folder of the hierarchy.
+    void MoveToFolder(const std::vector<std::uint64_t>& ids, const std::string& folder);
+    /// Lines the selection up on an axis, or spreads it evenly along it.
+    void AlignSelection(int axis, AlignTo to);
+    void SpreadSelection(int axis);
+    /// Moves entities by world offsets, each where it hangs.
+    void MoveBy(const std::vector<std::pair<std::uint64_t, glm::vec3>>& offsets, std::string_view label);
+    /// The world positions of the selection's roots, in their order.
+    [[nodiscard]] std::vector<glm::vec3> RootPositions(const std::vector<std::uint64_t>& roots);
+    /// The box around the selection's meshes, or around their positions.
+    [[nodiscard]] Bounds SelectionBounds();
+    void DrawFolder(const std::string& folder, const std::vector<std::string>& folders,
+                    const std::map<std::string, std::vector<std::uint64_t>>& byFolder,
+                    const std::vector<std::vector<std::uint64_t>>& children, const std::vector<std::size_t>& indexOf);
+    /// The hide and lock buttons at the end of a hierarchy row; returns which was clicked.
+    void RowToggles(const std::string& key, bool hidden, bool locked, bool& toggleHidden, bool& toggleLocked);
+    /// The measuring tool (M): drag between two surfaces to see the distance.
+    void Measure(daidalos::app::Application& app);
+    void DrawMeasure();
 
     // Prefabs (ADR-0078).
     /// Saves the selection, with what is under it, as a prefab file under the asset root, and puts one entity
@@ -306,6 +337,13 @@ private:
     std::unique_ptr<Loading> m_loading;
     Lighting m_lighting = Lighting::Lit;
     ShowFlags m_show;
+    /// What the view shows alone while isolated (Shift+H); empty for everything.
+    std::set<std::uint64_t> m_isolated;
+    Pivot m_pivot = Pivot::Origin;
+    bool m_measuring = false;
+    bool m_measureHeld = false;
+    std::optional<glm::vec3> m_measureFrom;
+    std::optional<glm::vec3> m_measureTo;
     /// Whether the scene's time runs in the view: off, effects, flickers and animations hold still (Ctrl+R).
     bool m_realtime = true;
     /// What hides what in the view, from the depth the renderer read back; refreshed each frame.
@@ -331,6 +369,10 @@ private:
     bool m_layoutBuilt = false;
 
     int m_operation = 0;
+    /// The gizmo's frame when the drag began and now, and where each moved entity was then (ADR-0107).
+    glm::mat4 m_gizmoStart{1.0f};
+    glm::mat4 m_gizmoMatrix{1.0f};
+    std::vector<std::pair<std::uint64_t, glm::mat4>> m_dragStart;
     bool m_local = false;
     bool m_gizmoUsing = false;
     /// The selection's rotation in degrees, kept while it is edited, so that angles do not jump between Euler
