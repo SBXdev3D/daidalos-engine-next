@@ -148,6 +148,10 @@ std::optional<PickHit> MeshPicker::Cast(ecs::World& world, const glm::vec3& orig
             const float length = glm::length(normal);
             normal = length > 0.0f ? normal / length : glm::vec3(0.0f, 1.0f, 0.0f);
             nearest->normal = glm::dot(normal, direction) > 0.0f ? -normal : normal;
+            for (std::size_t corner = 0; corner < 3; ++corner) {
+                nearest->corners[corner] =
+                    math::TransformPoint(transform.matrix, positions[indices[nearestTriangle + corner]]);
+            }
         }
     });
     return nearest;

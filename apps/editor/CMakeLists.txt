@@ -32,6 +32,8 @@ dai_add_app(NAME editor
         src/SequencePanel.hpp
         src/Thumbnail.cpp
         src/Thumbnail.hpp
+        src/Views.cpp
+        src/Views.hpp
     DEPS
         daidalos::app
         daidalos::scene

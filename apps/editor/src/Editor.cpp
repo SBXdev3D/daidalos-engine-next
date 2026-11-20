@@ -4,6 +4,7 @@
 
 #include "Editor.hpp"
 
+#include <daidalos/debugui/DebugUi.hpp>
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/logging/Log.hpp>
 #include <daidalos/math/Axes.hpp>
@@ -97,6 +98,19 @@ math::Transform Decompose(const glm::mat4& matrix) {
     return transform;
 }
 
+/// The shortest turn from one direction to another, both of length 1.
+glm::quat TurnBetween(const glm::vec3& from, const glm::vec3& to) {
+    const float cosine = glm::dot(from, to);
+    if (cosine < -0.9999f) {
+        // Opposite: half a turn about any axis square to from.
+        const glm::vec3 axis = glm::normalize(std::abs(from.x) < 0.9f ? glm::cross(from, glm::vec3(1.0f, 0.0f, 0.0f))
+                                                                      : glm::cross(from, glm::vec3(0.0f, 1.0f, 0.0f)));
+        return glm::angleAxis(glm::pi<float>(), axis);
+    }
+    const glm::vec3 axis = glm::cross(from, to);
+    return glm::normalize(glm::quat(1.0f + cosine, axis.x, axis.y, axis.z));
+}
+
 /// The twelve edges of the cube from -0.5 to 0.5, as pairs of corners.
 constexpr std::array<std::array<int, 2>, 12> kCubeEdges{
     {{0, 1}, {2, 3}, {4, 5}, {6, 7}, {0, 2}, {1, 3}, {4, 6}, {5, 7}, {0, 4}, {1, 5}, {2, 6}, {3, 7}}};
@@ -180,21 +194,6 @@ constexpr std::array<std::array<const char*, 2>, 15> kDebugViews{{
 }};
 
 } // namespace
-
-glm::mat4 EditorCamera::World() const {
-    math::Transform transform;
-    transform.translation = position;
-    transform.rotation = math::FromYawPitchRoll(yaw, pitch, 0.0f);
-    return math::ToMatrix(transform);
-}
-
-glm::mat4 EditorCamera::View() const {
-    return glm::inverse(World());
-}
-
-glm::vec3 EditorCamera::Forward() const {
-    return math::FromYawPitchRoll(yaw, pitch, 0.0f) * math::kForward;
-}
 
 core::Result<void> Editor::OnStart(app::Application& app) {
     m_app = &app;
@@ -530,7 +529,7 @@ void Editor::Create(std::string_view label, scene::LevelEntity entity, std::opti
     if (entity.name.empty()) {
         entity.name = std::string(label);
     }
-    entity.transform.translation = position.value_or(m_camera.position + m_camera.Forward() * 4.0f);
+    entity.transform.translation = position.value_or(InFront());
     Change(std::format("Create {}", label), [&entity](scene::Level& level) { level.entities.push_back(entity); });
     m_history.Commit(m_level);
     Select(entity.id);
@@ -1522,6 +1521,12 @@ void Editor::OnStop(app::Application& /*app*/) {
     // returns, before the editor itself goes.
     m_loading.reset();
     m_browser.reset();
+    for (Pane& pane : m_panes) {
+        if (!pane.snapshot.IsNull() && m_app != nullptr) {
+            m_app->Renderer().Device().DestroyTexture(pane.snapshot);
+            pane.snapshot = {};
+        }
+    }
     m_instance.reset();
     // The sandbox reads its level again when F5 starts it over: the play copy stays while it runs.
     if (!m_play.Running() && !m_playFile.empty()) {
@@ -1662,14 +1667,28 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
 
     // While a level loads, the one open shows but does not move or change.
     if (m_scene != nullptr && m_loading == nullptr) {
-        UpdateCamera(app, static_cast<float>(time.unclampedDelta.count()));
-        if (!m_show.gameView) {
-            DrawGrid();
-            DrawMarkers();
-            DrawShownExtras();
-            DrawSelectedCue();
+        const bool switching = UpdatePanes(app);
+        UsePane(m_active);
+        if (!switching) {
+            UpdateCamera(app, static_cast<float>(time.unclampedDelta.count()));
         }
-        if (m_measuring) {
+        for (std::size_t pane = 0; pane < m_panes.size(); ++pane) {
+            if (!m_split && pane != m_active) {
+                continue;
+            }
+            UsePane(pane);
+            DrawPaneFrame(pane);
+            if (!m_show.gameView) {
+                DrawGrid();
+                DrawMarkers();
+                DrawShownExtras();
+                DrawSelectedCue();
+            }
+        }
+        UsePane(m_active);
+        if (switching) {
+            // The click chose a pane: it does nothing else.
+        } else if (m_measuring) {
             Measure(app);
             DrawMeasure();
         } else if (m_painting) {
@@ -1714,8 +1733,14 @@ void Editor::OnUpdate(app::Application& app, const core::FrameTime& time) {
     }
     UpdateTitle(app);
     if (m_scene != nullptr && !m_cameraEntity.IsNull()) {
+        // The scene is drawn from the live pane's camera: an axis view's stands far back with a narrow lens.
+        m_drawPane = m_active;
+        const EditorCamera eye = Eye();
         static_cast<math::Transform&>(m_scene->World().Get<ecs::LocalTransform>(m_cameraEntity)) =
-            Decompose(m_camera.World());
+            Decompose(eye.World());
+        scene::Camera& camera = m_scene->World().Get<scene::Camera>(m_cameraEntity);
+        camera.verticalFov = eye.verticalFov;
+        camera.nearPlane = eye.nearPlane;
     }
 }
 
@@ -1787,10 +1812,49 @@ void Editor::HandleShortcuts(app::Application& /*app*/) {
         }
         return;
     }
-    for (int slot = 1; slot <= 9; ++slot) {
+    for (int slot = 1; slot <= 9 && !io.KeyShift; ++slot) {
         if (pressed(static_cast<ImGuiKey>(ImGuiKey_1 + slot - 1))) {
             Bookmark(slot, false);
         }
+    }
+    if (io.KeyShift) {
+        // Shift+1 to Shift+4: what the live pane looks from; Shift+5: one view or four (ADR-0108).
+        constexpr std::array<ViewKind, 4> kKinds{ViewKind::Perspective, ViewKind::Top, ViewKind::Front, ViewKind::Side};
+        for (std::size_t kind = 0; kind < kKinds.size(); ++kind) {
+            if (pressed(static_cast<ImGuiKey>(ImGuiKey_1 + static_cast<int>(kind)))) {
+                SetViewKind(kKinds[kind]);
+                return;
+            }
+        }
+        if (pressed(ImGuiKey_5)) {
+            SetSplit(!m_split);
+            return;
+        }
+    }
+    if (pressed(ImGuiKey_Keypad7)) {
+        SetViewKind(ViewKind::Top);
+    }
+    if (pressed(ImGuiKey_Keypad1)) {
+        SetViewKind(ViewKind::Front);
+    }
+    if (pressed(ImGuiKey_Keypad3)) {
+        SetViewKind(ViewKind::Side);
+    }
+    if (pressed(ImGuiKey_Keypad5)) {
+        SetViewKind(ViewKind::Perspective);
+    }
+    if (Pane& live = m_panes[m_active]; live.kind != ViewKind::Perspective) {
+        // [ and ] move an axis view's cut, by a quarter meter, or a meter with Shift.
+        const float step = io.KeyShift ? 1.0f : 0.25f;
+        if (ImGui::IsKeyPressed(ImGuiKey_LeftBracket, true)) {
+            live.ortho.cut = std::clamp(live.ortho.cut - step, kMinCut, kMaxCut);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_RightBracket, true)) {
+            live.ortho.cut = std::clamp(live.ortho.cut + step, kMinCut, kMaxCut);
+        }
+    }
+    if (pressed(ImGuiKey_End)) {
+        DropToFloor();
     }
     if (pressed(ImGuiKey_G)) {
         if (io.KeyShift) {
@@ -1882,6 +1946,11 @@ void Editor::FrameSelection() {
     if (bounds.Empty()) {
         return;
     }
+    if (Pane& live = m_panes[m_active]; live.kind != ViewKind::Perspective) {
+        const glm::vec2 size = live.rect.Size();
+        live.ortho = Framed(live.kind, bounds.min, bounds.max, size.x / std::max(size.y, 1.0f));
+        return;
+    }
     const glm::vec3 center = (bounds.min + bounds.max) * 0.5f;
     const float radius = glm::length(bounds.max - bounds.min) * 0.5f;
     const float distance = std::max(radius / std::tan(m_camera.verticalFov * 0.5f), 1.0f);
@@ -1890,15 +1959,18 @@ void Editor::FrameSelection() {
 void Editor::OnRender(app::Application& app, renderer::SceneView& view) {
     LightFromCamera(view);
     FilterView(view);
+    // A pane that becomes live, or changes its view, does not follow from the last frame (ADR-0108).
+    view.cut = view.cut || std::exchange(m_cutView, false);
     // The scene fills the dockspace's central node, in pixels (ADR-0055).
     const platform::Extent size = app.MainWindow().Size();
     const platform::Extent pixels = app.MainWindow().PixelSize();
     const float scaleX = size.width > 0 ? static_cast<float>(pixels.width) / static_cast<float>(size.width) : 1.0f;
     const float scaleY = size.height > 0 ? static_cast<float>(pixels.height) / static_cast<float>(size.height) : 1.0f;
-    const glm::vec2 extent = m_viewportMax - m_viewportMin;
+    const Rect& live = m_panes[m_active].rect;
+    const glm::vec2 extent = live.Size();
     if (extent.x >= 8.0f && extent.y >= 8.0f) {
-        view.viewport = renderer::ViewRect{.x = static_cast<std::uint32_t>(std::max(m_viewportMin.x, 0.0f) * scaleX),
-                                           .y = static_cast<std::uint32_t>(std::max(m_viewportMin.y, 0.0f) * scaleY),
+        view.viewport = renderer::ViewRect{.x = static_cast<std::uint32_t>(std::max(live.min.x, 0.0f) * scaleX),
+                                           .y = static_cast<std::uint32_t>(std::max(live.min.y, 0.0f) * scaleY),
                                            .width = static_cast<std::uint32_t>(extent.x * scaleX),
                                            .height = static_cast<std::uint32_t>(extent.y * scaleY)};
     }
@@ -1948,7 +2020,9 @@ void Editor::LightFromCamera(renderer::SceneView& view) const {
     view.atmosphere.fog.density = 0.0f;
     renderer::Light lamp;
     lamp.type = renderer::LightType::Point;
-    lamp.position = m_camera.position + glm::vec3(0.0f, 0.25f, 0.0f);
+    const Pane& live = m_panes[m_active];
+    lamp.position = live.kind == ViewKind::Perspective ? m_camera.position + glm::vec3(0.0f, 0.25f, 0.0f)
+                                                       : live.ortho.focus - ViewAxis(live.kind) * 0.3f;
     lamp.color = glm::vec3(1.0f, 0.96f, 0.9f) * 800.0f;
     lamp.range = 80.0f;
     lamp.radius = 0.5f;
@@ -2058,6 +2132,9 @@ void Editor::DrawMenu(app::Application& app) {
         if (ImGui::MenuItem(m_isolated.empty() ? "Isolate" : "Stop isolating", "Shift+H", false,
                             !m_selection.empty() || !m_isolated.empty())) {
             ToggleIsolate();
+        }
+        if (ImGui::MenuItem("Drop to the floor", "End", false, !m_selection.empty())) {
+            DropToFloor();
         }
         if (ImGui::MenuItem("Lock or unlock", "L", false, !m_selection.empty())) {
             const scene::LevelEntity* selected = Selected();
@@ -2264,6 +2341,26 @@ void Editor::DrawMenu(app::Application& app) {
             DrawLightingMenu();
             ImGui::EndMenu();
         }
+        ImGui::Separator();
+        constexpr std::array<std::pair<ViewKind, const char*>, 4> kKinds{{{ViewKind::Perspective, "Shift+1"},
+                                                                          {ViewKind::Top, "Shift+2"},
+                                                                          {ViewKind::Front, "Shift+3"},
+                                                                          {ViewKind::Side, "Shift+4"}}};
+        for (const auto& [kind, keys] : kKinds) {
+            if (ImGui::MenuItem(std::string(ViewName(kind)).c_str(), keys, m_panes[m_active].kind == kind)) {
+                SetViewKind(kind);
+            }
+        }
+        if (ImGui::MenuItem("Four views", "Shift+5", m_split)) {
+            SetSplit(!m_split);
+        }
+        ImGui::Separator();
+        ImGui::MenuItem("Snap to surfaces while moving", nullptr, &m_surfaceSnap);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("The selection goes onto what is under the mouse; Ctrl+Shift does it once, V snaps to "
+                              "the nearest corner");
+        }
+        ImGui::MenuItem("Turn to the surface", nullptr, &m_alignToSurface);
         ImGui::Separator();
         ImGui::MenuItem("Grid", "Shift+G", &m_show.grid);
         ImGui::MenuItem("Snapping", "X", &m_snap);
@@ -2568,9 +2665,11 @@ void Editor::DrawDockspace() {
         }
     }
     if (const ImGuiDockNode* central = ImGui::DockBuilderGetCentralNode(dockspace)) {
-        m_viewportMin = {central->Pos.x, central->Pos.y};
-        m_viewportMax = {central->Pos.x + central->Size.x, central->Pos.y + central->Size.y};
+        m_central = Rect{{central->Pos.x, central->Pos.y},
+                         {central->Pos.x + central->Size.x, central->Pos.y + central->Size.y}};
     }
+    LayOutPanes();
+    UsePane(m_active);
 }
 
 void Editor::RowToggles(const std::string& key, bool hidden, bool locked, bool& toggleHidden, bool& toggleLocked) {
@@ -2915,6 +3014,25 @@ bool Editor::MouseInViewport() const {
 void Editor::UpdateCamera(app::Application& app, float seconds) {
     const input::InputState& input = app.Input();
     const ImGuiIO& io = ImGui::GetIO();
+    Pane& live = m_panes[m_active];
+    if (live.kind != ViewKind::Perspective) {
+        // An axis view pans with the right or middle button and zooms with the wheel, about the mouse.
+        m_flying = false;
+        if (!MouseInViewport() || io.WantCaptureMouse) {
+            return;
+        }
+        if (input.IsDown(platform::MouseButton::Right) || input.IsDown(platform::MouseButton::Middle)) {
+            live.ortho.focus = Panned(live.kind, live.ortho, input.MouseDelta(), live.rect.Size().y);
+        }
+        if (input.WheelDelta().y != 0.0f) {
+            const auto [origin, direction] = RayAt(glm::vec2(io.MousePos.x, io.MousePos.y));
+            const glm::vec3 under = origin + direction * glm::dot(live.ortho.focus - origin, direction);
+            const float before = live.ortho.halfHeight;
+            live.ortho.halfHeight = Zoomed(before, input.WheelDelta().y);
+            live.ortho.focus = under + (live.ortho.focus - under) * (live.ortho.halfHeight / before);
+        }
+        return;
+    }
     if (!m_flying && input.WasPressed(platform::MouseButton::Right) && MouseInViewport() && !io.WantCaptureMouse) {
         m_flying = true;
         app.MainWindow().SetMouseCaptured(true);
@@ -2959,12 +3077,14 @@ void Editor::UpdateCamera(app::Application& app, float seconds) {
 
 glm::mat4 Editor::Projection() const {
     const glm::vec2 extent = glm::max(m_viewportMax - m_viewportMin, glm::vec2(1.0f));
-    return glm::perspective(m_camera.verticalFov, extent.x / extent.y, m_camera.nearPlane, m_camera.farPlane);
+    const EditorCamera eye = Eye();
+    return glm::perspective(eye.verticalFov, extent.x / extent.y, eye.nearPlane, eye.farPlane);
 }
 
 std::optional<glm::vec2> Editor::Project(const glm::vec3& point) const {
-    const glm::vec4 clip = Projection() * m_camera.View() * glm::vec4(point, 1.0f);
-    if (clip.w <= m_camera.nearPlane) {
+    const EditorCamera eye = Eye();
+    const glm::vec4 clip = Projection() * eye.View() * glm::vec4(point, 1.0f);
+    if (clip.w <= eye.nearPlane) {
         return std::nullopt;
     }
     const glm::vec2 ndc = glm::vec2(clip) / clip.w;
@@ -3062,7 +3182,7 @@ void Editor::DrawMarkers() {
             continue;
         }
         const glm::mat4& matrix = world.Get<ecs::WorldTransform>(created).matrix;
-        const float distance = glm::distance(glm::vec3(matrix[3]), m_camera.position);
+        const float distance = glm::distance(glm::vec3(matrix[3]), Focus());
         const bool reaching = m_show.lightReach && entity.light.has_value();
         if (!selected && distance > kMarkerReach && !reaching) {
             continue;
@@ -3128,7 +3248,7 @@ void Editor::DrawShownExtras() {
             continue;
         }
         const glm::mat4& matrix = world.Get<ecs::WorldTransform>(created).matrix;
-        if (m_show.collision && entity.body && glm::distance(glm::vec3(matrix[3]), m_camera.position) < 80.0f) {
+        if (m_show.collision && entity.body && glm::distance(glm::vec3(matrix[3]), Focus()) < 80.0f) {
             // Static boxes in cyan, bodies that move in magenta.
             const ImU32 color = entity.body->mass <= 0.0f ? IM_COL32(60, 230, 230, 200) : IM_COL32(230, 80, 230, 200);
             Box3D(draw, matrix, entity.body->center - entity.body->size * 0.5f,
@@ -3148,7 +3268,7 @@ void Editor::DrawShownExtras() {
         const glm::vec3 lift(0.0f, 0.05f, 0.0f);
         for (std::size_t edge = 0; edge + 1 < m_navigationEdges.size(); edge += 2) {
             const glm::vec3 middle = (m_navigationEdges[edge] + m_navigationEdges[edge + 1]) * 0.5f;
-            if (glm::distance(middle, m_camera.position) < 60.0f) {
+            if (glm::distance(middle, Focus()) < 60.0f) {
                 Line3D(draw, m_navigationEdges[edge] + lift, m_navigationEdges[edge + 1] + lift,
                        IM_COL32(80, 220, 120, 170), 1.0f);
             }
@@ -3208,6 +3328,269 @@ void Editor::FilterView(renderer::SceneView& view) const {
     }
 }
 
+EditorCamera Editor::Eye() const {
+    const Pane& pane = m_panes[m_drawPane];
+    return pane.kind == ViewKind::Perspective ? m_camera : AxisEye(pane.kind, pane.ortho);
+}
+
+glm::vec3 Editor::Focus() const {
+    const Pane& pane = m_panes[m_drawPane];
+    return pane.kind == ViewKind::Perspective ? m_camera.position : pane.ortho.focus;
+}
+
+glm::vec3 Editor::InFront() const {
+    const Pane& pane = m_panes[m_drawPane];
+    return pane.kind == ViewKind::Perspective ? m_camera.position + m_camera.Forward() * 4.0f : pane.ortho.focus;
+}
+
+void Editor::UsePane(std::size_t pane) {
+    m_drawPane = pane;
+    m_viewportMin = m_panes[pane].rect.min;
+    m_viewportMax = m_panes[pane].rect.max;
+    // Overlays of the pane drawn live meet the live depth; the others meet the depth of their last image.
+    if (pane == m_active) {
+        const std::optional<renderer::DepthPicture>& depth = m_app->Renderer().LatestDepth();
+        m_depth = DepthTest(depth ? &*depth : nullptr);
+    } else {
+        m_depth = DepthTest(m_panes[pane].depth ? &*m_panes[pane].depth : nullptr);
+    }
+}
+
+void Editor::LayOutPanes() {
+    if (m_split) {
+        const std::array<Rect, 4> rects = SplitPanes(m_central, 4.0f);
+        for (std::size_t pane = 0; pane < m_panes.size(); ++pane) {
+            m_panes[pane].rect = rects[pane];
+        }
+    } else {
+        m_panes[m_active].rect = m_central;
+    }
+}
+
+void Editor::SetViewKind(ViewKind kind) {
+    Pane& pane = m_panes[m_active];
+    if (pane.kind == kind) {
+        return;
+    }
+    if (kind != ViewKind::Perspective && pane.kind == ViewKind::Perspective) {
+        // From the camera: the axis view looks at where it stands, cut just in front of it.
+        pane.ortho.focus = m_camera.position;
+        pane.ortho.cut = 0.5f;
+    }
+    pane.kind = kind;
+    m_cutView = true;
+    m_status = std::format("{} view{}", ViewName(kind),
+                           kind == ViewKind::Perspective
+                               ? std::string()
+                               : std::string(": drag with the right or middle button to pan, the wheel zooms, "
+                                             "[ and ] move the cut"));
+}
+
+void Editor::SetSplit(bool split) {
+    m_split = split;
+    m_cutView = true;
+    m_switchTo.reset();
+    m_status = split ? "Four views: click one to draw it live; the others keep their last image" : "One view";
+}
+
+bool Editor::UpdatePanes(app::Application& app) {
+    // A pane chosen last frame is drawn live from now on; its own last image was captured as it was drawn.
+    if (m_switchTo) {
+        m_active = *std::exchange(m_switchTo, std::nullopt);
+        m_cutView = true;
+    }
+    if (std::optional<renderer::CapturedFrame> captured = app.Renderer().TakeCapture(); captured && m_captureFor) {
+        TakeSnapshot(*captured, *std::exchange(m_captureFor, std::nullopt));
+    }
+    if (!m_split) {
+        return false;
+    }
+    // A press in another pane makes it the live one: this frame still draws the live pane, which is captured.
+    const ImGuiIO& io = ImGui::GetIO();
+    const glm::vec2 mouse(io.MousePos.x, io.MousePos.y);
+    const input::InputState& input = app.Input();
+    const bool pressed = input.WasPressed(platform::MouseButton::Left) ||
+                         input.WasPressed(platform::MouseButton::Right) ||
+                         input.WasPressed(platform::MouseButton::Middle);
+    if (!pressed || io.WantCaptureMouse || m_switchTo || m_flying) {
+        return false;
+    }
+    for (std::size_t pane = 0; pane < m_panes.size(); ++pane) {
+        if (pane != m_active && m_panes[pane].rect.Contains(mouse)) {
+            const std::optional<renderer::DepthPicture>& depth = app.Renderer().LatestDepth();
+            m_panes[m_active].depth = depth;
+            app.Renderer().RequestCapture();
+            m_captureFor = m_active;
+            m_switchTo = pane;
+            return true;
+        }
+    }
+    return false;
+}
+
+void Editor::TakeSnapshot(const renderer::CapturedFrame& frame, std::size_t pane) {
+    if (frame.width == 0 || frame.height == 0 || frame.display.empty() || m_app == nullptr) {
+        return;
+    }
+    // The pane's rectangle in the captured window, in pixels.
+    const platform::Extent size = m_app->MainWindow().Size();
+    const float scaleX = size.width > 0 ? static_cast<float>(frame.width) / static_cast<float>(size.width) : 1.0f;
+    const float scaleY = size.height > 0 ? static_cast<float>(frame.height) / static_cast<float>(size.height) : 1.0f;
+    const Rect& rect = m_panes[pane].rect;
+    const auto left =
+        static_cast<std::uint32_t>(std::clamp(rect.min.x * scaleX, 0.0f, static_cast<float>(frame.width)));
+    const auto top =
+        static_cast<std::uint32_t>(std::clamp(rect.min.y * scaleY, 0.0f, static_cast<float>(frame.height)));
+    const auto right =
+        static_cast<std::uint32_t>(std::clamp(rect.max.x * scaleX, 0.0f, static_cast<float>(frame.width)));
+    const auto bottom =
+        static_cast<std::uint32_t>(std::clamp(rect.max.y * scaleY, 0.0f, static_cast<float>(frame.height)));
+    if (right <= left + 1 || bottom <= top + 1) {
+        return;
+    }
+    const std::uint32_t width = right - left;
+    const std::uint32_t height = bottom - top;
+    std::vector<std::uint8_t> pixels(std::size_t{width} * height * 4);
+    for (std::uint32_t row = 0; row < height; ++row) {
+        const std::size_t from = (std::size_t{top + row} * frame.width + left) * 4;
+        std::copy_n(frame.display.begin() + static_cast<std::ptrdiff_t>(from), std::size_t{width} * 4,
+                    pixels.begin() + static_cast<std::ptrdiff_t>(std::size_t{row} * width * 4));
+    }
+    rhi::Device& device = m_app->Renderer().Device();
+    core::Result<rhi::TextureHandle> texture =
+        device.CreateTexture({.extent = {width, height},
+                              .format = rhi::Format::Rgba8Unorm,
+                              .usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDst,
+                              .name = "Editor pane"});
+    if (!texture) {
+        DAI_LOG_WARNING(kModule, "{}", core::Format(texture.error()));
+        return;
+    }
+    if (core::Result<void> uploaded = device.UploadTexture(*texture, std::as_bytes(std::span(pixels))); !uploaded) {
+        DAI_LOG_WARNING(kModule, "{}", core::Format(uploaded.error()));
+        device.DestroyTexture(*texture);
+        return;
+    }
+    if (!m_panes[pane].snapshot.IsNull()) {
+        device.DestroyTexture(m_panes[pane].snapshot);
+    }
+    m_panes[pane].snapshot = *texture;
+}
+
+void Editor::DrawPaneFrame(std::size_t pane) {
+    const Pane& shown = m_panes[pane];
+    ImDrawList* draw = ImGui::GetBackgroundDrawList();
+    if (pane != m_active) {
+        if (!shown.snapshot.IsNull()) {
+            draw->AddImage(
+                static_cast<ImTextureID>(debugui::TextureId(m_app->Renderer().Device().BindlessIndex(shown.snapshot))),
+                {shown.rect.min.x, shown.rect.min.y}, {shown.rect.max.x, shown.rect.max.y});
+        } else {
+            draw->AddRectFilled({shown.rect.min.x, shown.rect.min.y}, {shown.rect.max.x, shown.rect.max.y},
+                                IM_COL32(14, 14, 16, 255));
+            const char* hint = "Click to draw this view";
+            const ImVec2 size = ImGui::CalcTextSize(hint);
+            const glm::vec2 middle = (shown.rect.min + shown.rect.max) * 0.5f;
+            draw->AddText({middle.x - size.x * 0.5f, middle.y - size.y * 0.5f}, IM_COL32(150, 150, 160, 255), hint);
+        }
+    }
+    // The pane's name in its corner, with the cut of an axis view; the live pane's border is lit.
+    std::string label(ViewName(shown.kind));
+    if (shown.kind != ViewKind::Perspective) {
+        label += std::format("  {:.0f} m across, cut {:.2f} m", shown.ortho.halfHeight * 2.0f, shown.ortho.cut);
+    }
+    if (m_split && pane != m_active) {
+        label += "  (last image)";
+    }
+    draw->AddRectFilled({shown.rect.min.x + 6.0f, shown.rect.min.y + 6.0f},
+                        {shown.rect.min.x + 14.0f + ImGui::CalcTextSize(label.c_str()).x,
+                         shown.rect.min.y + 8.0f + ImGui::GetTextLineHeight()},
+                        IM_COL32(0, 0, 0, 150), 3.0f);
+    draw->AddText({shown.rect.min.x + 10.0f, shown.rect.min.y + 7.0f}, IM_COL32(220, 220, 230, 255), label.c_str());
+    if (m_split) {
+        draw->AddRect({shown.rect.min.x, shown.rect.min.y}, {shown.rect.max.x, shown.rect.max.y},
+                      pane == m_active ? IM_COL32(255, 200, 60, 200) : IM_COL32(60, 60, 70, 255), 0.0f, 0, 1.5f);
+    }
+}
+
+void Editor::DrawAxisGrid() {
+    const Pane& pane = m_panes[m_drawPane];
+    if (!m_show.grid || m_show.gameView || pane.kind == ViewKind::Perspective) {
+        return;
+    }
+    // Lines across the pane in the plane through the focus, at least 10 pixels apart: a step of 1, 10 or 100 m,
+    // brighter every ten steps.
+    const glm::vec2 size = pane.rect.Size();
+    const float metersPerPixel = 2.0f * pane.ortho.halfHeight / std::max(size.y, 1.0f);
+    float step = 1.0f;
+    while (step / metersPerPixel < 10.0f && step < 1000.0f) {
+        step *= 10.0f;
+    }
+    const glm::vec3 right = ViewRight(pane.kind);
+    const glm::vec3 up = ViewUp(pane.kind);
+    const glm::vec2 half(size.x * 0.5f * metersPerPixel, pane.ortho.halfHeight);
+    const float across = glm::dot(pane.ortho.focus, right);
+    const float along = glm::dot(pane.ortho.focus, up);
+    ImDrawList* draw = ImGui::GetBackgroundDrawList();
+    draw->PushClipRect({pane.rect.min.x, pane.rect.min.y}, {pane.rect.max.x, pane.rect.max.y}, true);
+    const auto screen = [&](float x, float y) {
+        return ImVec2(pane.rect.min.x + (x - (across - half.x)) / metersPerPixel,
+                      pane.rect.min.y + ((along + half.y) - y) / metersPerPixel);
+    };
+    for (float x = std::floor((across - half.x) / step) * step; x <= across + half.x; x += step) {
+        const bool major = std::fmod(std::abs(std::round(x / step)), 10.0f) < 0.5f;
+        draw->AddLine(screen(x, along - half.y), screen(x, along + half.y), IM_COL32(200, 200, 210, major ? 70 : 28),
+                      major ? 1.5f : 1.0f);
+    }
+    for (float y = std::floor((along - half.y) / step) * step; y <= along + half.y; y += step) {
+        const bool major = std::fmod(std::abs(std::round(y / step)), 10.0f) < 0.5f;
+        draw->AddLine(screen(across - half.x, y), screen(across + half.x, y), IM_COL32(200, 200, 210, major ? 70 : 28),
+                      major ? 1.5f : 1.0f);
+    }
+    draw->PopClipRect();
+}
+
+void Editor::DropToFloor() {
+    if (m_instance == nullptr) {
+        return;
+    }
+    ecs::World& world = m_scene->World();
+    ecs::PropagateTransforms(world);
+    const auto selected = [this](ecs::Entity entity) {
+        for (std::uint64_t id = m_instance->IdOf(entity); id != 0;) {
+            if (IsSelected(id)) {
+                return true;
+            }
+            const scene::LevelEntity* above = m_level.Find(id);
+            id = above != nullptr ? above->parent : 0;
+        }
+        return false;
+    };
+    std::vector<std::pair<std::uint64_t, glm::vec3>> offsets;
+    for (const std::uint64_t id : SelectionRoots()) {
+        const ecs::Entity entity = m_instance->Find(id);
+        if (entity.IsNull() || LockedInEditor(m_level, id)) {
+            continue;
+        }
+        Bounds bounds = m_picker.WorldBounds(world, entity);
+        if (bounds.Empty()) {
+            bounds.Add(glm::vec3(world.Get<ecs::WorldTransform>(entity).matrix[3]));
+        }
+        const glm::vec3 from((bounds.min.x + bounds.max.x) * 0.5f, bounds.min.y + 0.05f,
+                             (bounds.min.z + bounds.max.z) * 0.5f);
+        if (const std::optional<PickHit> hit = m_picker.Cast(world, from, glm::vec3(0.0f, -1.0f, 0.0f), selected);
+            hit && hit->distance < 100.0f) {
+            offsets.emplace_back(id, glm::vec3(0.0f, hit->position.y - bounds.min.y, 0.0f));
+        }
+    }
+    if (offsets.empty()) {
+        m_status = "Nothing under the selection to drop onto";
+        return;
+    }
+    MoveBy(offsets, std::format("Drop {} entities to the floor", offsets.size()));
+    m_status = std::format("Dropped {} entities onto what is under them", offsets.size());
+}
+
 void Editor::DrawShowMenu() {
     ImGui::MenuItem("Game view", "G", &m_show.gameView);
     if (ImGui::IsItemHovered()) {
@@ -3265,7 +3648,7 @@ void Editor::DrawGizmo() {
     ImGuizmo::SetOrthographic(false);
     ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
     ImGuizmo::SetRect(m_viewportMin.x, m_viewportMin.y, extent.x, extent.y);
-    const glm::mat4 view = m_camera.View();
+    const glm::mat4 view = Eye().View();
     const glm::mat4 projection = Projection();
     const auto operation = static_cast<ImGuizmo::OPERATION>(m_operation == 0 ? ImGuizmo::TRANSLATE : m_operation);
     const ImGuizmo::MODE mode = m_local || operation == ImGuizmo::SCALE ? ImGuizmo::LOCAL : ImGuizmo::WORLD;
@@ -3291,6 +3674,35 @@ void Editor::DrawGizmo() {
     if (!changed) {
         return;
     }
+    // Onto the surface under the mouse, or its nearest corner with V, past the selection itself (ADR-0108).
+    const ImGuiIO& io = ImGui::GetIO();
+    const bool vertex = ImGui::IsKeyDown(ImGuiKey_V);
+    if (operation == ImGuizmo::TRANSLATE && (m_surfaceSnap || (io.KeyCtrl && io.KeyShift) || vertex)) {
+        const auto selectedPart = [this](ecs::Entity drawn) {
+            for (std::uint64_t id = m_instance->IdOf(drawn); id != 0;) {
+                if (IsSelected(id)) {
+                    return true;
+                }
+                const scene::LevelEntity* above = m_level.Find(id);
+                id = above != nullptr ? above->parent : 0;
+            }
+            return false;
+        };
+        const auto [origin, direction] = RayAt(glm::vec2(io.MousePos.x, io.MousePos.y));
+        if (const std::optional<PickHit> hit = m_picker.Cast(world, origin, direction, selectedPart)) {
+            glm::vec3 target = hit->position;
+            if (vertex) {
+                target = *std::ranges::min_element(
+                    hit->corners, {}, [&](const glm::vec3& corner) { return glm::distance(corner, hit->position); });
+            }
+            glm::quat turn = Decompose(m_gizmoStart).rotation;
+            if (m_alignToSurface && !vertex) {
+                // Up turned to the surface's normal, keeping the rest of the turn.
+                turn = TurnBetween(glm::vec3(0.0f, 1.0f, 0.0f), hit->normal) * turn;
+            }
+            matrix = glm::translate(glm::mat4(1.0f), target) * glm::mat4_cast(turn);
+        }
+    }
     m_gizmoMatrix = matrix;
     const glm::mat4 delta = matrix * glm::inverse(m_gizmoStart);
     std::vector<std::pair<std::uint64_t, math::Transform>> moved;
@@ -3315,6 +3727,10 @@ void Editor::DrawGizmo() {
 
 void Editor::DrawGrid() {
     if (!m_show.grid || m_show.gameView) {
+        return;
+    }
+    if (m_panes[m_drawPane].kind != ViewKind::Perspective) {
+        DrawAxisGrid();
         return;
     }
     ImDrawList* draw = ImGui::GetBackgroundDrawList();
@@ -3357,7 +3773,7 @@ void Editor::DrawHelp() {
         return;
     }
     if (ImGui::Begin("Shortcuts", &m_showHelp, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize)) {
-        constexpr std::array<std::array<const char*, 2>, 30> kKeys{{
+        constexpr std::array<std::array<const char*, 2>, 33> kKeys{{
             {"Right mouse + WASD, Q, E", "Fly; Shift goes faster, the wheel sets the speed"},
             {"Wheel, middle mouse", "Walk forward and back, pan"},
             {"Click, Ctrl+click", "Select, add to the selection"},
@@ -3368,6 +3784,9 @@ void Editor::DrawHelp() {
             {"H, Shift+H, Alt+H", "Hide the selection, show it alone, show everything"},
             {"L", "Lock the selection against clicks in the view, or unlock it"},
             {"M", "Measure: drag between two surfaces"},
+            {"Shift+1 to Shift+4", "Perspective, top, front, side; Shift+5 four views"},
+            {"[ and ]", "Move an axis view's cut through ceilings and walls"},
+            {"End, V, Ctrl+Shift drag", "Drop to the floor, snap to a corner, onto a surface"},
             {"Alt+1 to Alt+4", "Lit, unlit, lighting only, the editor's light"},
             {"B", "Paint decals and wet patches (drag over surfaces)"},
             {"F, double-click in the hierarchy", "Frame the selection"},
@@ -3457,7 +3876,7 @@ std::pair<glm::vec3, glm::vec3> Editor::RayAt(const glm::vec2& point) const {
     const glm::vec2 extent = glm::max(m_viewportMax - m_viewportMin, glm::vec2(1.0f));
     const glm::vec2 ndc((point.x - m_viewportMin.x) / extent.x * 2.0f - 1.0f,
                         1.0f - (point.y - m_viewportMin.y) / extent.y * 2.0f);
-    const glm::mat4 inverse = glm::inverse(Projection() * m_camera.View());
+    const glm::mat4 inverse = glm::inverse(Projection() * Eye().View());
     const glm::vec4 near = inverse * glm::vec4(ndc, -1.0f, 1.0f);
     const glm::vec4 far = inverse * glm::vec4(ndc, 1.0f, 1.0f);
     const glm::vec3 origin = glm::vec3(near) / near.w;

@@ -39,25 +39,9 @@ struct ImDrawList;
 #include "Paint.hpp"
 #include "Picking.hpp"
 #include "SequencePanel.hpp"
+#include "Views.hpp"
 
 namespace editor {
-
-/// The viewport's camera: it flies with the right mouse button held, as in most level editors.
-struct EditorCamera {
-    glm::vec3 position{0.0f, 2.0f, 6.0f};
-    /// Radians: yaw 0 looks along -Z and turns left as it grows; pitch looks up as it grows.
-    float yaw = 0.0f;
-    float pitch = -0.2f;
-    /// Meters per second.
-    float speed = 6.0f;
-    float verticalFov = 1.0471976f;
-    float nearPlane = 0.05f;
-    float farPlane = 2000.0f;
-
-    [[nodiscard]] glm::mat4 World() const;
-    [[nodiscard]] glm::mat4 View() const;
-    [[nodiscard]] glm::vec3 Forward() const;
-};
 
 /// The level editor (ADR-0055): the game's renderer as its viewport, a hierarchy of the level's entities, an
 /// inspector of their components, gizmos to move them, and the level file as its document.
@@ -233,6 +217,37 @@ private:
     /// The editor's light: the level's lights off, one soft light at the camera.
     void LightFromCamera(daidalos::renderer::SceneView& view) const;
 
+    // Views and panes (ADR-0108).
+    struct Pane {
+        ViewKind kind = ViewKind::Perspective;
+        OrthoView ortho;
+        Rect rect;
+        /// The last image it drew while it was the live pane, and the depth then, shown while another is live.
+        daidalos::rhi::TextureHandle snapshot;
+        std::optional<daidalos::renderer::DepthPicture> depth;
+    };
+    /// The camera of the pane being drawn or used.
+    [[nodiscard]] EditorCamera Eye() const;
+    /// Where distances from the view are measured: the camera, or an axis view's focus.
+    [[nodiscard]] glm::vec3 Focus() const;
+    /// Where something created goes: a few meters in front of the camera, or at an axis view's focus.
+    [[nodiscard]] glm::vec3 InFront() const;
+    /// Points the overlays, picking and the gizmo at a pane.
+    void UsePane(std::size_t pane);
+    void LayOutPanes();
+    void SetViewKind(ViewKind kind);
+    void SetSplit(bool split);
+    /// Makes a pane clicked in the split layout the live one, once the live one is captured; true when the click
+    /// was taken for that.
+    bool UpdatePanes(daidalos::app::Application& app);
+    void TakeSnapshot(const daidalos::renderer::CapturedFrame& frame, std::size_t pane);
+    /// A pane's last image if it is not live, its name and its border.
+    void DrawPaneFrame(std::size_t pane);
+    /// The grid of an axis view, in the plane through its focus.
+    void DrawAxisGrid();
+    /// Puts each selected entity on what is under it (End).
+    void DropToFloor();
+
     // What the view shows (ADR-0106).
     void DrawShowMenu();
     /// A line of the world over the view, in pieces, each faint where the scene hides it.
@@ -337,6 +352,21 @@ private:
     std::unique_ptr<Loading> m_loading;
     Lighting m_lighting = Lighting::Lit;
     ShowFlags m_show;
+    std::array<Pane, 4> m_panes{Pane{.kind = ViewKind::Perspective}, Pane{.kind = ViewKind::Top},
+                                Pane{.kind = ViewKind::Front}, Pane{.kind = ViewKind::Side}};
+    /// Four panes, or the live one alone.
+    bool m_split = false;
+    std::size_t m_active = 0;
+    std::size_t m_drawPane = 0;
+    std::optional<std::size_t> m_switchTo;
+    std::optional<std::size_t> m_captureFor;
+    /// The next frame does not follow from the last: nothing is carried over from it.
+    bool m_cutView = false;
+    /// The dockspace's central node, which the panes share.
+    Rect m_central;
+    /// While moving, the selection goes onto the surface under the mouse, turned to it if asked (ADR-0108).
+    bool m_surfaceSnap = false;
+    bool m_alignToSurface = false;
     /// What the view shows alone while isolated (Shift+H); empty for everything.
     std::set<std::uint64_t> m_isolated;
     Pivot m_pivot = Pivot::Origin;
