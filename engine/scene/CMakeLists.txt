@@ -12,6 +12,7 @@ dai_add_module(NAME scene
         include/daidalos/scene/Components.hpp
         include/daidalos/scene/EffectDocument.hpp
         include/daidalos/scene/GltfMaterials.hpp
+        include/daidalos/scene/ImportSettings.hpp
         include/daidalos/scene/Level.hpp
         include/daidalos/scene/ModelBatch.hpp
         include/daidalos/scene/Perception.hpp
@@ -31,6 +32,7 @@ dai_add_module(NAME scene
         src/Sequence.cpp
         src/Text.cpp
         src/GltfMaterials.cpp
+        src/ImportSettings.cpp
         src/JsonTree.cpp
         src/JsonTree.hpp
         src/LevelFile.cpp

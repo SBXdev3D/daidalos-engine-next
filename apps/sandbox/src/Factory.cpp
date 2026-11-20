@@ -978,7 +978,10 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
     for (const auto& [owner, placed] : instances) {
         for (const scene::Model::Node& node : placed->model->nodes) {
             const std::string kind = scene::ParseTags(node.name).kind;
-            if (kind != "level" && kind != "door") {
+            // A model whose import settings say so is walls and floors throughout (ADR-0117).
+            const bool walls =
+                kind == "level" || (kind != "door" && placed->model->levelCollision && !node.parts.empty());
+            if (!walls && kind != "door") {
                 continue;
             }
             const ecs::Entity nodeEntity = scene::FindNodeEntity(world, placed->root, node.name);

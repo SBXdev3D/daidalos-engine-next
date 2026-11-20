@@ -7,6 +7,7 @@
 #include <daidalos/app/Application.hpp>
 #include <daidalos/navigation/NavMesh.hpp>
 #include <daidalos/platform/Process.hpp>
+#include <daidalos/scene/ImportSettings.hpp>
 #include <daidalos/scene/Level.hpp>
 #include <daidalos/scene/ModelBatch.hpp>
 #include <daidalos/scene/Scene.hpp>
@@ -32,6 +33,7 @@ struct ImDrawList;
 #include <vector>
 
 #include "AssetBrowser.hpp"
+#include "AssetReferences.hpp"
 #include "Commands.hpp"
 #include "EffectPanel.hpp"
 #include "Game.hpp"
@@ -356,6 +358,10 @@ private:
     void DrawCameraPreview();
     [[nodiscard]] std::optional<EditorCamera> CameraOfSelection();
 
+    // Assets' references, moves and import settings (ADR-0117).
+    void DrawAssetDialogs();
+    void MoveAssetTo(const std::string& from, const std::string& to);
+
     // The interface.
     void DrawMenu(daidalos::app::Application& app);
     void DrawDialogs(daidalos::app::Application& app);
@@ -543,6 +549,11 @@ private:
     daidalos::rhi::TextureHandle m_previewTexture;
     glm::vec2 m_previewSize{0.0f};
     std::string m_previewOf;
+
+    /// The asset the References, Move and Import windows are about.
+    std::optional<AssetRequest> m_assetRequest;
+    std::vector<AssetReference> m_references;
+    daidalos::scene::ModelImportSettings m_importSettings;
 
     bool m_simulating = false;
     /// Frames the scene runs while paused, one per F10.
