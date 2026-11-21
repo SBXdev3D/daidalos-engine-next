@@ -4,8 +4,12 @@
 
 #include <daidalos/scene/Sequence.hpp>
 
+#include <glm/geometric.hpp>
+#include <glm/trigonometric.hpp>
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -61,6 +65,9 @@ TEST(SequenceTest, MistakesNameWhatIsWrong) {
     EXPECT_NE(error(R"({"cues": [{"at": -1, "event": "x"}]})").find("at"), std::string::npos);
     EXPECT_NE(error(R"({"cues": [{"at": 0, "power": {"on": true}}]})").find("circuit"), std::string::npos);
     EXPECT_NE(error(R"({"steps": []})").find("cues"), std::string::npos);
+    EXPECT_NE(
+        error(R"({"cues": [{"at": 0, "camera": {"path": "wobbly", "keys": [{"position": [0, 0, 0]}]}}]})").find("path"),
+        std::string::npos);
 }
 
 TEST(SequenceTest, TheCameraEasesBetweenItsKeys) {
@@ -72,6 +79,54 @@ TEST(SequenceTest, TheCameraEasesBetweenItsKeys) {
     // Slow at the ends: a quarter of the way in time is less than a quarter of the way.
     EXPECT_LT(scene::CameraAt(keys, 0.5f).position.x, 2.5f);
     EXPECT_EQ(scene::CameraAt(keys, 3.0f).position, glm::vec3(10.0f, 0.0f, 0.0f));
+}
+
+TEST(SequenceTest, ASmoothPathGoesThroughEveryKeyWithoutStopping) {
+    // Three keys on a line, unevenly timed (ADR-0120): the camera is at each key at its time, and moves on
+    // through the middle one, where the eased path stops.
+    const std::vector<scene::CameraKey> keys{
+        {.at = 0.0f, .position = {0.0f, 0.0f, 0.0f}, .target = {0.0f, 0.0f, -1.0f}},
+        {.at = 2.0f, .position = {0.0f, 0.0f, -10.0f}, .target = {0.0f, 0.0f, -11.0f}},
+        {.at = 3.0f, .position = {0.0f, 0.0f, -20.0f}, .target = {0.0f, 0.0f, -21.0f}}};
+    const auto at = [&](float time, scene::CameraPath path) { return scene::CameraAt(keys, time, path).position; };
+    using scene::CameraPath;
+    for (const scene::CameraKey& key : keys) {
+        EXPECT_NEAR(glm::distance(at(key.at, CameraPath::Smooth), key.position), 0.0f, 1e-4f);
+    }
+    const float smoothSpeed = glm::distance(at(2.01f, CameraPath::Smooth), at(1.99f, CameraPath::Smooth)) / 0.02f;
+    const float easedSpeed = glm::distance(at(2.01f, CameraPath::Eased), at(1.99f, CameraPath::Eased)) / 0.02f;
+    EXPECT_GT(smoothSpeed, 5.0f);
+    EXPECT_LT(easedSpeed, 0.5f);
+    // The speed changes smoothly through the key: the same just before and just after.
+    const float before = glm::distance(at(1.99f, CameraPath::Smooth), at(1.98f, CameraPath::Smooth));
+    const float after = glm::distance(at(2.02f, CameraPath::Smooth), at(2.01f, CameraPath::Smooth));
+    EXPECT_NEAR(before, after, 0.01f);
+    // At rest at both ends, and past them it stays at the ends.
+    EXPECT_LT(glm::distance(at(0.01f, CameraPath::Smooth), keys[0].position), 0.01f);
+    EXPECT_NEAR(glm::distance(at(9.0f, CameraPath::Smooth), keys[2].position), 0.0f, 1e-4f);
+}
+
+TEST(SequenceTest, ASmoothPathTurnsTheShorterWayAndNeverLooksStraightDown) {
+    // Yaw is 0 towards -Z and grows to the left. The shorter way from 170 to -170 degrees is through 180,
+    // towards +Z, not the long way round through 0.
+    const auto direction = [](float yawDegrees) {
+        const float yaw = glm::radians(yawDegrees);
+        return glm::vec3(-std::sin(yaw), 0.0f, -std::cos(yaw));
+    };
+    const std::vector<scene::CameraKey> turn{{.at = 0.0f, .position = glm::vec3(0.0f), .target = direction(170.0f)},
+                                             {.at = 1.0f, .position = glm::vec3(0.0f), .target = direction(-170.0f)}};
+    const scene::CameraKey half = scene::CameraAt(turn, 0.5f, scene::CameraPath::Smooth);
+    const glm::vec3 looking = glm::normalize(half.target - half.position);
+    EXPECT_GT(looking.z, 0.99f) << "Looks behind (+Z), half way through a 20 degree turn";
+
+    // A key looking straight down: the camera stops a degree short, so that it still knows which way is up.
+    const std::vector<scene::CameraKey> down{
+        {.at = 0.0f, .position = {0.0f, 5.0f, 0.0f}, .target = {0.0f, 5.0f, -1.0f}},
+        {.at = 1.0f, .position = {0.0f, 5.0f, 0.0f}, .target = {0.0f, 0.0f, 0.0f}}};
+    const scene::CameraKey end = scene::CameraAt(down, 1.0f, scene::CameraPath::Smooth);
+    const glm::vec3 view = glm::normalize(end.target - end.position);
+    EXPECT_LT(view.y, -0.999f);
+    EXPECT_GT(view.y, -0.99999f);
 }
 
 TEST(SequenceTest, WritingAndReadingBackGivesTheSameSequence) {
@@ -90,11 +145,13 @@ TEST(SequenceTest, WritingAndReadingBackGivesTheSameSequence) {
             {"at": 0.7, "mix": {"music": 0.2, "lowpass": 800, "seconds": 1}},
             {"at": 0.75, "subtitle": {"speaker": "speaker.you", "text": "subtitle.x"}},
             {"at": 0.8, "camera": {"keys": [{"at": 1, "position": [0, 2, 0], "target": [0, 1, -5], "focus": 5},
-                                            {"at": 0, "position": [0, 2, 3], "target": [0, 1, -5], "aperture": 2}]}}
+                                            {"at": 0, "position": [0, 2, 3], "target": [0, 1, -5], "aperture": 2}]}},
+            {"at": 0.9, "camera": {"path": "smooth", "keys": [{"at": 0, "position": [0, 2, 0], "target": [0, 2, -1]}]}}
         ]
     })");
     ASSERT_TRUE(sequence.has_value()) << core::Format(sequence.error());
     EXPECT_EQ(sequence->comment, "Each kind once.");
+    EXPECT_EQ(std::ranges::count(sequence->cues, scene::CameraPath::Smooth, &Cue::cameraPath), 1);
     const std::string written = scene::WriteSequence(*sequence);
     const core::Result<scene::Sequence> read = scene::ParseSequence(written);
     ASSERT_TRUE(read.has_value()) << core::Format(read.error()) << "\n" << written;

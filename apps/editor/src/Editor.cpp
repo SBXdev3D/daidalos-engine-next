@@ -1614,12 +1614,13 @@ void Editor::DrawSelectedCue() {
     const ImU32 color = CueColor(cue->kind);
     if (cue->kind == scene::Cue::Kind::Camera && !cue->keys.empty()) {
         // The path the camera takes, sampled as the scene moves it, and where each key looks.
-        constexpr int kSteps = 64;
+        const int steps = std::clamp(static_cast<int>(cue->keys.size()) * 16, 64, 2048);
         const float length = cue->keys.back().at - cue->keys.front().at;
-        for (int step = 0; step < kSteps; ++step) {
-            const float a = cue->keys.front().at + length * static_cast<float>(step) / kSteps;
-            const float b = cue->keys.front().at + length * static_cast<float>(step + 1) / kSteps;
-            line(scene::CameraAt(cue->keys, a).position, scene::CameraAt(cue->keys, b).position, color, 2.0f);
+        for (int step = 0; step < steps; ++step) {
+            const float a = cue->keys.front().at + length * static_cast<float>(step) / static_cast<float>(steps);
+            const float b = cue->keys.front().at + length * static_cast<float>(step + 1) / static_cast<float>(steps);
+            line(scene::CameraAt(cue->keys, a, cue->cameraPath).position,
+                 scene::CameraAt(cue->keys, b, cue->cameraPath).position, color, 2.0f);
         }
         for (const scene::CameraKey& key : cue->keys) {
             line(key.position, key.target, IM_COL32(255, 255, 255, 140), 1.0f);

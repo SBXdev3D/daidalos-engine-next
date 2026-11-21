@@ -86,6 +86,12 @@ public:
                                    .Obtain<double>("sandbox.darkness", 1.0,
                                                    "1 is the factory's darkness; 0 shows it brighter, without its haze")
                                    .Get());
+        m_levelDarkness = m_settings.darkness;
+        m_tourDarkness = static_cast<float>(
+            app.CVars()
+                .Obtain<double>("sandbox.tour_darkness", 0.5,
+                                "The darkness while the tour flies, so that its rooms show (ADR-0120); 1 as in play")
+                .Get());
         m_settings.startWithFlashlight =
             app.CVars().Obtain<bool>("sandbox.flashlight", false, "Start with the flashlight on").Get();
         m_settings.flashlightBattery =
@@ -122,6 +128,11 @@ public:
                         .Obtain<std::string>("sandbox.opening", "Factory/Sequences/opening.sequence.json",
                                              "The sequence a new game opens with, under assets/; empty for none")
                         .Get();
+        m_tour = app.CVars()
+                     .Obtain<bool>("sandbox.tour", false,
+                                   "Start in the level with the legacy demo's flight over the whole factory "
+                                   "(ADR-0120), without the menu; any menu key skips it")
+                     .Get();
         m_showcase = app.CVars()
                          .Obtain<bool>("sandbox.showcase", false,
                                        "Put the effects of mesh particles and ribbons in front of the start")
@@ -189,6 +200,14 @@ public:
         if (app.CurrentScene() != nullptr) {
             app.CurrentScene()->SetShakeScale(static_cast<float>(m_cameraShake->Get()));
         }
+        if (m_tourPlaying) {
+            // Lighter while the tour flies, then back to the level's darkness over two seconds as it hands over.
+            const bool flying = app.CurrentScene() != nullptr && app.CurrentScene()->InCinematic();
+            const float target = flying ? m_tourDarkness : m_levelDarkness;
+            const float step = 0.5f * delta;
+            m_settings.darkness = std::clamp(target, m_settings.darkness - step, m_settings.darkness + step);
+            m_tourPlaying = flying || m_settings.darkness != m_levelDarkness;
+        }
 
         if (m_loading) {
             m_loadingSeconds += delta;
@@ -199,6 +218,8 @@ public:
                 if (m_actions.WasPressed(input, sandbox::Menu) || m_actions.WasPressed(input, sandbox::Jump) ||
                     m_actions.WasPressed(input, sandbox::Interact)) {
                     current->StopCinematic();
+                    // The flight's muffled mix lifts with it, rather than at the end it would have had.
+                    current->Sounds().SetSnapshot({}, 1.0f);
                 }
             } else if (m_actions.WasPressed(input, sandbox::Menu)) {
                 OpenScreen(app, sandbox::Screen::Pause);
@@ -354,7 +375,17 @@ private:
             OpenScreen(app, sandbox::Screen::None);
         } else {
             // The first level waits behind the main menu, and the first start begins with the brightness.
-            if (m_menuAtStart && !m_calibrated) {
+            if (m_tour) {
+                // The tour stands in for the menu and the opening: it ends at the player's eyes.
+                OpenScreen(app, sandbox::Screen::None);
+                m_openingPlayed = true;
+                if (const core::Result<void> played = target.PlaySequenceFile(kTourSequence); !played) {
+                    DAI_LOG_WARNING("sandbox", "The tour: {}", core::Format(played.error()));
+                } else {
+                    m_tourPlaying = true;
+                    m_settings.darkness = m_tourDarkness;
+                }
+            } else if (m_menuAtStart && !m_calibrated) {
                 m_screen = sandbox::Screen::Main;
                 OpenScreen(app, sandbox::Screen::Calibration);
             } else {
@@ -807,6 +838,13 @@ private:
     /// The opening camera flight (ADR-0086), played once, when a new game starts from the main menu.
     std::string m_opening;
     bool m_openingPlayed = false;
+    /// The legacy demo's flight over the whole factory (ADR-0120), instead of the menu: sandbox.tour.
+    static constexpr std::string_view kTourSequence = "Factory/Sequences/tour.sequence.json";
+    bool m_tour = false;
+    bool m_tourPlaying = false;
+    float m_tourDarkness = 0.5f;
+    /// The darkness the level is played at (sandbox.darkness), which the tour lightens while it flies.
+    float m_levelDarkness = 1.0f;
     sandbox::OptionsState m_options;
     sandbox::PhotoMode m_photo;
     ui::Context m_ui;

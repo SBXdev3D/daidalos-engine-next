@@ -64,9 +64,11 @@ constexpr float kGlintRate = 1.2f;     // Glints per second, close up.
 constexpr float kGlintRange = 18.0f;   // Meters: farther, none.
 constexpr float kGlintScatter = 0.06f; // Meters around the item's glint point.
 constexpr float kDoorRadius = 3.5f;    // Opens by itself this close.
-constexpr float kDoorOpenTime = 6.0f;  // Seconds before it closes again.
-constexpr float kDoorRise = 2.3f;      // Meters.
-constexpr float kDoorSpeed = 2.3f;     // Meters per second.
+// Opens this close to a cinematic camera (ADR-0120), which moves faster than the player: up by the time it passes.
+constexpr float kCameraDoorRadius = 6.0f;
+constexpr float kDoorOpenTime = 6.0f; // Seconds before it closes again.
+constexpr float kDoorRise = 2.3f;     // Meters.
+constexpr float kDoorSpeed = 2.3f;    // Meters per second.
 constexpr int kMaxHealth = 100;
 constexpr int kHealthBonus = 25;
 constexpr int kArmorBonus = 50;
@@ -175,6 +177,9 @@ struct Door {
     /// Meters above the closed position.
     float rise = 0.0f;
     float timeLeft = 0.0f;
+    /// Opened for a cinematic camera (ADR-0120): it closes again after, even a door that stays open once the
+    /// player opens it, and stays locked.
+    bool openedForCamera = false;
     /// Its box in the navigation mesh (ADR-0069), and whether the mesh has it shut.
     std::optional<navigation::NavBox> navBox;
     bool navShut = true;
@@ -829,6 +834,7 @@ void UpdateDoors(scene::Scene& scene, ecs::Entity playerEntity, float delta) {
     const glm::vec3 eye = world.Get<ecs::LocalTransform>(playerEntity).translation;
     const bool interact = player.interactPressed;
     player.interactPressed = false;
+    const std::optional<glm::vec3> camera = scene.CinematicPosition();
 
     world.Each<Door, ecs::LocalTransform>([&](ecs::Entity /*entity*/, Door& door, ecs::LocalTransform& transform) {
         const float distance = glm::distance(door.closedPosition, eye);
@@ -839,15 +845,26 @@ void UpdateDoors(scene::Scene& scene, ecs::Entity playerEntity, float delta) {
             } else {
                 door.locked = false;
                 door.open = true;
+                door.openedForCamera = false;
                 door.timeLeft = kDoorOpenTime;
                 playAtCaptioned(&SoundBank::doorStart, door.closedPosition, "caption.door_open");
             }
         }
-        if (door.open && door.closable) {
+        // A cinematic camera flies through doors as the player walks through them (ADR-0120).
+        if (camera.has_value() && glm::distance(door.closedPosition, *camera) < kCameraDoorRadius) {
+            if (!door.open) {
+                door.open = true;
+                door.openedForCamera = true;
+                playAtCaptioned(&SoundBank::doorStart, door.closedPosition, "caption.door_open");
+            }
+            door.timeLeft = std::max(door.timeLeft, door.openedForCamera ? 1.0f : kDoorOpenTime);
+        }
+        if (door.open && (door.closable || door.openedForCamera)) {
             door.timeLeft -= delta;
             // Never down on the player.
             if (door.timeLeft <= 0.0f && distance >= kDoorRadius) {
                 door.open = false;
+                door.openedForCamera = false;
                 playAtCaptioned(&SoundBank::doorStart, door.closedPosition, "caption.door_close");
             }
         }

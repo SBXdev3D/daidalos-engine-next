@@ -28,6 +28,15 @@ struct CameraKey {
     [[nodiscard]] bool operator==(const CameraKey&) const = default;
 };
 
+/// How a camera cue goes from key to key (ADR-0120).
+enum class CameraPath : std::uint8_t {
+    /// Straight between keys, easing in and out of each: a few keys, each a shot (ADR-0071).
+    Eased,
+    /// One smooth curve through every key, without stopping at them, turning the shorter way: a long flight
+    /// of many keys. It starts and ends at rest.
+    Smooth,
+};
+
 /// One thing a sequence does at a time (ADR-0071). Entities are named as in the level (NodeName); paths are
 /// relative to the asset root.
 struct Cue {
@@ -58,6 +67,7 @@ struct Cue {
     float seconds = 0.0f;
     float strength = 0.0f;
     std::vector<CameraKey> keys;
+    CameraPath cameraPath = CameraPath::Eased;
     audio::MixSnapshot mix;
     [[nodiscard]] bool operator==(const Cue&) const = default;
 };
@@ -83,7 +93,8 @@ struct Sequence {
 /// Writes a sequence as its file (ADR-0079): cues in time order, each with the fields its kind uses, keys sorted.
 [[nodiscard]] std::string WriteSequence(const Sequence& sequence);
 
-/// Where a cinematic camera is at a time, between its keys.
-[[nodiscard]] CameraKey CameraAt(const std::vector<CameraKey>& keys, float time);
+/// Where a cinematic camera is at a time, between its keys. On a smooth path the target is a meter ahead,
+/// in the direction the camera looks, which never comes closer than a degree to straight up or down.
+[[nodiscard]] CameraKey CameraAt(const std::vector<CameraKey>& keys, float time, CameraPath path = CameraPath::Eased);
 
 } // namespace daidalos::scene

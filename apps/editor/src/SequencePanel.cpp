@@ -280,6 +280,15 @@ bool SequencePanel::DrawCue(scene::Cue& cue, const Context& context) {
         ImGui::TextDisabled("The game's code takes it: checkpoint, stinger...");
         break;
     case scene::Cue::Kind::Camera: {
+        bool smooth = cue.cameraPath == scene::CameraPath::Smooth;
+        if (ImGui::Checkbox("Smooth path", &smooth)) {
+            cue.cameraPath = smooth ? scene::CameraPath::Smooth : scene::CameraPath::Eased;
+            changed = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("One curve through every key without stopping, for long flights; off, the camera "
+                              "eases into each key, a shot at a time");
+        }
         std::optional<std::size_t> remove;
         for (std::size_t index = 0; index < cue.keys.size(); ++index) {
             scene::CameraKey& key = cue.keys[index];
