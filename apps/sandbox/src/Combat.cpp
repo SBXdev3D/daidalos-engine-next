@@ -99,7 +99,9 @@ constexpr float kZombieSight = 35.0f * kLegacyUnit;
 constexpr float kZombieViewAngle = glm::radians(60.0f); // From the direction it faces.
 // Faster than the original's 0.7 m/s, for a faster game (docs/DEMO.md). The walk clip speeds up with it.
 constexpr float kZombieSpeed = 1.3f;
-constexpr float kLegacyZombieSpeed = 2.0f * kLegacyUnit;
+// How fast the zombie's walk clip walks: Quaternius' zombie walk, 1.4 m in 1.33 s, on legs 1.1 times longer
+// (scripts/make_hazmat_zombie.py).
+constexpr float kZombieWalkClipSpeed = 1.4f / 1.333f * 1.1f;
 constexpr float kZombieTurnSpeed = glm::radians(180.0f);
 constexpr float kZombieReach = 4.0f * kLegacyUnit;
 constexpr float kZombieReachMargin = 0.4f; // A strike still lands on a player stepping back this far.
@@ -837,7 +839,7 @@ void Think(scene::Scene& scene, ecs::Entity playerEntity, Zombie& zombie, float 
 
     if (zombie.state != ZombieState::Attacking) {
         if (walking) {
-            Play(world, zombie.model, "walk", {.speed = kZombieSpeed / kLegacyZombieSpeed, .fade = kZombieFade});
+            Play(world, zombie.model, "walk", {.speed = kZombieSpeed / kZombieWalkClipSpeed, .fade = kZombieFade});
         } else {
             Play(world, zombie.model, "wait", {.fade = kZombieFade});
         }

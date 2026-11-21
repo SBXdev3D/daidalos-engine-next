@@ -122,3 +122,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0116](0116-sound-scatter-and-camera-preview.md) | A `sound` component that loops where it is, heard in the editor on request; a Props brush that scatters the selection's models; look through the selection, and a picture of what it sees | Accepted |
 | [0117](0117-asset-references-and-import-settings.md) | What uses an asset, listed from levels, prefabs, effects and sequences; moves that rewrite every file naming it; per-model import settings (scale, level collision) beside the model | Accepted |
 | [0118](0118-a-tidier-interface.md) | A dark theme with one accent, the system's interface font (`DebugUi::UseFont`), drawn icons for the tools; Phase 20 done | Accepted |
+| [0119](0119-a-zombie-in-a-hazmat-suit.md) | The zombie is "Zombie Hazmat" (CC-BY 4.0) with Quaternius' CC0 animations retargeted in Blender by a script; Mixamo's clips dropped | Accepted |

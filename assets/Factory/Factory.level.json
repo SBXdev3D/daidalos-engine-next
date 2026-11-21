@@ -198,7 +198,7 @@
         "patrol": "-7:0:0|7:0:0"
       },
       "id": 21,
-      "model": "zombie.gltf",
+      "model": "Monsters/zombie_hazmat/zombie_hazmat.gltf",
       "name": "Zombie 24",
       "transform": {
         "translation": [36.75, -12.25, -38.5]
@@ -210,7 +210,7 @@
         "kind": "zombie"
       },
       "id": 22,
-      "model": "zombie.gltf",
+      "model": "Monsters/zombie_hazmat/zombie_hazmat.gltf",
       "name": "Zombie 25",
       "transform": {
         "translation": [45.5, 3.5, -78.75]
@@ -379,7 +379,7 @@
         "patrol": "0:0:20|0:0:-20"
       },
       "id": 36,
-      "model": "zombie.gltf",
+      "model": "Monsters/zombie_hazmat/zombie_hazmat.gltf",
       "name": "Zombie 43",
       "transform": {
         "translation": [-36.75, -7.7, -47.25]
@@ -416,7 +416,7 @@
         "patrol": "-40:0:0|0:0:0|0:0:30|0:0:0"
       },
       "id": 39,
-      "model": "zombie.gltf",
+      "model": "Monsters/zombie_hazmat/zombie_hazmat.gltf",
       "name": "Zombie 45",
       "transform": {
         "rotation": [0, -0.7071068, 0, 0.7071068],

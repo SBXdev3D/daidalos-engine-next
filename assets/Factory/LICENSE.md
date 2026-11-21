@@ -16,4 +16,6 @@ These terms cover this directory. The author's own files are under the repositor
 
 The source site and the exact licences of the free assets are not recorded yet. The author confirmed the terms above from memory, so check them before releasing the demo, and add any attribution they require. On 8 November 2026 the author confirmed that screenshots showing the textures can be published on Patreon.
 
+The zombie in `Monsters/` is a CC-BY 4.0 model with CC0 animations, which requires credit: [Monsters/LICENSE.md](Monsters/LICENSE.md) gives it. The legacy zombie (`zombie.gltf`) stays for the legacy importer.
+
 The showcase's props in `Showcase/` are CC0 models from Poly Haven: [Showcase/LICENSE.md](Showcase/LICENSE.md) lists them with their authors, the items and weapons the player picks up included.
