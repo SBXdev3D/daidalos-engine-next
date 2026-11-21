@@ -131,7 +131,7 @@ sandbox.exe +window.fullscreen true +renderer.antialiasing off
 | `renderer.reflection_roughness` | 0.6 | Surfaces rougher than this trace no reflection |
 | `renderer.volumetric_fog` | true | Fog lit by the lights, with light shafts; off, the air is clear |
 | `renderer.traced_particles` | true | Particles in the ray-traced scene: smoke casts shadows, sparks show in mirrors; off (Low), rays pass them |
-| `renderer.film_grain` | 0.35 | Film grain, from 0 (none) to 1 |
+| `renderer.film_grain` | 0.2 | Film grain, from 0 (none) to 1 |
 | `renderer.vignette` | 0.5 | Darker corners, as through a lens |
 | `renderer.lens_dirt` | 0.5 | Smudges on the lens that bright light lights up |
 | `renderer.chromatic_aberration` | 0 | Red and blue split towards the edges |

@@ -183,6 +183,10 @@ uint LensHash(uint value) {
     return value;
 }
 
+// The grain's largest step on the gamma-encoded image at full strength (1): a mid-tone moves by about this
+// much, ±10 levels of 255 at the old default of 0.35.
+static const float kGrainStrength = 0.11;
+
 float LensRandom(uint2 cell, uint salt) {
     return float(LensHash(cell.x * 73856093u ^ cell.y * 19349663u ^ salt) & 0xFFFF) / 65535.0;
 }
@@ -247,11 +251,17 @@ float4 PSMain(float4 position : SV_Position) : SV_Target {
         color *= g_push.scale;
         color = g_push.toneMapper == 0 ? AgX(color) : PbrNeutral(color);
         if (g_push.grain > 0.0) {
-            // Film grain, new each frame: strongest in the mid-tones, as silver grains show most there.
+            // Film grain, new each frame, added where the eye judges it: on the gamma-encoded image, so that a
+            // step of grain looks the same size in every tone (ADR-0063). Strongest in the mid-tones, as silver
+            // grains show most there; it fades out in deep shadows, where added in linear light it outgrew
+            // the dark pixel it sat on, and a little in the highlights.
             const float noise = LensRandom(uint2(scenePixel), g_push.frame * 2654435761u) +
                                 LensRandom(uint2(scenePixel), g_push.frame * 2246822519u + 1u) - 1.0;
-            const float luma = dot(color, float3(0.2126, 0.7152, 0.0722));
-            color = max(color + noise * g_push.grain * 0.25 * sqrt(saturate(luma)) * (1.0 - saturate(luma) * 0.5), 0.0);
+            float3 encoded = pow(color, 1.0 / 2.2);
+            const float tone = saturate(dot(encoded, float3(0.2126, 0.7152, 0.0722)));
+            const float weight = smoothstep(0.02, 0.35, tone) * (1.0 - tone * 0.5);
+            encoded = max(encoded + noise * g_push.grain * kGrainStrength * weight, 0.0);
+            color = pow(encoded, 2.2);
         }
         color = ExpandHighlights(color, g_push.headroom);
     }
