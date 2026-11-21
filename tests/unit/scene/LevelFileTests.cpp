@@ -8,6 +8,8 @@
 #include <glm/trigonometric.hpp>
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <limits>
 #include <string>
 
 using namespace daidalos;
@@ -387,4 +389,25 @@ TEST(LevelFileTest, AmbientSoundsKeepTheirClipAndReach) {
     Level moved = level;
     scene::Relocate(moved, "Factory/Factory.level.json", "Other/Copy.level.json");
     EXPECT_EQ(moved.entities[0].sound->clip, "../Factory/Sounds/hum.wav");
+}
+
+TEST(LevelFileTest, ALevelWithABrokenTransformIsNotSaved) {
+    // A rotation that is not a number cannot be written as JSON: the save is refused, names the entity, and the
+    // file keeps what it had.
+    const std::filesystem::path file = std::filesystem::temp_directory_path() / "daidalos-broken.level.json";
+    Level good;
+    good.entities.push_back(LevelEntity{.id = 1, .name = "Lamp"});
+    ASSERT_TRUE(scene::SaveLevelFile(file, good).has_value());
+    EXPECT_EQ(scene::FindBrokenTransform(good), nullptr);
+
+    Level broken = good;
+    broken.entities[0].transform.rotation.x = std::numeric_limits<float>::quiet_NaN();
+    ASSERT_EQ(scene::FindBrokenTransform(broken), &broken.entities[0]);
+    const core::Result<void> saved = scene::SaveLevelFile(file, broken);
+    ASSERT_FALSE(saved.has_value());
+    EXPECT_NE(core::Format(saved.error()).find("Lamp"), std::string::npos);
+    const core::Result<Level> kept = scene::LoadLevelFile(file);
+    ASSERT_TRUE(kept.has_value()) << core::Format(kept.error());
+    EXPECT_EQ(*kept, good);
+    std::filesystem::remove(file);
 }

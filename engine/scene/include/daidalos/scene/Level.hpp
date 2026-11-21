@@ -240,7 +240,11 @@ inline constexpr std::uint32_t kLevelVersion = 1;
 
 /// Reads and parses a level file.
 [[nodiscard]] core::Result<Level> LoadLevelFile(const std::filesystem::path& file);
-/// Writes it, through a temporary file that replaces the old one, so a failed save loses nothing.
+/// The first entity whose transform holds a value that is not a number or is infinite, which JSON cannot hold
+/// and which would leave the file unreadable, or none.
+[[nodiscard]] const LevelEntity* FindBrokenTransform(const Level& level);
+/// Writes it, through a temporary file that replaces the old one, so a failed save loses nothing. A level with
+/// a broken transform (FindBrokenTransform) is not written: the file keeps what it had.
 [[nodiscard]] core::Result<void> SaveLevelFile(const std::filesystem::path& file, const Level& level);
 
 /// A level of one entity that places a glTF model: how a bare glTF file loads.

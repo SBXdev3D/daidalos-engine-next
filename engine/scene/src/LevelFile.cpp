@@ -1149,7 +1149,29 @@ core::Result<Level> LoadLevelFile(const std::filesystem::path& file) {
     return level;
 }
 
+const LevelEntity* FindBrokenTransform(const Level& level) {
+    const auto finite = [](const math::Transform& transform) {
+        const auto all = [](const auto& vector) {
+            for (int axis = 0; axis < vector.length(); ++axis) {
+                if (!std::isfinite(vector[axis])) {
+                    return false;
+                }
+            }
+            return true;
+        };
+        return all(transform.translation) && all(transform.rotation) && all(transform.scale);
+    };
+    const auto broken =
+        std::ranges::find_if(level.entities, [&](const LevelEntity& entity) { return !finite(entity.transform); });
+    return broken == level.entities.end() ? nullptr : &*broken;
+}
+
 core::Result<void> SaveLevelFile(const std::filesystem::path& file, const Level& level) {
+    if (const LevelEntity* broken = FindBrokenTransform(level)) {
+        return core::MakeError(
+            core::ErrorCode::InvalidArgument, kModule,
+            std::format("Not saved: the transform of \"{}\" (id {}) is not a number", broken->name, broken->id));
+    }
     const std::string text = WriteLevel(level);
     std::filesystem::path temporary = file;
     temporary += ".saving";

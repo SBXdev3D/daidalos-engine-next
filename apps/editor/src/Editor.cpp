@@ -89,6 +89,11 @@ math::Transform Decompose(const glm::mat4& matrix) {
             axes[axis] /= transform.scale[axis];
         }
     }
+    // An axis scaled to nothing has no direction: the rotation is then taken as none rather than made from a
+    // zero column, which gives a quaternion that is not a number.
+    if (!(transform.scale.x > 1e-8f && transform.scale.y > 1e-8f && transform.scale.z > 1e-8f)) {
+        return transform;
+    }
     // A mirrored matrix keeps a proper rotation and a negative scale.
     if (glm::dot(glm::cross(axes[0], axes[1]), axes[2]) < 0.0f) {
         transform.scale.x = -transform.scale.x;
@@ -100,6 +105,10 @@ math::Transform Decompose(const glm::mat4& matrix) {
 
 /// The shortest turn from one direction to another, both of length 1.
 glm::quat TurnBetween(const glm::vec3& from, const glm::vec3& to) {
+    // A surface without a normal (a triangle with no area) turns nothing.
+    if (!std::isfinite(glm::dot(to, to)) || glm::dot(to, to) < 1e-12f) {
+        return glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    }
     const float cosine = glm::dot(from, to);
     if (cosine < -0.9999f) {
         // Opposite: half a turn about any axis square to from.
@@ -512,9 +521,17 @@ void Editor::Change(std::string_view label, const std::function<void(scene::Leve
         m_status = "Stop simulating to edit (Alt+S, or K to keep where loose objects are)";
         return;
     }
+    scene::Level edited = m_level;
+    edit(edited);
+    // A transform that is not a number (a scale dragged to nothing, a surface with no normal) would show nothing
+    // and make the level file unreadable: the edit is refused, and the level stays as it was.
+    if (const scene::LevelEntity* broken = scene::FindBrokenTransform(edited)) {
+        m_status = std::format("{}: not done, it would break the transform of {}", label, broken->name);
+        DAI_LOG_WARNING(kModule, "{} (id {})", m_status, broken->id);
+        return;
+    }
     m_history.Begin(Snapshot(), label);
-    const scene::Level before = m_level;
-    edit(m_level);
+    const scene::Level before = std::exchange(m_level, std::move(edited));
     SyncShown(before, m_isolated);
 }
 
