@@ -376,7 +376,7 @@ core::Result<void> Application::LoadConfiguration() {
                                            "Share of the image that is its bloom, from 0 (none) to 1");
         m_sharpness = m_cvars.Register<double>("renderer.sharpness", 0.25,
                                                "Sharpening of the antialiased image, from 0 (none) to 1");
-        m_filmGrain = m_cvars.Register<double>("renderer.film_grain", 0.35, "Film grain, from 0 (none) to 1");
+        m_filmGrain = m_cvars.Register<double>("renderer.film_grain", 0.2, "Film grain, from 0 (none) to 1");
         m_vignette =
             m_cvars.Register<double>("renderer.vignette", 0.5, "Darker corners, as through a lens, from 0 (none) to 1");
         m_chromaticAberration = m_cvars.Register<double>("renderer.chromatic_aberration", 0.0,

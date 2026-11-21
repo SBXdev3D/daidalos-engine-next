@@ -465,7 +465,7 @@ MenuChoice DrawOptions(ui::Context& ui, ui::Canvas& canvas, const HudAssets& hud
         choice("options.color_vision", "renderer.color_vision", kVisions, kVisionNames, "normal");
         slider("options.camera_shake", "view.camera_shake", 0.0f, 1.0f, 0.25f, percent, twoDecimals, 1.0);
         slider("options.motion_blur", "renderer.motion_blur", 0.0f, 1.0f, 0.25f, percent, twoDecimals, 0.0);
-        slider("options.film_grain", "renderer.film_grain", 0.0f, 1.0f, 0.05f, percent, twoDecimals, 0.35);
+        slider("options.film_grain", "renderer.film_grain", 0.0f, 1.0f, 0.05f, percent, twoDecimals, 0.2);
         slider("options.chromatic_aberration", "renderer.chromatic_aberration", 0.0f, 1.0f, 0.05f, percent, twoDecimals,
                0.0);
         slider("options.lens_dirt", "renderer.lens_dirt", 0.0f, 1.0f, 0.05f, percent, twoDecimals, 0.5);
