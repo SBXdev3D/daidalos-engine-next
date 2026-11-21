@@ -165,8 +165,11 @@ def main():
     rng = random.Random(1311)
     loop = 16.0
     layers = [drone(loop, rng), heartbeat(loop), cluster(loop), screech(loop)]
+    # The drone plays all the time, the others only with danger: it sits well below them (8 dB), as a bed
+    # rather than a lead, so that calm is quiet and the danger layers stand out when they come.
+    peaks = [0.24, 0.6, 0.6, 0.6]
     for index, layer in enumerate(layers):
-        write(OUT / f"tension_{index}.wav", normalize(layer, 0.6))
+        write(OUT / f"tension_{index}.wav", normalize(layer, peaks[index]))
     for index in (1, 2):
         write(OUT / f"stinger_{index}.wav", normalize(stinger(rng, 2.5), 0.9))
     write(OUT / "hum.wav", normalize(hum(4.0, rng), 0.5))
