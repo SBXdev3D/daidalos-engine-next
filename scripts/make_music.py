@@ -29,8 +29,13 @@ def looped(frequency, seconds):
 
 
 def lowpass(samples, cutoff):
+    """A one-pole low-pass over a loop: it starts from the state its end leaves, so that the end flows into the
+    start. Starting from a raw sample instead left the drone's wind a jump of 60% of full scale at the seam, a
+    click every 16 seconds."""
     alpha = 1.0 - math.exp(-2.0 * math.pi * cutoff / RATE)
-    state = samples[-1] if samples else 0.0
+    state = 0.0
+    for value in samples:
+        state += alpha * (value - state)
     out = []
     for value in samples:
         state += alpha * (value - state)
