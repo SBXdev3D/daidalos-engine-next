@@ -141,7 +141,7 @@ void Scene::Extract(renderer::SceneView& view) {
             const glm::vec3 forward = key.target - key.position;
             if (const float length = glm::length(forward); length > 1e-4f) {
                 // Straight up or down, world up tells nothing: the top of the picture is then towards -Z.
-                const bool vertical = std::abs(forward.y) > 0.999f * length;
+                const bool vertical = std::abs(forward.y) > 0.99999f * length;
                 view.camera->view = glm::lookAt(key.position, key.target,
                                                 vertical ? glm::vec3(0.0f, 0.0f, -1.0f) : glm::vec3(0.0f, 1.0f, 0.0f));
             }

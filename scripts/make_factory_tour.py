@@ -43,8 +43,6 @@ FIXES = {
     21: {"position": [52.5, 5.0, -63.0]},
     # Under the east door's lintel (2.1 m) on the way back.
     25: {"position": [24.5, 1.55, -38.5]},
-    # Looking straight down into the shaft, the yaw does not show: kept as before, it needs no half turn.
-    30: {"yaw": 180.0},
 }
 
 # Keys added between legacy steps, where the curve would cut a corner or a door frame: after the step of the
@@ -61,7 +59,8 @@ INSERTS = {
     19: [(0.15, [45.5, 3.3, -75.4]), (0.85, [45.5, 3.3, -68.8])],
     # Past the corner of the lockers on the way to the west door.
     21: [(0.4, [46.8, 4.3, -60.4])],
-    # Into the shaft from above its middle, not along the edge of the floor.
+    # Into the shaft from above its middle, not along the edge of the floor, half turned and half looking down,
+    # so that the legacy half turn happens on the way down, as it did, and not when looking straight down.
     29: [(0.5, [-35.0, 0.6, -35.6])],
     # Round the corner of the upper corridor, not through it.
     36: [(0.6, [-34.6, 4.2, -76.4])],
@@ -116,7 +115,7 @@ def keys_of(steps):
         position = fix.get("position", step["position"])
         yaw = fix.get("yaw", step["yaw"])
         pitch = max(-88.0, min(88.0, fix.get("pitch", step["pitch"])))
-        if previous is not None and abs(yaw - previous["yaw"]) >= 170.0:
+        if previous is not None and abs(yaw - previous["yaw"]) >= 170.0 and index - 1 not in INSERTS:
             middle = [(a + b) / 2 for a, b in zip(previous["position"], position)]
             keys.append(key(previous["at"] + (time - previous["at"]) / 2, middle, (yaw + previous["yaw"]) / 2,
                             (pitch + previous["pitch"]) / 2))
@@ -149,15 +148,12 @@ def key(at, position, yaw, pitch, focus=LOOK):
 
 def sequence(keys):
     written = [{name: value for name, value in k.items() if name not in ("yaw", "pitch")} for k in keys]
-    length = keys[-1]["at"]
     return {
         "comment": "The factory tour (ADR-0120): the legacy demo's flight over its whole level, made by "
                    "scripts/make_factory_tour.py from the legacy intro.dgc, ending at the player's eyes. "
                    "sandbox.tour plays it instead of the menu.",
         "cues": [
-            {"at": 0.0, "mix": {"lowpass": 4000, "music": 0.8, "seconds": 1.0}},
             {"at": 0.0, "camera": {"path": "smooth", "keys": written}},
-            {"at": round(length - 3.0, 3), "mix": {"lowpass": 20000, "music": 1.0, "seconds": 3.0}},
         ],
     }
 

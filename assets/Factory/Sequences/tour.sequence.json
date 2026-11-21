@@ -1,7 +1,6 @@
 {
   "comment": "The factory tour (ADR-0120): the legacy demo's flight over its whole level, made by scripts/make_factory_tour.py from the legacy intro.dgc, ending at the player's eyes. sandbox.tour plays it instead of the menu.",
   "cues": [
-    {"at": 0, "mix": {"lowpass": 4000, "music": 0.8, "seconds": 1}},
     {"at": 0, "camera": {"path": "smooth", "keys": [
       {"at": 0, "position": [0, 2.1, 0], "target": [0, 2.1, -4], "aperture": 0, "focus": 4},
       {"at": 2.7, "position": [0, 1.6, -12.6], "target": [0, 1.6, -16.6], "aperture": 0, "focus": 4},
@@ -43,9 +42,8 @@
       {"at": 142.5, "position": [-21, 1.4, -38.5], "target": [-24.939, 0.705, -38.5], "aperture": 0, "focus": 4},
       {"at": 146.5, "position": [-33.25, 1.4, -38.5], "target": [-37.189, 0.705, -38.5], "aperture": 0, "focus": 4},
       {"at": 149.5, "position": [-35, 1.4, -38.5], "target": [-35, 0.705, -34.561], "aperture": 0, "focus": 4},
-      {"at": 151.5, "position": [-35, 0.6, -35.6], "target": [-35, -2.419, -32.976], "aperture": 0, "focus": 4},
-      {"at": 153.5, "position": [-35, -1.4, -35], "target": [-35, -5.398, -34.86], "aperture": 0, "focus": 4},
-      {"at": 155.5, "position": [-35, -3.85, -35], "target": [-37.877, -6.629, -35], "aperture": 0, "focus": 4},
+      {"at": 151.5, "position": [-35, 0.6, -35.6], "target": [-37.624, -2.419, -35.6], "aperture": 0, "focus": 4},
+      {"at": 153.5, "position": [-35, -1.4, -35], "target": [-35, -5.398, -35.14], "aperture": 0, "focus": 4},
       {"at": 157.5, "position": [-35, -6.3, -35], "target": [-35, -6.3, -39], "aperture": 0, "focus": 4},
       {"at": 162.5, "position": [-35, -6.3, -52.5], "target": [-35, -6.3, -56.5], "aperture": 0, "focus": 4},
       {"at": 168.5, "position": [-35, -6.3, -59.5], "target": [-34.86, -2.302, -59.5], "aperture": 0, "focus": 4},
@@ -66,7 +64,6 @@
       {"at": 219.5, "position": [0, 1.8, -6], "target": [0, 1.8, -2], "aperture": 0, "focus": 4},
       {"at": 221.1, "position": [1.2, 1.8, -1.5], "target": [-2.8, 1.8, -1.5], "aperture": 0, "focus": 4},
       {"at": 223.1, "position": [0, 1.9, 0.3], "target": [0, 1.83, -3.699], "aperture": 0, "focus": 4}
-    ]}},
-    {"at": 220.1, "mix": {"lowpass": 20000, "music": 1, "seconds": 3}}
+    ]}}
   ]
 }

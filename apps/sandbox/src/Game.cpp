@@ -379,6 +379,7 @@ private:
                 // The tour stands in for the menu and the opening: it ends at the player's eyes.
                 OpenScreen(app, sandbox::Screen::None);
                 m_openingPlayed = true;
+                m_settings.tour = true;
                 if (const core::Result<void> played = target.PlaySequenceFile(kTourSequence); !played) {
                     DAI_LOG_WARNING("sandbox", "The tour: {}", core::Format(played.error()));
                 } else {

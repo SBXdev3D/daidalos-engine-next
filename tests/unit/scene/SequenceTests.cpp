@@ -14,6 +14,7 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <utility>
 
 using namespace daidalos;
 using scene::Cue;
@@ -127,6 +128,62 @@ TEST(SequenceTest, ASmoothPathTurnsTheShorterWayAndNeverLooksStraightDown) {
     const glm::vec3 view = glm::normalize(end.target - end.position);
     EXPECT_LT(view.y, -0.999f);
     EXPECT_GT(view.y, -0.99999f);
+}
+
+TEST(SequenceTest, ASmoothPathHoldsALookBetweenTwoKeysThatShareIt) {
+    // Level, then up a shaft looking straight up at two keys, then level again (ADR-0120): between the two
+    // looking up, the look stays where they are rather than swinging past them and spinning the picture.
+    const auto key = [](float at, float y, float pitchDegrees) {
+        const float pitch = glm::radians(pitchDegrees);
+        const glm::vec3 position{0.0f, y, 0.0f};
+        return scene::CameraKey{
+            .at = at, .position = position, .target = position + glm::vec3(0.0f, std::sin(pitch), -std::cos(pitch))};
+    };
+    const std::vector<scene::CameraKey> keys{key(0.0f, 0.0f, 0.0f), key(2.0f, 0.0f, 80.0f), key(4.0f, 5.0f, 80.0f),
+                                             key(6.0f, 10.0f, 0.0f)};
+    for (float time = 2.0f; time <= 4.0f; time += 0.1f) {
+        const scene::CameraKey at = scene::CameraAt(keys, time, scene::CameraPath::Smooth);
+        const float pitch = glm::degrees(std::asin(glm::normalize(at.target - at.position).y));
+        EXPECT_NEAR(pitch, 80.0f, 0.01f) << "at " << time << " s";
+    }
+}
+
+TEST(SequenceTest, TheFactoryTourNeverSnaps) {
+    // The tour (ADR-0120) at 60 frames a second: from one frame to the next, neither where the camera looks
+    // nor which way is up in its picture (as the scene builds its view) turns more than a few degrees, down
+    // and up the shafts included.
+    std::ifstream file(std::filesystem::path(DAI_PROJECT_ASSET_DIR) / "Factory/Sequences/tour.sequence.json",
+                       std::ios::binary);
+    const std::string json{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    const core::Result<scene::Sequence> sequence = scene::ParseSequence(json, "tour");
+    ASSERT_TRUE(sequence.has_value()) << core::Format(sequence.error());
+    const auto camera = std::ranges::find(sequence->cues, Cue::Kind::Camera, &Cue::kind);
+    ASSERT_NE(camera, sequence->cues.end());
+    const auto frame = [&](float time) {
+        const scene::CameraKey key = scene::CameraAt(camera->keys, time, camera->cameraPath);
+        const glm::vec3 forward = glm::normalize(key.target - key.position);
+        const glm::vec3 up =
+            std::abs(forward.y) > 0.99999f ? glm::vec3(0.0f, 0.0f, -1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+        return std::pair{forward, glm::normalize(glm::cross(forward, up))};
+    };
+    const auto degrees = [](const glm::vec3& a, const glm::vec3& b) {
+        return glm::degrees(std::acos(std::clamp(glm::dot(a, b), -1.0f, 1.0f)));
+    };
+    float worstLook = 0.0f;
+    float worstRight = 0.0f;
+    float worstAt = 0.0f;
+    auto previous = frame(0.0f);
+    for (float time = 1.0f / 60.0f; time <= camera->keys.back().at; time += 1.0f / 60.0f) {
+        const auto now = frame(time);
+        worstLook = std::max(worstLook, degrees(previous.first, now.first));
+        if (const float right = degrees(previous.second, now.second); right > worstRight) {
+            worstRight = right;
+            worstAt = time;
+        }
+        previous = now;
+    }
+    EXPECT_LT(worstLook, 3.0f);
+    EXPECT_LT(worstRight, 3.0f) << "at " << worstAt << " s";
 }
 
 TEST(SequenceTest, WritingAndReadingBackGivesTheSameSequence) {

@@ -142,6 +142,9 @@ struct SoundBank {
     audio::ClipHandle alarm;
     audio::ClipHandle fan;
     audio::ClipHandle music;
+    /// The old demo's track while the tour flies (ADR-0120), and how loud it still is as it fades out after.
+    audio::VoiceHandle tourMusic;
+    float tourMusicLevel = 1.0f;
     /// The score in layers and its stingers (ADR-0068): scripts/make_music.py.
     std::vector<audio::ClipHandle> tension;
     std::vector<audio::ClipHandle> stingers;
@@ -180,6 +183,9 @@ struct Door {
     /// Opened for a cinematic camera (ADR-0120): it closes again after, even a door that stays open once the
     /// player opens it, and stays locked.
     bool openedForCamera = false;
+    /// A card reader opens it (its lamp is green): the only door a player opens by hand that a cinematic camera
+    /// opens too. The others opened by hand have a red lamp, and stay shut for the camera.
+    bool cardReader = false;
     /// Its box in the navigation mesh (ADR-0069), and whether the mesh has it shut.
     std::optional<navigation::NavBox> navBox;
     bool navShut = true;
@@ -344,13 +350,21 @@ SoundBank LoadSounds(scene::Scene& scene) {
 
 /// Starts what plays for the whole level. Waiting for the scene to run keeps a restart, which builds
 /// the new scene while the old one plays, from doubling every sound.
-void StartLoopedSounds(scene::Scene& scene, ecs::Entity playerEntity, bool classicMusic) {
+void StartLoopedSounds(scene::Scene& scene, ecs::Entity playerEntity, bool classicMusic, bool tour) {
     ecs::World& world = scene.World();
     audio::SoundWorld& sounds = scene.Sounds();
-    if (const SoundBank* bank = world.TryGet<SoundBank>(playerEntity)) {
-        // The score rises with the danger (ADR-0068); the old demo's track stays a setting away.
-        if (classicMusic) {
-            sounds.Play(bank->music, {.volume = kMusicVolume, .loop = true, .bus = audio::Bus::Music});
+    if (SoundBank* bank = world.TryGet<SoundBank>(playerEntity)) {
+        // The score rises with the danger (ADR-0068); the old demo's track stays a setting away. The tour flies
+        // to the old track, as the legacy flight did, and the score takes over after it (ADR-0120).
+        if (classicMusic || tour) {
+            const audio::VoiceHandle voice =
+                sounds.Play(bank->music, {.volume = kMusicVolume, .loop = true, .bus = audio::Bus::Music});
+            if (tour && !classicMusic) {
+                bank->tourMusic = voice;
+                if (voice.IsNull()) {
+                    sounds.PlayLayers(bank->tension, kMusicVolume * 1.6f);
+                }
+            }
         } else {
             sounds.PlayLayers(bank->tension, kMusicVolume * 1.6f);
         }
@@ -850,8 +864,10 @@ void UpdateDoors(scene::Scene& scene, ecs::Entity playerEntity, float delta) {
                 playAtCaptioned(&SoundBank::doorStart, door.closedPosition, "caption.door_open");
             }
         }
-        // A cinematic camera flies through doors as the player walks through them (ADR-0120).
-        if (camera.has_value() && glm::distance(door.closedPosition, *camera) < kCameraDoorRadius) {
+        // A cinematic camera flies through the doors a player walks through (ADR-0120): those that open by
+        // themselves, and the card reader's; the doors with a red lamp stay shut.
+        if (camera.has_value() && (!byHand || door.cardReader) &&
+            glm::distance(door.closedPosition, *camera) < kCameraDoorRadius) {
             if (!door.open) {
                 door.open = true;
                 door.openedForCamera = true;
@@ -1165,6 +1181,7 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
             door.radius = Number(tags, "radius", 1.0f) < 0.0f ? -1.0f : kDoorRadius;
             door.closable = tags.Value("closable") != "false";
             door.locked = std::ranges::find(lockedDoors, door.id) != lockedDoors.end();
+            door.cardReader = door.locked;
             world.Add<Door>(entity, door);
             world.Add<scene::SaveKey>(entity, keyOf(entity));
 
@@ -1444,7 +1461,7 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
                 [&scene, &settings, player, started = false](ecs::World& /*world*/, core::Seconds) mutable {
                     if (!started) {
                         started = true;
-                        StartLoopedSounds(scene, player(), settings.classicMusic);
+                        StartLoopedSounds(scene, player(), settings.classicMusic, settings.tour);
                     }
                 });
     // The score follows the danger, and a stinger marks the moment a zombie starts the hunt (ADR-0068).
@@ -1475,6 +1492,18 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
                                     {.volume = 0.6f, .bus = audio::Bus::Interface, .ducking = 0.6f});
                 scene.ShowCaption({.text = "caption.stinger", .seconds = 3.0f});
                 bank->stingerCooldown = 25.0f;
+            }
+        }
+        if (!bank->tourMusic.IsNull() && !scene.InCinematic()) {
+            // The tour has handed over: its track fades out over three seconds as the score comes in.
+            if (bank->tourMusicLevel == 1.0f) {
+                scene.Sounds().PlayLayers(bank->tension, kMusicVolume * 1.6f);
+            }
+            bank->tourMusicLevel = std::max(bank->tourMusicLevel - (static_cast<float>(delta.count()) / 3.0f), 0.0f);
+            scene.Sounds().SetVolume(bank->tourMusic, kMusicVolume * bank->tourMusicLevel);
+            if (bank->tourMusicLevel <= 0.0f) {
+                scene.Sounds().Stop(bank->tourMusic);
+                bank->tourMusic = {};
             }
         }
         const Threat threat = ZombieThreat(scene, state.feet);

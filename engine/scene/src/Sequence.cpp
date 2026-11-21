@@ -451,6 +451,25 @@ T Tangent(const std::vector<CameraKey>& keys, const std::vector<T>& values, std:
     return (values[index + 1] - values[index - 1]) / span;
 }
 
+// As Tangent, but level at a key where a value turns back or holds (Fritsch-Carlson): the look does not swing
+// past a key it stops at, as from straight up to straight up, where a swing would spin the picture.
+glm::vec2 MonotoneTangent(const std::vector<CameraKey>& keys, const std::vector<glm::vec2>& values, std::size_t index) {
+    glm::vec2 tangent = Tangent(keys, values, index);
+    if (index == 0 || index + 1 >= keys.size()) {
+        return tangent;
+    }
+    // Within a hundredth of a degree counts as holding: keys aimed the same way rarely give the same angle.
+    constexpr float kHold = 2e-4f;
+    for (int axis = 0; axis < 2; ++axis) {
+        const float before = values[index][axis] - values[index - 1][axis];
+        const float after = values[index + 1][axis] - values[index][axis];
+        if (std::abs(before) < kHold || std::abs(after) < kHold || before * after < 0.0f) {
+            tangent[axis] = 0.0f;
+        }
+    }
+    return tangent;
+}
+
 CameraKey SmoothCameraAt(const std::vector<CameraKey>& keys, float time) {
     // The angles of each key, the yaw unwrapped so that each turn takes the shorter way.
     std::vector<glm::vec3> positions;
@@ -478,8 +497,8 @@ CameraKey SmoothCameraAt(const std::vector<CameraKey>& keys, float time) {
     const float t = std::clamp((time - keys[from].at) / span, 0.0f, 1.0f);
     const glm::vec3 position = Hermite(positions[from], positions[index], Tangent(keys, positions, from),
                                        Tangent(keys, positions, index), span, t);
-    glm::vec2 look =
-        Hermite(angles[from], angles[index], Tangent(keys, angles, from), Tangent(keys, angles, index), span, t);
+    glm::vec2 look = Hermite(angles[from], angles[index], MonotoneTangent(keys, angles, from),
+                             MonotoneTangent(keys, angles, index), span, t);
     // A degree short of straight up or down, where looking at a point would leave no way to tell up.
     constexpr float kMostPitch = 89.0f * glm::pi<float>() / 180.0f;
     look.y = std::clamp(look.y, -kMostPitch, kMostPitch);
