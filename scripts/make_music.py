@@ -29,8 +29,13 @@ def looped(frequency, seconds):
 
 
 def lowpass(samples, cutoff):
+    """A one-pole low-pass over a loop: it starts from the state its end leaves, so that the end flows into the
+    start. Starting from a raw sample instead left the drone's wind a jump of 60% of full scale at the seam, a
+    click every 16 seconds."""
     alpha = 1.0 - math.exp(-2.0 * math.pi * cutoff / RATE)
-    state = samples[-1] if samples else 0.0
+    state = 0.0
+    for value in samples:
+        state += alpha * (value - state)
     out = []
     for value in samples:
         state += alpha * (value - state)
@@ -53,18 +58,30 @@ def write(path, samples):
 
 
 def drone(seconds, rng):
-    """D1 and A1, breathing slowly, over a low wind."""
+    """D2, A2, D3 and F3, a dark open chord with soft overtones, breathing slowly, over a faint wind and a D1
+    beneath it. Pitched where ordinary speakers play: an octave lower (D1 and A1 alone, under wind three times
+    as loud) the notes went unheard and the layer sounded like noise."""
     count = int(seconds * RATE)
-    d = looped(36.71, seconds)
-    a = looped(55.0, seconds)
+    sub = looped(36.71, seconds)
+    # Each note, its level, and a twin a little sharp that beats slowly against it.
+    notes = [(looped(f, seconds), level, looped(f + beat, seconds))
+             for f, level, beat in ((73.42, 1.0, 0.25), (110.0, 0.7, 0.19), (146.83, 0.45, 0.31), (174.61, 0.3, 0.13))]
     breath = looped(1.0 / 8.0, seconds)
+    brightness = looped(1.0 / 16.0, seconds)
     wind = lowpass([rng.uniform(-1, 1) for _ in range(count)], 180.0)
     out = []
     for i in range(count):
         t = i / RATE
         swell = 0.75 + 0.25 * math.sin(2 * math.pi * breath * t)
-        tone = math.sin(2 * math.pi * d * t) + 0.6 * math.sin(2 * math.pi * a * t) + 0.3 * math.sin(2 * math.pi * 2 * d * t)
-        out.append(tone * swell * 0.5 + wind[i] * 3.0)
+        # The overtones come and go once a loop, as if a filter opened and closed.
+        bright = 0.5 + 0.5 * math.sin(2 * math.pi * brightness * t)
+        tone = 0.0
+        for frequency, level, twin in notes:
+            for harmonic, gain in ((1, 1.0), (2, 0.25 + 0.2 * bright), (3, 0.1 + 0.15 * bright)):
+                tone += level * gain * (math.sin(2 * math.pi * frequency * harmonic * t) +
+                                        0.5 * math.sin(2 * math.pi * twin * harmonic * t))
+        tone += 0.8 * math.sin(2 * math.pi * sub * t)
+        out.append(tone * swell * 0.25 + wind[i])
     return out
 
 
@@ -148,8 +165,11 @@ def main():
     rng = random.Random(1311)
     loop = 16.0
     layers = [drone(loop, rng), heartbeat(loop), cluster(loop), screech(loop)]
+    # The drone plays all the time, the others only with danger: it sits well below them (8 dB), as a bed
+    # rather than a lead, so that calm is quiet and the danger layers stand out when they come.
+    peaks = [0.24, 0.6, 0.6, 0.6]
     for index, layer in enumerate(layers):
-        write(OUT / f"tension_{index}.wav", normalize(layer, 0.6))
+        write(OUT / f"tension_{index}.wav", normalize(layer, peaks[index]))
     for index in (1, 2):
         write(OUT / f"stinger_{index}.wav", normalize(stinger(rng, 2.5), 0.9))
     write(OUT / "hum.wav", normalize(hum(4.0, rng), 0.5))
