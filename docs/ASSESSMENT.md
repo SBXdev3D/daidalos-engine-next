@@ -78,8 +78,8 @@ This is an honest look at where Daidalos Engine Next stands: the engine, the fac
 
 - **The level's architecture is still the 2008 one:** boxes of tiled floor and brick wall at a 10-unit grid, under the new props. The props dress it; they cannot hide that every room is a box.
   - ▲ **Improve:** rebuild the walls, floors and ceilings in Blender with real architecture: columns, beams, ducts at the ceiling, stairs, windows, height changes. Keep the route.
-- **The art is mixed.** The legacy textures sit beside Poly Haven's scanned props, and the zombie and the weapons are the legacy models.
-  - ▲ **Improve:** one texture set for the walls, and a CC0 character (Quaternius) with better animation.
+- **The art is mixed.** The legacy textures sit beside Poly Haven's scanned props. The zombie is now a detailed model in a hazmat suit (ADR-0119), but the only enemy.
+  - ▲ **Improve:** one texture set for the walls, and a second monster, made the same way (ADR-0119).
 - **It has not been played for balance.** Ambush radii, recoil, zombie numbers and the ammunition count are first guesses (ADR-0084, ADR-0085).
   - ▲ **Improve:** play it end to end, several times, and tune.
 

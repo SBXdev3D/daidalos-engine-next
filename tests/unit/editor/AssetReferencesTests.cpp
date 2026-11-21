@@ -23,7 +23,10 @@ namespace {
 class AssetReferencesTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        m_root = std::filesystem::temp_directory_path() / "daidalos_asset_references_test";
+        // A folder per test: ctest runs them in parallel.
+        m_root =
+            std::filesystem::temp_directory_path() / (std::string("daidalos_asset_references_") +
+                                                      ::testing::UnitTest::GetInstance()->current_test_info()->name());
         std::filesystem::remove_all(m_root);
         std::filesystem::create_directories(m_root / "Factory/Sounds");
         std::filesystem::create_directories(m_root / "Factory/Effects");

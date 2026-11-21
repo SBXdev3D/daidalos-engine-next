@@ -221,6 +221,6 @@ Licensed under either of
 
 at your option. See [ADR-0047](docs/adr/0047-dual-mit-apache-licence.md).
 
-The demo's free textures, sounds and fonts keep their own licences: see [assets/README.md](assets/README.md) and [assets/Factory/LICENSE.md](assets/Factory/LICENSE.md).
+The demo's free textures, sounds and fonts keep their own licences: see [assets/README.md](assets/README.md) and [assets/Factory/LICENSE.md](assets/Factory/LICENSE.md). The zombie is a CC-BY 4.0 model, credited in [assets/Factory/Monsters/LICENSE.md](assets/Factory/Monsters/LICENSE.md).
 
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
