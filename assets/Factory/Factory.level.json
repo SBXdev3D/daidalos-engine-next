@@ -112,7 +112,7 @@
       "name": "Flashlight 16",
       "transform": {
         "rotation": [0.0, 0.0410037, 0.0, 0.999159],
-        "translation": [21.625, 1.1476, -43.2]
+        "translation": [17.5, 0.001, -38.5]
       }
     },
     {
