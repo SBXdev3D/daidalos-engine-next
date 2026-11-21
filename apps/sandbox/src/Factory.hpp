@@ -177,6 +177,8 @@ struct Settings {
     float flashlightBattery = 900.0f;
     /// The old demo's music track instead of the layered score (ADR-0068).
     bool classicMusic = false;
+    /// The level starts with the tour (ADR-0120), which flies to the old demo's track.
+    bool tour = false;
     /// A saved game to put the factory back to once it is made (ADR-0072); empty to start anew.
     std::filesystem::path loadSave;
     /// Where checkpoints save.

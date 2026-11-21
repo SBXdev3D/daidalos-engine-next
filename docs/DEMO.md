@@ -61,7 +61,7 @@ build/windows-msvc/apps/sandbox/Release/sandbox.exe
 
 If the level is missing, the sandbox shows a test floor. Other glTF files can be tried with `+sandbox.scene <path>`.
 
-The level loads behind the legacy loading screen, then waits behind the main menu; `+sandbox.menu false` starts playing at once. Escape pauses. The options apply at once and are saved to `user.cfg` next to the executable when you leave them; delete it to go back to the defaults. The game ends two seconds after the player dies, or after the last zombie dies, with the time taken.
+The level loads behind the legacy loading screen, then waits behind the main menu; `+sandbox.menu false` starts playing at once. `+sandbox.tour true` starts with the legacy demo's camera flight over the whole factory instead (ADR-0120), which ends in the player's eyes. Escape pauses. The options apply at once and are saved to `user.cfg` next to the executable when you leave them; delete it to go back to the defaults. The game ends two seconds after the player dies, or after the last zombie dies, with the time taken.
 
 In development builds, the key under Escape opens the developer tools: the console (`help` lists its commands, `restart` starts over), statistics, the entities with the player's state, and the loaded resources.
 

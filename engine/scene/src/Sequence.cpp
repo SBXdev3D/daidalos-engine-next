@@ -5,10 +5,13 @@
 #include <daidalos/scene/Sequence.hpp>
 
 #include <glm/common.hpp>
+#include <glm/geometric.hpp>
+#include <glm/gtc/constants.hpp>
 
 #include <simdjson.h>
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 
 #include "JsonTree.hpp"
@@ -198,7 +201,14 @@ core::Result<Cue> ReadCue(std::string_view sequence, simdjson::dom::object cueOb
         DAI_TRY(reader.Number("seconds", cue.seconds));
     } else if (kind == "camera") {
         cue.kind = Cue::Kind::Camera;
-        DAI_TRY(reader.Only({"keys"}));
+        DAI_TRY(reader.Only({"keys", "path"}));
+        std::string path = "eased";
+        DAI_TRY(reader.Text("path", path));
+        if (path == "smooth") {
+            cue.cameraPath = CameraPath::Smooth;
+        } else if (path != "eased") {
+            return reader.Invalid("path", "must be \"eased\" or \"smooth\"");
+        }
         simdjson::dom::array keys;
         if (body["keys"].get_array().get(keys) != simdjson::SUCCESS || keys.size() == 0) {
             return reader.Invalid("keys", "must be a list of keys");
@@ -388,6 +398,9 @@ std::string WriteSequence(const Sequence& sequence) {
                 written.emplace("focus", number(key.focus));
                 keys.push_back(Json{std::move(written)});
             }
+            if (cue->cameraPath == CameraPath::Smooth) {
+                body.emplace("path", text("smooth"));
+            }
             body.emplace("keys", Json{std::move(keys)});
             break;
         }
@@ -405,9 +418,109 @@ std::string WriteSequence(const Sequence& sequence) {
     return detail::WriteJson(Json{std::move(root)});
 }
 
-CameraKey CameraAt(const std::vector<CameraKey>& keys, float time) {
+namespace {
+
+// Where a key looks, as angles: yaw about up from -Z, growing to the left, and pitch, up positive.
+glm::vec2 LookAngles(const CameraKey& key) {
+    const glm::vec3 forward = key.target - key.position;
+    const float length = glm::length(forward);
+    if (length < 1e-5f) {
+        return glm::vec2(0.0f);
+    }
+    const glm::vec3 direction = forward / length;
+    return {std::atan2(-direction.x, -direction.z), std::asin(std::clamp(direction.y, -1.0f, 1.0f))};
+}
+
+// A cubic Hermite segment, tangents in units per second over a span of seconds.
+template <class T>
+T Hermite(const T& a, const T& b, const T& ta, const T& tb, float span, float t) {
+    const float t2 = t * t;
+    const float t3 = t2 * t;
+    return a * (2.0f * t3 - 3.0f * t2 + 1.0f) + ta * (span * (t3 - 2.0f * t2 + t)) + b * (-2.0f * t3 + 3.0f * t2) +
+           tb * (span * (t3 - t2));
+}
+
+// The tangent at a key of a curve through values at the keys' times: the slope from the key before to the one
+// after, and at rest at the first and last keys (a Catmull-Rom spline over uneven times).
+template <class T>
+T Tangent(const std::vector<CameraKey>& keys, const std::vector<T>& values, std::size_t index) {
+    if (index == 0 || index + 1 >= keys.size()) {
+        return T(0.0f);
+    }
+    const float span = std::max(keys[index + 1].at - keys[index - 1].at, 1e-4f);
+    return (values[index + 1] - values[index - 1]) / span;
+}
+
+// As Tangent, but level at a key where a value turns back or holds (Fritsch-Carlson): the look does not swing
+// past a key it stops at, as from straight up to straight up, where a swing would spin the picture.
+glm::vec2 MonotoneTangent(const std::vector<CameraKey>& keys, const std::vector<glm::vec2>& values, std::size_t index) {
+    glm::vec2 tangent = Tangent(keys, values, index);
+    if (index == 0 || index + 1 >= keys.size()) {
+        return tangent;
+    }
+    // Within a hundredth of a degree counts as holding: keys aimed the same way rarely give the same angle.
+    constexpr float kHold = 2e-4f;
+    for (int axis = 0; axis < 2; ++axis) {
+        const float before = values[index][axis] - values[index - 1][axis];
+        const float after = values[index + 1][axis] - values[index][axis];
+        if (std::abs(before) < kHold || std::abs(after) < kHold || before * after < 0.0f) {
+            tangent[axis] = 0.0f;
+        }
+    }
+    return tangent;
+}
+
+CameraKey SmoothCameraAt(const std::vector<CameraKey>& keys, float time) {
+    // The angles of each key, the yaw unwrapped so that each turn takes the shorter way.
+    std::vector<glm::vec3> positions;
+    std::vector<glm::vec2> angles;
+    std::vector<glm::vec2> lens;
+    positions.reserve(keys.size());
+    angles.reserve(keys.size());
+    lens.reserve(keys.size());
+    for (const CameraKey& key : keys) {
+        glm::vec2 look = LookAngles(key);
+        if (!angles.empty()) {
+            const float previous = angles.back().x;
+            look.x = previous + std::remainder(look.x - previous, glm::two_pi<float>());
+        }
+        positions.push_back(key.position);
+        angles.push_back(look);
+        lens.emplace_back(key.aperture, key.focus);
+    }
+    std::size_t index = 1;
+    while (index + 1 < keys.size() && time > keys[index].at) {
+        ++index;
+    }
+    const std::size_t from = index - 1;
+    const float span = std::max(keys[index].at - keys[from].at, 1e-4f);
+    const float t = std::clamp((time - keys[from].at) / span, 0.0f, 1.0f);
+    const glm::vec3 position = Hermite(positions[from], positions[index], Tangent(keys, positions, from),
+                                       Tangent(keys, positions, index), span, t);
+    glm::vec2 look = Hermite(angles[from], angles[index], MonotoneTangent(keys, angles, from),
+                             MonotoneTangent(keys, angles, index), span, t);
+    // A degree short of straight up or down, where looking at a point would leave no way to tell up.
+    constexpr float kMostPitch = 89.0f * glm::pi<float>() / 180.0f;
+    look.y = std::clamp(look.y, -kMostPitch, kMostPitch);
+    const glm::vec3 direction{-std::sin(look.x) * std::cos(look.y), std::sin(look.y),
+                              -std::cos(look.x) * std::cos(look.y)};
+    const glm::vec2 lensNow =
+        Hermite(lens[from], lens[index], Tangent(keys, lens, from), Tangent(keys, lens, index), span, t);
+    return {.at = time,
+            .position = position,
+            .target = position + direction,
+            .aperture = std::max(lensNow.x, 0.0f),
+            .focus = std::max(lensNow.y, 0.1f)};
+}
+
+} // namespace
+
+CameraKey CameraAt(const std::vector<CameraKey>& keys, float time, CameraPath path) {
     if (keys.empty()) {
         return {};
+    }
+    if (path == CameraPath::Smooth && keys.size() > 1) {
+        return SmoothCameraAt(keys, std::clamp(time, keys.front().at, keys.back().at));
     }
     if (time <= keys.front().at) {
         return keys.front();

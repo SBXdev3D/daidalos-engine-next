@@ -123,3 +123,4 @@ Each record explains one decision with lasting consequences: the context, the de
 | [0117](0117-asset-references-and-import-settings.md) | What uses an asset, listed from levels, prefabs, effects and sequences; moves that rewrite every file naming it; per-model import settings (scale, level collision) beside the model | Accepted |
 | [0118](0118-a-tidier-interface.md) | A dark theme with one accent, the system's interface font (`DebugUi::UseFont`), drawn icons for the tools; Phase 20 done | Accepted |
 | [0119](0119-a-zombie-in-a-hazmat-suit.md) | The zombie is "Zombie Hazmat" (CC-BY 4.0) with Quaternius' CC0 animations retargeted in Blender by a script; Mixamo's clips dropped | Accepted |
+| [0120](0120-the-factory-tour.md) | The legacy demo's 3-minute camera flight over the factory, converted by a script and checked against the level; camera cues may take one smooth path through their keys; doors open for the camera; `sandbox.tour` starts with it | Accepted |

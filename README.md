@@ -157,6 +157,8 @@ The sandbox adds its own:
 | `sandbox.frames` | 0 | Quit after this many frames; 0 runs until closed |
 | `sandbox.scene` | `Factory/Factory.level.json` | Level file (ADR-0054), or glTF model, to load from `assets/` |
 | `sandbox.darkness` | 1 | Multiplies the darkness; 0 shows the level |
+| `sandbox.tour` | false | Start in the level with the legacy demo's flight over the whole factory, about 3 min 45 s, instead of the menu; it ends in the player's eyes, and Escape, jump or use skips it (ADR-0120) |
+| `sandbox.tour_darkness` | 0.5 | The darkness while the tour flies; it returns to `sandbox.darkness` as the player takes over |
 | `sandbox.ambient` | 0.1 | Light that reaches everywhere in the dark; 0 is pitch black |
 | `sandbox.flashlight` | false | Start with the flashlight on |
 | `sandbox.aperture` | 0 | The camera's f-number for depth of field; 0 keeps everything sharp |

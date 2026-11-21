@@ -137,10 +137,13 @@ void Scene::Extract(renderer::SceneView& view) {
     // A camera cue has the camera, and a shake shakes whichever has it (ADR-0071).
     if (view.camera.has_value()) {
         if (m_cinematic.has_value()) {
-            const CameraKey key = CameraAt(m_cinematic->keys, m_cinematic->time);
+            const CameraKey key = CameraAt(m_cinematic->keys, m_cinematic->time, m_cinematic->path);
             const glm::vec3 forward = key.target - key.position;
-            if (glm::length(forward) > 1e-4f) {
-                view.camera->view = glm::lookAt(key.position, key.target, glm::vec3(0.0f, 1.0f, 0.0f));
+            if (const float length = glm::length(forward); length > 1e-4f) {
+                // Straight up or down, world up tells nothing: the top of the picture is then towards -Z.
+                const bool vertical = std::abs(forward.y) > 0.99999f * length;
+                view.camera->view = glm::lookAt(key.position, key.target,
+                                                vertical ? glm::vec3(0.0f, 0.0f, -1.0f) : glm::vec3(0.0f, 1.0f, 0.0f));
             }
             view.camera->aperture = key.aperture;
             view.camera->focusDistance = key.focus;
@@ -197,6 +200,13 @@ void Scene::PlaySequence(std::shared_ptr<const Sequence> sequence) {
     if (sequence != nullptr) {
         m_sequences.push_back({std::move(sequence)});
     }
+}
+
+std::optional<glm::vec3> Scene::CinematicPosition() const {
+    if (!m_cinematic.has_value()) {
+        return std::nullopt;
+    }
+    return CameraAt(m_cinematic->keys, m_cinematic->time, m_cinematic->path).position;
 }
 
 core::Result<void> Scene::PlaySequenceFile(std::string_view path) {
@@ -367,7 +377,7 @@ void Scene::RunCue(const Cue& cue) {
         m_shakeTime = m_shakeLength;
         break;
     case Cue::Kind::Camera:
-        m_cinematic = Cinematic{cue.keys, 0.0f};
+        m_cinematic = Cinematic{cue.keys, cue.cameraPath, 0.0f};
         m_cut = true;
         break;
     case Cue::Kind::Mix:

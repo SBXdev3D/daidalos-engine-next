@@ -15,6 +15,7 @@
 #include <fstream>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -383,6 +384,43 @@ TEST_F(ApplicationScene, CaptionsLastTheirTimeOnceEachAndAFewAtATime) {
     EXPECT_EQ(afterMany, scene::Scene::kMaxCaptions);
     EXPECT_EQ(oldestLeft, "caption.2");
     EXPECT_EQ(afterTime, 0U);
+    std::filesystem::remove_all(root);
+}
+
+TEST_F(ApplicationScene, ACameraCueSaysWhereItHasTheCamera) {
+    // ADR-0120: while a smooth camera cue has the camera, the game can ask where it is (to open doors on its
+    // way); before it and once it is skipped, nothing has it.
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / "daidalos-cinematic-test";
+    std::filesystem::create_directories(root);
+    std::ofstream(root / "flight.sequence.json") << R"({"cues": [{"at": 0, "camera": {"path": "smooth", "keys": [
+        {"at": 0, "position": [0, 2, 0], "target": [0, 2, -1]},
+        {"at": 1, "position": [0, 2, -5], "target": [0, 2, -6]},
+        {"at": 2, "position": [0, 2, -10], "target": [0, 2, -11]}]}}]})";
+    std::optional<glm::vec3> before;
+    std::optional<glm::vec3> during;
+    std::optional<glm::vec3> skipped;
+    FunctionHandler handler;
+    handler.start = [&](app::Application& app) -> core::Result<void> {
+        scene::Scene scene(app.Renderer(), root);
+        before = scene.CinematicPosition();
+        DAI_TRY(scene.PlaySequenceFile("flight.sequence.json"));
+        for (int index = 0; index < 10; ++index) {
+            scene.RunFrame(core::Seconds(0.1), 0.0f);
+        }
+        during = scene.CinematicPosition();
+        scene.StopCinematic();
+        skipped = scene.CinematicPosition();
+        app.RequestQuit();
+        return {};
+    };
+    RUN_OR_SKIP(handler);
+    EXPECT_TRUE(result.has_value());
+    EXPECT_FALSE(before.has_value());
+    ASSERT_TRUE(during.has_value());
+    // About a second in, near the middle key, and moving on: not stopped at either end.
+    EXPECT_LT(during->z, -3.0f);
+    EXPECT_GT(during->z, -7.0f);
+    EXPECT_FALSE(skipped.has_value());
     std::filesystem::remove_all(root);
 }
 

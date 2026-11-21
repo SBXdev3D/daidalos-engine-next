@@ -117,6 +117,8 @@ public:
     [[nodiscard]] std::vector<std::string> TakeEvents() { return std::exchange(m_events, {}); }
     /// Whether a camera cue has the camera.
     [[nodiscard]] bool InCinematic() const { return m_cinematic.has_value(); }
+    /// Where the camera cue has the camera now, if one has it: for the game to open doors on its way (ADR-0120).
+    [[nodiscard]] std::optional<glm::vec3> CinematicPosition() const;
     /// Gives the camera back at once, as when a player skips a cinematic (ADR-0086). The sequence's other cues
     /// go on.
     void StopCinematic() { m_cinematic.reset(); }
@@ -183,6 +185,7 @@ private:
     };
     struct Cinematic {
         std::vector<CameraKey> keys;
+        CameraPath path = CameraPath::Eased;
         float time = 0.0f;
     };
     void UpdateTriggers();
