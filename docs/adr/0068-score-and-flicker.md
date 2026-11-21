@@ -27,3 +27,7 @@ Tested: three layers at tension 0 play only the first, at 1 all three, back at 0
 
 - **Crossfading whole tracks by intensity:** simpler to compose for, but the change between tracks is heard; layers that play all along change without a seam.
 - **Horizontal resequencing** (segments chosen at bar lines): more musical, but needs a score written for it.
+
+## Amendment (2026-11-21): a drone that is heard
+
+On ordinary speakers the base layer sounded like loud noise and no music: its notes were D1 and A1 (36 and 55 Hz), which few speakers play, under filtered noise three times as loud; and its loop clicked, the noise's filter starting from a raw sample instead of the state the loop ends in. The drone is now a dark open chord an octave up (D2, A2, D3, F3, each with a slowly beating twin and overtones that swell once a loop) over a quieter wind and a D1 beneath; the filter starts from the loop's end. The notes are 2.8 times the wind's level (1.2 before), 41% of their energy at or above 100 Hz (none before), and the seam is within an ordinary step.

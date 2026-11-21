@@ -58,18 +58,30 @@ def write(path, samples):
 
 
 def drone(seconds, rng):
-    """D1 and A1, breathing slowly, over a low wind."""
+    """D2, A2, D3 and F3, a dark open chord with soft overtones, breathing slowly, over a faint wind and a D1
+    beneath it. Pitched where ordinary speakers play: an octave lower (D1 and A1 alone, under wind three times
+    as loud) the notes went unheard and the layer sounded like noise."""
     count = int(seconds * RATE)
-    d = looped(36.71, seconds)
-    a = looped(55.0, seconds)
+    sub = looped(36.71, seconds)
+    # Each note, its level, and a twin a little sharp that beats slowly against it.
+    notes = [(looped(f, seconds), level, looped(f + beat, seconds))
+             for f, level, beat in ((73.42, 1.0, 0.25), (110.0, 0.7, 0.19), (146.83, 0.45, 0.31), (174.61, 0.3, 0.13))]
     breath = looped(1.0 / 8.0, seconds)
+    brightness = looped(1.0 / 16.0, seconds)
     wind = lowpass([rng.uniform(-1, 1) for _ in range(count)], 180.0)
     out = []
     for i in range(count):
         t = i / RATE
         swell = 0.75 + 0.25 * math.sin(2 * math.pi * breath * t)
-        tone = math.sin(2 * math.pi * d * t) + 0.6 * math.sin(2 * math.pi * a * t) + 0.3 * math.sin(2 * math.pi * 2 * d * t)
-        out.append(tone * swell * 0.5 + wind[i] * 3.0)
+        # The overtones come and go once a loop, as if a filter opened and closed.
+        bright = 0.5 + 0.5 * math.sin(2 * math.pi * brightness * t)
+        tone = 0.0
+        for frequency, level, twin in notes:
+            for harmonic, gain in ((1, 1.0), (2, 0.25 + 0.2 * bright), (3, 0.1 + 0.15 * bright)):
+                tone += level * gain * (math.sin(2 * math.pi * frequency * harmonic * t) +
+                                        0.5 * math.sin(2 * math.pi * twin * harmonic * t))
+        tone += 0.8 * math.sin(2 * math.pi * sub * t)
+        out.append(tone * swell * 0.25 + wind[i])
     return out
 
 
