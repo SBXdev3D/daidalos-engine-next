@@ -125,18 +125,64 @@ def step(surface, rng):
                    (envelope(highpass(noise(rng, 0.25), 2500), 0.0005, 0.008), 0.6),
                    (envelope(bandpass(noise(rng, 0.25), 600, 3000), 0.002, 0.03), 0.3))
     if surface == "water":
-        splash = envelope(bandpass(noise(rng, 0.5), 400, 4000), 0.01, 0.09)
-        bubbles = []
+        # Its own dice, while the shared ones move on as the first water step drew them, so that the sounds
+        # made after it (the impacts) stay the same.
+        own = random.Random()
+        own.setstate(rng.getstate())
+        noise(rng, 0.5)
         for _ in range(rng.randint(2, 4)):
-            start = rng.uniform(0.02, 0.2)
-            frequency = rng.uniform(600, 1400)
-            bubble = silence(start)
-            for i in range(int(0.05 * RATE)):
-                t = i / RATE
-                bubble.append(math.sin(2 * math.pi * frequency * (1 + 3 * t) * t) * math.exp(-t / 0.015))
-            bubbles.append((bubble, 0.25))
-        return mix((thump(rng, 70, 0.03, 0.5), 0.4), (splash, 0.8), *bubbles)
+            rng.uniform(0.02, 0.2)
+            rng.uniform(600, 1400)
+        return puddle_step(own)
     raise ValueError(surface)
+
+
+def bubble(radius, start, amplitude, seconds):
+    """One air bubble ringing in water (van den Doel, "Physically based models for liquid sounds", 2005): a sine
+    at the Minnaert frequency of its radius, damped as the radius says, whose pitch rises as it nears the
+    surface. Small bubbles ring high and briefly, large ones low and longer."""
+    frequency = 3.0 / radius
+    damping = 0.043 * frequency + 0.0014 * frequency ** 1.5
+    rise = 0.1 * damping
+    out = silence(start)
+    phase = 0.0
+    for i in range(int(min(seconds - start, 6.0 / damping) * RATE)):
+        t = i / RATE
+        phase += 2.0 * math.pi * frequency * (1.0 + rise * t) / RATE
+        out.append(amplitude * math.sin(phase) * math.exp(-damping * t))
+    return out
+
+
+def bubbles(rng, count, start, spread, smallest, largest, loudness, seconds):
+    """A burst of bubbles from an instant on, most of them soon after it, of radii between smallest and largest
+    (meters), many more small than large."""
+    out = []
+    for _ in range(count):
+        at = start + rng.expovariate(1.0 / spread)
+        if at >= seconds - 0.01:
+            continue
+        radius = smallest * (largest / smallest) ** (rng.random() ** 2.0)
+        out.append((bubble(radius, at, rng.uniform(0.4, 1.0) * (radius / largest) ** 0.5, seconds), loudness))
+    return out
+
+
+def puddle_step(rng):
+    """A foot in a shallow puddle: the sole slaps the water, it sloshes away, a cloud of small bubbles rings
+    as the air the sole pushed under escapes, drops fall back, and the sole lifts with a smaller, sucking
+    splash. The old step was one burst of noise and two to four tones, which read as a synthesizer."""
+    seconds = 0.65
+    lift = rng.uniform(0.17, 0.24)
+    slap = envelope(bandpass(noise(rng, seconds), 500, 7000), 0.0015, 0.02)
+    slosh = envelope(bandpass(noise(rng, seconds), 150, 1400), 0.012, 0.11)
+    lifting = silence(lift) + envelope(bandpass(noise(rng, seconds - lift), 300, 3500), 0.02, 0.05)
+    drops = []
+    for _ in range(rng.randint(4, 8)):
+        at = rng.uniform(0.1, 0.4)
+        drops.append((bubble(rng.uniform(0.0006, 0.0015), at, rng.uniform(0.3, 0.7), seconds), 0.12))
+        drops.append((silence(at) + envelope(highpass(noise(rng, 0.03), 3000), 0.0005, 0.004), 0.08))
+    return mix((thump(rng, 55, 0.02, seconds), 0.25), (slap, 0.55), (slosh, 0.35), (lifting, 0.25),
+               *bubbles(rng, rng.randint(25, 40), 0.004, 0.05, 0.0008, 0.006, 0.22, seconds),
+               *bubbles(rng, rng.randint(8, 15), lift + 0.01, 0.04, 0.0008, 0.004, 0.16, seconds), *drops)
 
 
 def impact(surface, rng):

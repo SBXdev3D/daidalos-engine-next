@@ -110,8 +110,9 @@ public:
         }
         m_settings.classicMusic =
             app.CVars()
-                .Obtain<bool>("sandbox.classic_music", false,
-                              "Play the old demo's music track instead of the score that follows the danger")
+                .Obtain<bool>(
+                    "sandbox.classic_music", false,
+                    "Play the old demo's music track alone, at full volume; otherwise it plays low under the score")
                 .Get();
         m_settings.aperture = static_cast<float>(
             app.CVars()

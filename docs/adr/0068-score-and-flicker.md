@@ -31,3 +31,7 @@ Tested: three layers at tension 0 play only the first, at 1 all three, back at 0
 ## Amendment (2026-11-21): a drone that is heard
 
 On ordinary speakers the base layer sounded like loud noise and no music: its notes were D1 and A1 (36 and 55 Hz), which few speakers play, under filtered noise three times as loud; and its loop clicked, the noise's filter starting from a raw sample instead of the state the loop ends in. The drone is now a dark open chord an octave up (D2, A2, D3, F3, each with a slowly beating twin and overtones that swell once a loop) over a quieter wind and a D1 beneath; the filter starts from the loop's end. The notes are 2.8 times the wind's level (1.2 before), 41% of their energy at or above 100 Hz (none before), and the seam is within an ordinary step. It is also written 8 dB below the other layers (peak 0.24 against 0.6): it plays all the time, so calm is quiet and the danger layers stand out.
+
+## Amendment (2026-11-21, later): the old track under the score
+
+Still too loud for the owner, who also asked for the old demo's music at a low volume. The drone lost its D1 (a rumble on headphones) and went 6 dB lower again (peak 0.12, about -31 dBFS RMS, from -16 at first), and the old demo's track (`enter_the_maze.ogg`) now loops all through play at a third of its old volume (0.1 against 0.35), under the score. `sandbox.classic_music` plays it alone at full volume, as before. After the tour (ADR-0120), the track comes down to that level over three seconds instead of stopping.
