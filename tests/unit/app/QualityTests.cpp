@@ -21,6 +21,7 @@ TEST(Quality, EachPresetCostsMoreThanTheOneBelow) {
         EXPECT_LE(lower.minRenderScale, higher.minRenderScale) << NameOf(kQualities[index]);
         EXPECT_LE(lower.giBounces, higher.giBounces) << NameOf(kQualities[index]);
         EXPECT_LE(lower.giRays, higher.giRays) << NameOf(kQualities[index]);
+        EXPECT_LE(lower.giNewRays, higher.giNewRays) << NameOf(kQualities[index]);
         EXPECT_GE(lower.giPixelsPerRay, higher.giPixelsPerRay) << NameOf(kQualities[index]);
         EXPECT_LE(lower.reflectionRoughness, higher.reflectionRoughness) << NameOf(kQualities[index]);
         EXPECT_LE(lower.restirSpatial, higher.restirSpatial) << NameOf(kQualities[index]);

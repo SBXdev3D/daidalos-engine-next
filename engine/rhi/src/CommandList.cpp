@@ -90,9 +90,9 @@ StateAccess Describe(Access access, bool texture) {
 // What the compute queue's barriers keep (ADR-0095). A source in other stages ran on the graphics queue before
 // the compute queue started, which a semaphore orders: the barrier keeps only its layout change. A destination
 // in other stages, such as a ray query's fragment stage, is for the graphics queue's own uses.
-constexpr VkPipelineStageFlags2 kComputeStages =
-    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_COPY_BIT |
-    VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+constexpr VkPipelineStageFlags2 kComputeStages = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
+                                                 VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_COPY_BIT |
+                                                 VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
 
 constexpr VkAccessFlags2 kComputeAccesses =
     VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT |

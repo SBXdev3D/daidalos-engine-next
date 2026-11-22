@@ -150,6 +150,8 @@ std::vector<AssetReference> FindReferences(const std::filesystem::path& root, co
             }
         }
     });
+    // By file: the order the folders are walked in is the file system's, which differs between them.
+    std::ranges::stable_sort(references, {}, &AssetReference::file);
     return references;
 }
 

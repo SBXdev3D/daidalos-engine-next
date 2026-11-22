@@ -462,7 +462,7 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
             const bool flesh = std::ranges::find(zombieBodies, hit.body) != zombieBodies.end();
             const std::string_view surface = surfaces != nullptr ? surfaces->Of(hit.body) : std::string_view{};
             for (const Impact& impact : ImpactsOf(*effects, flesh ? "flesh" : surface)) {
-                scene.SpawnParticles(impact.effect, hit.position, hit.normal, impact.count);
+                scene.SpawnParticles(impact.effect, hit.position, hit.normal, static_cast<std::uint32_t>(impact.count));
             }
             LeaveMark(scene, physics, *effects, hit, flesh, surface, aim);
             // One impact heard per shot, however many pellets land.

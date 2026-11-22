@@ -164,8 +164,8 @@ void DirectLighting::AddTo(RenderGraph& graph, const DirectLightingInputs& input
                              inputs.layers.IsNull() ? 0xFFFFFFFFU : sampled(inputs.layers)};
     const std::uint32_t groupsX = (extent.width + kGroupSize - 1) / kGroupSize;
     const std::uint32_t groupsY = (extent.height + kGroupSize - 1) / kGroupSize;
-    const auto dispatch = [this, groupsX, groupsY](rhi::PipelineHandle pipeline, const RestirPushConstants& constants) {
-        return [this, pipeline, constants, groupsX, groupsY](rhi::CommandList& commands) {
+    const auto dispatch = [groupsX, groupsY](rhi::PipelineHandle pipeline, const RestirPushConstants& constants) {
+        return [pipeline, constants, groupsX, groupsY](rhi::CommandList& commands) {
             DAI_PROFILE_SCOPE("renderer::DirectLighting");
             commands.BindPipeline(pipeline);
             commands.Push(constants);

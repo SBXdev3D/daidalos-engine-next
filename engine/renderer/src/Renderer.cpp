@@ -193,6 +193,7 @@ struct Renderer::Impl {
                     .lightCandidates = std::clamp(config.lightCandidates, 1U, 8U),
                     .clamp = std::max(config.clamp, 0.0f),
                     .rays = std::clamp(config.rays, 1U, 16U),
+                    .newRays = std::clamp(config.newRays, 1U, 16U),
                     .pixelsPerRay = config.pixelsPerRay >= 4 ? 4U : (config.pixelsPerRay >= 2 ? 2U : 1U),
                     .reflectionPixelsPerRay = config.reflectionPixelsPerRay >= 2 ? 2U : 1U};
     }
@@ -891,26 +892,31 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     std::optional<GlobalIlluminationInputs> giInputs;
     if (illuminate) {
         giInputs = GlobalIlluminationInputs{
-        .extent = renderExtent,
-        .frameBuffer = impl.meshPass->FrameDataIndex(),
-        .instanceBuffer = impl.meshPass->InstanceDataIndex(),
-        .materialBuffer = impl.meshPass->MaterialDataIndex(),
-        .structure = impl.rayTracing->Structure(),
-        .skinnedVertices = impl.meshPass->SkinnedVertices(),
-        .materialGrid = impl.meshPass->MaterialGrid(),
-        .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
-        .depth = impl.depth,
-        .normals = impl.normals,
-        .frameIndex = frameIndex,
-        .reflections = reflect,
-        .reflectionRoughness = impl.reflectionRoughness,
-        // The clamp is set in what the screen shows.
-        .settings = {.bounces = impl.indirect.bounces,
-                     .lightCandidates = impl.indirect.lightCandidates,
-                     .clamp = impl.indirect.clamp / displayScale,
-                     .rays = impl.indirect.rays,
-                     .pixelsPerRay = impl.indirect.pixelsPerRay,
-                     .reflectionPixelsPerRay = impl.indirect.reflectionPixelsPerRay}};
+            .extent = renderExtent,
+            .frameBuffer = impl.meshPass->FrameDataIndex(),
+            .instanceBuffer = impl.meshPass->InstanceDataIndex(),
+            .materialBuffer = impl.meshPass->MaterialDataIndex(),
+            .structure = impl.rayTracing->Structure(),
+            .skinnedVertices = impl.meshPass->SkinnedVertices(),
+            .materialGrid = impl.meshPass->MaterialGrid(),
+            .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
+            .depth = impl.depth,
+            .normals = impl.normals,
+            // Where the denoiser barely knows a surface, more rays (ADR-0121); after a cut, it will forget all.
+            .denoiserGuides =
+                impl.denoise && impl.denoised && !view.cut ? impl.denoiser->PreviousGuides() : rhi::TextureHandle{},
+            .motion = impl.motion,
+            .frameIndex = frameIndex,
+            .reflections = reflect,
+            .reflectionRoughness = impl.reflectionRoughness,
+            // The clamp is set in what the screen shows.
+            .settings = {.bounces = impl.indirect.bounces,
+                         .lightCandidates = impl.indirect.lightCandidates,
+                         .clamp = impl.indirect.clamp / displayScale,
+                         .rays = impl.indirect.rays,
+                         .newRays = impl.indirect.newRays,
+                         .pixelsPerRay = impl.indirect.pixelsPerRay,
+                         .reflectionPixelsPerRay = impl.indirect.reflectionPixelsPerRay}};
     }
     const GlobalIllumination::Mode giMode =
         cacheView ? GlobalIllumination::Mode::Cache : GlobalIllumination::Mode::Indirect;

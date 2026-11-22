@@ -94,6 +94,9 @@ core::Result<Json> FromSimdjson(simdjson::dom::element element) {
         return Json{element.get_bool().value_unsafe()};
     case simdjson::dom::element_type::NULL_VALUE:
         return Json{nullptr};
+    case simdjson::dom::element_type::BIGINT:
+        // A number beyond 64 bits, kept as text by simdjson: as before, null.
+        break;
     }
     return Json{nullptr};
 }

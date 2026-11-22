@@ -1327,9 +1327,9 @@ core::Result<void> Device::EndFrame(Swapchain* swapchain) {
                                                 .signalSemaphoreInfoCount = 1,
                                                 .pSignalSemaphoreInfos = &join}));
         const VkCommandBufferSubmitInfo second = CommandInfo(slot.parts[1]);
-        DAI_TRY(SubmitTo(m_impl->queue, {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-                                         .commandBufferInfoCount = 1,
-                                         .pCommandBufferInfos = &second}));
+        DAI_TRY(SubmitTo(
+            m_impl->queue,
+            {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2, .commandBufferInfoCount = 1, .pCommandBufferInfos = &second}));
         const VkCommandBufferSubmitInfo third = CommandInfo(slot.parts[2]);
         DAI_TRY(SubmitTo(m_impl->queue, {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
                                          .waitSemaphoreInfoCount = 1,

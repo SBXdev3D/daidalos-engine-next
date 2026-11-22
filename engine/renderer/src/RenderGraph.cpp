@@ -142,9 +142,8 @@ AsyncPlan RenderGraph::PlanAsync(const std::vector<PlannedPass>& planned, const 
             continue;
         }
         // A graphics pass that depends on an async pass, or that one depends on, waits for the compute queue.
-        const bool conflicts = std::ranges::any_of(computed, [&](std::size_t other) {
-            return Conflicts(planned[index], planned[other]);
-        });
+        const bool conflicts =
+            std::ranges::any_of(computed, [&](std::size_t other) { return Conflicts(planned[index], planned[other]); });
         // An async pass after it that depends on it could not start before it either.
         bool later = false;
         for (std::size_t other = index + 1; other < planned.size() && !later; ++other) {

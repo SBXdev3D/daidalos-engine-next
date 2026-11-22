@@ -1,6 +1,6 @@
 # ADR-0045: Bounces lit before the cache, clamped bounces, and the dark corridor; ReSTIR GI measured and dropped
 
-- **Status:** Accepted
+- **Status:** Accepted; pixels the denoiser has no history of may trace more rays (ADR-0121)
 - **Date:** 2026-11-14
 - **Amends:** ADR-0040 (each pixel's ray lights the surface it hits before it reads the cache)
 

@@ -180,11 +180,11 @@ struct Device::Impl {
 
     /// Sets a resource's sharing between the graphics and compute queues: concurrent when both exist.
     template <typename CreateInfo>
-    void Share(CreateInfo& info) const {
+    void Share(CreateInfo& create) const {
         if (computeQueue != VK_NULL_HANDLE) {
-            info.sharingMode = VK_SHARING_MODE_CONCURRENT;
-            info.queueFamilyIndexCount = static_cast<std::uint32_t>(sharedFamilies.size());
-            info.pQueueFamilyIndices = sharedFamilies.data();
+            create.sharingMode = VK_SHARING_MODE_CONCURRENT;
+            create.queueFamilyIndexCount = static_cast<std::uint32_t>(sharedFamilies.size());
+            create.pQueueFamilyIndices = sharedFamilies.data();
         }
     }
 

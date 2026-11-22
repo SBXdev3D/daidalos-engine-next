@@ -30,10 +30,12 @@ namespace daidalos::platform {
 namespace {
 
 constexpr std::string_view kModule = "platform";
+constexpr std::size_t kLogLines = 40;
+
+#if defined(_WIN32)
 /// The code the crash handler raises to dump from abort() and failed assertions (CrashHandler.cpp).
 constexpr std::uint32_t kDumpHereException = 0xE0000DA1;
 constexpr std::size_t kMaxFrames = 64;
-constexpr std::size_t kLogLines = 40;
 
 std::string ExceptionName(std::uint32_t code) {
     switch (code) {
@@ -57,6 +59,7 @@ std::string ExceptionName(std::uint32_t code) {
         return std::format("exception 0x{:08X}", code);
     }
 }
+#endif
 
 } // namespace
 

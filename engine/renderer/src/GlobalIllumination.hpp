@@ -26,6 +26,9 @@ struct GlobalIlluminationSettings {
     float clamp = 16.0f;
     /// Rays per pixel, from 1 to 16, averaged.
     std::uint32_t rays = 1;
+    /// Rays per pixel, from rays to 16, where the denoiser has little history of the surface (ADR-0121): it
+    /// just came into view, so its light is one frame's, which the denoiser can only blur.
+    std::uint32_t newRays = 1;
     /// Pixels per traced pixel (ADR-0093): 1 traces every pixel; 2 half of them, in a checkerboard; 4 one of
     /// each two by two. They take turns, and the others take their traced neighbours' light.
     std::uint32_t pixelsPerRay = 1;
@@ -56,6 +59,11 @@ struct GlobalIlluminationInputs {
     /// The G-buffer's depth and normals.
     rhi::TextureHandle depth;
     rhi::TextureHandle normals;
+    /// The denoiser's guides of last frame (Denoiser::PreviousGuides), where pixels whose surface it barely
+    /// knows get settings.newRays rays, found through the G-buffer's motion vectors. Null: every pixel gets
+    /// settings.rays.
+    rhi::TextureHandle denoiserGuides;
+    rhi::TextureHandle motion;
     /// Counts the frames: the paths change with it.
     std::uint32_t frameIndex = 0;
     /// Traces the reflection of each pixel's specular lobe (ADR-0042) into Reflections().

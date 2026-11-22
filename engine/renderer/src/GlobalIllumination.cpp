@@ -50,6 +50,8 @@ struct GiPushConstants {
     std::uint32_t previousHistory;
     std::uint32_t historyValid;
     std::uint32_t sharpOnly;
+    std::uint32_t denoiserGuides;
+    std::uint32_t motion;
 };
 static_assert(sizeof(GiPushConstants) <= rhi::kMaxPushConstantSize);
 
@@ -60,11 +62,13 @@ std::uint32_t Counts(const GlobalIlluminationSettings& settings) {
     const std::uint32_t bounces = std::min(settings.bounces, 3U);
     const std::uint32_t candidates = std::clamp(settings.lightCandidates, 1U, 8U);
     const std::uint32_t rays = std::clamp(settings.rays, 1U, 16U);
-    return bounces | (candidates << 8U) | (rays << 16U);
+    const std::uint32_t newRays = std::clamp(settings.newRays, rays, 16U);
+    return bounces | (candidates << 8U) | (rays << 16U) | (newRays << 24U);
 }
 
 constexpr std::uint32_t kGroupSize = 8;
 constexpr std::uint32_t kResolveGroupSize = 64;
+constexpr std::uint32_t kNoTexture = 0xFFFFFFFF;
 
 } // namespace
 
@@ -72,11 +76,10 @@ GlobalIllumination::GlobalIllumination(GlobalIllumination&& other) noexcept
     : m_device(other.m_device), m_update(std::exchange(other.m_update, {})),
       m_resolve(std::exchange(other.m_resolve, {})), m_trace(std::exchange(other.m_trace, {})),
       m_fill(std::exchange(other.m_fill, {})), m_reflect(std::exchange(other.m_reflect, {})),
-      m_reflectFill(std::exchange(other.m_reflectFill, {})),
-      m_keys(std::exchange(other.m_keys, {})), m_accumulation(std::exchange(other.m_accumulation, {})),
-      m_radiance(std::exchange(other.m_radiance, {})), m_ages(std::exchange(other.m_ages, {})),
-      m_anchors(std::exchange(other.m_anchors, {})), m_output(std::exchange(other.m_output, {})),
-      m_reflections(std::exchange(other.m_reflections, {})),
+      m_reflectFill(std::exchange(other.m_reflectFill, {})), m_keys(std::exchange(other.m_keys, {})),
+      m_accumulation(std::exchange(other.m_accumulation, {})), m_radiance(std::exchange(other.m_radiance, {})),
+      m_ages(std::exchange(other.m_ages, {})), m_anchors(std::exchange(other.m_anchors, {})),
+      m_output(std::exchange(other.m_output, {})), m_reflections(std::exchange(other.m_reflections, {})),
       m_history{std::exchange(other.m_history[0], {}), std::exchange(other.m_history[1], {})}, m_extent(other.m_extent),
       m_reset(other.m_reset), m_historyFrame(other.m_historyFrame),
       m_reflectionHistory{std::exchange(other.m_reflectionHistory[0], {}),
@@ -175,30 +178,32 @@ core::Result<void> GlobalIllumination::Resize(rhi::Extent extent) {
 GiPushConstants GlobalIllumination::PushConstants(const GlobalIlluminationInputs& inputs, Mode mode) const {
     const rhi::Extent extent = inputs.extent.width > 0 ? inputs.extent : m_extent;
     return GiPushConstants{inputs.frameBuffer,
-                         inputs.instanceBuffer,
-                         inputs.materialBuffer,
-                         m_device->StorageIndex(m_keys),
-                         m_device->StorageIndex(m_accumulation),
-                         m_device->StorageIndex(m_radiance),
-                         m_device->StorageIndex(m_ages),
-                         m_device->StorageIndex(m_anchors),
-                         m_device->BindlessIndex(inputs.depth),
-                         m_device->BindlessIndex(inputs.normals),
-                         m_device->StorageImageIndex(m_output),
-                         extent.width,
-                         extent.height,
-                         inputs.frameIndex,
-                         static_cast<std::uint32_t>(mode),
-                         kPathSpacing,
-                         0,
-                         m_device->StorageImageIndex(m_reflections),
-                         inputs.reflectionRoughness,
-                         Counts(inputs.settings),
-                         inputs.settings.clamp,
-                         0,
-                         0,
-                         0,
-                         0};
+                           inputs.instanceBuffer,
+                           inputs.materialBuffer,
+                           m_device->StorageIndex(m_keys),
+                           m_device->StorageIndex(m_accumulation),
+                           m_device->StorageIndex(m_radiance),
+                           m_device->StorageIndex(m_ages),
+                           m_device->StorageIndex(m_anchors),
+                           m_device->BindlessIndex(inputs.depth),
+                           m_device->BindlessIndex(inputs.normals),
+                           m_device->StorageImageIndex(m_output),
+                           extent.width,
+                           extent.height,
+                           inputs.frameIndex,
+                           static_cast<std::uint32_t>(mode),
+                           kPathSpacing,
+                           0,
+                           m_device->StorageImageIndex(m_reflections),
+                           inputs.reflectionRoughness,
+                           Counts(inputs.settings),
+                           inputs.settings.clamp,
+                           0,
+                           0,
+                           0,
+                           0,
+                           inputs.denoiserGuides ? m_device->BindlessIndex(inputs.denoiserGuides) : kNoTexture,
+                           inputs.denoiserGuides ? m_device->BindlessIndex(inputs.motion) : kNoTexture};
 }
 
 void GlobalIllumination::AddCacheUpdate(RenderGraph& graph, const GlobalIlluminationInputs& inputs, Mode mode) {
@@ -218,7 +223,7 @@ void GlobalIllumination::AddCache(RenderGraph& graph, const GlobalIlluminationIn
         GiPushConstants reset = push;
         reset.reset = 1;
         graph.AddPass({.name = "Radiance cache reset", .group = "Radiance cache", .buffers = cache, .async = async},
-                      [this, reset, resolveGroups](rhi::CommandList& commands) {
+                      [this, reset](rhi::CommandList& commands) {
                           commands.BindPipeline(m_resolve);
                           commands.Push(reset);
                           commands.Dispatch(resolveGroups);
@@ -244,7 +249,7 @@ void GlobalIllumination::AddCache(RenderGraph& graph, const GlobalIlluminationIn
                       commands.Dispatch((tilesX + kGroupSize - 1) / kGroupSize, (tilesY + kGroupSize - 1) / kGroupSize);
                   });
     graph.AddPass({.name = "Radiance cache resolve", .group = "Radiance cache", .buffers = cache, .async = async},
-                  [this, push, resolveGroups](rhi::CommandList& commands) {
+                  [this, push](rhi::CommandList& commands) {
                       commands.BindPipeline(m_resolve);
                       commands.Push(push);
                       commands.Dispatch(resolveGroups);
@@ -283,7 +288,9 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
                    .group = "Indirect light",
                    .textures = {{m_output, rhi::Access::ComputeShaderWrite, !sparse},
                                 {inputs.depth, rhi::Access::ComputeShaderRead},
-                                {inputs.normals, rhi::Access::ComputeShaderRead}},
+                                {inputs.normals, rhi::Access::ComputeShaderRead},
+                                {inputs.denoiserGuides, rhi::Access::ComputeShaderRead},
+                                {inputs.motion, rhi::Access::ComputeShaderRead}},
                    .buffers = traced,
                    .structures = {{inputs.structure, rhi::Access::RayQueryRead}}},
                   [this, trace, traceGroupsX, traceGroupsY](rhi::CommandList& commands) {

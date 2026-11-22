@@ -64,6 +64,11 @@ public:
     /// The filtered light of the last frame added, in the formats of its inputs, with its variance in alpha.
     [[nodiscard]] rhi::TextureHandle Diffuse() const { return m_diffuse.work[0]; }
     [[nodiscard]] rhi::TextureHandle Specular() const { return m_specular.work[0]; }
+    /// Before this frame is added: the last frame's linear depth, normal and frames averaged per pixel, as
+    /// half floats; null without history. Global illumination traces more rays where the frames are few.
+    [[nodiscard]] rhi::TextureHandle PreviousGuides() const {
+        return m_hasHistory ? m_guides[m_current] : rhi::TextureHandle{};
+    }
 
     /// Iterations of the spatial filter, each twice as wide as the last: 1, 2 then 4 pixels apart. A wider
     /// one would only filter pixels with less than one frame of history, which there are not (ADR-0097).
