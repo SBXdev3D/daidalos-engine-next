@@ -78,10 +78,17 @@ private:
 
 // Values on a cube of n cells a side; cell (x, y, z) is centered on (x + 0.5, y + 0.5, z + 0.5) in cell units.
 struct Grid {
-    explicit Grid(int size) : n(size), values(static_cast<std::size_t>(size) * size * size, 0.0f) {}
+    explicit Grid(int size)
+        : n(size),
+          values(static_cast<std::size_t>(size) * static_cast<std::size_t>(size) * static_cast<std::size_t>(size),
+                 0.0f) {}
 
-    float& At(int x, int y, int z) { return values[(static_cast<std::size_t>(z) * n + y) * n + x]; }
-    [[nodiscard]] float At(int x, int y, int z) const { return values[(static_cast<std::size_t>(z) * n + y) * n + x]; }
+    [[nodiscard]] std::size_t Index(int x, int y, int z) const {
+        const auto side = static_cast<std::size_t>(n);
+        return (static_cast<std::size_t>(z) * side + static_cast<std::size_t>(y)) * side + static_cast<std::size_t>(x);
+    }
+    float& At(int x, int y, int z) { return values[Index(x, y, z)]; }
+    [[nodiscard]] float At(int x, int y, int z) const { return values[Index(x, y, z)]; }
     [[nodiscard]] float Get(int x, int y, int z) const {
         return (x < 0 || y < 0 || z < 0 || x >= n || y >= n || z >= n) ? 0.0f : At(x, y, z);
     }
@@ -305,7 +312,7 @@ public:
             }
         }
         Frame frame;
-        const auto pixels = static_cast<std::size_t>(size) * size;
+        const auto pixels = static_cast<std::size_t>(size) * static_cast<std::size_t>(size);
         frame.emission.resize(pixels);
         frame.positive.resize(pixels);
         frame.negative.resize(pixels);
@@ -338,7 +345,8 @@ public:
                 const float v = (static_cast<float>(py) + 0.5f) / static_cast<float>(size);
                 const float edge = std::clamp(std::min({u, 1.0f - u, v, 1.0f - v}) / kEdgeFade, 0.0f, 1.0f);
                 const float window = edge * edge * (3.0f - 2.0f * edge);
-                const std::size_t index = static_cast<std::size_t>(py) * size + px;
+                const std::size_t index =
+                    static_cast<std::size_t>(py) * static_cast<std::size_t>(size) + static_cast<std::size_t>(px);
                 frame.emission[index] = emission * window;
                 frame.positive[index] = glm::vec3(scattered[0], scattered[1], scattered[2]) * window;
                 frame.negative[index] = glm::vec3(scattered[3], scattered[4], scattered[5]) * window;

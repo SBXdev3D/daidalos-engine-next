@@ -223,7 +223,7 @@ void GlobalIllumination::AddCache(RenderGraph& graph, const GlobalIlluminationIn
         GiPushConstants reset = push;
         reset.reset = 1;
         graph.AddPass({.name = "Radiance cache reset", .group = "Radiance cache", .buffers = cache, .async = async},
-                      [this, reset, resolveGroups](rhi::CommandList& commands) {
+                      [this, reset](rhi::CommandList& commands) {
                           commands.BindPipeline(m_resolve);
                           commands.Push(reset);
                           commands.Dispatch(resolveGroups);
@@ -249,7 +249,7 @@ void GlobalIllumination::AddCache(RenderGraph& graph, const GlobalIlluminationIn
                       commands.Dispatch((tilesX + kGroupSize - 1) / kGroupSize, (tilesY + kGroupSize - 1) / kGroupSize);
                   });
     graph.AddPass({.name = "Radiance cache resolve", .group = "Radiance cache", .buffers = cache, .async = async},
-                  [this, push, resolveGroups](rhi::CommandList& commands) {
+                  [this, push](rhi::CommandList& commands) {
                       commands.BindPipeline(m_resolve);
                       commands.Push(push);
                       commands.Dispatch(resolveGroups);

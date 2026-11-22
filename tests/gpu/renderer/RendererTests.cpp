@@ -147,8 +147,10 @@ TEST_F(RendererTest, RendersBelowTheOutputsResolution) {
     // A fixed scale (ADR-0049).
     target->SetResolution({.scale = 0.67f, .dynamic = false});
     RenderFrames(*target, view, 3);
-    EXPECT_EQ(target->Stats().renderWidth, static_cast<std::uint32_t>(std::lround(size.width * 0.67f)));
-    EXPECT_EQ(target->Stats().renderHeight, static_cast<std::uint32_t>(std::lround(size.height * 0.67f)));
+    EXPECT_EQ(target->Stats().renderWidth,
+              static_cast<std::uint32_t>(std::lround(static_cast<float>(size.width) * 0.67f)));
+    EXPECT_EQ(target->Stats().renderHeight,
+              static_cast<std::uint32_t>(std::lround(static_cast<float>(size.height) * 0.67f)));
 
     // A scale that changes every frame keeps every history and reads nothing it should not.
     for (const float scale : {0.5f, 0.9f, 0.58f, 1.0f, 0.75f, 0.5f}) {

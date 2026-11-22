@@ -1216,7 +1216,7 @@ Image ReadHalf(rhi::Device& device, rhi::TextureHandle texture, rhi::Extent exte
     Image image(count);
     for (std::size_t index = 0; index < count; ++index) {
         for (int channel = 0; channel < 4; ++channel) {
-            image[index][channel] = glm::unpackHalf1x16(halves[index * 4 + channel]);
+            image[index][channel] = glm::unpackHalf1x16(halves[index * 4 + static_cast<std::size_t>(channel)]);
         }
     }
     return image;
@@ -1887,7 +1887,8 @@ TEST_F(DarkCorridorTest, DISABLED_TimeNewRaysWhileTurningAt1080p) {
     const auto material = [this](const MaterialDesc& desc) { return Material(desc); };
     std::vector<SceneView> views;
     for (int step = -5; step <= 5; ++step) {
-        views.push_back(CorridorView(m_corridor, m_cube, material, TurnedTarget(m_corridor, 3.0f * step)));
+        views.push_back(
+            CorridorView(m_corridor, m_cube, material, TurnedTarget(m_corridor, 3.0f * static_cast<float>(step))));
     }
 
     const auto time = [&](const std::string& name, const renderer::GlobalIlluminationSettings& settings, bool turning) {

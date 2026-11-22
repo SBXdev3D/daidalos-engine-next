@@ -130,12 +130,15 @@ std::vector<float> BakeOcclusion(const ImageData& height, float depth) {
     const auto at = [&](int x, int y) {
         x = ((x % width) + width) % width;
         y = ((y % rows) + rows) % rows;
-        return static_cast<float>(height.pixels[(static_cast<std::size_t>(y) * width + x) * 4]) / 255.0f;
+        return static_cast<float>(height.pixels[(static_cast<std::size_t>(y) * static_cast<std::size_t>(width) +
+                                                 static_cast<std::size_t>(x)) *
+                                                4]) /
+               255.0f;
     };
     constexpr int kDirections = 16;
     constexpr int kSteps = 12;
     const float reach = depth * 4.0f;
-    std::vector<float> occlusion(static_cast<std::size_t>(width) * rows);
+    std::vector<float> occlusion(static_cast<std::size_t>(width) * static_cast<std::size_t>(rows));
     for (int y = 0; y < rows; ++y) {
         for (int x = 0; x < width; ++x) {
             const float here = at(x, y);
@@ -155,7 +158,8 @@ std::vector<float> BakeOcclusion(const ImageData& height, float depth) {
                 const float sine = steepest / std::sqrt(1.0f + steepest * steepest);
                 open += 1.0f - sine * sine;
             }
-            occlusion[static_cast<std::size_t>(y) * width + x] = open / kDirections;
+            occlusion[static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x)] =
+                open / kDirections;
         }
     }
     return occlusion;
