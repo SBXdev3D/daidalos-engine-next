@@ -1,0 +1,75 @@
+{
+    "comment": "Smoke from a hearth's fire (ADR-0122): thinner than a column, rising into the hood.",
+    "fog_density": 0.6,
+    "texture": "smoke.ktx2",
+    "columns": 8,
+    "rows": 8,
+    "frames": 64,
+    "frameRate": 20,
+    "loop": true,
+    "randomStartFrame": true,
+    "lightMaps": [
+        "smoke_lp.ktx2",
+        "smoke_ln.ktx2"
+    ],
+    "anisotropy": 0.4,
+    "color": [
+        [
+            0,
+            [
+                0.45,
+                0.43,
+                0.4,
+                0.0
+            ]
+        ],
+        [
+            0.15,
+            [
+                0.45,
+                0.43,
+                0.4,
+                0.35
+            ]
+        ],
+        [
+            1,
+            [
+                0.4,
+                0.4,
+                0.4,
+                0
+            ]
+        ]
+    ],
+    "lifetime": [
+        3,
+        4
+    ],
+    "size": [
+        0.8,
+        1.1
+    ],
+    "sizeOverLife": [
+        [
+            0,
+            1
+        ],
+        [
+            1,
+            2.5
+        ]
+    ],
+    "spawnRadius": 0.2,
+    "speed": [
+        0.6,
+        0.9
+    ],
+    "drag": 0.5,
+    "turbulence": 0.5,
+    "rotationSpeed": 10,
+    "softness": 0.5,
+    "emitter": {
+        "rate": 4
+    }
+}

@@ -1,0 +1,27 @@
+{
+    "comment": "Chunks thrown by an explosion (ADR-0122), which puff dust where they land.",
+    "mesh": "Meshes/chip.glb",
+    "collision": "bounce",
+    "bounce": 0.3,
+    "onHit": {
+        "effect": "dust_puff.effect.json",
+        "count": 1
+    },
+    "lifetime": [
+        5,
+        7
+    ],
+    "size": [
+        0.3,
+        0.9
+    ],
+    "spawnRadius": 0.3,
+    "spread": 80,
+    "speed": [
+        4,
+        10
+    ],
+    "gravity": 1,
+    "drag": 0.1,
+    "rotationSpeed": 700
+}

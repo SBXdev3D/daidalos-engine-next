@@ -1,0 +1,104 @@
+{
+    "comment": "The fireball of a big explosion (ADR-0122): several balls of the flipbook's fire, thrown out from the blast, swelling as they burn out into smoke.",
+    "texture": "explosion.ktx2",
+    "columns": 8,
+    "rows": 8,
+    "frames": 64,
+    "loop": false,
+    "color": [
+        [
+            0,
+            [
+                1,
+                1,
+                1,
+                1
+            ]
+        ],
+        [
+            0.8,
+            [
+                1,
+                1,
+                1,
+                1
+            ]
+        ],
+        [
+            1,
+            [
+                1,
+                1,
+                1,
+                0
+            ]
+        ]
+    ],
+    "fadeIn": 0.02,
+    "emissionOverLife": [
+        [
+            0,
+            10
+        ],
+        [
+            0.4,
+            4
+        ],
+        [
+            0.8,
+            1
+        ],
+        [
+            1,
+            0.3
+        ]
+    ],
+    "lit": false,
+    "lifetime": [
+        1.6,
+        2.4
+    ],
+    "size": [
+        3.2,
+        4.6
+    ],
+    "orientation": "camera",
+    "softness": 0.8,
+    "sizeOverLife": [
+        [
+            0,
+            0.5
+        ],
+        [
+            0.3,
+            1.2
+        ],
+        [
+            1,
+            1.6
+        ]
+    ],
+    "spawnRadius": 0.5,
+    "spread": 75,
+    "speed": [
+        1.5,
+        3.5
+    ],
+    "speedOverLife": [
+        [
+            0,
+            1
+        ],
+        [
+            0.4,
+            0.2
+        ],
+        [
+            1,
+            0.05
+        ]
+    ],
+    "gravity": -0.15,
+    "drag": 1.0,
+    "rotationSpeed": 40
+}

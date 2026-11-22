@@ -1,0 +1,4940 @@
+{
+  "entities": [
+    {
+      "id": 1,
+      "model": "EffectsGallery.gltf",
+      "name": "EffectsGallery"
+    },
+    {
+      "id": 2,
+      "light": {
+        "angular_radius": 1.5,
+        "color": [
+          0.7,
+          0.8,
+          1.0
+        ],
+        "intensity": 18.0,
+        "type": "directional"
+      },
+      "name": "Moon",
+      "transform": {
+        "rotation": [
+          -0.5650526,
+          -0.1412631,
+          0.0,
+          0.8128717
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "name": "Fire: hearth fire -0.6",
+      "particles": {
+        "effect": "Effects/bonfire.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -0.6,
+          0.35,
+          -3.5
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "name": "Fire: hearth fire 0.6",
+      "particles": {
+        "effect": "Effects/bonfire.effect.json"
+      },
+      "transform": {
+        "translation": [
+          0.6,
+          0.35,
+          -3.5
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "name": "Fire: hearth fire front",
+      "particles": {
+        "effect": "Effects/fire.effect.json"
+      },
+      "transform": {
+        "translation": [
+          0.0,
+          0.4,
+          -3.1
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "name": "Fire: embers on the logs",
+      "particles": {
+        "effect": "Effects/embers.effect.json",
+        "surface": {
+          "entity": 1,
+          "node": "fire_logs"
+        }
+      },
+      "transform": {
+        "translation": [
+          0.0,
+          0.0,
+          -3.5
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "name": "Fire: embers rising",
+      "particles": {
+        "effect": "Effects/embers.effect.json"
+      },
+      "transform": {
+        "translation": [
+          0.0,
+          0.6,
+          -3.5
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "name": "Fire: heat haze",
+      "particles": {
+        "effect": "Effects/heat_haze.effect.json"
+      },
+      "transform": {
+        "translation": [
+          0.0,
+          1.3,
+          -3.5
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "name": "Fire: hearth smoke",
+      "particles": {
+        "effect": "Effects/hearth_smoke.effect.json"
+      },
+      "transform": {
+        "translation": [
+          0.0,
+          2.2,
+          -3.5
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "model": "Showcase/Barrel_01/Barrel_01.gltf",
+      "name": "Fire: Barrel 01",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.1736482,
+          0.0,
+          0.9848078
+        ],
+        "translation": [
+          -4.0,
+          0.0,
+          -1.0
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "name": "Fire: barrel fire -4.0",
+      "particles": {
+        "effect": "Effects/barrel_fire.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -4.0,
+          0.88,
+          -1.0
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "name": "Fire: barrel embers -4.0",
+      "particles": {
+        "effect": "Effects/embers.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -4.0,
+          1.0,
+          -1.0
+        ]
+      }
+    },
+    {
+      "id": 13,
+      "model": "Showcase/barrel_03/barrel_03.gltf",
+      "name": "Fire: barrel 03",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.1736482,
+          0.0,
+          0.9848078
+        ],
+        "translation": [
+          -3.3,
+          0.0,
+          -2.2
+        ]
+      }
+    },
+    {
+      "id": 14,
+      "name": "Fire: barrel fire -3.3",
+      "particles": {
+        "effect": "Effects/barrel_fire.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -3.3,
+          0.88,
+          -2.2
+        ]
+      }
+    },
+    {
+      "id": 15,
+      "name": "Fire: barrel embers -3.3",
+      "particles": {
+        "effect": "Effects/embers.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -3.3,
+          1.0,
+          -2.2
+        ]
+      }
+    },
+    {
+      "id": 16,
+      "model": "Showcase/Barrel_02/Barrel_02.gltf",
+      "name": "Fire: Barrel 02",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.5735764,
+          0.0,
+          0.819152
+        ],
+        "translation": [
+          -4.6,
+          0.0,
+          0.3
+        ]
+      }
+    },
+    {
+      "id": 17,
+      "model": "Showcase/wooden_crate_02/wooden_crate_02.gltf",
+      "name": "Fire: wooden crate 02",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.6427876,
+          0.0,
+          0.7660444
+        ],
+        "translation": [
+          4.2,
+          0.0,
+          -2.0
+        ]
+      }
+    },
+    {
+      "id": 18,
+      "model": "Showcase/wooden_crate_01/wooden_crate_01.gltf",
+      "name": "Fire: wooden crate 01",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.7372773,
+          0.0,
+          0.6755902
+        ],
+        "translation": [
+          4.3,
+          0.45,
+          -2.1
+        ]
+      }
+    },
+    {
+      "id": 19,
+      "model": "Showcase/trashbag/trashbag.gltf",
+      "name": "Fire: trashbag",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.258819,
+          0.0,
+          0.9659258
+        ],
+        "translation": [
+          3.6,
+          0.0,
+          -0.6
+        ]
+      }
+    },
+    {
+      "id": 20,
+      "model": "Showcase/metal_office_desk/metal_office_desk.gltf",
+      "name": "Fire: metal office desk",
+      "transform": {
+        "rotation": [
+          0.0,
+          -0.7071068,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          4.5,
+          0.0,
+          2.8
+        ]
+      }
+    },
+    {
+      "id": 21,
+      "name": "Fire: candle 2.2",
+      "particles": {
+        "effect": "Effects/candle.effect.json"
+      },
+      "transform": {
+        "translation": [
+          4.5,
+          0.8,
+          2.2
+        ]
+      }
+    },
+    {
+      "id": 22,
+      "name": "Fire: candle 2.75",
+      "particles": {
+        "effect": "Effects/candle.effect.json"
+      },
+      "transform": {
+        "translation": [
+          4.5,
+          0.8,
+          2.75
+        ]
+      }
+    },
+    {
+      "id": 23,
+      "name": "Fire: candle 3.35",
+      "particles": {
+        "effect": "Effects/candle.effect.json"
+      },
+      "transform": {
+        "translation": [
+          4.5,
+          0.8,
+          3.35
+        ]
+      }
+    },
+    {
+      "decal": {
+        "roughness": 0.8,
+        "texture": "Decals/scorch.png"
+      },
+      "id": 24,
+      "name": "Fire: decal",
+      "transform": {
+        "rotation": [
+          -0.7071068,
+          0.0,
+          0.0,
+          0.7071068
+        ],
+        "scale": [
+          2.6,
+          2.6,
+          0.6
+        ],
+        "translation": [
+          0.0,
+          0.0,
+          -1.6
+        ]
+      }
+    },
+    {
+      "decal": {
+        "roughness": 0.8,
+        "texture": "Decals/grime.png"
+      },
+      "id": 25,
+      "name": "Fire: decal",
+      "transform": {
+        "rotation": [
+          -0.664463,
+          0.2418448,
+          0.2418448,
+          0.664463
+        ],
+        "scale": [
+          2.5,
+          2.5,
+          0.6
+        ],
+        "translation": [
+          -3.8,
+          0.0,
+          -1.4
+        ]
+      }
+    },
+    {
+      "id": 26,
+      "name": "Fire: caged hanging light",
+      "prefab": "Prefabs/caged_hanging_light.prefab.json",
+      "transform": {
+        "translation": [
+          -2.5,
+          6.0,
+          5.0
+        ]
+      }
+    },
+    {
+      "id": 27,
+      "light": {
+        "color": [
+          0.55,
+          0.65,
+          1.0
+        ],
+        "intensity": 30.0,
+        "radius": 0.05,
+        "range": 10.0,
+        "type": "point"
+      },
+      "name": "Fire: cold fill",
+      "transform": {
+        "translation": [
+          0.0,
+          4.5,
+          3.0
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.8,
+          0.75,
+          0.7
+        ],
+        "density": 0.012,
+        "edge": 0.3,
+        "noise": 0.5,
+        "noise_frequency": 0.6,
+        "noise_velocity": [
+          0.05,
+          0.0,
+          0.02
+        ]
+      },
+      "id": 28,
+      "name": "Fire: haze",
+      "transform": {
+        "scale": [
+          14.0,
+          6.0,
+          14.0
+        ],
+        "translation": [
+          0.0,
+          3.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 29,
+      "name": "Fire: sound",
+      "sound": {
+        "clip": "Sounds/Ambience/fire.wav",
+        "max_distance": 18.0,
+        "min_distance": 2.0,
+        "volume": 1.0
+      },
+      "transform": {
+        "translation": [
+          0.0,
+          0.5,
+          -3.5
+        ]
+      }
+    },
+    {
+      "game": {
+        "kind": "player"
+      },
+      "id": 30,
+      "name": "Fire: player",
+      "transform": {
+        "translation": [
+          0.0,
+          1.4,
+          5.0
+        ]
+      }
+    },
+    {
+      "id": 31,
+      "model": "Showcase/propane_tank/propane_tank.gltf",
+      "name": "Explosion: propane tank",
+      "transform": {
+        "rotation": [
+          0.0,
+          -0.1045285,
+          0.0,
+          0.9945219
+        ],
+        "translation": [
+          56.6,
+          0.0,
+          -4.0
+        ]
+      }
+    },
+    {
+      "id": 32,
+      "model": "Showcase/propane_tank/propane_tank.gltf",
+      "name": "Explosion: propane tank",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.1045285,
+          0.0,
+          0.9945219
+        ],
+        "translation": [
+          57.4,
+          0.0,
+          -3.8
+        ]
+      }
+    },
+    {
+      "id": 33,
+      "model": "Showcase/propane_tank/propane_tank.gltf",
+      "name": "Explosion: propane tank",
+      "transform": {
+        "translation": [
+          57.0,
+          0.0,
+          -4.4
+        ]
+      }
+    },
+    {
+      "id": 34,
+      "name": "Explosion: blast A",
+      "transform": {
+        "translation": [
+          57.0,
+          0.6,
+          -4.0
+        ]
+      }
+    },
+    {
+      "id": 35,
+      "model": "Showcase/propane_tank/propane_tank.gltf",
+      "name": "Explosion: propane tank",
+      "transform": {
+        "rotation": [
+          0.0,
+          -0.1045285,
+          0.0,
+          0.9945219
+        ],
+        "translation": [
+          62.8,
+          0.0,
+          -3.0
+        ]
+      }
+    },
+    {
+      "id": 36,
+      "model": "Showcase/propane_tank/propane_tank.gltf",
+      "name": "Explosion: propane tank",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.1045285,
+          0.0,
+          0.9945219
+        ],
+        "translation": [
+          63.6,
+          0.0,
+          -2.8
+        ]
+      }
+    },
+    {
+      "id": 37,
+      "model": "Showcase/propane_tank/propane_tank.gltf",
+      "name": "Explosion: propane tank",
+      "transform": {
+        "translation": [
+          63.2,
+          0.0,
+          -3.4
+        ]
+      }
+    },
+    {
+      "id": 38,
+      "name": "Explosion: blast B",
+      "transform": {
+        "translation": [
+          63.2,
+          0.6,
+          -3.0
+        ]
+      }
+    },
+    {
+      "id": 39,
+      "model": "Showcase/propane_tank/propane_tank.gltf",
+      "name": "Explosion: propane tank",
+      "transform": {
+        "rotation": [
+          0.0,
+          -0.1045285,
+          0.0,
+          0.9945219
+        ],
+        "translation": [
+          59.6,
+          0.0,
+          -6.0
+        ]
+      }
+    },
+    {
+      "id": 40,
+      "model": "Showcase/propane_tank/propane_tank.gltf",
+      "name": "Explosion: propane tank",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.1045285,
+          0.0,
+          0.9945219
+        ],
+        "translation": [
+          60.4,
+          0.0,
+          -5.8
+        ]
+      }
+    },
+    {
+      "id": 41,
+      "model": "Showcase/propane_tank/propane_tank.gltf",
+      "name": "Explosion: propane tank",
+      "transform": {
+        "translation": [
+          60.0,
+          0.0,
+          -6.4
+        ]
+      }
+    },
+    {
+      "id": 42,
+      "name": "Explosion: blast C",
+      "transform": {
+        "translation": [
+          60.0,
+          0.6,
+          -6.0
+        ]
+      }
+    },
+    {
+      "id": 43,
+      "model": "Showcase/barrel_03/barrel_03.gltf",
+      "name": "Explosion: barrel 03",
+      "transform": {
+        "translation": [
+          55.0,
+          0.0,
+          -6.2
+        ]
+      }
+    },
+    {
+      "id": 44,
+      "model": "Showcase/Barrel_01/Barrel_01.gltf",
+      "name": "Explosion: Barrel 01",
+      "transform": {
+        "translation": [
+          55.7,
+          0.0,
+          -6.6
+        ]
+      }
+    },
+    {
+      "id": 45,
+      "model": "Showcase/Barrel_02/Barrel_02.gltf",
+      "name": "Explosion: Barrel 02",
+      "transform": {
+        "translation": [
+          65.2,
+          0.0,
+          -6.0
+        ]
+      }
+    },
+    {
+      "id": 46,
+      "model": "Showcase/old_military_crate/old_military_crate.gltf",
+      "name": "Explosion: old military crate",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.7071068,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          65.0,
+          0.0,
+          -1.0
+        ]
+      }
+    },
+    {
+      "id": 47,
+      "model": "Showcase/wooden_crate_02/wooden_crate_02.gltf",
+      "name": "Explosion: wooden crate 02",
+      "transform": {
+        "translation": [
+          53.8,
+          0.0,
+          0.5
+        ]
+      }
+    },
+    {
+      "id": 48,
+      "model": "Showcase/cement_bag/cement_bag.gltf",
+      "name": "Explosion: cement bag",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.5,
+          0.0,
+          0.8660254
+        ],
+        "translation": [
+          54.5,
+          0.0,
+          2.6
+        ]
+      }
+    },
+    {
+      "id": 49,
+      "model": "Showcase/cement_bag/cement_bag.gltf",
+      "name": "Explosion: cement bag",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.6087614,
+          0.0,
+          0.7933533
+        ],
+        "translation": [
+          54.6,
+          0.18,
+          2.5
+        ]
+      }
+    },
+    {
+      "id": 50,
+      "model": "Showcase/industrial_storage_cart/industrial_storage_cart.gltf",
+      "name": "Explosion: industrial storage cart",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.7071068,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          65.8,
+          0.0,
+          4.0
+        ]
+      }
+    },
+    {
+      "id": 51,
+      "name": "Explosion: caged hanging light",
+      "prefab": "Prefabs/caged_hanging_light.prefab.json",
+      "transform": {
+        "translation": [
+          56.0,
+          7.0,
+          -2.0
+        ]
+      }
+    },
+    {
+      "id": 52,
+      "name": "Explosion: caged hanging light",
+      "prefab": "Prefabs/caged_hanging_light.prefab.json",
+      "transform": {
+        "translation": [
+          64.0,
+          7.0,
+          2.0
+        ]
+      }
+    },
+    {
+      "id": 53,
+      "light": {
+        "color": [
+          1.0,
+          0.85,
+          0.7
+        ],
+        "inner_angle": 35,
+        "intensity": 2200.0,
+        "outer_angle": 60,
+        "radius": 0.2,
+        "range": 20.0,
+        "type": "spot"
+      },
+      "name": "Explosion: wash on the back wall",
+      "transform": {
+        "rotation": [
+          -0.2098553,
+          0.0,
+          0.0,
+          0.9777325
+        ],
+        "translation": [
+          60.0,
+          6.6,
+          3.0
+        ]
+      }
+    },
+    {
+      "id": 54,
+      "light": {
+        "color": [
+          0.6,
+          0.7,
+          1.0
+        ],
+        "intensity": 40.0,
+        "radius": 0.05,
+        "range": 14.0,
+        "type": "point"
+      },
+      "name": "Explosion: cold fill",
+      "transform": {
+        "translation": [
+          60.0,
+          5.0,
+          6.0
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.8,
+          0.82,
+          0.85
+        ],
+        "density": 0.012,
+        "edge": 0.3,
+        "noise": 0.5,
+        "noise_frequency": 0.6,
+        "noise_velocity": [
+          0.05,
+          0.0,
+          0.02
+        ]
+      },
+      "id": 55,
+      "name": "Explosion: haze",
+      "transform": {
+        "scale": [
+          16.0,
+          7.0,
+          16.0
+        ],
+        "translation": [
+          60.0,
+          3.5,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 56,
+      "name": "Electricity: tower arc end",
+      "transform": {
+        "translation": [
+          122.2,
+          3.3,
+          -3.0
+        ]
+      }
+    },
+    {
+      "id": 57,
+      "name": "Electricity: tower arc",
+      "ribbon": {
+        "effect": "Effects/arc.ribbon.json",
+        "target": 56
+      },
+      "transform": {
+        "translation": [
+          117.8,
+          3.3,
+          -3.0
+        ]
+      }
+    },
+    {
+      "id": 58,
+      "name": "Electricity: arc to the ceiling end",
+      "transform": {
+        "translation": [
+          117.1,
+          5.2,
+          -4.2
+        ]
+      }
+    },
+    {
+      "id": 59,
+      "name": "Electricity: arc to the ceiling",
+      "ribbon": {
+        "effect": "Effects/arc.ribbon.json",
+        "target": 58
+      },
+      "transform": {
+        "translation": [
+          117.4,
+          3.4,
+          -3.0
+        ]
+      }
+    },
+    {
+      "id": 60,
+      "name": "Electricity: arc to the floor end",
+      "transform": {
+        "translation": [
+          123.6,
+          0.0,
+          -1.8
+        ]
+      }
+    },
+    {
+      "id": 61,
+      "name": "Electricity: arc to the floor",
+      "ribbon": {
+        "effect": "Effects/arc.ribbon.json",
+        "target": 60
+      },
+      "transform": {
+        "translation": [
+          122.6,
+          1.3,
+          -2.6
+        ]
+      }
+    },
+    {
+      "id": 62,
+      "light": {
+        "animation": {
+          "depth": 0.6,
+          "pattern": "flicker",
+          "rate": 14
+        },
+        "color": [
+          0.55,
+          0.7,
+          1.0
+        ],
+        "intensity": 90.0,
+        "radius": 0.05,
+        "range": 12.0,
+        "type": "point"
+      },
+      "name": "Electricity: arc light",
+      "transform": {
+        "translation": [
+          120.0,
+          3.3,
+          -3.0
+        ]
+      }
+    },
+    {
+      "id": 63,
+      "light": {
+        "color": [
+          0.75,
+          0.8,
+          1.0
+        ],
+        "intensity": 0.0,
+        "radius": 0.05,
+        "range": 16.0,
+        "type": "point"
+      },
+      "name": "Electricity: strike light",
+      "transform": {
+        "translation": [
+          120.0,
+          5.5,
+          -3.0
+        ]
+      }
+    },
+    {
+      "id": 64,
+      "lightning": {
+        "bolt": "Effects/lightning_indoor.ribbon.json",
+        "duration": 0.35,
+        "flash": 900,
+        "interval": [
+          2.5,
+          5.0
+        ],
+        "light": 63
+      },
+      "name": "Electricity: lightning",
+      "transform": {
+        "scale": [
+          1.5,
+          6.5,
+          1.5
+        ],
+        "translation": [
+          120.0,
+          3.5,
+          -3.0
+        ]
+      }
+    },
+    {
+      "id": 65,
+      "model": "Showcase/utility_box_02/utility_box_02.gltf",
+      "name": "Electricity: utility box 02",
+      "transform": {
+        "translation": [
+          118.5,
+          0.0,
+          -6.6
+        ]
+      }
+    },
+    {
+      "id": 66,
+      "model": "Showcase/utility_box_01/utility_box_01.gltf",
+      "name": "Electricity: utility box 01",
+      "transform": {
+        "translation": [
+          120.0,
+          0.0,
+          -6.6
+        ]
+      }
+    },
+    {
+      "id": 67,
+      "model": "Showcase/utility_box_02/utility_box_02.gltf",
+      "name": "Electricity: utility box 02",
+      "transform": {
+        "translation": [
+          121.5,
+          0.0,
+          -6.6
+        ]
+      }
+    },
+    {
+      "id": 68,
+      "model": "Showcase/portable_generator/portable_generator.gltf",
+      "name": "Electricity: portable generator",
+      "transform": {
+        "rotation": [
+          0.0,
+          -0.258819,
+          0.0,
+          0.9659258
+        ],
+        "translation": [
+          125.0,
+          0.0,
+          -1.0
+        ]
+      }
+    },
+    {
+      "id": 69,
+      "model": "Showcase/tool_cart/tool_cart.gltf",
+      "name": "Electricity: tool cart",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.6427876,
+          0.0,
+          0.7660444
+        ],
+        "translation": [
+          114.5,
+          0.0,
+          0.5
+        ]
+      }
+    },
+    {
+      "id": 70,
+      "model": "Showcase/power_box_01/power_box_01.gltf",
+      "name": "Electricity: power box 01",
+      "transform": {
+        "rotation": [
+          0.0,
+          -0.7071068,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          127.94,
+          2.3,
+          -1.5
+        ]
+      }
+    },
+    {
+      "id": 71,
+      "model": "Showcase/power_box_01/power_box_01.gltf",
+      "name": "Electricity: power box 01",
+      "transform": {
+        "rotation": [
+          0.0,
+          -0.7071068,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          127.94,
+          2.3,
+          1.5
+        ]
+      }
+    },
+    {
+      "id": 72,
+      "name": "Electricity: sparking box",
+      "particles": {
+        "effect": "Effects/cable_sparks.effect.json"
+      },
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.8022929,
+          0.5969305
+        ],
+        "translation": [
+          127.85,
+          2.0,
+          -1.5
+        ]
+      }
+    },
+    {
+      "id": 73,
+      "name": "Electricity: box sparks",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.6339889,
+          0.7733421
+        ],
+        "translation": [
+          127.85,
+          2.2,
+          1.5
+        ]
+      }
+    },
+    {
+      "id": 74,
+      "model": "Showcase/mounted_fluorescent_lights/mounted_fluorescent_lights.gltf",
+      "name": "Electricity: mounted fluorescent lights",
+      "transform": {
+        "translation": [
+          116.0,
+          6.95,
+          1.5
+        ]
+      }
+    },
+    {
+      "id": 75,
+      "model": "Showcase/mounted_fluorescent_lights/mounted_fluorescent_lights.gltf",
+      "name": "Electricity: mounted fluorescent lights",
+      "transform": {
+        "translation": [
+          120.0,
+          6.95,
+          1.5
+        ]
+      }
+    },
+    {
+      "id": 76,
+      "model": "Showcase/mounted_fluorescent_lights/mounted_fluorescent_lights.gltf",
+      "name": "Electricity: mounted fluorescent lights",
+      "transform": {
+        "translation": [
+          124.0,
+          6.95,
+          1.5
+        ]
+      }
+    },
+    {
+      "id": 77,
+      "light": {
+        "animation": {
+          "depth": 0.9,
+          "pattern": "failing",
+          "rate": 1.0
+        },
+        "color": [
+          0.85,
+          0.95,
+          1.0
+        ],
+        "inner_angle": 50,
+        "intensity": 260.0,
+        "outer_angle": 75,
+        "radius": 0.05,
+        "range": 12.0,
+        "type": "spot"
+      },
+      "name": "Electricity: failing tube",
+      "transform": {
+        "rotation": [
+          -0.7071068,
+          0.0,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          116.0,
+          6.85,
+          1.5
+        ]
+      }
+    },
+    {
+      "id": 78,
+      "light": {
+        "animation": {
+          "depth": 0.2,
+          "pattern": "buzz",
+          "rate": 1.0
+        },
+        "color": [
+          0.85,
+          0.95,
+          1.0
+        ],
+        "inner_angle": 50,
+        "intensity": 220.0,
+        "outer_angle": 75,
+        "radius": 0.05,
+        "range": 12.0,
+        "type": "spot"
+      },
+      "name": "Electricity: buzzing tube",
+      "transform": {
+        "rotation": [
+          -0.7071068,
+          0.0,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          124.0,
+          6.85,
+          1.5
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.75,
+          0.82,
+          1.0
+        ],
+        "density": 0.03,
+        "edge": 0.3,
+        "noise": 0.5,
+        "noise_frequency": 0.6,
+        "noise_velocity": [
+          0.05,
+          0.0,
+          0.02
+        ]
+      },
+      "id": 79,
+      "name": "Electricity: haze",
+      "transform": {
+        "scale": [
+          16.0,
+          7.0,
+          14.0
+        ],
+        "translation": [
+          120.0,
+          3.5,
+          -1.0
+        ]
+      }
+    },
+    {
+      "decal": {
+        "roughness": 0.8,
+        "texture": "Decals/scorch.png"
+      },
+      "id": 80,
+      "name": "Electricity: decal",
+      "transform": {
+        "rotation": [
+          -0.7071068,
+          0.0,
+          0.0,
+          0.7071068
+        ],
+        "scale": [
+          1.6,
+          1.6,
+          0.6
+        ],
+        "translation": [
+          123.6,
+          0.0,
+          -1.8
+        ]
+      }
+    },
+    {
+      "id": 81,
+      "name": "Electricity: sound",
+      "sound": {
+        "clip": "Sounds/Ambience/hum.wav",
+        "max_distance": 16.0,
+        "min_distance": 2.0,
+        "volume": 1.0
+      },
+      "transform": {
+        "translation": [
+          120.0,
+          2.0,
+          -3.0
+        ]
+      }
+    },
+    {
+      "id": 82,
+      "model": "Showcase/security_light/security_light.gltf",
+      "name": "Rain: security light",
+      "transform": {
+        "translation": [
+          180.0,
+          3.4,
+          -8.95
+        ]
+      }
+    },
+    {
+      "id": 83,
+      "light": {
+        "color": [
+          1.0,
+          0.85,
+          0.65
+        ],
+        "inner_angle": 25,
+        "intensity": 1400.0,
+        "outer_angle": 55,
+        "radius": 0.1,
+        "range": 22.0,
+        "type": "spot"
+      },
+      "name": "Rain: door lamp",
+      "transform": {
+        "rotation": [
+          -0.9685597,
+          0.0,
+          0.0,
+          0.2487811
+        ],
+        "translation": [
+          180.0,
+          3.2,
+          -8.6
+        ]
+      }
+    },
+    {
+      "id": 84,
+      "light": {
+        "color": [
+          0.7,
+          0.8,
+          1.0
+        ],
+        "inner_angle": 20,
+        "intensity": 900.0,
+        "outer_angle": 45,
+        "radius": 0.1,
+        "range": 24.0,
+        "type": "spot"
+      },
+      "name": "Rain: yard lamp",
+      "transform": {
+        "rotation": [
+          -0.8242871,
+          -0.4808342,
+          0.0,
+          0.2989134
+        ],
+        "translation": [
+          173.5,
+          6.5,
+          -8.6
+        ]
+      }
+    },
+    {
+      "id": 85,
+      "name": "Rain: hanging industrial lamp",
+      "prefab": "Prefabs/hanging_industrial_lamp.prefab.json",
+      "transform": {
+        "translation": [
+          182.5,
+          3.2,
+          6.0
+        ]
+      }
+    },
+    {
+      "id": 86,
+      "model": "Showcase/Barrel_01/Barrel_01.gltf",
+      "name": "Rain: Barrel 01",
+      "transform": {
+        "translation": [
+          175.0,
+          0.0,
+          -6.5
+        ]
+      }
+    },
+    {
+      "id": 87,
+      "model": "Showcase/Barrel_02/Barrel_02.gltf",
+      "name": "Rain: Barrel 02",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.258819,
+          0.0,
+          0.9659258
+        ],
+        "translation": [
+          175.6,
+          0.0,
+          -7.2
+        ]
+      }
+    },
+    {
+      "id": 88,
+      "model": "Showcase/trashbag/trashbag.gltf",
+      "name": "Rain: trashbag",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0871557,
+          0.0,
+          0.9961947
+        ],
+        "translation": [
+          185.5,
+          0.0,
+          -5.0
+        ]
+      }
+    },
+    {
+      "id": 89,
+      "model": "Showcase/trashbag/trashbag.gltf",
+      "name": "Rain: trashbag",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.6427876,
+          0.0,
+          0.7660444
+        ],
+        "translation": [
+          186.0,
+          0.0,
+          -5.6
+        ]
+      }
+    },
+    {
+      "id": 90,
+      "model": "Showcase/hand_truck/hand_truck.gltf",
+      "name": "Rain: hand truck",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.9848078,
+          0.0,
+          -0.1736482
+        ],
+        "translation": [
+          184.5,
+          0.0,
+          -7.5
+        ]
+      }
+    },
+    {
+      "id": 91,
+      "model": "Showcase/wooden_crate_02/wooden_crate_02.gltf",
+      "name": "Rain: wooden crate 02",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0436194,
+          0.0,
+          0.9990482
+        ],
+        "translation": [
+          173.5,
+          0.0,
+          2.0
+        ]
+      }
+    },
+    {
+      "id": 92,
+      "model": "Showcase/WetFloorSign_01/WetFloorSign_01.gltf",
+      "name": "Rain: WetFloorSign 01",
+      "transform": {
+        "rotation": [
+          0.0,
+          -0.1736482,
+          0.0,
+          0.9848078
+        ],
+        "translation": [
+          182.0,
+          0.0,
+          5.5
+        ]
+      }
+    },
+    {
+      "id": 93,
+      "name": "Rain: rain",
+      "transform": {
+        "scale": [
+          16.0,
+          6.0,
+          12.8
+        ],
+        "translation": [
+          180.0,
+          10.0,
+          -2.6
+        ]
+      },
+      "weather": {
+        "effect": "Effects/rain.effect.json",
+        "rate": 45,
+        "reach": 20
+      }
+    },
+    {
+      "id": 94,
+      "name": "Rain: wet",
+      "transform": {
+        "scale": [
+          16.6,
+          8.0,
+          18.6
+        ],
+        "translation": [
+          180.0,
+          3.0,
+          0.0
+        ]
+      },
+      "wet": {
+        "puddle_height": 1.5,
+        "puddles": 0.6,
+        "rain": 60,
+        "streaks": 0.7,
+        "wetness": 0.9
+      }
+    },
+    {
+      "id": 95,
+      "name": "Rain: drips off the porch",
+      "particles": {
+        "effect": "Effects/drip_edge.effect.json"
+      },
+      "transform": {
+        "translation": [
+          180.0,
+          3.18,
+          3.75
+        ]
+      }
+    },
+    {
+      "id": 96,
+      "name": "Rain: drip under the porch",
+      "particles": {
+        "effect": "Effects/drip.effect.json"
+      },
+      "transform": {
+        "translation": [
+          178.0,
+          3.18,
+          5.0
+        ]
+      }
+    },
+    {
+      "id": 97,
+      "lightning": {
+        "bolt": "Effects/lightning.ribbon.json",
+        "duration": 0.5,
+        "flash": 500,
+        "interval": [
+          4.0,
+          8.0
+        ],
+        "light": 2
+      },
+      "name": "Rain: lightning",
+      "transform": {
+        "scale": [
+          80.0,
+          30.0,
+          10.0
+        ],
+        "translation": [
+          180.0,
+          30.0,
+          -60.0
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.75,
+          0.8,
+          0.85
+        ],
+        "density": 0.04,
+        "edge": 0.3,
+        "noise": 0.5,
+        "noise_frequency": 0.6,
+        "noise_velocity": [
+          0.05,
+          0.0,
+          0.02
+        ]
+      },
+      "id": 98,
+      "name": "Rain: rain haze",
+      "transform": {
+        "scale": [
+          16.0,
+          7.0,
+          13.0
+        ],
+        "translation": [
+          180.0,
+          3.5,
+          -2.5
+        ]
+      }
+    },
+    {
+      "id": 99,
+      "name": "Rain: sound",
+      "sound": {
+        "clip": "Sounds/Ambience/rain.wav",
+        "max_distance": 22.0,
+        "min_distance": 4.0,
+        "volume": 1.0
+      },
+      "transform": {
+        "translation": [
+          180.0,
+          1.5,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 100,
+      "model": "Showcase/old_military_crate/old_military_crate.gltf",
+      "name": "Snow: old military crate",
+      "transform": {
+        "translation": [
+          -5.0,
+          0.0,
+          -65.5
+        ]
+      }
+    },
+    {
+      "id": 101,
+      "model": "Showcase/wooden_crate_02/wooden_crate_02.gltf",
+      "name": "Snow: wooden crate 02",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0871557,
+          0.0,
+          0.9961947
+        ],
+        "translation": [
+          5.2,
+          0.0,
+          -65.0
+        ]
+      }
+    },
+    {
+      "id": 102,
+      "model": "Showcase/wooden_crate_01/wooden_crate_01.gltf",
+      "name": "Snow: wooden crate 01",
+      "transform": {
+        "rotation": [
+          0.0,
+          -0.0871557,
+          0.0,
+          0.9961947
+        ],
+        "translation": [
+          5.0,
+          0.0,
+          -65.2
+        ]
+      }
+    },
+    {
+      "id": 103,
+      "model": "Showcase/steel_frame_shelves_02/steel_frame_shelves_02.gltf",
+      "name": "Snow: steel frame shelves 02",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.7071068,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          -6.4,
+          0.0,
+          -59.0
+        ]
+      }
+    },
+    {
+      "id": 104,
+      "model": "Showcase/steel_frame_shelves_02/steel_frame_shelves_02.gltf",
+      "name": "Snow: steel frame shelves 02",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.7071068,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          -6.4,
+          0.0,
+          -57.8
+        ]
+      }
+    },
+    {
+      "id": 105,
+      "model": "Showcase/Barrel_02/Barrel_02.gltf",
+      "name": "Snow: Barrel 02",
+      "transform": {
+        "translation": [
+          4.5,
+          0.0,
+          -56.2
+        ]
+      }
+    },
+    {
+      "id": 106,
+      "model": "Showcase/hand_truck/hand_truck.gltf",
+      "name": "Snow: hand truck",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.9396926,
+          0.0,
+          0.3420201
+        ],
+        "translation": [
+          -3.5,
+          0.0,
+          -55.5
+        ]
+      }
+    },
+    {
+      "id": 107,
+      "name": "Snow: snow",
+      "transform": {
+        "scale": [
+          5.6,
+          1.0,
+          4.5
+        ],
+        "translation": [
+          0.0,
+          8.5,
+          -61.75
+        ]
+      },
+      "weather": {
+        "effect": "Effects/snow.effect.json",
+        "rate": 90,
+        "reach": 20
+      }
+    },
+    {
+      "id": 108,
+      "name": "Snow: snow 2",
+      "transform": {
+        "scale": [
+          1.5,
+          1.0,
+          1.5
+        ],
+        "translation": [
+          4.25,
+          8.5,
+          -57.25
+        ]
+      },
+      "weather": {
+        "effect": "Effects/snow.effect.json",
+        "rate": 60,
+        "reach": 20
+      }
+    },
+    {
+      "id": 109,
+      "name": "Snow: draft",
+      "transform": {
+        "scale": [
+          10.0,
+          7.0,
+          10.0
+        ],
+        "translation": [
+          0.0,
+          3.5,
+          -61.0
+        ]
+      },
+      "wind": {
+        "edge": 0.4,
+        "gust": 0.8,
+        "gust_frequency": 0.25,
+        "velocity": [
+          0.5,
+          0.0,
+          0.3
+        ]
+      }
+    },
+    {
+      "id": 110,
+      "name": "Snow: cold breath",
+      "particles": {
+        "effect": "Effects/breath.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -4.6,
+          1.6,
+          -56.0
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.85,
+          0.9,
+          1.0
+        ],
+        "density": 0.07,
+        "edge": 0.3,
+        "noise": 0.6,
+        "noise_frequency": 0.6,
+        "noise_velocity": [
+          0.05,
+          0.0,
+          0.02
+        ]
+      },
+      "id": 111,
+      "name": "Snow: cold air",
+      "transform": {
+        "scale": [
+          14.0,
+          7.0,
+          14.0
+        ],
+        "translation": [
+          0.0,
+          3.5,
+          -61.0
+        ]
+      }
+    },
+    {
+      "id": 112,
+      "name": "Snow: caged hanging light",
+      "prefab": "Prefabs/caged_hanging_light.prefab.json",
+      "transform": {
+        "translation": [
+          -5.0,
+          7.0,
+          -55.5
+        ]
+      }
+    },
+    {
+      "id": 113,
+      "light": {
+        "color": [
+          0.6,
+          0.72,
+          1.0
+        ],
+        "inner_angle": 20,
+        "intensity": 4000.0,
+        "outer_angle": 32,
+        "radius": 0.3,
+        "range": 16.0,
+        "type": "spot"
+      },
+      "name": "Snow: moonlight through the hole",
+      "transform": {
+        "rotation": [
+          -0.7208666,
+          -0.0720867,
+          0.0,
+          0.6893147
+        ],
+        "translation": [
+          0.0,
+          9.0,
+          -61.75
+        ]
+      }
+    },
+    {
+      "id": 114,
+      "light": {
+        "color": [
+          1.0,
+          0.75,
+          0.5
+        ],
+        "intensity": 20.0,
+        "radius": 0.05,
+        "range": 7.0,
+        "type": "point"
+      },
+      "name": "Snow: warm corner",
+      "transform": {
+        "translation": [
+          -5.0,
+          2.5,
+          -55.5
+        ]
+      }
+    },
+    {
+      "id": 115,
+      "name": "Snow: sound",
+      "sound": {
+        "clip": "Sounds/Ambience/wind.wav",
+        "max_distance": 16.0,
+        "min_distance": 3.0,
+        "volume": 0.6
+      },
+      "transform": {
+        "translation": [
+          0.0,
+          5.0,
+          -61.5
+        ]
+      }
+    },
+    {
+      "game": {
+        "kind": "fan"
+      },
+      "id": 116,
+      "model": "fan.gltf",
+      "name": "Wind: fan",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.7071068,
+          0.7071068
+        ],
+        "translation": [
+          70.9,
+          2.5,
+          -60.0
+        ]
+      }
+    },
+    {
+      "id": 117,
+      "light": {
+        "color": [
+          1.0,
+          0.9,
+          0.75
+        ],
+        "inner_angle": 18,
+        "intensity": 3500.0,
+        "outer_angle": 34,
+        "radius": 0.15,
+        "range": 30.0,
+        "type": "spot"
+      },
+      "name": "Wind: light down the tunnel",
+      "transform": {
+        "rotation": [
+          -0.1428144,
+          0.6491562,
+          0.0,
+          0.7471281
+        ],
+        "translation": [
+          70.2,
+          4.6,
+          -57.4
+        ]
+      }
+    },
+    {
+      "id": 118,
+      "name": "Wind: caged hanging light",
+      "prefab": "Prefabs/caged_hanging_light.prefab.json",
+      "transform": {
+        "translation": [
+          52.0,
+          5.0,
+          -60.0
+        ]
+      }
+    },
+    {
+      "id": 119,
+      "name": "Wind: caged hanging light",
+      "prefab": "Prefabs/caged_hanging_light.prefab.json",
+      "transform": {
+        "translation": [
+          58.0,
+          5.0,
+          -60.0
+        ]
+      }
+    },
+    {
+      "id": 120,
+      "name": "Wind: caged hanging light",
+      "prefab": "Prefabs/caged_hanging_light.prefab.json",
+      "transform": {
+        "translation": [
+          64.0,
+          5.0,
+          -60.0
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.85,
+          0.85,
+          0.85
+        ],
+        "density": 0.025,
+        "edge": 0.3,
+        "noise": 0.7,
+        "noise_frequency": 0.5,
+        "noise_velocity": [
+          -1.5,
+          0.0,
+          0.0
+        ]
+      },
+      "id": 121,
+      "name": "Wind: dust in the air",
+      "transform": {
+        "scale": [
+          26.0,
+          5.0,
+          7.0
+        ],
+        "translation": [
+          60.0,
+          2.5,
+          -60.0
+        ]
+      }
+    },
+    {
+      "id": 122,
+      "name": "Wind: gale",
+      "transform": {
+        "scale": [
+          26.0,
+          5.0,
+          7.0
+        ],
+        "translation": [
+          60.0,
+          2.5,
+          -60.0
+        ]
+      },
+      "wind": {
+        "edge": 0.2,
+        "gust": 0.6,
+        "gust_frequency": 0.35,
+        "velocity": [
+          -7.0,
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 123,
+      "name": "Wind: wind dust",
+      "particles": {
+        "effect": "Effects/wind_dust.effect.json"
+      },
+      "transform": {
+        "translation": [
+          69.0,
+          2.5,
+          -60.0
+        ]
+      }
+    },
+    {
+      "id": 124,
+      "name": "Wind: wind ash",
+      "particles": {
+        "effect": "Effects/wind_ash.effect.json"
+      },
+      "transform": {
+        "translation": [
+          69.0,
+          2.5,
+          -60.0
+        ]
+      }
+    },
+    {
+      "id": 125,
+      "name": "Wind: papers blown",
+      "particles": {
+        "effect": "Effects/papers.effect.json"
+      },
+      "transform": {
+        "translation": [
+          68.5,
+          0.8,
+          -60.0
+        ]
+      }
+    },
+    {
+      "id": 126,
+      "name": "Wind: papers on the floor",
+      "particles": {
+        "effect": "Effects/papers.effect.json"
+      },
+      "transform": {
+        "translation": [
+          64.0,
+          0.3,
+          -58.5
+        ]
+      }
+    },
+    {
+      "id": 127,
+      "name": "Wind: papers in the air",
+      "particles": {
+        "effect": "Effects/papers.effect.json"
+      },
+      "transform": {
+        "translation": [
+          66.0,
+          2.5,
+          -61.5
+        ]
+      }
+    },
+    {
+      "id": 128,
+      "name": "Wind: wind wisps",
+      "particles": {
+        "effect": "Effects/wind_wisps.effect.json"
+      },
+      "transform": {
+        "translation": [
+          69.0,
+          2.5,
+          -60.0
+        ]
+      }
+    },
+    {
+      "id": 129,
+      "name": "Wind: dust motes",
+      "particles": {
+        "effect": "Effects/dust_motes.effect.json"
+      },
+      "transform": {
+        "translation": [
+          66.0,
+          2.0,
+          -60.0
+        ]
+      }
+    },
+    {
+      "id": 130,
+      "model": "Showcase/modular_industrial_pipes_01/modular_industrial_pipes_01.gltf",
+      "name": "Wind: modular industrial pipes 01",
+      "transform": {
+        "translation": [
+          51.0,
+          2.2,
+          -63.35
+        ]
+      }
+    },
+    {
+      "id": 131,
+      "model": "Showcase/modular_industrial_pipes_01/modular_industrial_pipes_01.gltf",
+      "name": "Wind: modular industrial pipes 01",
+      "transform": {
+        "translation": [
+          56.0,
+          2.2,
+          -63.35
+        ]
+      }
+    },
+    {
+      "id": 132,
+      "model": "Showcase/modular_industrial_pipes_01/modular_industrial_pipes_01.gltf",
+      "name": "Wind: modular industrial pipes 01",
+      "transform": {
+        "translation": [
+          61.0,
+          2.2,
+          -63.35
+        ]
+      }
+    },
+    {
+      "id": 133,
+      "model": "Showcase/modular_industrial_pipes_01/modular_industrial_pipes_01.gltf",
+      "name": "Wind: modular industrial pipes 01",
+      "transform": {
+        "translation": [
+          66.0,
+          2.2,
+          -63.35
+        ]
+      }
+    },
+    {
+      "id": 134,
+      "model": "Showcase/modular_industrial_pipes_01/modular_industrial_pipes_01.gltf",
+      "name": "Wind: modular industrial pipes 01",
+      "transform": {
+        "rotation": [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        "translation": [
+          51.0,
+          2.2,
+          -56.65
+        ]
+      }
+    },
+    {
+      "id": 135,
+      "model": "Showcase/modular_industrial_pipes_01/modular_industrial_pipes_01.gltf",
+      "name": "Wind: modular industrial pipes 01",
+      "transform": {
+        "rotation": [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        "translation": [
+          56.0,
+          2.2,
+          -56.65
+        ]
+      }
+    },
+    {
+      "id": 136,
+      "model": "Showcase/modular_industrial_pipes_01/modular_industrial_pipes_01.gltf",
+      "name": "Wind: modular industrial pipes 01",
+      "transform": {
+        "rotation": [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        "translation": [
+          61.0,
+          2.2,
+          -56.65
+        ]
+      }
+    },
+    {
+      "id": 137,
+      "model": "Showcase/modular_industrial_pipes_01/modular_industrial_pipes_01.gltf",
+      "name": "Wind: modular industrial pipes 01",
+      "transform": {
+        "rotation": [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        "translation": [
+          66.0,
+          2.2,
+          -56.65
+        ]
+      }
+    },
+    {
+      "id": 138,
+      "model": "Showcase/cement_bag/cement_bag.gltf",
+      "name": "Wind: cement bag",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.1736482,
+          0.0,
+          0.9848078
+        ],
+        "translation": [
+          54.0,
+          0.0,
+          -62.6
+        ]
+      }
+    },
+    {
+      "id": 139,
+      "model": "Showcase/plastic_crate_01/plastic_crate_01.gltf",
+      "name": "Wind: plastic crate 01",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0871557,
+          0.0,
+          0.9961947
+        ],
+        "translation": [
+          57.0,
+          0.0,
+          -57.2
+        ]
+      }
+    },
+    {
+      "id": 140,
+      "model": "Showcase/trashbag/trashbag.gltf",
+      "name": "Wind: trashbag",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.4226183,
+          0.0,
+          0.9063078
+        ],
+        "translation": [
+          62.0,
+          0.0,
+          -62.8
+        ]
+      }
+    },
+    {
+      "id": 141,
+      "light": {
+        "color": [
+          0.6,
+          0.7,
+          1.0
+        ],
+        "intensity": 25.0,
+        "radius": 0.05,
+        "range": 10.0,
+        "type": "point"
+      },
+      "name": "Wind: cold fill",
+      "transform": {
+        "translation": [
+          50.0,
+          4.5,
+          -60.0
+        ]
+      }
+    },
+    {
+      "id": 142,
+      "name": "Wind: sound",
+      "sound": {
+        "clip": "Sounds/Ambience/wind.wav",
+        "max_distance": 20.0,
+        "min_distance": 3.0,
+        "volume": 1.0
+      },
+      "transform": {
+        "translation": [
+          64.0,
+          2.5,
+          -60.0
+        ]
+      }
+    },
+    {
+      "id": 143,
+      "light": {
+        "color": [
+          1.0,
+          0.95,
+          0.85
+        ],
+        "inner_angle": 24,
+        "intensity": 9000.0,
+        "outer_angle": 40,
+        "radius": 0.2,
+        "range": 30.0,
+        "type": "spot"
+      },
+      "name": "Fog: light behind the slats",
+      "transform": {
+        "rotation": [
+          -0.2901716,
+          -0.6448259,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          109.4,
+          5.0,
+          -60.0
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.85,
+          0.87,
+          0.9
+        ],
+        "density": 0.012,
+        "edge": 0.3,
+        "noise": 0.6,
+        "noise_frequency": 0.6,
+        "noise_velocity": [
+          0.05,
+          0.0,
+          0.02
+        ]
+      },
+      "id": 144,
+      "name": "Fog: room fog",
+      "transform": {
+        "scale": [
+          16.0,
+          6.0,
+          16.0
+        ],
+        "translation": [
+          120.0,
+          3.0,
+          -60.0
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.9,
+          0.9,
+          0.92
+        ],
+        "density": 0.35,
+        "edge": 0.15,
+        "falloff_height": 0.3,
+        "noise": 0.8,
+        "noise_frequency": 0.4,
+        "noise_velocity": [
+          0.15,
+          0.0,
+          0.05
+        ]
+      },
+      "id": 145,
+      "name": "Fog: ground fog",
+      "transform": {
+        "scale": [
+          16.0,
+          1.2,
+          16.0
+        ],
+        "translation": [
+          120.0,
+          0.6,
+          -60.0
+        ]
+      }
+    },
+    {
+      "id": 146,
+      "model": "Showcase/Barrel_02/Barrel_02.gltf",
+      "name": "Fog: Barrel 02",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.1305262,
+          0.0,
+          0.9914449
+        ],
+        "translation": [
+          125.5,
+          0.0,
+          -65.5
+        ]
+      }
+    },
+    {
+      "id": 147,
+      "model": "Showcase/Barrel_01/Barrel_01.gltf",
+      "name": "Fog: Barrel 01",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.3420201,
+          0.0,
+          0.9396926
+        ],
+        "translation": [
+          126.2,
+          0.0,
+          -64.8
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.4,
+          1.0,
+          0.4
+        ],
+        "density": 0.6,
+        "edge": 0.6,
+        "falloff_height": 0.8,
+        "glow": [
+          0.15,
+          1.2,
+          0.2
+        ],
+        "noise": 0.8,
+        "noise_frequency": 1.2,
+        "noise_velocity": [
+          0.0,
+          0.1,
+          0.1
+        ]
+      },
+      "id": 148,
+      "name": "Fog: glowing gas",
+      "transform": {
+        "scale": [
+          3.0,
+          2.0,
+          3.0
+        ],
+        "translation": [
+          125.5,
+          1.0,
+          -65.0
+        ]
+      }
+    },
+    {
+      "id": 149,
+      "name": "Fog: spores",
+      "particles": {
+        "effect": "Effects/spores.effect.json"
+      },
+      "transform": {
+        "translation": [
+          125.5,
+          1.0,
+          -65.0
+        ]
+      }
+    },
+    {
+      "id": 150,
+      "light": {
+        "color": [
+          0.3,
+          1.0,
+          0.35
+        ],
+        "intensity": 12.0,
+        "radius": 0.05,
+        "range": 6.0,
+        "type": "point"
+      },
+      "name": "Fog: gas glow",
+      "transform": {
+        "translation": [
+          125.5,
+          1.2,
+          -65.0
+        ]
+      }
+    },
+    {
+      "id": 151,
+      "model": "Showcase/old_military_crate/old_military_crate.gltf",
+      "name": "Fog: old military crate",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.258819,
+          0.0,
+          0.9659258
+        ],
+        "translation": [
+          123.0,
+          0.0,
+          -57.0
+        ]
+      }
+    },
+    {
+      "id": 152,
+      "model": "Showcase/wooden_crate_02/wooden_crate_02.gltf",
+      "name": "Fog: wooden crate 02",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.7071068,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          117.0,
+          0.0,
+          -54.5
+        ]
+      }
+    },
+    {
+      "id": 153,
+      "model": "Showcase/steel_frame_shelves_02/steel_frame_shelves_02.gltf",
+      "name": "Fog: steel frame shelves 02",
+      "transform": {
+        "rotation": [
+          0.0,
+          -0.7071068,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          127.4,
+          0.0,
+          -58.0
+        ]
+      }
+    },
+    {
+      "id": 154,
+      "model": "Showcase/steel_frame_shelves_02/steel_frame_shelves_02.gltf",
+      "name": "Fog: steel frame shelves 02",
+      "transform": {
+        "rotation": [
+          0.0,
+          -0.7071068,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          127.4,
+          0.0,
+          -56.8
+        ]
+      }
+    },
+    {
+      "id": 155,
+      "model": "Showcase/metal_stool_01/metal_stool_01.gltf",
+      "name": "Fog: metal stool 01",
+      "transform": {
+        "translation": [
+          118.0,
+          0.0,
+          -62.0
+        ]
+      }
+    },
+    {
+      "id": 156,
+      "name": "Fog: wisp",
+      "ribbon": {
+        "effect": "Effects/wisp.ribbon.json"
+      },
+      "transform": {
+        "translation": [
+          122.0,
+          1.4,
+          -63.0
+        ]
+      }
+    },
+    {
+      "id": 157,
+      "name": "Fog: sound",
+      "sound": {
+        "clip": "Sounds/Ambience/wind.wav",
+        "max_distance": 16.0,
+        "min_distance": 3.0,
+        "volume": 0.35
+      },
+      "transform": {
+        "translation": [
+          120.0,
+          3.0,
+          -60.0
+        ]
+      }
+    },
+    {
+      "id": 158,
+      "name": "Cryo: leaking valve",
+      "particles": {
+        "effect": "Effects/cryo_jet.effect.json"
+      },
+      "transform": {
+        "rotation": [
+          0.7328858,
+          0.0,
+          -0.1099329,
+          0.6714114
+        ],
+        "translation": [
+          181.5,
+          1.1,
+          -66.55
+        ]
+      }
+    },
+    {
+      "id": 159,
+      "name": "Cryo: frost by the valve",
+      "particles": {
+        "effect": "Effects/frost_glitter.effect.json"
+      },
+      "transform": {
+        "translation": [
+          181.5,
+          1.2,
+          -65.0
+        ]
+      }
+    },
+    {
+      "id": 160,
+      "name": "Cryo: vapour under the jet",
+      "particles": {
+        "effect": "Effects/cryo_vapour.effect.json"
+      },
+      "transform": {
+        "translation": [
+          181.5,
+          0.3,
+          -64.5
+        ]
+      }
+    },
+    {
+      "id": 161,
+      "name": "Cryo: second valve",
+      "transform": {
+        "rotation": [
+          0.6608875,
+          0.0,
+          0.1982662,
+          0.723822
+        ],
+        "translation": [
+          184.9,
+          0.75,
+          -66.55
+        ]
+      }
+    },
+    {
+      "id": 162,
+      "model": "Showcase/metal_office_desk/metal_office_desk.gltf",
+      "name": "Cryo: metal office desk",
+      "transform": {
+        "translation": [
+          178.0,
+          0.0,
+          -61.0
+        ]
+      }
+    },
+    {
+      "id": 163,
+      "model": "Showcase/propane_tank/propane_tank.gltf",
+      "name": "Cryo: dewar",
+      "transform": {
+        "translation": [
+          177.7,
+          0.79,
+          -61.1
+        ]
+      }
+    },
+    {
+      "id": 164,
+      "name": "Cryo: vapour from the dewar",
+      "particles": {
+        "effect": "Effects/cryo_vapour.effect.json"
+      },
+      "transform": {
+        "translation": [
+          177.7,
+          1.36,
+          -61.1
+        ]
+      }
+    },
+    {
+      "id": 165,
+      "name": "Cryo: vapour over the edge",
+      "particles": {
+        "effect": "Effects/cryo_vapour.effect.json"
+      },
+      "transform": {
+        "translation": [
+          178.4,
+          0.82,
+          -60.55
+        ]
+      }
+    },
+    {
+      "id": 166,
+      "name": "Cryo: frost over the bench",
+      "particles": {
+        "effect": "Effects/frost_glitter.effect.json"
+      },
+      "transform": {
+        "translation": [
+          178.0,
+          1.2,
+          -60.8
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.9,
+          0.95,
+          1.0
+        ],
+        "density": 0.45,
+        "edge": 0.15,
+        "falloff_height": 0.2,
+        "noise": 0.8,
+        "noise_frequency": 0.6,
+        "noise_velocity": [
+          0.1,
+          0.0,
+          0.15
+        ]
+      },
+      "id": 167,
+      "name": "Cryo: cold layer",
+      "transform": {
+        "scale": [
+          14.0,
+          0.6,
+          14.0
+        ],
+        "translation": [
+          180.0,
+          0.3,
+          -60.0
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.85,
+          0.92,
+          1.0
+        ],
+        "density": 0.01,
+        "edge": 0.3,
+        "noise": 0.5,
+        "noise_frequency": 0.6,
+        "noise_velocity": [
+          0.05,
+          0.0,
+          0.02
+        ]
+      },
+      "id": 168,
+      "name": "Cryo: cold air",
+      "transform": {
+        "scale": [
+          14.0,
+          5.0,
+          14.0
+        ],
+        "translation": [
+          180.0,
+          2.5,
+          -60.0
+        ]
+      }
+    },
+    {
+      "id": 169,
+      "model": "Showcase/mounted_fluorescent_lights/mounted_fluorescent_lights.gltf",
+      "name": "Cryo: mounted fluorescent lights",
+      "transform": {
+        "translation": [
+          177.0,
+          4.95,
+          -59.0
+        ]
+      }
+    },
+    {
+      "id": 170,
+      "light": {
+        "color": [
+          0.8,
+          0.92,
+          1.0
+        ],
+        "inner_angle": 50,
+        "intensity": 200.0,
+        "outer_angle": 75,
+        "radius": 0.05,
+        "range": 10.0,
+        "type": "spot"
+      },
+      "name": "Cryo: tube",
+      "transform": {
+        "rotation": [
+          -0.7071068,
+          0.0,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          177.0,
+          4.85,
+          -59.0
+        ]
+      }
+    },
+    {
+      "id": 171,
+      "model": "Showcase/mounted_fluorescent_lights/mounted_fluorescent_lights.gltf",
+      "name": "Cryo: mounted fluorescent lights",
+      "transform": {
+        "translation": [
+          183.0,
+          4.95,
+          -59.0
+        ]
+      }
+    },
+    {
+      "id": 172,
+      "light": {
+        "color": [
+          0.8,
+          0.92,
+          1.0
+        ],
+        "inner_angle": 50,
+        "intensity": 200.0,
+        "outer_angle": 75,
+        "radius": 0.05,
+        "range": 10.0,
+        "type": "spot"
+      },
+      "name": "Cryo: tube",
+      "transform": {
+        "rotation": [
+          -0.7071068,
+          0.0,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          183.0,
+          4.85,
+          -59.0
+        ]
+      }
+    },
+    {
+      "id": 173,
+      "light": {
+        "color": [
+          0.7,
+          0.9,
+          1.0
+        ],
+        "inner_angle": 25,
+        "intensity": 700.0,
+        "outer_angle": 45,
+        "radius": 0.1,
+        "range": 14.0,
+        "type": "spot"
+      },
+      "name": "Cryo: backlight on the bench",
+      "transform": {
+        "rotation": [
+          -0.9467376,
+          0.0,
+          0.0,
+          0.3220062
+        ],
+        "translation": [
+          178.0,
+          4.8,
+          -66.6
+        ]
+      }
+    },
+    {
+      "id": 174,
+      "light": {
+        "color": [
+          0.7,
+          0.9,
+          1.0
+        ],
+        "inner_angle": 25,
+        "intensity": 500.0,
+        "outer_angle": 45,
+        "radius": 0.1,
+        "range": 14.0,
+        "type": "spot"
+      },
+      "name": "Cryo: light on the jet",
+      "transform": {
+        "rotation": [
+          -0.3582307,
+          0.2149384,
+          0.0,
+          0.908555
+        ],
+        "translation": [
+          184.5,
+          4.8,
+          -62.0
+        ]
+      }
+    },
+    {
+      "id": 175,
+      "model": "Showcase/metal_tool_chest/metal_tool_chest.gltf",
+      "name": "Cryo: metal tool chest",
+      "transform": {
+        "rotation": [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        "translation": [
+          184.5,
+          0.0,
+          -55.5
+        ]
+      }
+    },
+    {
+      "id": 176,
+      "model": "Showcase/plastic_crate_01/plastic_crate_01.gltf",
+      "name": "Cryo: plastic crate 01",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.1736482,
+          0.0,
+          0.9848078
+        ],
+        "translation": [
+          174.5,
+          0.0,
+          -57.0
+        ]
+      }
+    },
+    {
+      "id": 177,
+      "name": "Cryo: sound",
+      "sound": {
+        "clip": "Sounds/Ambience/cryo.wav",
+        "max_distance": 15.0,
+        "min_distance": 2.0,
+        "volume": 1.0
+      },
+      "transform": {
+        "translation": [
+          181.5,
+          1.0,
+          -65.5
+        ]
+      }
+    },
+    {
+      "id": 178,
+      "name": "Water: burst pipe",
+      "particles": {
+        "effect": "Effects/pipe_spray.effect.json"
+      },
+      "transform": {
+        "rotation": [
+          0.4914348,
+          0.0,
+          -0.7371522,
+          0.4637872
+        ],
+        "translation": [
+          1.2,
+          4.6,
+          -122.85
+        ]
+      }
+    },
+    {
+      "id": 179,
+      "name": "Water: drip -3.0",
+      "particles": {
+        "effect": "Effects/drip.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -3.0,
+          4.58,
+          -121.4
+        ]
+      }
+    },
+    {
+      "id": 180,
+      "name": "Water: drip -1.0",
+      "particles": {
+        "effect": "Effects/drip.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -1.0,
+          4.58,
+          -121.35
+        ]
+      }
+    },
+    {
+      "id": 181,
+      "name": "Water: drip 3.5",
+      "particles": {
+        "effect": "Effects/drip.effect.json"
+      },
+      "transform": {
+        "translation": [
+          3.5,
+          4.58,
+          -122.9
+        ]
+      }
+    },
+    {
+      "id": 182,
+      "name": "Water: drip 5.0",
+      "particles": {
+        "effect": "Effects/drip.effect.json"
+      },
+      "transform": {
+        "translation": [
+          5.0,
+          4.58,
+          -121.4
+        ]
+      }
+    },
+    {
+      "id": 183,
+      "name": "Water: drip -4.5",
+      "particles": {
+        "effect": "Effects/drip.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -4.5,
+          4.58,
+          -122.9
+        ]
+      }
+    },
+    {
+      "id": 184,
+      "name": "Water: bubbles",
+      "particles": {
+        "effect": "Effects/bubbles.effect.json"
+      },
+      "transform": {
+        "translation": [
+          -1.8,
+          0.03,
+          -118.2
+        ]
+      }
+    },
+    {
+      "id": 185,
+      "name": "Water: wet",
+      "transform": {
+        "scale": [
+          14.0,
+          4.0,
+          14.0
+        ],
+        "translation": [
+          0.0,
+          2.0,
+          -120.0
+        ]
+      },
+      "wet": {
+        "puddle_height": 1.5,
+        "puddles": 0.9,
+        "rain": 0,
+        "streaks": 0.8,
+        "wetness": 1.0
+      }
+    },
+    {
+      "id": 186,
+      "model": "Showcase/WetFloorSign_01/WetFloorSign_01.gltf",
+      "name": "Water: WetFloorSign 01",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.258819,
+          0.0,
+          0.9659258
+        ],
+        "translation": [
+          2.5,
+          0.0,
+          -117.5
+        ]
+      }
+    },
+    {
+      "id": 187,
+      "model": "Showcase/portable_generator/portable_generator.gltf",
+      "name": "Water: portable generator",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.1736482,
+          0.0,
+          0.9848078
+        ],
+        "translation": [
+          -5.0,
+          0.0,
+          -125.0
+        ]
+      }
+    },
+    {
+      "id": 188,
+      "model": "Showcase/utility_box_02/utility_box_02.gltf",
+      "name": "Water: utility box 02",
+      "transform": {
+        "translation": [
+          3.0,
+          0.0,
+          -126.6
+        ]
+      }
+    },
+    {
+      "id": 189,
+      "model": "Showcase/utility_box_01/utility_box_01.gltf",
+      "name": "Water: utility box 01",
+      "transform": {
+        "translation": [
+          4.2,
+          0.0,
+          -126.6
+        ]
+      }
+    },
+    {
+      "id": 190,
+      "model": "Showcase/metal_jerrycan/metal_jerrycan.gltf",
+      "name": "Water: metal jerrycan",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.5735764,
+          0.0,
+          0.819152
+        ],
+        "translation": [
+          -4.4,
+          0.0,
+          -124.2
+        ]
+      }
+    },
+    {
+      "id": 191,
+      "model": "Showcase/Barrel_02/Barrel_02.gltf",
+      "name": "Water: Barrel 02",
+      "transform": {
+        "translation": [
+          5.8,
+          0.0,
+          -115.5
+        ]
+      }
+    },
+    {
+      "id": 192,
+      "name": "Water: caged hanging light",
+      "prefab": "Prefabs/caged_hanging_light.prefab.json",
+      "transform": {
+        "translation": [
+          -5.0,
+          5.5,
+          -125.0
+        ]
+      }
+    },
+    {
+      "id": 193,
+      "light": {
+        "color": [
+          0.3,
+          1.0,
+          0.5
+        ],
+        "intensity": 25.0,
+        "radius": 0.05,
+        "range": 9.0,
+        "type": "point"
+      },
+      "name": "Water: green exit light",
+      "transform": {
+        "translation": [
+          -6.5,
+          2.5,
+          -114.5
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.8,
+          0.82,
+          0.85
+        ],
+        "density": 0.01,
+        "edge": 0.3,
+        "noise": 0.5,
+        "noise_frequency": 0.6,
+        "noise_velocity": [
+          0.05,
+          0.0,
+          0.02
+        ]
+      },
+      "id": 194,
+      "name": "Water: damp air",
+      "transform": {
+        "scale": [
+          14.0,
+          5.5,
+          14.0
+        ],
+        "translation": [
+          0.0,
+          2.75,
+          -120.0
+        ]
+      }
+    },
+    {
+      "id": 195,
+      "light": {
+        "color": [
+          0.9,
+          0.95,
+          1.0
+        ],
+        "inner_angle": 25,
+        "intensity": 500.0,
+        "outer_angle": 45,
+        "radius": 0.1,
+        "range": 16.0,
+        "type": "spot"
+      },
+      "name": "Water: light across the puddles",
+      "transform": {
+        "rotation": [
+          -0.0712151,
+          0.5934595,
+          0.0,
+          0.8017071
+        ],
+        "translation": [
+          6.5,
+          1.2,
+          -118.0
+        ]
+      }
+    },
+    {
+      "id": 196,
+      "light": {
+        "color": [
+          0.8,
+          0.9,
+          1.0
+        ],
+        "inner_angle": 20,
+        "intensity": 1200.0,
+        "outer_angle": 38,
+        "radius": 0.1,
+        "range": 14.0,
+        "type": "spot"
+      },
+      "name": "Water: light behind the spray",
+      "transform": {
+        "rotation": [
+          -0.4177746,
+          0.8355492,
+          0.0,
+          0.3568221
+        ],
+        "translation": [
+          4.0,
+          4.4,
+          -126.0
+        ]
+      }
+    },
+    {
+      "id": 197,
+      "name": "Water: sound",
+      "sound": {
+        "clip": "Sounds/Ambience/water.wav",
+        "max_distance": 16.0,
+        "min_distance": 2.0,
+        "volume": 1.0
+      },
+      "transform": {
+        "translation": [
+          1.2,
+          3.0,
+          -122.5
+        ]
+      }
+    },
+    {
+      "id": 198,
+      "light": {
+        "animation": {
+          "depth": 0.25,
+          "pattern": "flicker",
+          "rate": 3
+        },
+        "color": [
+          1.0,
+          0.45,
+          0.15
+        ],
+        "intensity": 160.0,
+        "radius": 0.05,
+        "range": 12.0,
+        "type": "point"
+      },
+      "name": "Steam: furnace light",
+      "transform": {
+        "translation": [
+          60.0,
+          0.9,
+          -125.4
+        ]
+      }
+    },
+    {
+      "id": 199,
+      "name": "Steam: furnace smoke",
+      "particles": {
+        "effect": "Effects/smoke_column.effect.json"
+      },
+      "transform": {
+        "translation": [
+          60.0,
+          2.5,
+          -126.2
+        ]
+      }
+    },
+    {
+      "id": 200,
+      "name": "Steam: heat haze",
+      "particles": {
+        "effect": "Effects/heat_haze.effect.json"
+      },
+      "transform": {
+        "translation": [
+          60.0,
+          1.4,
+          -125.8
+        ]
+      }
+    },
+    {
+      "id": 201,
+      "name": "Steam: vent 0",
+      "particles": {
+        "effect": "Effects/steam_vent.effect.json"
+      },
+      "transform": {
+        "translation": [
+          56.0,
+          0.05,
+          -121.0
+        ]
+      }
+    },
+    {
+      "id": 202,
+      "name": "Steam: vent burst 0",
+      "particles": {
+        "burst": {
+          "count": 50,
+          "interval": 2.4
+        },
+        "effect": "Effects/steam_vent.effect.json"
+      },
+      "transform": {
+        "translation": [
+          56.0,
+          0.05,
+          -121.0
+        ]
+      }
+    },
+    {
+      "id": 203,
+      "name": "Steam: vent mist 0",
+      "particles": {
+        "effect": "Effects/pipe_mist.effect.json"
+      },
+      "transform": {
+        "translation": [
+          56.0,
+          0.1,
+          -121.0
+        ]
+      }
+    },
+    {
+      "id": 204,
+      "name": "Steam: vent 1",
+      "particles": {
+        "effect": "Effects/steam_vent.effect.json"
+      },
+      "transform": {
+        "translation": [
+          60.0,
+          0.05,
+          -121.0
+        ]
+      }
+    },
+    {
+      "id": 205,
+      "name": "Steam: vent burst 1",
+      "particles": {
+        "burst": {
+          "count": 50,
+          "interval": 3.0999999999999996
+        },
+        "effect": "Effects/steam_vent.effect.json"
+      },
+      "transform": {
+        "translation": [
+          60.0,
+          0.05,
+          -121.0
+        ]
+      }
+    },
+    {
+      "id": 206,
+      "name": "Steam: vent mist 1",
+      "particles": {
+        "effect": "Effects/pipe_mist.effect.json"
+      },
+      "transform": {
+        "translation": [
+          60.0,
+          0.1,
+          -121.0
+        ]
+      }
+    },
+    {
+      "id": 207,
+      "name": "Steam: vent 2",
+      "particles": {
+        "effect": "Effects/steam_vent.effect.json"
+      },
+      "transform": {
+        "translation": [
+          64.0,
+          0.05,
+          -121.0
+        ]
+      }
+    },
+    {
+      "id": 208,
+      "name": "Steam: vent burst 2",
+      "particles": {
+        "burst": {
+          "count": 50,
+          "interval": 3.8
+        },
+        "effect": "Effects/steam_vent.effect.json"
+      },
+      "transform": {
+        "translation": [
+          64.0,
+          0.05,
+          -121.0
+        ]
+      }
+    },
+    {
+      "id": 209,
+      "name": "Steam: vent mist 2",
+      "particles": {
+        "effect": "Effects/pipe_mist.effect.json"
+      },
+      "transform": {
+        "translation": [
+          64.0,
+          0.1,
+          -121.0
+        ]
+      }
+    },
+    {
+      "id": 210,
+      "name": "Steam: leak left",
+      "particles": {
+        "effect": "Effects/smoke_leak.effect.json"
+      },
+      "transform": {
+        "rotation": [
+          0.7071068,
+          0.0,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          56.6,
+          2.8,
+          -124.7
+        ]
+      }
+    },
+    {
+      "id": 211,
+      "name": "Steam: leak on the flue",
+      "particles": {
+        "effect": "Effects/smoke_leak.effect.json"
+      },
+      "transform": {
+        "translation": [
+          65.0,
+          4.5,
+          -125.6
+        ]
+      }
+    },
+    {
+      "id": 212,
+      "name": "Steam: leak above",
+      "particles": {
+        "effect": "Effects/smoke_leak.effect.json"
+      },
+      "transform": {
+        "rotation": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "translation": [
+          62.5,
+          3.2,
+          -117.88
+        ]
+      }
+    },
+    {
+      "id": 213,
+      "model": "Showcase/metal_office_desk/metal_office_desk.gltf",
+      "name": "Steam: metal office desk",
+      "transform": {
+        "rotation": [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        "translation": [
+          65.5,
+          0.0,
+          -115.5
+        ]
+      }
+    },
+    {
+      "id": 214,
+      "model": "Showcase/metal_stool_01/metal_stool_01.gltf",
+      "name": "Steam: metal stool 01",
+      "transform": {
+        "translation": [
+          65.0,
+          0.0,
+          -116.6
+        ]
+      }
+    },
+    {
+      "id": 215,
+      "name": "Steam: cigarette smoke",
+      "particles": {
+        "effect": "Effects/cigarette_smoke.effect.json"
+      },
+      "transform": {
+        "translation": [
+          65.2,
+          0.8,
+          -115.4
+        ]
+      }
+    },
+    {
+      "id": 216,
+      "model": "Showcase/tool_cart/tool_cart.gltf",
+      "name": "Steam: tool cart",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.5,
+          0.0,
+          0.8660254
+        ],
+        "translation": [
+          54.5,
+          0.0,
+          -116.5
+        ]
+      }
+    },
+    {
+      "id": 217,
+      "model": "Showcase/korean_fire_extinguisher_01/korean_fire_extinguisher_01.gltf",
+      "name": "Steam: korean fire extinguisher 01",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.7071068,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          52.4,
+          0.0,
+          -122.0
+        ]
+      }
+    },
+    {
+      "id": 218,
+      "name": "Steam: caged hanging light",
+      "prefab": "Prefabs/caged_hanging_light.prefab.json",
+      "transform": {
+        "translation": [
+          57.0,
+          6.0,
+          -116.5
+        ]
+      }
+    },
+    {
+      "id": 219,
+      "light": {
+        "color": [
+          0.85,
+          0.9,
+          1.0
+        ],
+        "inner_angle": 25,
+        "intensity": 500.0,
+        "outer_angle": 45,
+        "radius": 0.05,
+        "range": 14.0,
+        "type": "spot"
+      },
+      "name": "Steam: cool spot",
+      "transform": {
+        "rotation": [
+          -0.4618104,
+          0.0,
+          0.0,
+          0.8869787
+        ],
+        "translation": [
+          60.0,
+          5.9,
+          -118.0
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.9,
+          0.9,
+          0.9
+        ],
+        "density": 0.04,
+        "edge": 0.3,
+        "noise": 0.5,
+        "noise_frequency": 0.6,
+        "noise_velocity": [
+          0.05,
+          0.0,
+          0.02
+        ]
+      },
+      "id": 220,
+      "name": "Steam: steamy air",
+      "transform": {
+        "scale": [
+          16.0,
+          6.0,
+          14.0
+        ],
+        "translation": [
+          60.0,
+          3.0,
+          -120.0
+        ]
+      }
+    },
+    {
+      "id": 221,
+      "name": "Steam: sound",
+      "sound": {
+        "clip": "Sounds/Ambience/steam.wav",
+        "max_distance": 16.0,
+        "min_distance": 2.0,
+        "volume": 1.0
+      },
+      "transform": {
+        "translation": [
+          60.0,
+          1.0,
+          -121.0
+        ]
+      }
+    },
+    {
+      "id": 222,
+      "model": "Showcase/trashbag/trashbag.gltf",
+      "name": "Creatures: body bag",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.7071068,
+          0.0,
+          0.7071068
+        ],
+        "scale": [
+          1.0,
+          0.45,
+          3.0
+        ],
+        "translation": [
+          122.2,
+          0.85,
+          -122.6
+        ]
+      }
+    },
+    {
+      "id": 223,
+      "name": "Creatures: flies swarm",
+      "particles": {
+        "effect": "Effects/flies_swarm.effect.json"
+      },
+      "transform": {
+        "translation": [
+          122.2,
+          1.3,
+          -122.6
+        ]
+      }
+    },
+    {
+      "attractor": {
+        "effect": "Effects/flies_swarm.effect.json",
+        "radius": 1.2,
+        "strength": 3,
+        "vortex": 2
+      },
+      "id": 224,
+      "name": "Creatures: flies' pull",
+      "transform": {
+        "translation": [
+          122.2,
+          1.2,
+          -122.6
+        ]
+      }
+    },
+    {
+      "decal": {
+        "roughness": 0.3,
+        "texture": "Decals/blood_splatter.png"
+      },
+      "id": 225,
+      "name": "Creatures: decal",
+      "transform": {
+        "rotation": [
+          -0.6830127,
+          0.1830127,
+          0.1830127,
+          0.6830127
+        ],
+        "scale": [
+          1.6,
+          1.6,
+          0.6
+        ],
+        "translation": [
+          122.0,
+          0.0,
+          -121.6
+        ]
+      }
+    },
+    {
+      "decal": {
+        "roughness": 0.8,
+        "texture": "Decals/blood_drips.png"
+      },
+      "id": 226,
+      "name": "Creatures: decal",
+      "transform": {
+        "rotation": [
+          -0.7071068,
+          0.0,
+          0.0,
+          0.7071068
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          0.6
+        ],
+        "translation": [
+          122.3,
+          0.0,
+          -122.6
+        ]
+      }
+    },
+    {
+      "id": 227,
+      "name": "Creatures: flies",
+      "transform": {
+        "translation": [
+          122.2,
+          1.3,
+          -122.6
+        ]
+      }
+    },
+    {
+      "id": 228,
+      "name": "Creatures: hanging industrial lamp",
+      "prefab": "Prefabs/hanging_industrial_lamp.prefab.json",
+      "transform": {
+        "translation": [
+          118.5,
+          3.9,
+          -119.5
+        ]
+      }
+    },
+    {
+      "id": 229,
+      "name": "Creatures: moths swarm",
+      "particles": {
+        "effect": "Effects/moths_swarm.effect.json"
+      },
+      "transform": {
+        "translation": [
+          118.5,
+          2.6,
+          -119.5
+        ]
+      }
+    },
+    {
+      "attractor": {
+        "effect": "Effects/moths_swarm.effect.json",
+        "radius": 1.0,
+        "strength": 2,
+        "vortex": 4
+      },
+      "id": 230,
+      "name": "Creatures: moths' pull",
+      "transform": {
+        "translation": [
+          118.5,
+          2.7,
+          -119.5
+        ]
+      }
+    },
+    {
+      "id": 231,
+      "light": {
+        "color": [
+          1.0,
+          0.9,
+          0.75
+        ],
+        "inner_angle": 20,
+        "intensity": 600.0,
+        "outer_angle": 38,
+        "radius": 0.1,
+        "range": 10.0,
+        "type": "spot"
+      },
+      "name": "Creatures: light on the slab",
+      "transform": {
+        "rotation": [
+          -0.5257311,
+          0.0,
+          0.0,
+          0.8506508
+        ],
+        "translation": [
+          122.2,
+          4.9,
+          -120.5
+        ]
+      }
+    },
+    {
+      "id": 232,
+      "name": "Creatures: moths",
+      "transform": {
+        "translation": [
+          118.5,
+          2.6,
+          -119.5
+        ]
+      }
+    },
+    {
+      "id": 233,
+      "model": "Showcase/trashbag/trashbag.gltf",
+      "name": "Creatures: trashbag",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.1736482,
+          0.0,
+          0.9848078
+        ],
+        "translation": [
+          125.5,
+          0.0,
+          -115.0
+        ]
+      }
+    },
+    {
+      "id": 234,
+      "model": "Showcase/trashbag/trashbag.gltf",
+      "name": "Creatures: trashbag",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.6427876,
+          0.0,
+          0.7660444
+        ],
+        "translation": [
+          126.0,
+          0.0,
+          -115.7
+        ]
+      }
+    },
+    {
+      "decal": {
+        "roughness": 0.8,
+        "texture": "Decals/mold.png"
+      },
+      "id": 235,
+      "name": "Creatures: decal",
+      "transform": {
+        "rotation": [
+          -0.7071068,
+          0.0,
+          0.0,
+          0.7071068
+        ],
+        "scale": [
+          3.0,
+          3.0,
+          0.6
+        ],
+        "translation": [
+          125.5,
+          0.0,
+          -115.2
+        ]
+      }
+    },
+    {
+      "id": 236,
+      "name": "Creatures: spores",
+      "particles": {
+        "effect": "Effects/spores.effect.json"
+      },
+      "transform": {
+        "translation": [
+          125.5,
+          0.8,
+          -115.2
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.5,
+          1.0,
+          0.4
+        ],
+        "density": 0.4,
+        "edge": 0.6,
+        "falloff_height": 0.6,
+        "glow": [
+          0.08,
+          0.5,
+          0.1
+        ],
+        "noise": 0.5,
+        "noise_frequency": 0.6,
+        "noise_velocity": [
+          0.05,
+          0.0,
+          0.02
+        ]
+      },
+      "id": 237,
+      "name": "Creatures: rot",
+      "transform": {
+        "scale": [
+          2.6,
+          1.6,
+          2.6
+        ],
+        "translation": [
+          125.5,
+          0.8,
+          -115.2
+        ]
+      }
+    },
+    {
+      "id": 238,
+      "light": {
+        "color": [
+          0.4,
+          1.0,
+          0.3
+        ],
+        "intensity": 8.0,
+        "radius": 0.05,
+        "range": 5.0,
+        "type": "point"
+      },
+      "name": "Creatures: rot glow",
+      "transform": {
+        "translation": [
+          125.5,
+          1.0,
+          -115.2
+        ]
+      }
+    },
+    {
+      "id": 239,
+      "name": "Creatures: wisp",
+      "ribbon": {
+        "effect": "Effects/wisp.ribbon.json"
+      },
+      "transform": {
+        "translation": [
+          116.0,
+          1.5,
+          -116.0
+        ]
+      }
+    },
+    {
+      "id": 240,
+      "model": "Showcase/metal_tool_chest/metal_tool_chest.gltf",
+      "name": "Creatures: metal tool chest",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.7071068,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          114.2,
+          0.0,
+          -117.0
+        ]
+      }
+    },
+    {
+      "id": 241,
+      "model": "Showcase/hand_truck/hand_truck.gltf",
+      "name": "Creatures: hand truck",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.9848078,
+          0.0,
+          -0.1736482
+        ],
+        "translation": [
+          124.5,
+          0.0,
+          -125.5
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.8,
+          0.82,
+          0.85
+        ],
+        "density": 0.012,
+        "edge": 0.3,
+        "noise": 0.5,
+        "noise_frequency": 0.6,
+        "noise_velocity": [
+          0.05,
+          0.0,
+          0.02
+        ]
+      },
+      "id": 242,
+      "name": "Creatures: stale air",
+      "transform": {
+        "scale": [
+          14.0,
+          5.0,
+          14.0
+        ],
+        "translation": [
+          120.0,
+          2.5,
+          -120.0
+        ]
+      }
+    },
+    {
+      "id": 243,
+      "name": "Creatures: sound",
+      "sound": {
+        "clip": "Sounds/Ambience/flies.wav",
+        "max_distance": 10.0,
+        "min_distance": 1.0,
+        "volume": 1.0
+      },
+      "transform": {
+        "translation": [
+          122.2,
+          1.3,
+          -122.6
+        ]
+      }
+    },
+    {
+      "id": 244,
+      "model": "Showcase/barrel_03/barrel_03.gltf",
+      "name": "Impacts: barrel 03",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.1736482,
+          0.0,
+          0.9848078
+        ],
+        "translation": [
+          186.4,
+          0.0,
+          -128.3
+        ]
+      }
+    },
+    {
+      "id": 245,
+      "model": "Showcase/Barrel_01/Barrel_01.gltf",
+      "name": "Impacts: Barrel 01",
+      "transform": {
+        "translation": [
+          186.2,
+          0.93,
+          -128.35
+        ]
+      }
+    },
+    {
+      "id": 246,
+      "light": {
+        "color": [
+          1.0,
+          0.95,
+          0.85
+        ],
+        "inner_angle": 18,
+        "intensity": 450.0,
+        "outer_angle": 32,
+        "radius": 0.05,
+        "range": 10.0,
+        "type": "spot"
+      },
+      "name": "Impacts: target lamp -5.25",
+      "transform": {
+        "rotation": [
+          -0.4068386,
+          0.0,
+          0.0,
+          0.9135001
+        ],
+        "translation": [
+          174.75,
+          4.9,
+          -125.5
+        ]
+      }
+    },
+    {
+      "id": 247,
+      "light": {
+        "color": [
+          1.0,
+          0.95,
+          0.85
+        ],
+        "inner_angle": 18,
+        "intensity": 450.0,
+        "outer_angle": 32,
+        "radius": 0.05,
+        "range": 10.0,
+        "type": "spot"
+      },
+      "name": "Impacts: target lamp -2.05",
+      "transform": {
+        "rotation": [
+          -0.4068386,
+          0.0,
+          0.0,
+          0.9135001
+        ],
+        "translation": [
+          177.95,
+          4.9,
+          -125.5
+        ]
+      }
+    },
+    {
+      "id": 248,
+      "light": {
+        "color": [
+          1.0,
+          0.95,
+          0.85
+        ],
+        "inner_angle": 18,
+        "intensity": 450.0,
+        "outer_angle": 32,
+        "radius": 0.05,
+        "range": 10.0,
+        "type": "spot"
+      },
+      "name": "Impacts: target lamp 1.2",
+      "transform": {
+        "rotation": [
+          -0.4068386,
+          0.0,
+          0.0,
+          0.9135001
+        ],
+        "translation": [
+          181.2,
+          4.9,
+          -125.5
+        ]
+      }
+    },
+    {
+      "id": 249,
+      "light": {
+        "color": [
+          1.0,
+          0.95,
+          0.85
+        ],
+        "inner_angle": 18,
+        "intensity": 450.0,
+        "outer_angle": 32,
+        "radius": 0.05,
+        "range": 10.0,
+        "type": "spot"
+      },
+      "name": "Impacts: target lamp 4.3",
+      "transform": {
+        "rotation": [
+          -0.4068386,
+          0.0,
+          0.0,
+          0.9135001
+        ],
+        "translation": [
+          184.3,
+          4.9,
+          -125.5
+        ]
+      }
+    },
+    {
+      "id": 250,
+      "light": {
+        "color": [
+          1.0,
+          0.95,
+          0.85
+        ],
+        "inner_angle": 18,
+        "intensity": 450.0,
+        "outer_angle": 32,
+        "radius": 0.05,
+        "range": 10.0,
+        "type": "spot"
+      },
+      "name": "Impacts: target lamp 6.4",
+      "transform": {
+        "rotation": [
+          -0.4068386,
+          0.0,
+          0.0,
+          0.9135001
+        ],
+        "translation": [
+          186.4,
+          4.9,
+          -125.5
+        ]
+      }
+    },
+    {
+      "id": 251,
+      "name": "Impacts: muzzle",
+      "transform": {
+        "translation": [
+          180.0,
+          1.45,
+          -115.4
+        ]
+      }
+    },
+    {
+      "id": 252,
+      "name": "Impacts: ejector",
+      "transform": {
+        "rotation": [
+          0.0857979,
+          0.0,
+          -0.4289895,
+          0.8992256
+        ],
+        "translation": [
+          180.1,
+          1.5,
+          -115.1
+        ]
+      }
+    },
+    {
+      "id": 253,
+      "model": "Showcase/metal_toolbox/metal_toolbox.gltf",
+      "name": "Impacts: metal toolbox",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0871557,
+          0.0,
+          0.9961947
+        ],
+        "translation": [
+          182.2,
+          1.0,
+          -114.7
+        ]
+      }
+    },
+    {
+      "id": 254,
+      "model": "Showcase/metal_stool_01/metal_stool_01.gltf",
+      "name": "Impacts: metal stool 01",
+      "transform": {
+        "translation": [
+          178.5,
+          0.0,
+          -113.6
+        ]
+      }
+    },
+    {
+      "fog": {
+        "albedo": [
+          0.8,
+          0.82,
+          0.85
+        ],
+        "density": 0.035,
+        "edge": 0.3,
+        "noise": 0.5,
+        "noise_frequency": 0.6,
+        "noise_velocity": [
+          0.05,
+          0.0,
+          0.02
+        ]
+      },
+      "id": 255,
+      "name": "Impacts: gun smoke haze",
+      "transform": {
+        "scale": [
+          14.0,
+          5.0,
+          14.0
+        ],
+        "translation": [
+          180.0,
+          2.5,
+          -122.0
+        ]
+      }
+    },
+    {
+      "id": 256,
+      "light": {
+        "color": [
+          0.6,
+          0.7,
+          1.0
+        ],
+        "intensity": 30.0,
+        "radius": 0.05,
+        "range": 10.0,
+        "type": "point"
+      },
+      "name": "Impacts: cold fill",
+      "transform": {
+        "translation": [
+          180.0,
+          4.5,
+          -114.0
+        ]
+      }
+    },
+    {
+      "id": 257,
+      "light": {
+        "color": [
+          0.9,
+          0.9,
+          1.0
+        ],
+        "intensity": 40.0,
+        "radius": 0.05,
+        "range": 10.0,
+        "type": "point"
+      },
+      "name": "Impacts: lane light",
+      "transform": {
+        "translation": [
+          180.0,
+          4.5,
+          -122.0
+        ]
+      }
+    },
+    {
+      "id": 258,
+      "name": "Impacts: concrete hit",
+      "transform": {
+        "rotation": [
+          0.7071068,
+          0.0,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          174.75,
+          1.6,
+          -128.4
+        ]
+      }
+    },
+    {
+      "id": 259,
+      "name": "Impacts: aim at concrete",
+      "transform": {
+        "rotation": [
+          -0.6521423,
+          0.0,
+          0.2633652,
+          0.7108792
+        ],
+        "translation": [
+          180.0,
+          1.45,
+          -115.4
+        ]
+      }
+    },
+    {
+      "id": 260,
+      "name": "Impacts: metal hit",
+      "transform": {
+        "rotation": [
+          0.7071068,
+          0.0,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          177.95,
+          1.6,
+          -128.7
+        ]
+      }
+    },
+    {
+      "id": 261,
+      "name": "Impacts: aim at metal",
+      "transform": {
+        "rotation": [
+          -0.6949483,
+          0.0,
+          0.1071161,
+          0.7110365
+        ],
+        "translation": [
+          180.0,
+          1.45,
+          -115.4
+        ]
+      }
+    },
+    {
+      "id": 262,
+      "name": "Impacts: wood hit",
+      "transform": {
+        "rotation": [
+          0.7071068,
+          0.0,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          181.2,
+          1.3,
+          -128.2
+        ]
+      }
+    },
+    {
+      "id": 263,
+      "name": "Impacts: aim at wood",
+      "transform": {
+        "rotation": [
+          -0.7081146,
+          0.0,
+          -0.0663857,
+          0.7029698
+        ],
+        "translation": [
+          180.0,
+          1.45,
+          -115.4
+        ]
+      }
+    },
+    {
+      "id": 264,
+      "name": "Impacts: glass hit",
+      "transform": {
+        "rotation": [
+          0.7071068,
+          0.0,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          184.3,
+          1.6,
+          -128.56
+        ]
+      }
+    },
+    {
+      "id": 265,
+      "name": "Impacts: aim at glass",
+      "transform": {
+        "rotation": [
+          -0.6684857,
+          0.0,
+          -0.2184262,
+          0.7109268
+        ],
+        "translation": [
+          180.0,
+          1.45,
+          -115.4
+        ]
+      }
+    },
+    {
+      "id": 266,
+      "name": "Impacts: drum hit",
+      "transform": {
+        "rotation": [
+          0.7071068,
+          0.0,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          186.4,
+          0.6,
+          -127.96
+        ]
+      }
+    },
+    {
+      "id": 267,
+      "name": "Impacts: aim at drum",
+      "transform": {
+        "rotation": [
+          -0.6487128,
+          0.0,
+          -0.3305543,
+          0.6854965
+        ],
+        "translation": [
+          180.0,
+          1.45,
+          -115.4
+        ]
+      }
+    }
+  ],
+  "environment": {
+    "exposure": {
+      "auto": true,
+      "ev100": 3.0,
+      "max": 2.5,
+      "min": 0.5
+    },
+    "fog": {
+      "albedo": [
+        0.8,
+        0.82,
+        0.85
+      ],
+      "anisotropy": 0.3
+    },
+    "sky": {
+      "faces": "Sky/sky1",
+      "intensity": 9.6,
+      "yaw": 180.0
+    }
+  },
+  "format": "daidalos-level",
+  "version": 1
+}

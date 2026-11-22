@@ -5,6 +5,9 @@
 #include "Game.hpp"
 
 #include <daidalos/app/Application.hpp>
+#if DAI_DEV_TOOLS
+#include <daidalos/app/DevTools.hpp>
+#endif
 #include <daidalos/ecs/Transform.hpp>
 #include <daidalos/platform/Platform.hpp>
 #include <daidalos/renderer/CornellBox.hpp>
@@ -134,6 +137,13 @@ public:
                                    "Start in the level with the legacy demo's flight over the whole factory "
                                    "(ADR-0120), without the menu; any menu key skips it")
                      .Get();
+        m_startSequence = app.CVars()
+                              .Obtain<std::string>(
+                                  "sandbox.sequence", "",
+                                  "A sequence under assets/ to play at the start instead of the menu, as "
+                                  "Factory/Sequences/effects_tour.sequence.json in Factory/EffectsGallery.level.json "
+                                  "(ADR-0122); any menu key skips its camera")
+                              .Get();
         m_showcase = app.CVars()
                          .Obtain<bool>("sandbox.showcase", false,
                                        "Put the effects of mesh particles and ribbons in front of the start")
@@ -376,7 +386,20 @@ private:
             OpenScreen(app, sandbox::Screen::None);
         } else {
             // The first level waits behind the main menu, and the first start begins with the brightness.
-            if (m_tour) {
+            if (!m_startSequence.empty() && !m_tour) {
+                // A sequence of its own instead of the menu and the opening (ADR-0122), at the level's darkness,
+                // filmed: without the developer tools' frame summary.
+                OpenScreen(app, sandbox::Screen::None);
+#if DAI_DEV_TOOLS
+                if (app::DevTools* tools = app.Tools()) {
+                    tools->SetSummaryShown(false);
+                }
+#endif
+                m_openingPlayed = true;
+                if (const core::Result<void> played = target.PlaySequenceFile(m_startSequence); !played) {
+                    DAI_LOG_WARNING("sandbox", "sandbox.sequence: {}", core::Format(played.error()));
+                }
+            } else if (m_tour) {
                 // The tour stands in for the menu and the opening: it ends at the player's eyes.
                 OpenScreen(app, sandbox::Screen::None);
                 m_openingPlayed = true;
@@ -712,6 +735,12 @@ private:
             (m_screen == sandbox::Screen::None || m_screen == sandbox::Screen::Dead)) {
             sandbox::DrawHud(canvas, m_hud, *player);
         }
+        // A fade cue covers the scene (ADR-0122), under the menus.
+        if (const scene::Scene* scene = app.CurrentScene(); scene != nullptr) {
+            if (const glm::vec4 fade = scene->Fade(); fade.a > 0.0f) {
+                canvas.FillRect({{0.0f, 0.0f}, canvas.Size()}, fade);
+            }
+        }
         if (scene::Scene* scene = app.CurrentScene(); scene != nullptr && m_screen == sandbox::Screen::None) {
             const ecs::Entity camera = scene->ActiveCamera();
             const ecs::WorldTransform* eye =
@@ -843,6 +872,8 @@ private:
     /// The legacy demo's flight over the whole factory (ADR-0120), instead of the menu: sandbox.tour.
     static constexpr std::string_view kTourSequence = "Factory/Sequences/tour.sequence.json";
     bool m_tour = false;
+    /// sandbox.sequence: a sequence played at the start instead of the menu (ADR-0122).
+    std::string m_startSequence;
     bool m_tourPlaying = false;
     float m_tourDarkness = 0.5f;
     /// The darkness the level is played at (sandbox.darkness), which the tour lightens while it flies.

@@ -1,0 +1,52 @@
+{
+    "comment": "A bolt that strikes between coils indoors (ADR-0122): lightning's shape, a room's size, and a blue flash.",
+    "texture": "ribbon_glow.png",
+    "shape": "bolt",
+    "generations": 6,
+    "displacement": 0.15,
+    "branches": 0.35,
+    "refresh": 0.06,
+    "flicker": 0.4,
+    "color": [
+        [
+            0,
+            [
+                6,
+                7,
+                12,
+                1
+            ]
+        ],
+        [
+            1,
+            [
+                5,
+                6,
+                10,
+                1
+            ]
+        ]
+    ],
+    "width": [
+        [
+            0,
+            0.12
+        ],
+        [
+            1,
+            0.05
+        ]
+    ],
+    "length": 6,
+    "light": {
+        "color": [
+            0.7,
+            0.8,
+            1
+        ],
+        "intensity": 300,
+        "range": 16,
+        "radius": 0.3,
+        "fade": 0.12
+    }
+}

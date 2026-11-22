@@ -1,0 +1,2628 @@
+{
+ "comment": "The effects gallery's tour (ADR-0122): a shot of each room, fading through black between them, made by scripts/make_effects_gallery.py; changes belong there. +sandbox.sequence plays it at the start.",
+ "cues": [
+  {
+   "at": 0,
+   "fade": {
+    "to": 1,
+    "seconds": 0
+   }
+  },
+  {
+   "at": 0,
+   "mix": {
+    "music": 0,
+    "effects": 1,
+    "ambience": 1,
+    "interface": 1,
+    "lowpass": 20000,
+    "seconds": 0
+   }
+  },
+  {
+   "at": 0.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       -3.6,
+       1.0,
+       6.3
+      ],
+      "target": [
+       0.0,
+       0.9,
+       -3.4
+      ],
+      "aperture": 2.0,
+      "focus": 10.35
+     },
+     {
+      "at": 9.0,
+      "position": [
+       -1.8,
+       0.8,
+       1.6
+      ],
+      "target": [
+       0.0,
+       0.8,
+       -3.4
+      ],
+      "aperture": 2.0,
+      "focus": 5.31
+     },
+     {
+      "at": 17.5,
+      "position": [
+       2.0,
+       1.5,
+       0.0
+      ],
+      "target": [
+       0.0,
+       1.0,
+       -3.6
+      ],
+      "aperture": 2.0,
+      "focus": 4.15
+     }
+    ]
+   }
+  },
+  {
+   "at": 1.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 16.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 17.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       64.5,
+       1.5,
+       3.8
+      ],
+      "target": [
+       59.5,
+       1.8,
+       -4.5
+      ],
+      "aperture": 0.0,
+      "focus": 9.69
+     },
+     {
+      "at": 19.5,
+      "position": [
+       60.5,
+       1.3,
+       4.6
+      ],
+      "target": [
+       60.0,
+       2.0,
+       -4.8
+      ],
+      "aperture": 0.0,
+      "focus": 9.44
+     }
+    ]
+   }
+  },
+  {
+   "at": 18.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 20.2,
+   "particles": {
+    "effect": "Factory/Effects/explosion_flare.effect.json",
+    "entity": "Explosion: blast A",
+    "count": 1
+   }
+  },
+  {
+   "at": 20.2,
+   "particles": {
+    "effect": "Factory/Effects/explosion_fireball.effect.json",
+    "entity": "Explosion: blast A",
+    "count": 9
+   }
+  },
+  {
+   "at": 20.2,
+   "sound": {
+    "clip": "Factory/Sounds/Ambience/explosion.wav",
+    "volume": 1.0,
+    "entity": "Explosion: blast A"
+   }
+  },
+  {
+   "at": 20.2,
+   "shake": {
+    "strength": 0.7,
+    "seconds": 1.4
+   }
+  },
+  {
+   "at": 20.22,
+   "particles": {
+    "effect": "Factory/Effects/explosion_sparks.effect.json",
+    "entity": "Explosion: blast A",
+    "count": 160
+   }
+  },
+  {
+   "at": 20.22,
+   "particles": {
+    "effect": "Factory/Effects/explosion_debris.effect.json",
+    "entity": "Explosion: blast A",
+    "count": 24
+   }
+  },
+  {
+   "at": 20.25,
+   "particles": {
+    "effect": "Factory/Effects/explosion_shock.effect.json",
+    "entity": "Explosion: blast A",
+    "count": 70
+   }
+  },
+  {
+   "at": 20.35,
+   "particles": {
+    "effect": "Factory/Effects/explosion_smoke.effect.json",
+    "entity": "Explosion: blast A",
+    "count": 14
+   }
+  },
+  {
+   "at": 25.2,
+   "particles": {
+    "effect": "Factory/Effects/explosion_flare.effect.json",
+    "entity": "Explosion: blast B",
+    "count": 1
+   }
+  },
+  {
+   "at": 25.2,
+   "particles": {
+    "effect": "Factory/Effects/explosion_fireball.effect.json",
+    "entity": "Explosion: blast B",
+    "count": 9
+   }
+  },
+  {
+   "at": 25.2,
+   "sound": {
+    "clip": "Factory/Sounds/Ambience/explosion.wav",
+    "volume": 1.0,
+    "entity": "Explosion: blast B"
+   }
+  },
+  {
+   "at": 25.2,
+   "shake": {
+    "strength": 0.6,
+    "seconds": 1.4
+   }
+  },
+  {
+   "at": 25.22,
+   "particles": {
+    "effect": "Factory/Effects/explosion_sparks.effect.json",
+    "entity": "Explosion: blast B",
+    "count": 160
+   }
+  },
+  {
+   "at": 25.22,
+   "particles": {
+    "effect": "Factory/Effects/explosion_debris.effect.json",
+    "entity": "Explosion: blast B",
+    "count": 24
+   }
+  },
+  {
+   "at": 25.25,
+   "particles": {
+    "effect": "Factory/Effects/explosion_shock.effect.json",
+    "entity": "Explosion: blast B",
+    "count": 70
+   }
+  },
+  {
+   "at": 25.35,
+   "particles": {
+    "effect": "Factory/Effects/explosion_smoke.effect.json",
+    "entity": "Explosion: blast B",
+    "count": 14
+   }
+  },
+  {
+   "at": 30.0,
+   "particles": {
+    "effect": "Factory/Effects/explosion_flare.effect.json",
+    "entity": "Explosion: blast C",
+    "count": 1
+   }
+  },
+  {
+   "at": 30.0,
+   "particles": {
+    "effect": "Factory/Effects/explosion_fireball.effect.json",
+    "entity": "Explosion: blast C",
+    "count": 9
+   }
+  },
+  {
+   "at": 30.0,
+   "sound": {
+    "clip": "Factory/Sounds/Ambience/explosion.wav",
+    "volume": 1.0,
+    "entity": "Explosion: blast C"
+   }
+  },
+  {
+   "at": 30.0,
+   "shake": {
+    "strength": 0.9,
+    "seconds": 1.4
+   }
+  },
+  {
+   "at": 30.02,
+   "particles": {
+    "effect": "Factory/Effects/explosion_sparks.effect.json",
+    "entity": "Explosion: blast C",
+    "count": 160
+   }
+  },
+  {
+   "at": 30.02,
+   "particles": {
+    "effect": "Factory/Effects/explosion_debris.effect.json",
+    "entity": "Explosion: blast C",
+    "count": 24
+   }
+  },
+  {
+   "at": 30.05,
+   "particles": {
+    "effect": "Factory/Effects/explosion_shock.effect.json",
+    "entity": "Explosion: blast C",
+    "count": 70
+   }
+  },
+  {
+   "at": 30.15,
+   "particles": {
+    "effect": "Factory/Effects/explosion_smoke.effect.json",
+    "entity": "Explosion: blast C",
+    "count": 14
+   }
+  },
+  {
+   "at": 30.5,
+   "particles": {
+    "effect": "Factory/Effects/explosion_flare.effect.json",
+    "entity": "Explosion: blast A",
+    "count": 1
+   }
+  },
+  {
+   "at": 30.5,
+   "particles": {
+    "effect": "Factory/Effects/explosion_fireball.effect.json",
+    "entity": "Explosion: blast A",
+    "count": 9
+   }
+  },
+  {
+   "at": 30.5,
+   "sound": {
+    "clip": "Factory/Sounds/Ambience/explosion.wav",
+    "volume": 1.0,
+    "entity": "Explosion: blast A"
+   }
+  },
+  {
+   "at": 30.5,
+   "shake": {
+    "strength": 0.5,
+    "seconds": 1.4
+   }
+  },
+  {
+   "at": 30.52,
+   "particles": {
+    "effect": "Factory/Effects/explosion_sparks.effect.json",
+    "entity": "Explosion: blast A",
+    "count": 160
+   }
+  },
+  {
+   "at": 30.52,
+   "particles": {
+    "effect": "Factory/Effects/explosion_debris.effect.json",
+    "entity": "Explosion: blast A",
+    "count": 24
+   }
+  },
+  {
+   "at": 30.55,
+   "particles": {
+    "effect": "Factory/Effects/explosion_shock.effect.json",
+    "entity": "Explosion: blast A",
+    "count": 70
+   }
+  },
+  {
+   "at": 30.65,
+   "particles": {
+    "effect": "Factory/Effects/explosion_smoke.effect.json",
+    "entity": "Explosion: blast A",
+    "count": 14
+   }
+  },
+  {
+   "at": 35.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 36.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       118.8,
+       0.7,
+       4.5
+      ],
+      "target": [
+       120.0,
+       3.2,
+       -3.0
+      ],
+      "aperture": 2.8,
+      "focus": 8.0
+     },
+     {
+      "at": 8.5,
+      "position": [
+       120.8,
+       1.2,
+       1.2
+      ],
+      "target": [
+       120.0,
+       3.2,
+       -3.0
+      ],
+      "aperture": 2.8,
+      "focus": 4.72
+     },
+     {
+      "at": 17.5,
+      "position": [
+       124.5,
+       2.0,
+       2.5
+      ],
+      "target": [
+       121.8,
+       2.4,
+       -2.6
+      ],
+      "aperture": 2.8,
+      "focus": 5.78
+     }
+    ]
+   }
+  },
+  {
+   "at": 37.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 41.5,
+   "particles": {
+    "effect": "Factory/Effects/sparks.effect.json",
+    "entity": "Electricity: box sparks",
+    "count": 90
+   }
+  },
+  {
+   "at": 41.5,
+   "particles": {
+    "effect": "Factory/Effects/explosion_flare.effect.json",
+    "entity": "Electricity: box sparks",
+    "count": 1
+   }
+  },
+  {
+   "at": 41.5,
+   "sound": {
+    "clip": "Factory/Sounds/Ambience/zap.wav",
+    "volume": 1.0,
+    "entity": "Electricity: box sparks"
+   }
+  },
+  {
+   "at": 41.5,
+   "shake": {
+    "strength": 0.2,
+    "seconds": 0.4
+   }
+  },
+  {
+   "at": 47.0,
+   "particles": {
+    "effect": "Factory/Effects/sparks.effect.json",
+    "entity": "Electricity: box sparks",
+    "count": 90
+   }
+  },
+  {
+   "at": 47.0,
+   "particles": {
+    "effect": "Factory/Effects/explosion_flare.effect.json",
+    "entity": "Electricity: box sparks",
+    "count": 1
+   }
+  },
+  {
+   "at": 47.0,
+   "sound": {
+    "clip": "Factory/Sounds/Ambience/zap.wav",
+    "volume": 1.0,
+    "entity": "Electricity: box sparks"
+   }
+  },
+  {
+   "at": 47.0,
+   "shake": {
+    "strength": 0.2,
+    "seconds": 0.4
+   }
+  },
+  {
+   "at": 50.2,
+   "particles": {
+    "effect": "Factory/Effects/sparks.effect.json",
+    "entity": "Electricity: box sparks",
+    "count": 90
+   }
+  },
+  {
+   "at": 50.2,
+   "particles": {
+    "effect": "Factory/Effects/explosion_flare.effect.json",
+    "entity": "Electricity: box sparks",
+    "count": 1
+   }
+  },
+  {
+   "at": 50.2,
+   "sound": {
+    "clip": "Factory/Sounds/Ambience/zap.wav",
+    "volume": 1.0,
+    "entity": "Electricity: box sparks"
+   }
+  },
+  {
+   "at": 50.2,
+   "shake": {
+    "strength": 0.2,
+    "seconds": 0.4
+   }
+  },
+  {
+   "at": 52.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 53.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       177.0,
+       1.6,
+       7.6
+      ],
+      "target": [
+       181.0,
+       2.0,
+       -6.0
+      ],
+      "aperture": 2.8,
+      "focus": 14.18
+     },
+     {
+      "at": 9.0,
+      "position": [
+       179.2,
+       1.5,
+       5.6
+      ],
+      "target": [
+       180.0,
+       2.2,
+       -7.0
+      ],
+      "aperture": 2.8,
+      "focus": 12.64
+     },
+     {
+      "at": 17.5,
+      "position": [
+       180.8,
+       1.2,
+       4.4
+      ],
+      "target": [
+       180.0,
+       3.5,
+       -7.5
+      ],
+      "aperture": 2.8,
+      "focus": 12.15
+     }
+    ]
+   }
+  },
+  {
+   "at": 54.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 69.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 70.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       2.5,
+       1.0,
+       -54.5
+      ],
+      "target": [
+       -0.3,
+       6.5,
+       -61.8
+      ],
+      "aperture": 2.0,
+      "focus": 9.56
+     },
+     {
+      "at": 8.0,
+      "position": [
+       1.6,
+       1.2,
+       -55.6
+      ],
+      "target": [
+       -0.3,
+       3.0,
+       -61.8
+      ],
+      "aperture": 2.0,
+      "focus": 6.73
+     },
+     {
+      "at": 17.5,
+      "position": [
+       0.8,
+       0.9,
+       -56.8
+      ],
+      "target": [
+       -0.4,
+       0.2,
+       -61.8
+      ],
+      "aperture": 2.0,
+      "focus": 5.19
+     }
+    ]
+   }
+  },
+  {
+   "at": 71.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 86.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 87.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       53.0,
+       1.6,
+       -58.2
+      ],
+      "target": [
+       70.0,
+       2.4,
+       -60.0
+      ],
+      "aperture": 2.8,
+      "focus": 17.11
+     },
+     {
+      "at": 17.5,
+      "position": [
+       61.0,
+       1.2,
+       -61.6
+      ],
+      "target": [
+       70.0,
+       2.6,
+       -59.5
+      ],
+      "aperture": 2.8,
+      "focus": 9.35
+     }
+    ]
+   }
+  },
+  {
+   "at": 88.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 103.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 104.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       125.0,
+       1.0,
+       -54.0
+      ],
+      "target": [
+       112.0,
+       2.2,
+       -61.0
+      ],
+      "aperture": 2.0,
+      "focus": 14.81
+     },
+     {
+      "at": 17.5,
+      "position": [
+       118.5,
+       0.8,
+       -54.5
+      ],
+      "target": [
+       112.0,
+       2.6,
+       -63.0
+      ],
+      "aperture": 2.0,
+      "focus": 10.85
+     }
+    ]
+   }
+  },
+  {
+   "at": 104.0,
+   "move": {
+    "entity": "Fog: wisp",
+    "to": [
+     122.0,
+     1.4,
+     -63.0
+    ],
+    "seconds": 0.0
+   }
+  },
+  {
+   "at": 105.0,
+   "move": {
+    "entity": "Fog: wisp",
+    "to": [
+     119.0,
+     1.1,
+     -64.5
+    ],
+    "seconds": 2.5
+   }
+  },
+  {
+   "at": 105.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 107.5,
+   "move": {
+    "entity": "Fog: wisp",
+    "to": [
+     116.5,
+     1.6,
+     -62.0
+    ],
+    "seconds": 2.5
+   }
+  },
+  {
+   "at": 110.0,
+   "move": {
+    "entity": "Fog: wisp",
+    "to": [
+     118.0,
+     1.2,
+     -58.5
+    ],
+    "seconds": 2.5
+   }
+  },
+  {
+   "at": 112.5,
+   "move": {
+    "entity": "Fog: wisp",
+    "to": [
+     121.0,
+     1.7,
+     -59.5
+    ],
+    "seconds": 2.5
+   }
+  },
+  {
+   "at": 115.0,
+   "move": {
+    "entity": "Fog: wisp",
+    "to": [
+     123.0,
+     1.3,
+     -62.5
+    ],
+    "seconds": 2.5
+   }
+  },
+  {
+   "at": 117.5,
+   "move": {
+    "entity": "Fog: wisp",
+    "to": [
+     120.0,
+     1.0,
+     -65.0
+    ],
+    "seconds": 2.5
+   }
+  },
+  {
+   "at": 120.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 121.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       185.5,
+       0.6,
+       -57.0
+      ],
+      "target": [
+       181.0,
+       0.8,
+       -65.0
+      ],
+      "aperture": 2.0,
+      "focus": 9.18
+     },
+     {
+      "at": 8.5,
+      "position": [
+       182.0,
+       0.9,
+       -58.5
+      ],
+      "target": [
+       179.0,
+       0.8,
+       -63.0
+      ],
+      "aperture": 2.0,
+      "focus": 5.41
+     },
+     {
+      "at": 17.5,
+      "position": [
+       175.5,
+       1.4,
+       -57.5
+      ],
+      "target": [
+       178.5,
+       0.9,
+       -61.5
+      ],
+      "aperture": 2.0,
+      "focus": 5.02
+     }
+    ]
+   }
+  },
+  {
+   "at": 122.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 125.5,
+   "particles": {
+    "effect": "Factory/Effects/cryo_jet.effect.json",
+    "entity": "Cryo: second valve",
+    "count": 60
+   }
+  },
+  {
+   "at": 125.5,
+   "sound": {
+    "clip": "Factory/Sounds/Ambience/cryo.wav",
+    "volume": 0.8,
+    "entity": "Cryo: second valve"
+   }
+  },
+  {
+   "at": 125.8,
+   "particles": {
+    "effect": "Factory/Effects/cryo_jet.effect.json",
+    "entity": "Cryo: second valve",
+    "count": 60
+   }
+  },
+  {
+   "at": 126.1,
+   "particles": {
+    "effect": "Factory/Effects/cryo_jet.effect.json",
+    "entity": "Cryo: second valve",
+    "count": 60
+   }
+  },
+  {
+   "at": 131.0,
+   "particles": {
+    "effect": "Factory/Effects/cryo_jet.effect.json",
+    "entity": "Cryo: second valve",
+    "count": 60
+   }
+  },
+  {
+   "at": 131.0,
+   "sound": {
+    "clip": "Factory/Sounds/Ambience/cryo.wav",
+    "volume": 0.8,
+    "entity": "Cryo: second valve"
+   }
+  },
+  {
+   "at": 131.3,
+   "particles": {
+    "effect": "Factory/Effects/cryo_jet.effect.json",
+    "entity": "Cryo: second valve",
+    "count": 60
+   }
+  },
+  {
+   "at": 131.6,
+   "particles": {
+    "effect": "Factory/Effects/cryo_jet.effect.json",
+    "entity": "Cryo: second valve",
+    "count": 60
+   }
+  },
+  {
+   "at": 137.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 138.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       -4.0,
+       0.4,
+       -116.0
+      ],
+      "target": [
+       1.2,
+       2.2,
+       -122.6
+      ],
+      "aperture": 2.0,
+      "focus": 8.59
+     },
+     {
+      "at": 17.5,
+      "position": [
+       -1.0,
+       0.7,
+       -118.4
+      ],
+      "target": [
+       1.4,
+       3.4,
+       -122.7
+      ],
+      "aperture": 2.0,
+      "focus": 5.62
+     }
+    ]
+   }
+  },
+  {
+   "at": 139.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 154.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 155.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       54.0,
+       1.2,
+       -114.5
+      ],
+      "target": [
+       60.0,
+       1.5,
+       -123.0
+      ],
+      "aperture": 2.0,
+      "focus": 10.41
+     },
+     {
+      "at": 17.5,
+      "position": [
+       62.5,
+       1.0,
+       -115.5
+      ],
+      "target": [
+       58.5,
+       1.8,
+       -123.5
+      ],
+      "aperture": 2.0,
+      "focus": 8.98
+     }
+    ]
+   }
+  },
+  {
+   "at": 156.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 171.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 172.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       117.1,
+       2.3,
+       -117.9
+      ],
+      "target": [
+       118.5,
+       2.6,
+       -119.5
+      ],
+      "aperture": 2.0,
+      "focus": 2.15
+     },
+     {
+      "at": 7.0,
+      "position": [
+       119.6,
+       2.1,
+       -118.2
+      ],
+      "target": [
+       118.5,
+       2.6,
+       -119.5
+      ],
+      "aperture": 2.0,
+      "focus": 1.77
+     },
+     {
+      "at": 17.5,
+      "position": [
+       123.8,
+       1.6,
+       -120.4
+      ],
+      "target": [
+       122.2,
+       1.1,
+       -122.6
+      ],
+      "aperture": 2.0,
+      "focus": 2.77
+     }
+    ]
+   }
+  },
+  {
+   "at": 172.0,
+   "particles": {
+    "effect": "Factory/Effects/flies_swarm.effect.json",
+    "entity": "Creatures: flies",
+    "count": 90
+   }
+  },
+  {
+   "at": 172.0,
+   "particles": {
+    "effect": "Factory/Effects/moths_swarm.effect.json",
+    "entity": "Creatures: moths",
+    "count": 30
+   }
+  },
+  {
+   "at": 173.0,
+   "move": {
+    "entity": "Creatures: wisp",
+    "to": [
+     118.0,
+     1.2,
+     -117.5
+    ],
+    "seconds": 3.5
+   }
+  },
+  {
+   "at": 173.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 176.5,
+   "move": {
+    "entity": "Creatures: wisp",
+    "to": [
+     116.5,
+     1.8,
+     -119.0
+    ],
+    "seconds": 3.5
+   }
+  },
+  {
+   "at": 180.0,
+   "move": {
+    "entity": "Creatures: wisp",
+    "to": [
+     115.0,
+     1.3,
+     -117.5
+    ],
+    "seconds": 3.5
+   }
+  },
+  {
+   "at": 183.5,
+   "move": {
+    "entity": "Creatures: wisp",
+    "to": [
+     117.0,
+     1.6,
+     -115.5
+    ],
+    "seconds": 3.5
+   }
+  },
+  {
+   "at": 188.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 189.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       175.0,
+       1.5,
+       -123.5
+      ],
+      "target": [
+       176.8,
+       1.5,
+       -128.5
+      ],
+      "aperture": 2.0,
+      "focus": 5.31
+     },
+     {
+      "at": 8.5,
+      "position": [
+       179.0,
+       1.4,
+       -124.2
+      ],
+      "target": [
+       181.2,
+       1.4,
+       -128.5
+      ],
+      "aperture": 2.0,
+      "focus": 4.83
+     },
+     {
+      "at": 17.5,
+      "position": [
+       183.2,
+       1.3,
+       -124.6
+      ],
+      "target": [
+       184.8,
+       1.3,
+       -128.6
+      ],
+      "aperture": 2.0,
+      "focus": 4.31
+     }
+    ]
+   }
+  },
+  {
+   "at": 190.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 191.8,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 191.8,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 191.8,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at concrete",
+    "count": 1
+   }
+  },
+  {
+   "at": 191.8,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 191.85,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 191.917,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_concrete_1.wav",
+    "volume": 1.0,
+    "entity": "Impacts: concrete hit"
+   }
+  },
+  {
+   "at": 191.917,
+   "particles": {
+    "effect": "Factory/Effects/impact_chips.effect.json",
+    "entity": "Impacts: concrete hit",
+    "count": 6
+   }
+  },
+  {
+   "at": 191.917,
+   "particles": {
+    "effect": "Factory/Effects/impact_puff.effect.json",
+    "entity": "Impacts: concrete hit",
+    "count": 3
+   }
+  },
+  {
+   "at": 191.917,
+   "particles": {
+    "effect": "Factory/Effects/sparks.effect.json",
+    "entity": "Impacts: concrete hit",
+    "count": 30
+   }
+  },
+  {
+   "at": 192.42,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 192.42,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 192.42,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at metal",
+    "count": 1
+   }
+  },
+  {
+   "at": 192.42,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 192.47,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 192.532,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_metal_2.wav",
+    "volume": 1.0,
+    "entity": "Impacts: metal hit"
+   }
+  },
+  {
+   "at": 192.532,
+   "particles": {
+    "effect": "Factory/Effects/sparks.effect.json",
+    "entity": "Impacts: metal hit",
+    "count": 30
+   }
+  },
+  {
+   "at": 192.532,
+   "particles": {
+    "effect": "Factory/Effects/impact_puff.effect.json",
+    "entity": "Impacts: metal hit",
+    "count": 3
+   }
+  },
+  {
+   "at": 193.04,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 193.04,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 193.04,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at wood",
+    "count": 1
+   }
+  },
+  {
+   "at": 193.04,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 193.09,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 193.147,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_wood_3.wav",
+    "volume": 1.0,
+    "entity": "Impacts: wood hit"
+   }
+  },
+  {
+   "at": 193.147,
+   "particles": {
+    "effect": "Factory/Effects/impact_splinters.effect.json",
+    "entity": "Impacts: wood hit",
+    "count": 6
+   }
+  },
+  {
+   "at": 193.147,
+   "particles": {
+    "effect": "Factory/Effects/impact_puff.effect.json",
+    "entity": "Impacts: wood hit",
+    "count": 3
+   }
+  },
+  {
+   "at": 193.66,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 193.66,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 193.66,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at glass",
+    "count": 1
+   }
+  },
+  {
+   "at": 193.66,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 193.71,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 193.775,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_glass_1.wav",
+    "volume": 1.0,
+    "entity": "Impacts: glass hit"
+   }
+  },
+  {
+   "at": 193.775,
+   "particles": {
+    "effect": "Factory/Effects/impact_glass.effect.json",
+    "entity": "Impacts: glass hit",
+    "count": 14
+   }
+  },
+  {
+   "at": 193.775,
+   "particles": {
+    "effect": "Factory/Effects/glass_shards.effect.json",
+    "entity": "Impacts: glass hit",
+    "count": 5
+   }
+  },
+  {
+   "at": 194.28,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 194.28,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 194.28,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at drum",
+    "count": 1
+   }
+  },
+  {
+   "at": 194.28,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 194.33,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 194.398,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_metal_2.wav",
+    "volume": 1.0,
+    "entity": "Impacts: drum hit"
+   }
+  },
+  {
+   "at": 194.398,
+   "particles": {
+    "effect": "Factory/Effects/sparks.effect.json",
+    "entity": "Impacts: drum hit",
+    "count": 30
+   }
+  },
+  {
+   "at": 194.398,
+   "particles": {
+    "effect": "Factory/Effects/impact_puff.effect.json",
+    "entity": "Impacts: drum hit",
+    "count": 3
+   }
+  },
+  {
+   "at": 195.38,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 195.38,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 195.38,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at metal",
+    "count": 1
+   }
+  },
+  {
+   "at": 195.38,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 195.43,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 195.492,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_metal_3.wav",
+    "volume": 1.0,
+    "entity": "Impacts: metal hit"
+   }
+  },
+  {
+   "at": 195.492,
+   "particles": {
+    "effect": "Factory/Effects/sparks.effect.json",
+    "entity": "Impacts: metal hit",
+    "count": 30
+   }
+  },
+  {
+   "at": 195.492,
+   "particles": {
+    "effect": "Factory/Effects/impact_puff.effect.json",
+    "entity": "Impacts: metal hit",
+    "count": 3
+   }
+  },
+  {
+   "at": 196.0,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 196.0,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 196.0,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at concrete",
+    "count": 1
+   }
+  },
+  {
+   "at": 196.0,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 196.05,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 196.117,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_concrete_1.wav",
+    "volume": 1.0,
+    "entity": "Impacts: concrete hit"
+   }
+  },
+  {
+   "at": 196.117,
+   "particles": {
+    "effect": "Factory/Effects/impact_chips.effect.json",
+    "entity": "Impacts: concrete hit",
+    "count": 6
+   }
+  },
+  {
+   "at": 196.117,
+   "particles": {
+    "effect": "Factory/Effects/impact_puff.effect.json",
+    "entity": "Impacts: concrete hit",
+    "count": 3
+   }
+  },
+  {
+   "at": 196.117,
+   "particles": {
+    "effect": "Factory/Effects/sparks.effect.json",
+    "entity": "Impacts: concrete hit",
+    "count": 30
+   }
+  },
+  {
+   "at": 196.62,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 196.62,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 196.62,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at wood",
+    "count": 1
+   }
+  },
+  {
+   "at": 196.62,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 196.67,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 196.727,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_wood_2.wav",
+    "volume": 1.0,
+    "entity": "Impacts: wood hit"
+   }
+  },
+  {
+   "at": 196.727,
+   "particles": {
+    "effect": "Factory/Effects/impact_splinters.effect.json",
+    "entity": "Impacts: wood hit",
+    "count": 6
+   }
+  },
+  {
+   "at": 196.727,
+   "particles": {
+    "effect": "Factory/Effects/impact_puff.effect.json",
+    "entity": "Impacts: wood hit",
+    "count": 3
+   }
+  },
+  {
+   "at": 197.24,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 197.24,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 197.24,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at drum",
+    "count": 1
+   }
+  },
+  {
+   "at": 197.24,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 197.29,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 197.358,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_metal_3.wav",
+    "volume": 1.0,
+    "entity": "Impacts: drum hit"
+   }
+  },
+  {
+   "at": 197.358,
+   "particles": {
+    "effect": "Factory/Effects/sparks.effect.json",
+    "entity": "Impacts: drum hit",
+    "count": 30
+   }
+  },
+  {
+   "at": 197.358,
+   "particles": {
+    "effect": "Factory/Effects/impact_puff.effect.json",
+    "entity": "Impacts: drum hit",
+    "count": 3
+   }
+  },
+  {
+   "at": 197.86,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 197.86,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 197.86,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at glass",
+    "count": 1
+   }
+  },
+  {
+   "at": 197.86,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 197.91,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 197.975,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_glass_1.wav",
+    "volume": 1.0,
+    "entity": "Impacts: glass hit"
+   }
+  },
+  {
+   "at": 197.975,
+   "particles": {
+    "effect": "Factory/Effects/impact_glass.effect.json",
+    "entity": "Impacts: glass hit",
+    "count": 14
+   }
+  },
+  {
+   "at": 197.975,
+   "particles": {
+    "effect": "Factory/Effects/glass_shards.effect.json",
+    "entity": "Impacts: glass hit",
+    "count": 5
+   }
+  },
+  {
+   "at": 198.96,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 198.96,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 198.96,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at metal",
+    "count": 1
+   }
+  },
+  {
+   "at": 198.96,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 199.01,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 199.072,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_metal_2.wav",
+    "volume": 1.0,
+    "entity": "Impacts: metal hit"
+   }
+  },
+  {
+   "at": 199.072,
+   "particles": {
+    "effect": "Factory/Effects/sparks.effect.json",
+    "entity": "Impacts: metal hit",
+    "count": 30
+   }
+  },
+  {
+   "at": 199.072,
+   "particles": {
+    "effect": "Factory/Effects/impact_puff.effect.json",
+    "entity": "Impacts: metal hit",
+    "count": 3
+   }
+  },
+  {
+   "at": 199.58,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 199.58,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 199.58,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at wood",
+    "count": 1
+   }
+  },
+  {
+   "at": 199.58,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 199.63,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 199.687,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_wood_3.wav",
+    "volume": 1.0,
+    "entity": "Impacts: wood hit"
+   }
+  },
+  {
+   "at": 199.687,
+   "particles": {
+    "effect": "Factory/Effects/impact_splinters.effect.json",
+    "entity": "Impacts: wood hit",
+    "count": 6
+   }
+  },
+  {
+   "at": 199.687,
+   "particles": {
+    "effect": "Factory/Effects/impact_puff.effect.json",
+    "entity": "Impacts: wood hit",
+    "count": 3
+   }
+  },
+  {
+   "at": 200.2,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 200.2,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 200.2,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at concrete",
+    "count": 1
+   }
+  },
+  {
+   "at": 200.2,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 200.25,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 200.317,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_concrete_1.wav",
+    "volume": 1.0,
+    "entity": "Impacts: concrete hit"
+   }
+  },
+  {
+   "at": 200.317,
+   "particles": {
+    "effect": "Factory/Effects/impact_chips.effect.json",
+    "entity": "Impacts: concrete hit",
+    "count": 6
+   }
+  },
+  {
+   "at": 200.317,
+   "particles": {
+    "effect": "Factory/Effects/impact_puff.effect.json",
+    "entity": "Impacts: concrete hit",
+    "count": 3
+   }
+  },
+  {
+   "at": 200.317,
+   "particles": {
+    "effect": "Factory/Effects/sparks.effect.json",
+    "entity": "Impacts: concrete hit",
+    "count": 30
+   }
+  },
+  {
+   "at": 200.82,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 200.82,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 200.82,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at drum",
+    "count": 1
+   }
+  },
+  {
+   "at": 200.82,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 200.87,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 200.938,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_metal_2.wav",
+    "volume": 1.0,
+    "entity": "Impacts: drum hit"
+   }
+  },
+  {
+   "at": 200.938,
+   "particles": {
+    "effect": "Factory/Effects/sparks.effect.json",
+    "entity": "Impacts: drum hit",
+    "count": 30
+   }
+  },
+  {
+   "at": 200.938,
+   "particles": {
+    "effect": "Factory/Effects/impact_puff.effect.json",
+    "entity": "Impacts: drum hit",
+    "count": 3
+   }
+  },
+  {
+   "at": 201.44,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 201.44,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 201.44,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at metal",
+    "count": 1
+   }
+  },
+  {
+   "at": 201.44,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 201.49,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 201.552,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_metal_3.wav",
+    "volume": 1.0,
+    "entity": "Impacts: metal hit"
+   }
+  },
+  {
+   "at": 201.552,
+   "particles": {
+    "effect": "Factory/Effects/sparks.effect.json",
+    "entity": "Impacts: metal hit",
+    "count": 30
+   }
+  },
+  {
+   "at": 201.552,
+   "particles": {
+    "effect": "Factory/Effects/impact_puff.effect.json",
+    "entity": "Impacts: metal hit",
+    "count": 3
+   }
+  },
+  {
+   "at": 202.54,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 202.54,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 202.54,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at glass",
+    "count": 1
+   }
+  },
+  {
+   "at": 202.54,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 202.59,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 202.655,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_glass_1.wav",
+    "volume": 1.0,
+    "entity": "Impacts: glass hit"
+   }
+  },
+  {
+   "at": 202.655,
+   "particles": {
+    "effect": "Factory/Effects/impact_glass.effect.json",
+    "entity": "Impacts: glass hit",
+    "count": 14
+   }
+  },
+  {
+   "at": 202.655,
+   "particles": {
+    "effect": "Factory/Effects/glass_shards.effect.json",
+    "entity": "Impacts: glass hit",
+    "count": 5
+   }
+  },
+  {
+   "at": 203.16,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 203.16,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 203.16,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at wood",
+    "count": 1
+   }
+  },
+  {
+   "at": 203.16,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 203.21,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 203.267,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_wood_2.wav",
+    "volume": 1.0,
+    "entity": "Impacts: wood hit"
+   }
+  },
+  {
+   "at": 203.267,
+   "particles": {
+    "effect": "Factory/Effects/impact_splinters.effect.json",
+    "entity": "Impacts: wood hit",
+    "count": 6
+   }
+  },
+  {
+   "at": 203.267,
+   "particles": {
+    "effect": "Factory/Effects/impact_puff.effect.json",
+    "entity": "Impacts: wood hit",
+    "count": 3
+   }
+  },
+  {
+   "at": 203.78,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 203.78,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 203.78,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at concrete",
+    "count": 1
+   }
+  },
+  {
+   "at": 203.78,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 203.83,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 203.897,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_concrete_3.wav",
+    "volume": 1.0,
+    "entity": "Impacts: concrete hit"
+   }
+  },
+  {
+   "at": 203.897,
+   "particles": {
+    "effect": "Factory/Effects/impact_chips.effect.json",
+    "entity": "Impacts: concrete hit",
+    "count": 6
+   }
+  },
+  {
+   "at": 203.897,
+   "particles": {
+    "effect": "Factory/Effects/impact_puff.effect.json",
+    "entity": "Impacts: concrete hit",
+    "count": 3
+   }
+  },
+  {
+   "at": 203.897,
+   "particles": {
+    "effect": "Factory/Effects/sparks.effect.json",
+    "entity": "Impacts: concrete hit",
+    "count": 30
+   }
+  },
+  {
+   "at": 204.4,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 204.4,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 204.4,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at drum",
+    "count": 1
+   }
+  },
+  {
+   "at": 204.4,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 204.45,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 204.518,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_metal_1.wav",
+    "volume": 1.0,
+    "entity": "Impacts: drum hit"
+   }
+  },
+  {
+   "at": 204.518,
+   "particles": {
+    "effect": "Factory/Effects/sparks.effect.json",
+    "entity": "Impacts: drum hit",
+    "count": 30
+   }
+  },
+  {
+   "at": 204.518,
+   "particles": {
+    "effect": "Factory/Effects/impact_puff.effect.json",
+    "entity": "Impacts: drum hit",
+    "count": 3
+   }
+  },
+  {
+   "at": 205.02,
+   "particles": {
+    "effect": "Factory/Effects/muzzle_flash.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 3
+   }
+  },
+  {
+   "at": 205.02,
+   "particles": {
+    "effect": "Factory/Effects/gun_smoke.effect.json",
+    "entity": "Impacts: muzzle",
+    "count": 6
+   }
+  },
+  {
+   "at": 205.02,
+   "particles": {
+    "effect": "Factory/Effects/tracer.effect.json",
+    "entity": "Impacts: aim at metal",
+    "count": 1
+   }
+  },
+  {
+   "at": 205.02,
+   "sound": {
+    "clip": "Factory/Sounds/handgun_fire.wav",
+    "volume": 0.7,
+    "entity": "Impacts: muzzle"
+   }
+  },
+  {
+   "at": 205.07,
+   "particles": {
+    "effect": "Factory/Effects/shell_casings.effect.json",
+    "entity": "Impacts: ejector",
+    "count": 1
+   }
+  },
+  {
+   "at": 205.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 205.132,
+   "sound": {
+    "clip": "Factory/Sounds/Surfaces/impact_metal_2.wav",
+    "volume": 1.0,
+    "entity": "Impacts: metal hit"
+   }
+  },
+  {
+   "at": 205.132,
+   "particles": {
+    "effect": "Factory/Effects/sparks.effect.json",
+    "entity": "Impacts: metal hit",
+    "count": 30
+   }
+  },
+  {
+   "at": 205.132,
+   "particles": {
+    "effect": "Factory/Effects/impact_puff.effect.json",
+    "entity": "Impacts: metal hit",
+    "count": 3
+   }
+  },
+  {
+   "at": 206.8,
+   "fade": {
+    "to": 0,
+    "seconds": 2.0
+   }
+  }
+ ]
+}

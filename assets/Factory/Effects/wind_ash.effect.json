@@ -1,0 +1,62 @@
+{
+    "comment": "Flakes of ash and soot that a gusting wind tumbles along a tunnel (ADR-0122).",
+    "texture": "sprites.png",
+    "columns": 4,
+    "cell": 4,
+    "color": [
+        [
+            0,
+            [
+                0.25,
+                0.24,
+                0.23,
+                0
+            ]
+        ],
+        [
+            0.1,
+            [
+                0.25,
+                0.24,
+                0.23,
+                0.9
+            ]
+        ],
+        [
+            1,
+            [
+                0.25,
+                0.24,
+                0.23,
+                0
+            ]
+        ]
+    ],
+    "lifetime": [
+        4,
+        7
+    ],
+    "size": [
+        0.03,
+        0.05
+    ],
+    "spawnBox": [
+        0.5,
+        1.8,
+        1.8
+    ],
+    "speed": [
+        0.2,
+        0.6
+    ],
+    "gravity": 0.05,
+    "drag": 1.6,
+    "turbulence": 2,
+    "turbulenceScale": 1,
+    "rotationSpeed": 300,
+    "softness": 0.01,
+    "emitter": {
+        "rate": 45,
+        "radius": 8
+    }
+}

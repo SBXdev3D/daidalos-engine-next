@@ -424,6 +424,61 @@ TEST_F(ApplicationScene, ACameraCueSaysWhereItHasTheCamera) {
     std::filesystem::remove_all(root);
 }
 
+TEST_F(ApplicationScene, AFadeCoversThePictureAndCutsBetweenCameras) {
+    // ADR-0122: a fade cue covers the picture over its seconds, from where the fade is; a second camera cue
+    // takes the camera from the first at once; skipping the cinematic lifts the fade.
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / "daidalos-fade-test";
+    std::filesystem::create_directories(root);
+    std::ofstream(root / "rooms.sequence.json") << R"({"cues": [
+        {"at": 0, "camera": {"keys": [{"at": 0, "position": [0, 2, 0], "target": [0, 2, -1]},
+                                      {"at": 3, "position": [0, 2, -3], "target": [0, 2, -4]}]}},
+        {"at": 0, "fade": {"to": 1, "seconds": 1, "color": [1, 0, 0]}},
+        {"at": 1.5, "camera": {"keys": [{"at": 0, "position": [50, 2, 0], "target": [50, 2, -1]},
+                                        {"at": 2, "position": [50, 2, -2], "target": [50, 2, -3]}]}},
+        {"at": 1.5, "fade": {"to": 0, "seconds": 1}}]})";
+    glm::vec4 start{-1.0f};
+    glm::vec4 half{-1.0f};
+    glm::vec4 covered{-1.0f};
+    glm::vec4 lifting{-1.0f};
+    glm::vec4 skipped{-1.0f};
+    std::optional<glm::vec3> second;
+    FunctionHandler handler;
+    handler.start = [&](app::Application& app) -> core::Result<void> {
+        scene::Scene scene(app.Renderer(), root);
+        start = scene.Fade();
+        DAI_TRY(scene.PlaySequenceFile("rooms.sequence.json"));
+        const auto frames = [&](int count) {
+            for (int index = 0; index < count; ++index) {
+                scene.RunFrame(core::Seconds(0.1), 0.0f);
+            }
+        };
+        frames(5);
+        half = scene.Fade();
+        frames(7);
+        covered = scene.Fade();
+        frames(5);
+        lifting = scene.Fade();
+        second = scene.CinematicPosition();
+        scene.StopCinematic();
+        skipped = scene.Fade();
+        app.RequestQuit();
+        return {};
+    };
+    RUN_OR_SKIP(handler);
+    EXPECT_TRUE(result.has_value());
+    EXPECT_FLOAT_EQ(start.a, 0.0f);
+    EXPECT_GT(half.a, 0.2f);
+    EXPECT_LT(half.a, 0.8f);
+    EXPECT_FLOAT_EQ(covered.a, 1.0f);
+    EXPECT_FLOAT_EQ(covered.r, 1.0f);
+    EXPECT_GT(lifting.a, 0.0f);
+    EXPECT_LT(lifting.a, 1.0f);
+    ASSERT_TRUE(second.has_value());
+    EXPECT_GT(second->x, 49.0f);
+    EXPECT_FLOAT_EQ(skipped.a, 0.0f);
+    std::filesystem::remove_all(root);
+}
+
 TEST_F(ApplicationScene, ASavedGameRestoresTheWorldItLeft) {
     // A world made from the same "level" twice (ADR-0072): changes made to the first come back in the second.
     struct Made {

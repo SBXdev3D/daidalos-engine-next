@@ -18,6 +18,8 @@
 #include <daidalos/scene/Systems.hpp>
 #include <daidalos/scene/Text.hpp>
 
+#include <glm/vec4.hpp>
+
 #include <algorithm>
 #include <chrono>
 #include <deque>
@@ -119,9 +121,15 @@ public:
     [[nodiscard]] bool InCinematic() const { return m_cinematic.has_value(); }
     /// Where the camera cue has the camera now, if one has it: for the game to open doors on its way (ADR-0120).
     [[nodiscard]] std::optional<glm::vec3> CinematicPosition() const;
-    /// Gives the camera back at once, as when a player skips a cinematic (ADR-0086). The sequence's other cues
-    /// go on.
-    void StopCinematic() { m_cinematic.reset(); }
+    /// Gives the camera back at once, as when a player skips a cinematic (ADR-0086), and lifts a fade
+    /// (ADR-0122). The sequence's other cues go on.
+    void StopCinematic() {
+        m_cinematic.reset();
+        m_fade = {};
+    }
+    /// What covers the picture now, from fade cues (ADR-0122): a linear color, and how much, 0 for nothing.
+    /// The game draws it over the scene, under its menus.
+    [[nodiscard]] glm::vec4 Fade() const;
     /// Shows a subtitle or a sound's caption (ADR-0075) for its seconds; the same text shown again starts
     /// over rather than showing twice. The game draws them, as its settings say.
     void ShowCaption(Caption caption);
@@ -183,6 +191,13 @@ private:
         float seconds = 0.0f;
         float time = 0.0f;
     };
+    struct Fading {
+        glm::vec3 color{0.0f};
+        float from = 0.0f;
+        float to = 0.0f;
+        float seconds = 0.0f;
+        float time = 0.0f;
+    };
     struct Cinematic {
         std::vector<CameraKey> keys;
         CameraPath path = CameraPath::Eased;
@@ -197,6 +212,7 @@ private:
     std::map<std::string, std::shared_ptr<const Sequence>, std::less<>> m_sequenceFiles;
     std::vector<Moving> m_moving;
     std::optional<Cinematic> m_cinematic;
+    Fading m_fade;
     float m_shake = 0.0f;
     float m_shakeTime = 0.0f;
     float m_shakeLength = 0.0f;

@@ -1,0 +1,95 @@
+{
+    "comment": "Ice crystals in the cold air around a cryogenic leak (ADR-0122): tiny points that catch the light and twinkle as they drift down.",
+    "traced": false,
+    "texture": "sprites.png",
+    "columns": 4,
+    "cell": 4,
+    "color": [
+        [
+            0,
+            [
+                1.6,
+                2.0,
+                2.6,
+                0
+            ]
+        ],
+        [
+            0.15,
+            [
+                1.6,
+                2.0,
+                2.6,
+                1
+            ]
+        ],
+        [
+            1,
+            [
+                1.2,
+                1.6,
+                2.4,
+                0
+            ]
+        ]
+    ],
+    "emissionOverLife": [
+        [
+            0,
+            1
+        ],
+        [
+            0.15,
+            2.5
+        ],
+        [
+            0.3,
+            0.6
+        ],
+        [
+            0.45,
+            2
+        ],
+        [
+            0.6,
+            0.5
+        ],
+        [
+            0.75,
+            1.8
+        ],
+        [
+            1,
+            0.4
+        ]
+    ],
+    "additive": true,
+    "lit": false,
+    "lifetime": [
+        2,
+        4
+    ],
+    "size": [
+        0.008,
+        0.016
+    ],
+    "spawnBox": [
+        0.8,
+        0.6,
+        0.8
+    ],
+    "speed": [
+        0.02,
+        0.1
+    ],
+    "gravity": 0.02,
+    "drag": 1.5,
+    "turbulence": 0.6,
+    "turbulenceScale": 0.6,
+    "rotationSpeed": 90,
+    "softness": 0.01,
+    "emitter": {
+        "rate": 40,
+        "radius": 3
+    }
+}

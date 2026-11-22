@@ -13,11 +13,11 @@
 namespace editor {
 
 /// Every kind of cue, in the order the panel offers them.
-inline constexpr std::array<daidalos::scene::Cue::Kind, 11> kCueKinds{
+inline constexpr std::array<daidalos::scene::Cue::Kind, 12> kCueKinds{
     daidalos::scene::Cue::Kind::Sound,  daidalos::scene::Cue::Kind::Subtitle,  daidalos::scene::Cue::Kind::Light,
     daidalos::scene::Cue::Kind::Power,  daidalos::scene::Cue::Kind::Particles, daidalos::scene::Cue::Kind::Shake,
     daidalos::scene::Cue::Kind::Mix,    daidalos::scene::Cue::Kind::Move,      daidalos::scene::Cue::Kind::Visible,
-    daidalos::scene::Cue::Kind::Camera, daidalos::scene::Cue::Kind::Event};
+    daidalos::scene::Cue::Kind::Camera, daidalos::scene::Cue::Kind::Fade,      daidalos::scene::Cue::Kind::Event};
 
 /// A new cue of a kind at a time, with values that do something when played as they are: a full volume, a
 /// short shake, a mix that fades in half a second, a camera of two keys a second apart.

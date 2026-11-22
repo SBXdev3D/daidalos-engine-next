@@ -1,0 +1,84 @@
+{
+    "comment": "A big fire of logs in a hearth (ADR-0122): tall flames, and the strong, flickering light they give off.",
+    "texture": "fire.ktx2",
+    "columns": 8,
+    "rows": 8,
+    "frames": 64,
+    "frameRate": 30,
+    "loop": true,
+    "randomStartFrame": true,
+    "color": [
+        [
+            0,
+            [
+                1,
+                1,
+                1,
+                1
+            ]
+        ],
+        [
+            0.7,
+            [
+                1,
+                1,
+                1,
+                1
+            ]
+        ],
+        [
+            1,
+            [
+                1,
+                1,
+                1,
+                0
+            ]
+        ]
+    ],
+    "fadeIn": 0.15,
+    "emissionOverLife": 6,
+    "additive": true,
+    "lit": false,
+    "lifetime": [
+        0.7,
+        1.0
+    ],
+    "size": [
+        1.1,
+        1.5
+    ],
+    "sizeOverLife": [
+        [
+            0,
+            0.8
+        ],
+        [
+            1,
+            1.1
+        ]
+    ],
+    "orientation": "axis",
+    "spawnRadius": 0.35,
+    "speed": [
+        0.1,
+        0.2
+    ],
+    "softness": 0.1,
+    "emitter": {
+        "rate": 26
+    },
+    "light": {
+        "temperature": 1900,
+        "intensity": 260,
+        "range": 11,
+        "radius": 0.4,
+        "offset": [
+            0,
+            0.6,
+            0
+        ],
+        "flickerRate": 7,
+        "flickerDepth": 0.35
+    }
+}

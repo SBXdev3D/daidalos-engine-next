@@ -1,0 +1,93 @@
+{
+    "comment": "A jet of liquid nitrogen from a cracked valve (ADR-0122): a white plume that leaves fast along the emitter's +Y, opens out, slows, and sinks as it warms into vapour.",
+    "fog_density": 1.0,
+    "texture": "../particles.png",
+    "columns": 4,
+    "cell": 0,
+    "color": [
+        [
+            0,
+            [
+                0.95,
+                0.98,
+                1.0,
+                0.5
+            ]
+        ],
+        [
+            0.3,
+            [
+                0.9,
+                0.95,
+                1.0,
+                0.25
+            ]
+        ],
+        [
+            1,
+            [
+                0.85,
+                0.92,
+                1.0,
+                0
+            ]
+        ]
+    ],
+    "fadeIn": 0.02,
+    "anisotropy": 0.4,
+    "collision": "bounce",
+    "bounce": 0.0,
+    "lifetime": [
+        1.2,
+        2.2
+    ],
+    "size": [
+        0.08,
+        0.14
+    ],
+    "sizeOverLife": [
+        [
+            0,
+            1
+        ],
+        [
+            0.3,
+            6
+        ],
+        [
+            1,
+            14
+        ]
+    ],
+    "shape": "cone",
+    "spawnRadius": 0.02,
+    "spread": 9,
+    "speed": [
+        6,
+        8
+    ],
+    "speedOverLife": [
+        [
+            0,
+            1
+        ],
+        [
+            0.25,
+            0.2
+        ],
+        [
+            1,
+            0.05
+        ]
+    ],
+    "gravity": 0.08,
+    "drag": 2.5,
+    "turbulence": 0.8,
+    "turbulenceScale": 0.8,
+    "rotationSpeed": 40,
+    "softness": 0.4,
+    "emitter": {
+        "rate": 90,
+        "radius": 5
+    }
+}

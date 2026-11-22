@@ -1,0 +1,55 @@
+{
+    "comment": "The first white-hot instant of an explosion (ADR-0122), and the strong light it throws.",
+    "texture": "../particles.png",
+    "columns": 4,
+    "cell": 3,
+    "color": [
+        [
+            0,
+            [
+                12,
+                9,
+                5,
+                1
+            ]
+        ],
+        [
+            1,
+            [
+                6,
+                2.5,
+                0.6,
+                0
+            ]
+        ]
+    ],
+    "fadeIn": 0,
+    "additive": true,
+    "lit": false,
+    "lifetime": [
+        0.18,
+        0.22
+    ],
+    "size": [
+        2.5,
+        3
+    ],
+    "sizeOverLife": [
+        [
+            0,
+            0.5
+        ],
+        [
+            1,
+            1.6
+        ]
+    ],
+    "softness": 0.4,
+    "light": {
+        "temperature": 3000,
+        "intensity": 6000,
+        "range": 22,
+        "radius": 0.6,
+        "fade": 0.35
+    }
+}

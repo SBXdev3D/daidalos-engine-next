@@ -1,0 +1,63 @@
+{
+    "comment": "Grit and dust a strong wind drives down a tunnel (ADR-0122): fine streaks stretched along their flight.",
+    "traced": false,
+    "texture": "sprites.png",
+    "columns": 4,
+    "cell": 3,
+    "color": [
+        [
+            0,
+            [
+                0.8,
+                0.75,
+                0.65,
+                0
+            ]
+        ],
+        [
+            0.2,
+            [
+                0.8,
+                0.75,
+                0.65,
+                0.8
+            ]
+        ],
+        [
+            1,
+            [
+                0.8,
+                0.75,
+                0.65,
+                0
+            ]
+        ]
+    ],
+    "lifetime": [
+        2,
+        4
+    ],
+    "size": [
+        0.01,
+        0.02
+    ],
+    "orientation": "velocity",
+    "stretch": 0.03,
+    "spawnBox": [
+        0.5,
+        1.8,
+        1.8
+    ],
+    "speed": [
+        0.5,
+        1.5
+    ],
+    "drag": 2.5,
+    "turbulence": 1.2,
+    "turbulenceScale": 0.8,
+    "softness": 0.01,
+    "emitter": {
+        "rate": 200,
+        "radius": 8
+    }
+}

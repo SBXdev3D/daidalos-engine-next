@@ -1,0 +1,95 @@
+{
+    "comment": "Steam blasting up from a vent in a boiler room (ADR-0122): a dense white plume along +Y that billows and thins as it rises.",
+    "fog_density": 1.0,
+    "texture": "smoke.ktx2",
+    "columns": 8,
+    "rows": 8,
+    "frames": 64,
+    "frameRate": 24,
+    "loop": true,
+    "randomStartFrame": true,
+    "lightMaps": [
+        "smoke_lp.ktx2",
+        "smoke_ln.ktx2"
+    ],
+    "anisotropy": 0.55,
+    "color": [
+        [
+            0,
+            [
+                0.9,
+                0.9,
+                0.92,
+                0
+            ]
+        ],
+        [
+            0.1,
+            [
+                0.9,
+                0.9,
+                0.92,
+                0.5
+            ]
+        ],
+        [
+            1,
+            [
+                0.9,
+                0.9,
+                0.92,
+                0
+            ]
+        ]
+    ],
+    "fadeIn": 0.05,
+    "lifetime": [
+        1.5,
+        2.5
+    ],
+    "size": [
+        0.3,
+        0.5
+    ],
+    "sizeOverLife": [
+        [
+            0,
+            0.6
+        ],
+        [
+            1,
+            4
+        ]
+    ],
+    "shape": "cone",
+    "spawnRadius": 0.1,
+    "spread": 8,
+    "speed": [
+        3,
+        4.5
+    ],
+    "speedOverLife": [
+        [
+            0,
+            1
+        ],
+        [
+            0.4,
+            0.35
+        ],
+        [
+            1,
+            0.15
+        ]
+    ],
+    "gravity": -0.05,
+    "drag": 0.3,
+    "turbulence": 0.8,
+    "turbulenceScale": 1.2,
+    "rotationSpeed": 25,
+    "softness": 0.6,
+    "emitter": {
+        "rate": 18,
+        "radius": 4
+    }
+}

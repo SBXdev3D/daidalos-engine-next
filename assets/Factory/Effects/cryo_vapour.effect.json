@@ -1,0 +1,92 @@
+{
+    "comment": "Liquid nitrogen boiling off (ADR-0122): cold vapour heavier than air, which pours over an edge, falls slowly, and spreads across the floor in a thin, rolling layer.",
+    "fog_density": 0.8,
+    "texture": "../particles.png",
+    "columns": 4,
+    "cell": 0,
+    "color": [
+        [
+            0,
+            [
+                0.85,
+                0.93,
+                1.0,
+                0.0
+            ]
+        ],
+        [
+            0.1,
+            [
+                0.85,
+                0.93,
+                1.0,
+                0.22
+            ]
+        ],
+        [
+            0.6,
+            [
+                0.8,
+                0.9,
+                1.0,
+                0.12
+            ]
+        ],
+        [
+            1,
+            [
+                0.8,
+                0.9,
+                1.0,
+                0
+            ]
+        ]
+    ],
+    "fadeIn": 0.1,
+    "anisotropy": 0.5,
+    "collision": "bounce",
+    "bounce": 0.0,
+    "lifetime": [
+        5,
+        8
+    ],
+    "size": [
+        0.25,
+        0.4
+    ],
+    "sizeOverLife": [
+        [
+            0,
+            1
+        ],
+        [
+            0.4,
+            3
+        ],
+        [
+            1,
+            6
+        ]
+    ],
+    "spawnRadius": 0.12,
+    "direction": [
+        0,
+        -1,
+        0
+    ],
+    "spread": 35,
+    "speed": [
+        0.1,
+        0.35
+    ],
+    "gravity": 0.06,
+    "drag": 1.2,
+    "turbulence": 0.35,
+    "turbulenceScale": 1.2,
+    "rotationSpeed": 12,
+    "softness": 0.6,
+    "emitter": {
+        "rate": 14,
+        "radius": 5
+    }
+}
