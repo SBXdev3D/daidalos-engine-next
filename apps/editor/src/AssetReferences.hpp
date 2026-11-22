@@ -21,7 +21,7 @@ struct AssetReference {
 };
 
 /// Every level, prefab, effect, ribbon and sequence under the root that names an asset, a path under the root (a
-/// sky by its faces' prefix). Texture sources (`Source` folders) are left out.
+/// sky by its faces' prefix), by file. Texture sources (`Source` folders) are left out.
 [[nodiscard]] std::vector<AssetReference> FindReferences(const std::filesystem::path& root, const std::string& asset);
 
 /// Points a level's paths that name one asset at another, both under the root; the level is read from levelPath.

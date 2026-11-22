@@ -478,8 +478,10 @@ Scene::~Scene() {
     for (IPLSource& source : m_toAdd) {
         iplSourceRelease(&source);
     }
-    for (IPLSource& source : m_toRemove) {
+    // A source whose removal waited for the simulation is still among the added ones: released once, here.
+    for (IPLSource source : m_toRemove) {
         iplSourceRemove(source, m_simulator);
+        std::erase(m_added, source);
         iplSourceRelease(&source);
     }
     for (IPLSource& source : m_added) {
