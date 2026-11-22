@@ -22,18 +22,22 @@ namespace sandbox {
 namespace {
 
 // Canvas units, from the legacy CHudView, which was laid out for 1080 pixels.
-constexpr float kIconSize = 32.0f;
+constexpr float kIconSize = 48.0f;
 constexpr float kMargin = 40.0f;
 constexpr float kLabelSize = 40.0f;
 constexpr float kMessageSize = 34.0f;
 constexpr float kCrosshairSize = 32.0f;
 constexpr glm::vec4 kShadow{0.0f, 0.0f, 0.0f, 0.6f};
 
-// Places of the icons in hud.png.
-constexpr ui::Rect kHealthIcon{{0.0f, 0.281f}, {0.125f, 0.125f}};
-constexpr ui::Rect kArmorIcon{{0.0f, 0.141f}, {0.125f, 0.125f}};
-constexpr ui::Rect kAmmoIcon{{0.0f, 0.0f}, {0.125f, 0.125f}};
-constexpr ui::Rect kFlashlightIcon{{0.141f, 0.0f}, {0.25f, 0.25f}};
+// Places of the icons in hud.png, in its pixels: square cells, each with its icon and drop shadow.
+constexpr glm::vec2 kIconsSize{384.0f, 432.0f};
+constexpr ui::Rect IconCell(float x, float y, float side) {
+    return {glm::vec2(x, y) / kIconsSize, glm::vec2(side) / kIconsSize};
+}
+constexpr ui::Rect kAmmoIcon = IconCell(0.0f, 4.0f, 128.0f);
+constexpr ui::Rect kArmorIcon = IconCell(0.0f, 143.0f, 128.0f);
+constexpr ui::Rect kHealthIcon = IconCell(0.0f, 288.0f, 128.0f);
+constexpr ui::Rect kFlashlightIcon = IconCell(177.0f, 31.0f, 192.0f);
 
 /// The legacy colors of a percentage: red when low, yellow, green, and blue past 100.
 glm::vec4 StateColor(int value) {
@@ -115,7 +119,7 @@ void DrawHud(ui::Canvas& canvas, const HudAssets& hud, const Player& player) {
 
     // Each icon is followed by its value, in a row centered on the icon.
     const float bottomRow = size.y - kMargin - (kIconSize * 0.5f);
-    const float upperRow = bottomRow - 55.0f;
+    const float upperRow = bottomRow - 62.0f;
     const auto icon = [&](const ui::Rect& source, float left, float row) {
         canvas.DrawImage(hud.icons, {{left, row - (kIconSize * 0.5f)}, glm::vec2(kIconSize)}, {.source = source});
     };
