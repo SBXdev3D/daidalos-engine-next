@@ -346,6 +346,9 @@ protected:
                                                     .emissiveTriangles = m_pass->EmissiveTriangles(),
                                                     .depth = depth,
                                                     .normals = normals,
+                                                    .denoiserGuides = denoiser.has_value() ? denoiser->PreviousGuides()
+                                                                                           : rhi::TextureHandle{},
+                                                    .motion = motion,
                                                     .frameIndex = frame,
                                                     .reflections = options.reflections,
                                                     .settings = options.gi});
@@ -1467,10 +1470,29 @@ double Flicker(const Image& before, const Image& after) {
 
 // What the dark corridor measures of one way of tracing indirect light.
 struct CorridorScores {
-    float flip = 0.0f;    // Of the 32nd denoised frame after a cut.
-    double flicker = 0.0; // Mean change of luminance between denoised frames that do not move, over its mean.
-    int lag = 0;          // Frames after a turn of 30 degrees until the bounce-lit pixels are within 10%.
+    float flip = 0.0f;     // Of the 32nd denoised frame after a cut.
+    double flicker = 0.0;  // Mean change of luminance between denoised frames that do not move, over its mean.
+    int lag = 0;           // Frames after a turn of 30 degrees until the bounce-lit pixels are within 10%.
+    float turnFlip = 0.0f; // Of the first two frames after the turn, most of whose surfaces were not in view.
 };
+
+// What the dark corridor measures of a turn as the player makes one (ADR-0121).
+struct SweepScores {
+    float flip = 0.0f;        // Of the two frames as the camera stops, against the path tracer's view.
+    float settledFlip = 0.0f; // Of the frame kLinger frames later.
+    // Of the light that was too much, as the camera stopped, on pixels the path tracer sees dark: the share
+    // left kLinger frames later.
+    double lingering = 0.0;
+};
+
+// The corridor's view with its flashlight aimed a few degrees to the right of where the camera looks.
+void AimFlashlight(SceneView& view, const renderer::DarkCorridor& corridor, const glm::vec3& target, float degrees) {
+    const glm::vec3 ahead = target - corridor.eye;
+    const float angle = -glm::radians(degrees);
+    const glm::vec3 turned(ahead.x * std::cos(angle) + ahead.z * std::sin(angle), ahead.y,
+                           -ahead.x * std::sin(angle) + ahead.z * std::cos(angle));
+    view.lights[0] = renderer::Flashlight(corridor.eye, corridor.eye + turned);
+}
 
 } // namespace
 
@@ -1480,6 +1502,10 @@ protected:
     static constexpr float kTurn = 30.0f;
     static constexpr std::uint32_t kStill = 64; // Frames before the turn.
     static constexpr std::uint32_t kAfter = 48; // And after.
+    // A turn as the player makes one: 3 degrees a frame, a quarter turn in a second at 30 frames per second.
+    static constexpr std::uint32_t kSweepFrames = 10;
+    // Frames after the camera stops at which the light left behind is measured.
+    static constexpr std::uint32_t kLinger = 10;
 
     void SetUp() override {
         PathTracerTest::SetUp();
@@ -1489,15 +1515,57 @@ protected:
         const auto material = [this](const MaterialDesc& desc) { return Material(desc); };
         m_view = CorridorView(m_corridor, m_cube, material, m_corridor.target);
         m_turned = CorridorView(m_corridor, m_cube, material, TurnedTarget(m_corridor, kTurn));
+        for (std::uint32_t step = 1; step < kSweepFrames; ++step) {
+            m_sweep.push_back(CorridorView(
+                m_corridor, m_cube, material,
+                TurnedTarget(m_corridor, kTurn * static_cast<float>(step) / static_cast<float>(kSweepFrames))));
+        }
+        m_sweep.push_back(m_turned);
         m_traced = Trace(m_view, kExtent, {.maxBounces = 8, .seed = 41, .jitter = false}, 2048);
         m_tracedTurned = Trace(m_turned, kExtent, {.maxBounces = 8, .seed = 43, .jitter = false}, 2048);
         // Where the turned view's light has bounced at least once: no direct light reaches the pixel.
         const Image direct =
             Trace(m_turned, kExtent, {.maxBounces = 2, .seed = 47, .jitter = false, .directOnly = true}, 64);
         m_bounceOnly.resize(direct.size());
+        m_dark.resize(direct.size());
         for (std::size_t index = 0; index < direct.size(); ++index) {
             m_bounceOnly[index] = Luminance(direct[index]) <= 0.0f && Luminance(m_tracedTurned[index]) > 0.0f;
+            m_dark[index] = Luminance(m_tracedTurned[index]) < 0.02f;
         }
+    }
+
+    // The view turns kTurn degrees over kSweepFrames frames, its flashlight with it, then stops.
+    SweepScores MeasureSweep(const renderer::GlobalIlluminationSettings& settings) {
+        core::Result<renderer::GlobalIllumination> created = renderer::GlobalIllumination::Create(Device());
+        EXPECT_TRUE(created.has_value());
+        SweepScores scores;
+        const double reference = MaskedMean(m_tracedTurned, m_dark);
+        const std::uint32_t stopped = kStill + kSweepFrames - 1; // The first frame of the turned view.
+        double darkWhenStopped = 0.0;
+        Rasterize(m_view, kExtent,
+                  {.frames = stopped + kLinger + 1,
+                   .denoise = true,
+                   .indirect = &*created,
+                   .animate =
+                       [&](SceneView& view, std::uint32_t frame) {
+                           view = frame < kStill ? m_view : m_sweep[std::min(frame - kStill, kSweepFrames - 1)];
+                       },
+                   .gi = settings,
+                   .eachFrame =
+                       [&](const Image& image, std::uint32_t frame) {
+                           if (frame == stopped || frame == stopped + 1) {
+                               scores.flip += 0.5f * Flip(m_tracedTurned, image, kExtent);
+                           }
+                           if (frame == stopped) {
+                               darkWhenStopped = MaskedMean(image, m_dark);
+                           }
+                           if (frame == stopped + kLinger) {
+                               scores.settledFlip = Flip(m_tracedTurned, image, kExtent);
+                               scores.lingering = (MaskedMean(image, m_dark) - reference) /
+                                                  std::max(darkWhenStopped - reference, 1e-6);
+                           }
+                       }});
+        return scores;
     }
 
     CorridorScores Measure(const renderer::GlobalIlluminationSettings& settings) {
@@ -1523,6 +1591,9 @@ protected:
                            if (frame >= 33 && frame < kStill) {
                                flicker += Flicker(last, image);
                            }
+                           if (frame == kStill || frame == kStill + 1) {
+                               scores.turnFlip += 0.5f * Flip(m_tracedTurned, image, kExtent);
+                           }
                            if (frame >= kStill && scores.lag == static_cast<int>(kAfter)) {
                                const double mean = MaskedMean(image, m_bounceOnly);
                                within = std::abs(mean - reference) < 0.1 * reference ? within + 1 : 0;
@@ -1541,16 +1612,29 @@ protected:
         RecordProperty(name + "_flip", std::to_string(scores.flip));
         RecordProperty(name + "_flicker", std::to_string(scores.flicker));
         RecordProperty(name + "_lag", std::to_string(scores.lag));
-        std::printf("%s: FLIP %.4f, flicker %.4f, lag %d frames\n", name.c_str(), scores.flip, scores.flicker,
-                    scores.lag);
+        RecordProperty(name + "_turn_flip", std::to_string(scores.turnFlip));
+        std::printf("%s: FLIP %.4f, flicker %.4f, lag %d frames, FLIP after the turn %.4f\n", name.c_str(), scores.flip,
+                    scores.flicker, scores.lag, scores.turnFlip);
+    }
+
+    void Report(const std::string& name, const SweepScores& scores) {
+        RecordProperty(name + "_sweep_flip", std::to_string(scores.flip));
+        RecordProperty(name + "_settled_flip", std::to_string(scores.settledFlip));
+        RecordProperty(name + "_lingering", std::to_string(scores.lingering));
+        std::printf("%s: FLIP as the turn stops %.4f, %u frames later %.4f, light left behind then %.3f\n",
+                    name.c_str(), scores.flip, kLinger, scores.settledFlip, scores.lingering);
     }
 
     renderer::DarkCorridor m_corridor = renderer::MakeDarkCorridor();
     SceneView m_view;
     SceneView m_turned;
+    // The views of a turn of kTurn degrees over kSweepFrames frames, the last one m_turned.
+    std::vector<SceneView> m_sweep;
     Image m_traced;
     Image m_tracedTurned;
     std::vector<bool> m_bounceOnly;
+    // Where the turned view is dark in the path tracer's.
+    std::vector<bool> m_dark;
 };
 
 TEST_F(DarkCorridorTest, TheFlashlightsBounceMatchesThePathTracer) {
@@ -1563,11 +1647,82 @@ TEST_F(DarkCorridorTest, TheFlashlightsBounceMatchesThePathTracer) {
     const CorridorScores cached = Measure({.bounces = 0});
     Report("bounce", bounced);
     Report("cache", cached);
-    // Measured on an RTX 3090: FLIP 0.112, flicker 0.0078, lag 0 frames; from the cache, FLIP 0.243.
+    // Measured on an RTX 3090: FLIP 0.105, flicker 0.0080, lag 0 frames; from the cache, FLIP 0.23.
     EXPECT_LT(bounced.flip, 0.13f);
     EXPECT_LT(bounced.flip, 0.6f * cached.flip);
     EXPECT_LT(bounced.flicker, 0.0095);
     EXPECT_LE(bounced.lag, 2);
+}
+
+TEST_F(DarkCorridorTest, TheHistoryFollowsAFlashlightThatMoved) {
+    // The camera holds still and the flashlight turns 10 degrees to the right: the wall the beam left goes
+    // dark within a few frames, with the diffuse history kept near its short one (ADR-0121). Direct light
+    // alone, so that the radiance cache, which lags a moving light (ADR-0051), does not hide the denoiser's own
+    // lag.
+    constexpr std::uint32_t kAimed = 16;
+    const auto material = [this](const MaterialDesc& desc) { return Material(desc); };
+    SceneView aimed = CorridorView(m_corridor, m_cube, material, m_corridor.target);
+    AimFlashlight(aimed, m_corridor, m_corridor.target, 10.0f);
+    const Image before = Trace(m_view, kExtent, {.maxBounces = 2, .seed = 59, .jitter = false, .directOnly = true}, 64);
+    const Image after = Trace(aimed, kExtent, {.maxBounces = 2, .seed = 61, .jitter = false, .directOnly = true}, 64);
+    // Where the beam was and is no longer.
+    std::vector<bool> left(before.size());
+    for (std::size_t index = 0; index < before.size(); ++index) {
+        left[index] = Luminance(before[index]) > 0.0f && Luminance(after[index]) <= 0.0f;
+    }
+    ASSERT_GT(std::ranges::count(left, true), 300) << "the beam leaves part of the view";
+    int lag = static_cast<int>(kAimed);
+    double brightBefore = 0.0;
+    Rasterize(m_view, kExtent,
+              {.frames = kStill + kAimed,
+               .denoise = true,
+               .animate = [&](SceneView& view, std::uint32_t frame) { view = frame < kStill ? m_view : aimed; },
+               .eachFrame =
+                   [&](const Image& image, std::uint32_t frame) {
+                       const double mean = MaskedMean(image, left);
+                       if (frame + 1 == kStill) {
+                           brightBefore = mean;
+                       }
+                       if (frame >= kStill && lag == static_cast<int>(kAimed) && mean < 0.1 * brightBefore) {
+                           lag = static_cast<int>(frame - kStill);
+                       }
+                   }});
+    RecordProperty("lag", std::to_string(lag));
+    std::printf("the wall the beam left: %.4f lit, under a tenth after %d frames\n", brightBefore, lag);
+    EXPECT_GT(brightBefore, 0.0) << "the beam lit the wall";
+    EXPECT_LE(lag, 4);
+}
+
+TEST_F(DarkCorridorTest, LightTheBeamLeftFadesAfterATurn) {
+    // The camera turns 30 degrees over 10 frames, the flashlight with it, and stops. The far end of the
+    // corridor, which the beam lit, is dark in the path tracer's view; the denoiser's history kept the old light
+    // for 30 frames and more, its range widened by the noise of indirect light and by the bright frames
+    // themselves. Kept near the short history around it (ADR-0121), the light left behind fades sooner.
+    // Measured on an RTX 3090: 0.35 of it left after 10 frames, 0.48 before.
+    const SweepScores scores = MeasureSweep({});
+    Report("sweep", scores);
+    EXPECT_LT(scores.lingering, 0.42);
+}
+
+TEST_F(DarkCorridorTest, SurfacesComingIntoViewTraceMoreRays) {
+    // Most of what is seen after a turn has no history: its indirect light is one frame's, which the denoiser
+    // can only blur, and it showed as grain on walls while the camera turned. Pixels the denoiser barely knows
+    // trace more rays (ADR-0121), and the others as many as before.
+    const CorridorScores one = Measure({.rays = 1, .newRays = 1});
+    const CorridorScores more = Measure({.rays = 1, .newRays = 4});
+    const SweepScores oneSweep = MeasureSweep({.rays = 1, .newRays = 1});
+    const SweepScores moreSweep = MeasureSweep({.rays = 1, .newRays = 4});
+    Report("new_rays_1", one);
+    Report("new_rays_4", more);
+    Report("new_rays_1", oneSweep);
+    Report("new_rays_4", moreSweep);
+    // Measured on an RTX 3090: FLIP 0.68 against 0.70 after a turn in one frame, 0.585 against 0.600 as a
+    // turn over 10 frames stops.
+    EXPECT_LT(more.turnFlip, one.turnFlip);
+    EXPECT_LT(moreSweep.flip, oneSweep.flip);
+    // Standing still, nothing changes.
+    EXPECT_LT(more.flip, one.flip + 0.01f);
+    EXPECT_NEAR(more.flicker, one.flicker, 0.001);
 }
 
 TEST_F(DarkCorridorTest, DISABLED_MeasureEveryWayOfTracingIndirectLight) {
@@ -1702,6 +1857,111 @@ TEST_F(DarkCorridorTest, DISABLED_TimeIndirectLightAt1080p) {
     }
     for (const std::uint32_t candidates : {1U, 2U, 8U}) {
         time("candidates" + std::to_string(candidates), {.lightCandidates = candidates});
+    }
+    m_pass->DestroyShadingTargets(*shading);
+    for (const rhi::TextureHandle texture : {depth, normals, motion}) {
+        Device().DestroyTexture(texture);
+    }
+}
+
+TEST_F(DarkCorridorTest, DISABLED_TimeNewRaysWhileTurningAt1080p) {
+    // Not a test: the GPU time of indirect light and of the denoiser at 1920 x 1080 in the dark corridor, the
+    // view still or turning back and forth by 3 degrees a frame, with more rays where the denoiser barely knows
+    // the surface (ADR-0121).
+    constexpr rhi::Extent kFull{1920, 1080};
+    const auto created = [&](rhi::Format format, rhi::TextureUsage usage, const char* name) {
+        const core::Result<rhi::TextureHandle> texture =
+            Device().CreateTexture({.extent = kFull, .format = format, .usage = usage, .name = name});
+        EXPECT_TRUE(texture.has_value());
+        return texture.value_or(rhi::TextureHandle{});
+    };
+    const rhi::TextureHandle depth =
+        created(kDepthFormat, rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled, "Depth");
+    const rhi::TextureHandle normals =
+        created(MeshPass::kNormalFormat, rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled, "Normals");
+    const rhi::TextureHandle motion =
+        created(MeshPass::kMotionFormat, rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled, "Motion");
+    core::Result<renderer::ShadingTargets> shading = m_pass->CreateShadingTargets(kFull);
+    ASSERT_TRUE(shading.has_value());
+    // From 15 degrees left to 15 degrees right and back, 3 degrees a frame.
+    const auto material = [this](const MaterialDesc& desc) { return Material(desc); };
+    std::vector<SceneView> views;
+    for (int step = -5; step <= 5; ++step) {
+        views.push_back(CorridorView(m_corridor, m_cube, material, TurnedTarget(m_corridor, 3.0f * step)));
+    }
+
+    const auto time = [&](const std::string& name, const renderer::GlobalIlluminationSettings& settings, bool turning) {
+        core::Result<renderer::GlobalIllumination> gi = renderer::GlobalIllumination::Create(Device());
+        ASSERT_TRUE(gi.has_value() && gi->Resize(kFull).has_value());
+        core::Result<renderer::Denoiser> denoiser = renderer::Denoiser::Create(Device());
+        ASSERT_TRUE(denoiser.has_value() && denoiser->Resize(kFull).has_value());
+        constexpr std::uint32_t kWarmup = 16;
+        constexpr std::uint32_t kTimed = 128;
+        std::array<std::vector<std::string_view>, rhi::kFramesInFlight> groups;
+        std::map<std::string, double> totals;
+        std::uint32_t timed = 0;
+        for (std::uint32_t frame = 0; frame < kWarmup + kTimed + rhi::kFramesInFlight; ++frame) {
+            core::Result<std::optional<rhi::Frame>> begun = Device().BeginFrame();
+            ASSERT_TRUE(begun.has_value() && begun->has_value());
+            rhi::Frame& current = **begun;
+            const std::span<const double> stamps = Device().CompletedTimestamps();
+            if (frame >= kWarmup && stamps.size() == groups[current.slot].size() + 1) {
+                for (std::size_t group = 0; group < groups[current.slot].size(); ++group) {
+                    totals[std::string(groups[current.slot][group])] += stamps[group + 1] - stamps[group];
+                }
+                ++timed;
+            }
+            const std::uint32_t cycle = frame % 20;
+            const SceneView& view = turning ? views[cycle <= 10 ? cycle : 20 - cycle] : views[5];
+            const core::Result<std::uint32_t> structure = m_scene->Reserve(current.slot, view.draws.size());
+            ASSERT_TRUE(structure.has_value());
+            ASSERT_TRUE(m_pass
+                            ->Prepare(view, {.extent = kFull,
+                                             .accelerationStructure = *structure,
+                                             .frameIndex = frame,
+                                             .exposure = renderer::ExposureScale(view.atmosphere.ev100)})
+                            .has_value());
+            ASSERT_TRUE(m_scene->Prepare(m_pass->TracedDraws()).has_value());
+            renderer::RenderGraph graph;
+            m_scene->AddBuild(graph);
+            m_pass->AddEmissiveLights(graph);
+            graph.AddPass(
+                {.name = "G-buffer", .rendering = MeshPass::GBufferRendering(*shading, normals, motion, depth)},
+                [&](rhi::CommandList& list) { m_pass->RecordGBuffer(list); });
+            gi->AddTo(graph, {.frameBuffer = m_pass->FrameDataIndex(),
+                              .instanceBuffer = m_pass->InstanceDataIndex(),
+                              .materialBuffer = m_pass->MaterialDataIndex(),
+                              .structure = m_scene->Structure(),
+                              .emissiveTriangles = m_pass->EmissiveTriangles(),
+                              .depth = depth,
+                              .normals = normals,
+                              .denoiserGuides = denoiser->PreviousGuides(),
+                              .motion = motion,
+                              .frameIndex = frame,
+                              .reflections = false,
+                              .settings = settings});
+            denoiser->AddTo(graph, {.extent = kFull,
+                                    .frameBuffer = m_pass->FrameDataIndex(),
+                                    .diffuse = shading->diffuse,
+                                    .specular = shading->specular,
+                                    .depth = depth,
+                                    .normals = normals,
+                                    .motion = motion});
+            groups[current.slot] = graph.Execute(current.commands);
+            ASSERT_TRUE(Device().EndFrame().has_value());
+        }
+        ASSERT_TRUE(Device().WaitIdle().has_value());
+        for (const auto& [group, total] : totals) {
+            const double milliseconds = total / std::max(timed, 1U);
+            std::printf("%s, %s: %.3f ms\n", name.c_str(), group.c_str(), milliseconds);
+            RecordProperty(name + "_" + group, std::to_string(milliseconds));
+        }
+    };
+    for (const bool turning : {false, true}) {
+        for (const std::uint32_t rays : {1U, 2U, 4U}) {
+            time(std::string(turning ? "turning" : "still") + "_new_rays" + std::to_string(rays), {.newRays = rays},
+                 turning);
+        }
     }
     m_pass->DestroyShadingTargets(*shading);
     for (const rhi::TextureHandle texture : {depth, normals, motion}) {

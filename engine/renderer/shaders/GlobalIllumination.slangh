@@ -40,7 +40,7 @@ struct GiPushConstants {
     uint reflections;   // Storage image: the light each pixel's specular lobe reflects (ADR-0042).
     float maxRoughness; // Rougher surfaces trace no reflection ray: the indirect light stands in for it.
     // ADR-0045. Bytes, from the lowest: the surfaces lit before the cache is read, the lights weighed at
-    // each, the rays per pixel.
+    // each, the rays per pixel, and the rays per pixel where the denoiser has little history (ADR-0121).
     uint counts;
     float clamp; // The luminance bounced light is clamped to, pre-exposed; 0 for none.
     // The fill pass (ADR-0093): storage images of this frame's history and last frame's, and 1 if last frame
@@ -49,6 +49,10 @@ struct GiPushConstants {
     uint previousHistory;
     uint historyValid;
     uint sharpOnly; // The reflections pass (ADR-0096): 1 traces only sharp reflections, on the half whose turn it is not.
+    // The trace pass (ADR-0121): the denoiser's guides of last frame (linear depth, normal, frames averaged)
+    // and the G-buffer's motion vectors, or kNoTexture when there is no history to find.
+    uint denoiserGuides;
+    uint motion;
 };
 
 [[vk::push_constant]] GiPushConstants g_gi;
@@ -61,6 +65,9 @@ uint GiLightCandidates() {
 }
 uint GiRays() {
     return max((g_gi.counts >> 16) & 0xFF, 1u);
+}
+uint GiNewRays() {
+    return max(g_gi.counts >> 24, GiRays());
 }
 
 [[vk::binding(2, 0)]] RWStructuredBuffer<uint> g_cacheWords[];

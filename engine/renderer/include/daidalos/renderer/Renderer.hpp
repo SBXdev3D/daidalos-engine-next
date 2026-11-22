@@ -83,6 +83,9 @@ struct IndirectLightConfig {
     float clamp = 16.0f;
     /// Rays per pixel, from 1 to 16: less noise, for their cost.
     std::uint32_t rays = 1;
+    /// Rays per pixel, from rays to 16, where the denoiser has little history of the surface, which just came
+    /// into view (ADR-0121): its light is one frame's, which the denoiser can only blur.
+    std::uint32_t newRays = 1;
     /// Pixels per ray (ADR-0093): 1 traces every pixel, 2 half of them in a checkerboard, 4 one of each two by
     /// two. They take turns, and the others take their neighbours' light: fewer rays, for more noise.
     std::uint32_t pixelsPerRay = 1;

@@ -37,13 +37,22 @@ constexpr std::uint32_t kMaxWorkerThreads = 4;
 constexpr std::uint32_t kProbeWarmupFrames = 90;
 constexpr std::uint32_t kProbeFrames = 120;
 // The settings the presets decide, which ChooseQuality puts back to the preset.
-constexpr std::array<std::string_view, 16> kPresetSettings{"renderer.render_scale",    "renderer.min_render_scale",
-                                                           "renderer.indirect_light",  "renderer.gi_bounces",
-                                                           "renderer.gi_rays",         "renderer.gi_pixels_per_ray",
-                                                           "renderer.reflections",     "renderer.reflection_roughness", "renderer.reflection_pixels_per_ray",
-                                                           "renderer.restir_spatial",  "renderer.restir_candidates",
-                                                           "renderer.volumetric_fog",  "renderer.fog_slices",
-                                                           "renderer.fog_tile",        "renderer.particle_density",
+constexpr std::array<std::string_view, 17> kPresetSettings{"renderer.render_scale",
+                                                           "renderer.min_render_scale",
+                                                           "renderer.indirect_light",
+                                                           "renderer.gi_bounces",
+                                                           "renderer.gi_rays",
+                                                           "renderer.gi_new_rays",
+                                                           "renderer.gi_pixels_per_ray",
+                                                           "renderer.reflections",
+                                                           "renderer.reflection_roughness",
+                                                           "renderer.reflection_pixels_per_ray",
+                                                           "renderer.restir_spatial",
+                                                           "renderer.restir_candidates",
+                                                           "renderer.volumetric_fog",
+                                                           "renderer.fog_slices",
+                                                           "renderer.fog_tile",
+                                                           "renderer.particle_density",
                                                            "renderer.traced_particles"};
 
 /// The variable's value if something set it, the preset's otherwise.
@@ -469,6 +478,10 @@ core::Result<void> Application::LoadConfiguration() {
             "Brightest bounced light, as on screen before tone mapping, against fireflies; 0 for no limit");
         m_giRays = m_cvars.Register<std::int64_t>(
             "renderer.gi_rays", 1, "Rays of indirect light per pixel, from 1 to 16: less noise, for their cost");
+        m_giNewRays = m_cvars.Register<std::int64_t>(
+            "renderer.gi_new_rays", 1,
+            "Rays of indirect light per pixel where the surface just came into view, from 1 to 16: less noise "
+            "while the camera turns");
         m_giPixelsPerRay = m_cvars.Register<std::int64_t>(
             "renderer.gi_pixels_per_ray", 1,
             "Pixels per ray of indirect light: 1, 2 in a checkerboard or 4, the others filled from their neighbours");
@@ -790,6 +803,7 @@ renderer::IndirectLightConfig Application::IndirectLight() const {
             .lightCandidates = count(*m_giLightCandidates, 1, 8),
             .clamp = static_cast<float>(std::max(m_giClamp->Get(), 0.0)),
             .rays = static_cast<std::uint32_t>(std::clamp<std::int64_t>(quality.giRays, 1, 16)),
+            .newRays = static_cast<std::uint32_t>(std::clamp<std::int64_t>(quality.giNewRays, 1, 16)),
             .pixelsPerRay = static_cast<std::uint32_t>(std::clamp<std::int64_t>(quality.giPixelsPerRay, 1, 4)),
             .reflectionPixelsPerRay =
                 static_cast<std::uint32_t>(std::clamp<std::int64_t>(quality.reflectionPixelsPerRay, 1, 2))};
@@ -832,6 +846,7 @@ QualitySettings Application::EffectiveQualitySettings() const {
             .indirectLight = Preset(*m_indirectLight, preset.indirectLight),
             .giBounces = Preset(*m_giBounces, preset.giBounces),
             .giRays = Preset(*m_giRays, preset.giRays),
+            .giNewRays = Preset(*m_giNewRays, preset.giNewRays),
             .giPixelsPerRay = Preset(*m_giPixelsPerRay, preset.giPixelsPerRay),
             .reflections = Preset(*m_reflections, preset.reflections),
             .reflectionRoughness = Preset(*m_reflectionRoughness, preset.reflectionRoughness),

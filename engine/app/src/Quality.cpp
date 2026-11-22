@@ -43,8 +43,14 @@ constexpr std::array<QualitySettings, 4> kPresets{{
     {},
     // Ultra: two surfaces lit before the cache, reflections on rough surfaces, finer fog, never below two
     // thirds of the resolution. A second ray of indirect light doubled its cost (+4.2 to 5.2 ms) for noise the
-    // denoiser already removes, and was dropped (ADR-0090).
-    {.minRenderScale = 0.67, .giBounces = 2, .reflectionRoughness = 0.9, .fogSlices = 128, .fogTile = 8},
+    // denoiser already removes, and was dropped (ADR-0090). Four rays where a surface just came into view: less
+    // grain while the camera turns, for 40% more indirect light while it does (ADR-0121).
+    {.minRenderScale = 0.67,
+     .giBounces = 2,
+     .giNewRays = 4,
+     .reflectionRoughness = 0.9,
+     .fogSlices = 128,
+     .fogTile = 8},
 }};
 
 constexpr std::array<std::string_view, 4> kNames{"low", "medium", "high", "ultra"};

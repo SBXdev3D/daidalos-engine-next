@@ -23,10 +23,12 @@ struct QualitySettings {
     /// renderer.render_scale and renderer.min_render_scale: what dynamic resolution moves between.
     double renderScale = 1.0;
     double minRenderScale = 0.5;
-    /// renderer.indirect_light, renderer.gi_bounces, renderer.gi_rays and renderer.gi_pixels_per_ray.
+    /// renderer.indirect_light, renderer.gi_bounces, renderer.gi_rays, renderer.gi_new_rays and
+    /// renderer.gi_pixels_per_ray.
     bool indirectLight = true;
     std::int64_t giBounces = 1;
     std::int64_t giRays = 1;
+    std::int64_t giNewRays = 1;
     std::int64_t giPixelsPerRay = 1;
     /// renderer.reflections, renderer.reflection_roughness and renderer.reflection_pixels_per_ray.
     bool reflections = true;

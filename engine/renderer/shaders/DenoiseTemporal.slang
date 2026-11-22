@@ -47,6 +47,21 @@ struct TemporalPushConstants {
 static const float kFramesForVariance = 4.0;
 // The moments forget faster than the light, so that the variance follows changes.
 static const float kMomentsWeight = 0.2;
+// The diffuse light's long history stays within this many standard deviations of the short histories around
+// it, or within this share of their mean where the light is not noisy (ADR-0121)...
+static const float kFastBound = 1.0;
+static const float kFastFloor = 0.02;
+// ...across the pixels around, each way, of which this many must be on the same surface.
+static const int kFastRadius = 2;
+static const float kFastNeighbours = 6.0;
+// Each group of 8 by 8 pixels reads last frame's around where its centre was once, into a tile this wide, and
+// each pixel its neighbours from it: a third of the reads of 25 taps each. A pixel whose own motion takes its
+// neighbours out of the tile, on an object that moves, reads them itself.
+static const int kFastTile = 16;
+
+// The tile: last frame's linear depth and normal, and the luminance of its short and long histories.
+groupshared float4 s_fastGuides[kFastTile * kFastTile];
+groupshared float2 s_fastLight[kFastTile * kFastTile];
 // How far the depth of last frame's surface may be from where this one was, relative to it.
 static const float kDepthTolerance = 0.05;
 // The cosine of the largest angle between last frame's normal and this one: 60 degrees. The normals include
@@ -120,13 +135,75 @@ float2 Variance(float4 moments) {
     return max(float2(moments.y - moments.x * moments.x, moments.w - moments.z * moments.z), 0.0);
 }
 
-[numthreads(8, 8, 1)]
-void CSMain(uint3 id : SV_DispatchThreadID) {
-    const uint2 size = uint2(g_temporal.width, g_temporal.height);
-    if (any(id.xy >= size)) {
-        return;
+// Where the long history of the diffuse light around previousUv may be (ADR-0121): in x, the mean of last
+// frame's short histories, the moments' luminance, across the pixels on the same surface within kFastRadius;
+// in y, how far from it, one standard deviation: the noise of that mean, the short histories' spread over the
+// number of pixels, and the light's own detail, the long histories' spread, a shadow's edge or a gradient.
+// Measured across pixels in one frame, it does not grow when the light changes, as one pixel's spread over its
+// frames does. Negative where too few pixels are on the surface.
+// Last frame's linear depth and normal at a pixel, and the luminance of its short and long histories, from
+// the group's tile if it holds the pixel. Depth 0 where nothing was drawn, or outside the image.
+float4 FastGuide(int2 previous, int2 tileOrigin, int2 size, out float2 light) {
+    const int2 inTile = previous - tileOrigin;
+    if (all(inTile >= 0) && all(inTile < kFastTile)) {
+        const int index = inTile.y * kFastTile + inTile.x;
+        light = s_fastLight[index];
+        return s_fastGuides[index];
     }
-    const int2 pixel = int2(id.xy);
+    light = 0.0;
+    if (any(previous < 0) || any(previous >= size)) {
+        return 0.0;
+    }
+    const float4 guide = Load(g_temporal.previousGuides, previous);
+    light = float2(Load(g_temporal.previousMoments, previous).x,
+                   Luminance(Load(g_temporal.previousDiffuse, previous).rgb));
+    return float4(guide.x, DecodeNormal(guide.yz));
+}
+
+float2 FastNeighbourhood(float2 previousUv, float2 extent, int2 tileOrigin) {
+    const int2 size = int2(extent);
+    const int2 centre = min(int2(previousUv * extent), size - 1);
+    float2 centreLight;
+    const float4 guide = FastGuide(centre, tileOrigin, size, centreLight);
+    if (guide.x <= 0.0) {
+        return -1.0;
+    }
+    const float3 normal = guide.yzw;
+    float2 sum = 0.0;     // Short histories, then long ones.
+    float2 squares = 0.0;
+    float count = 0.0;
+    for (int y = -kFastRadius; y <= kFastRadius; ++y) {
+        for (int x = -kFastRadius; x <= kFastRadius; ++x) {
+            float2 light;
+            const float4 other = FastGuide(centre + int2(x, y), tileOrigin, size, light);
+            if (other.x <= 0.0 || abs(other.x - guide.x) > kDepthTolerance * guide.x ||
+                dot(other.yzw, normal) < kNormalTolerance) {
+                continue;
+            }
+            sum += light;
+            squares += light * light;
+            count += 1.0;
+        }
+    }
+    if (count < kFastNeighbours) {
+        return -1.0;
+    }
+    const float2 mean = sum / count;
+    const float2 spread = max(squares / count - mean * mean, 0.0);
+    return float2(mean.x, sqrt(spread.x / count + spread.y));
+}
+
+// The light, as bright as it may be: within [low, high] in luminance, its color kept.
+float3 BoundLuminance(float3 light, float low, float high) {
+    const float luminance = Luminance(light);
+    const float bounded = clamp(luminance, low, high);
+    if (bounded == luminance || luminance <= 1e-6) {
+        return light;
+    }
+    return light * (bounded / luminance);
+}
+
+void Accumulate(int2 pixel, uint2 size, int2 tileOrigin) {
     const float depth = Load(g_temporal.depth, pixel).r;
     if (depth <= 0.0) {
         // Nothing was drawn: no light, and nothing for the next frame to find.
@@ -219,8 +296,23 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         // stays.
         const float2 deviation = sqrt(Variance(historyMoments / historyWeight));
         moments = lerp(historyMoments / historyWeight, moments, max(weight, kMomentsWeight));
-        const float3 keptDiffuse =
-            clamp(historyDiffuse / historyWeight, lowDiffuse - deviation.x, highDiffuse + deviation.x);
+        // Before that, the diffuse light is kept near its short history (ReLAX's fast history; ADR-0121).
+        // Noisy light, as indirect light is, widens the neighbourhood's range, and so does the noise of a
+        // history that was bright: after a beam swept a wall and left it, the old light stayed for 30 frames
+        // and more. The moments' luminance is a short history of about 1 / kMomentsWeight frames; the long
+        // one is kept near the mean of the short ones around it, within that mean's noise and the light's own
+        // detail (FastNeighbourhood). It follows light that changed within a few frames, and keeps every
+        // frame where the light did not. The mean of many pixels, unlike one pixel's few noisy frames, is not
+        // pulled by a rare bright sample, which a tighter bound would throw away, darkening the light. The
+        // neighbourhood's range comes after, and wins: a light that goes out still shows at once. Specular
+        // light keeps only the range: a reflection moves with what it reflects, not with the pixels around.
+        float3 nearDiffuse = historyDiffuse / historyWeight;
+        const float2 fast = FastNeighbourhood(previousUv, previousExtent, tileOrigin);
+        if (fast.y >= 0.0) {
+            const float reach = kFastBound * fast.y + kFastFloor * fast.x;
+            nearDiffuse = BoundLuminance(nearDiffuse, fast.x - reach, fast.x + reach);
+        }
+        const float3 keptDiffuse = clamp(nearDiffuse, lowDiffuse - deviation.x, highDiffuse + deviation.x);
         const float3 keptSpecular =
             clamp(historySpecular / historyWeight, lowSpecular - deviation.y, highSpecular + deviation.y);
         averageDiffuse = lerp(keptDiffuse, diffuse.rgb, weight);
@@ -241,4 +333,34 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     const float2 samples = max(frames / float2(g_temporal.diffuseRepeats, g_temporal.specularRepeats), 1.0);
     g_halfStorageImages[g_temporal.historyDiffuse][pixel] = float4(averageDiffuse, variance.x / samples.x);
     g_halfStorageImages[g_temporal.historySpecular][pixel] = float4(averageSpecular, variance.y / samples.y);
+}
+
+[numthreads(8, 8, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID, uint3 group : SV_GroupID, uint index : SV_GroupIndex) {
+    const uint2 size = uint2(g_temporal.width, g_temporal.height);
+    // The tile, around where the group's centre was last frame (ADR-0121); none without history.
+    const FrameData frame = g_frames[g_temporal.frameBuffer][0];
+    const int2 previousSize = int2(frame.previousRenderSize);
+    const int2 groupCentre = min(int2(group.xy * 8u + 4u), int2(size) - 1);
+    const float2 centreUv = (float2(groupCentre) + 0.5) / float2(size) + Load(g_temporal.motion, groupCentre).xy;
+    const int2 tileOrigin = int2(floor(centreUv * float2(previousSize))) - kFastTile / 2;
+    if (g_temporal.reset == 0) {
+        for (uint entry = index; entry < uint(kFastTile * kFastTile); entry += 64u) {
+            const int2 previous = tileOrigin + int2(entry % uint(kFastTile), entry / uint(kFastTile));
+            float4 guide = 0.0;
+            float2 light = 0.0;
+            if (all(previous >= 0) && all(previous < previousSize)) {
+                const float4 stored = Load(g_temporal.previousGuides, previous);
+                guide = float4(stored.x, DecodeNormal(stored.yz));
+                light = float2(Load(g_temporal.previousMoments, previous).x,
+                               Luminance(Load(g_temporal.previousDiffuse, previous).rgb));
+            }
+            s_fastGuides[entry] = guide;
+            s_fastLight[entry] = light;
+        }
+    }
+    GroupMemoryBarrierWithGroupSync();
+    if (all(id.xy < size)) {
+        Accumulate(int2(id.xy), size, tileOrigin);
+    }
 }

@@ -50,6 +50,8 @@ struct GiPushConstants {
     std::uint32_t previousHistory;
     std::uint32_t historyValid;
     std::uint32_t sharpOnly;
+    std::uint32_t denoiserGuides;
+    std::uint32_t motion;
 };
 static_assert(sizeof(GiPushConstants) <= rhi::kMaxPushConstantSize);
 
@@ -60,11 +62,13 @@ std::uint32_t Counts(const GlobalIlluminationSettings& settings) {
     const std::uint32_t bounces = std::min(settings.bounces, 3U);
     const std::uint32_t candidates = std::clamp(settings.lightCandidates, 1U, 8U);
     const std::uint32_t rays = std::clamp(settings.rays, 1U, 16U);
-    return bounces | (candidates << 8U) | (rays << 16U);
+    const std::uint32_t newRays = std::clamp(settings.newRays, rays, 16U);
+    return bounces | (candidates << 8U) | (rays << 16U) | (newRays << 24U);
 }
 
 constexpr std::uint32_t kGroupSize = 8;
 constexpr std::uint32_t kResolveGroupSize = 64;
+constexpr std::uint32_t kNoTexture = 0xFFFFFFFF;
 
 } // namespace
 
@@ -175,30 +179,32 @@ core::Result<void> GlobalIllumination::Resize(rhi::Extent extent) {
 GiPushConstants GlobalIllumination::PushConstants(const GlobalIlluminationInputs& inputs, Mode mode) const {
     const rhi::Extent extent = inputs.extent.width > 0 ? inputs.extent : m_extent;
     return GiPushConstants{inputs.frameBuffer,
-                         inputs.instanceBuffer,
-                         inputs.materialBuffer,
-                         m_device->StorageIndex(m_keys),
-                         m_device->StorageIndex(m_accumulation),
-                         m_device->StorageIndex(m_radiance),
-                         m_device->StorageIndex(m_ages),
-                         m_device->StorageIndex(m_anchors),
-                         m_device->BindlessIndex(inputs.depth),
-                         m_device->BindlessIndex(inputs.normals),
-                         m_device->StorageImageIndex(m_output),
-                         extent.width,
-                         extent.height,
-                         inputs.frameIndex,
-                         static_cast<std::uint32_t>(mode),
-                         kPathSpacing,
-                         0,
-                         m_device->StorageImageIndex(m_reflections),
-                         inputs.reflectionRoughness,
-                         Counts(inputs.settings),
-                         inputs.settings.clamp,
-                         0,
-                         0,
-                         0,
-                         0};
+                           inputs.instanceBuffer,
+                           inputs.materialBuffer,
+                           m_device->StorageIndex(m_keys),
+                           m_device->StorageIndex(m_accumulation),
+                           m_device->StorageIndex(m_radiance),
+                           m_device->StorageIndex(m_ages),
+                           m_device->StorageIndex(m_anchors),
+                           m_device->BindlessIndex(inputs.depth),
+                           m_device->BindlessIndex(inputs.normals),
+                           m_device->StorageImageIndex(m_output),
+                           extent.width,
+                           extent.height,
+                           inputs.frameIndex,
+                           static_cast<std::uint32_t>(mode),
+                           kPathSpacing,
+                           0,
+                           m_device->StorageImageIndex(m_reflections),
+                           inputs.reflectionRoughness,
+                           Counts(inputs.settings),
+                           inputs.settings.clamp,
+                           0,
+                           0,
+                           0,
+                           0,
+                           inputs.denoiserGuides ? m_device->BindlessIndex(inputs.denoiserGuides) : kNoTexture,
+                           inputs.denoiserGuides ? m_device->BindlessIndex(inputs.motion) : kNoTexture};
 }
 
 void GlobalIllumination::AddCacheUpdate(RenderGraph& graph, const GlobalIlluminationInputs& inputs, Mode mode) {
@@ -283,7 +289,9 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
                    .group = "Indirect light",
                    .textures = {{m_output, rhi::Access::ComputeShaderWrite, !sparse},
                                 {inputs.depth, rhi::Access::ComputeShaderRead},
-                                {inputs.normals, rhi::Access::ComputeShaderRead}},
+                                {inputs.normals, rhi::Access::ComputeShaderRead},
+                                {inputs.denoiserGuides, rhi::Access::ComputeShaderRead},
+                                {inputs.motion, rhi::Access::ComputeShaderRead}},
                    .buffers = traced,
                    .structures = {{inputs.structure, rhi::Access::RayQueryRead}}},
                   [this, trace, traceGroupsX, traceGroupsY](rhi::CommandList& commands) {
