@@ -104,6 +104,9 @@ constexpr float kStepDistance = 2.45f;   // Meters walked between two footsteps.
 constexpr float kLadderDistance = 1.05f; // Meters climbed between two sounds.
 constexpr float kLandingSpeed = 4.0f;    // Meters per second.
 constexpr float kMusicVolume = 0.35f;
+// The old demo's track under the score, low, all through play: the music of the place, which the score's
+// layers then add their danger to.
+constexpr float kClassicUnderScore = 0.1f;
 
 enum class PickupKind { Health, Armor, HandgunAmmo, RifleAmmo, Flashlight, RedCard, Rifle };
 constexpr std::size_t kPickupKinds = 7;
@@ -142,7 +145,8 @@ struct SoundBank {
     audio::ClipHandle alarm;
     audio::ClipHandle fan;
     audio::ClipHandle music;
-    /// The old demo's track while the tour flies (ADR-0120), and how loud it still is as it fades out after.
+    /// The old demo's track, at full volume while the tour flies (ADR-0120), and how far it has come down
+    /// towards kClassicUnderScore since the tour handed over, from 1 to 0.
     audio::VoiceHandle tourMusic;
     float tourMusicLevel = 1.0f;
     /// The score in layers and its stingers (ADR-0068): scripts/make_music.py.
@@ -354,18 +358,15 @@ void StartLoopedSounds(scene::Scene& scene, ecs::Entity playerEntity, bool class
     ecs::World& world = scene.World();
     audio::SoundWorld& sounds = scene.Sounds();
     if (SoundBank* bank = world.TryGet<SoundBank>(playerEntity)) {
-        // The score rises with the danger (ADR-0068); the old demo's track stays a setting away. The tour flies
-        // to the old track, as the legacy flight did, and the score takes over after it (ADR-0120).
-        if (classicMusic || tour) {
-            const audio::VoiceHandle voice =
-                sounds.Play(bank->music, {.volume = kMusicVolume, .loop = true, .bus = audio::Bus::Music});
-            if (tour && !classicMusic) {
-                bank->tourMusic = voice;
-                if (voice.IsNull()) {
-                    sounds.PlayLayers(bank->tension, kMusicVolume * 1.6f);
-                }
-            }
-        } else {
+        // The score rises with the danger (ADR-0068), over the old demo's track played low; with the setting,
+        // the old track alone at full volume. The tour flies to the old track at full volume, as the legacy flight
+        // did, and the score comes in under it as it comes down (ADR-0120).
+        const bool loud = classicMusic || tour;
+        const audio::VoiceHandle voice = sounds.Play(
+            bank->music, {.volume = loud ? kMusicVolume : kClassicUnderScore, .loop = true, .bus = audio::Bus::Music});
+        if (tour && !classicMusic && !voice.IsNull()) {
+            bank->tourMusic = voice;
+        } else if (!classicMusic) {
             sounds.PlayLayers(bank->tension, kMusicVolume * 1.6f);
         }
     }
@@ -1495,14 +1496,15 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
             }
         }
         if (!bank->tourMusic.IsNull() && !scene.InCinematic()) {
-            // The tour has handed over: its track fades out over three seconds as the score comes in.
+            // The tour has handed over: its track comes down to where it plays under the score, over three seconds,
+            // as the score comes in.
             if (bank->tourMusicLevel == 1.0f) {
                 scene.Sounds().PlayLayers(bank->tension, kMusicVolume * 1.6f);
             }
             bank->tourMusicLevel = std::max(bank->tourMusicLevel - (static_cast<float>(delta.count()) / 3.0f), 0.0f);
-            scene.Sounds().SetVolume(bank->tourMusic, kMusicVolume * bank->tourMusicLevel);
+            scene.Sounds().SetVolume(bank->tourMusic,
+                                     kClassicUnderScore + ((kMusicVolume - kClassicUnderScore) * bank->tourMusicLevel));
             if (bank->tourMusicLevel <= 0.0f) {
-                scene.Sounds().Stop(bank->tourMusic);
                 bank->tourMusic = {};
             }
         }

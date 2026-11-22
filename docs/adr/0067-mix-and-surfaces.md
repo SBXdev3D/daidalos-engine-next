@@ -28,3 +28,7 @@ Tested: a 100 Hz snapshot takes a 440 Hz tone on the effects bus to 5% while the
 
 - **A low-pass node per voice:** muffles each sound by its own cause, but a filter per voice to drive; one filter on the world's buses is what a snapshot needs.
 - **Recorded sounds:** better sounding, but each needs a licence checked; the script's sounds need none.
+
+## Amendment (2026-11-21): a puddle that sounds like water
+
+The owner found the step in a puddle unrealistic: it was one burst of filtered noise and two to four sine tones. It is now built as water sounds are (van den Doel, "Physically based models for liquid sounds", 2005): the sole's slap, a slosh, 25 to 40 air bubbles that each ring at the Minnaert frequency of their radius (0.8 to 6 mm, most small), damped and rising in pitch as they near the surface, a few drops falling back, and a smaller splash with its own bubbles as the foot lifts. `scripts/make_surface_sounds.py` gives the water step its own dice, so that the impacts made after it stay the same files.

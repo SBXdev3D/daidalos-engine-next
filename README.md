@@ -163,7 +163,7 @@ The sandbox adds its own:
 | `sandbox.flashlight` | false | Start with the flashlight on |
 | `sandbox.aperture` | 0 | The camera's f-number for depth of field; 0 keeps everything sharp |
 | `sandbox.focus` | 3 | Meters the camera is focused at |
-| `sandbox.classic_music` | false | The old demo's music track instead of the score that follows the danger |
+| `sandbox.classic_music` | false | The old demo's music track alone, at full volume; otherwise it plays low under the score that follows the danger |
 | `sandbox.continue` | false | Start from the last checkpoint; F6 saves, F9 loads |
 | `game.language` | en | Language of the interface, subtitles and captions (a file of `assets/Text`) |
 | `game.subtitles`, `game.captions` | true, false | Show what is said, and what sounds are heard |

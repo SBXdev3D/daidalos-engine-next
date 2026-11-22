@@ -58,11 +58,10 @@ def write(path, samples):
 
 
 def drone(seconds, rng):
-    """D2, A2, D3 and F3, a dark open chord with soft overtones, breathing slowly, over a faint wind and a D1
-    beneath it. Pitched where ordinary speakers play: an octave lower (D1 and A1 alone, under wind three times
-    as loud) the notes went unheard and the layer sounded like noise."""
+    """D2, A2, D3 and F3, a dark open chord with soft overtones, breathing slowly, over a faint wind. Pitched
+    where ordinary speakers play: an octave lower (D1 and A1 alone, under wind three times as loud) the notes
+    went unheard and the layer sounded like noise. No D1 beneath any more: on headphones it was a loud rumble."""
     count = int(seconds * RATE)
-    sub = looped(36.71, seconds)
     # Each note, its level, and a twin a little sharp that beats slowly against it.
     notes = [(looped(f, seconds), level, looped(f + beat, seconds))
              for f, level, beat in ((73.42, 1.0, 0.25), (110.0, 0.7, 0.19), (146.83, 0.45, 0.31), (174.61, 0.3, 0.13))]
@@ -80,7 +79,6 @@ def drone(seconds, rng):
             for harmonic, gain in ((1, 1.0), (2, 0.25 + 0.2 * bright), (3, 0.1 + 0.15 * bright)):
                 tone += level * gain * (math.sin(2 * math.pi * frequency * harmonic * t) +
                                         0.5 * math.sin(2 * math.pi * twin * harmonic * t))
-        tone += 0.8 * math.sin(2 * math.pi * sub * t)
         out.append(tone * swell * 0.25 + wind[i])
     return out
 
@@ -165,9 +163,9 @@ def main():
     rng = random.Random(1311)
     loop = 16.0
     layers = [drone(loop, rng), heartbeat(loop), cluster(loop), screech(loop)]
-    # The drone plays all the time, the others only with danger: it sits well below them (8 dB), as a bed
-    # rather than a lead, so that calm is quiet and the danger layers stand out when they come.
-    peaks = [0.24, 0.6, 0.6, 0.6]
+    # The drone plays all the time, the others only with danger: it sits well below them (14 dB), as a bed
+    # rather than a lead, under the old demo's track, so that calm is quiet and the danger layers stand out.
+    peaks = [0.12, 0.6, 0.6, 0.6]
     for index, layer in enumerate(layers):
         write(OUT / f"tension_{index}.wav", normalize(layer, peaks[index]))
     for index in (1, 2):
