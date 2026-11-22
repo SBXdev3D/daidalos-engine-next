@@ -24,7 +24,7 @@ namespace sandbox {
 struct HudAssets {
     const daidalos::ui::Font* font = nullptr;
     const daidalos::ui::Font* boldFont = nullptr;
-    /// The legacy hud.png: health, armor, ammo and flashlight icons.
+    /// hud.png: health, armor, ammo and flashlight icons.
     daidalos::rhi::TextureHandle icons;
     daidalos::rhi::TextureHandle crosshair;
     /// The legacy loading screen's gear, which turns while a level loads.
