@@ -70,5 +70,4 @@ private:
     std::string m_status;
 };
 
-
 } // namespace editor

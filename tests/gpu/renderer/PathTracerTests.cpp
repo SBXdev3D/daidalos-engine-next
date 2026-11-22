@@ -2807,12 +2807,9 @@ TEST_F(PathTracerTest, HalfTheRoughReflectionsMatchThePathTracer) {
     ASSERT_TRUE(created.has_value()) << core::Format(created.error());
     const Image every =
         Rasterize(view, kExtent, {.frames = 64, .indirect = &*created, .warmup = 32, .reflections = true});
-    const Image half = Rasterize(view, kExtent,
-                                 {.frames = 64,
-                                  .indirect = &*created,
-                                  .warmup = 32,
-                                  .reflections = true,
-                                  .gi = {.reflectionPixelsPerRay = 2}});
+    const Image half = Rasterize(
+        view, kExtent,
+        {.frames = 64, .indirect = &*created, .warmup = 32, .reflections = true, .gi = {.reflectionPixelsPerRay = 2}});
     const float everyFlip = Flip(traced, every, kExtent);
     const float halfFlip = Flip(traced, half, kExtent);
     RecordProperty("flip", std::to_string(halfFlip));

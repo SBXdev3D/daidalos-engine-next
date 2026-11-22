@@ -107,12 +107,11 @@ VkAccelerationStructureBuildGeometryInfoKHR BuildInfo(const AccelerationStructur
                                                               : VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
         // A bottom-level structure built once may be compacted after its build (ADR-0100).
         .flags = static_cast<VkBuildAccelerationStructureFlagsKHR>(
-            desc.rebuiltEveryFrame
-                ? VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR
-                : VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR |
-                      (desc.level == AccelerationStructureLevel::Bottom
-                           ? VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR
-                           : 0)),
+            desc.rebuiltEveryFrame ? VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR
+                                   : VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR |
+                                         (desc.level == AccelerationStructureLevel::Bottom
+                                              ? VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR
+                                              : 0)),
         .mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
         .geometryCount = 1,
         .pGeometries = &geometry,
@@ -410,7 +409,7 @@ core::Result<void> Device::Impl::CompactBuiltStructures() {
             .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .memoryBarrierCount = 1, .pMemoryBarriers = &barrier};
         vkCmdPipelineBarrier2(uploads.commands, &dependency);
         DAI_LOG_DEBUG(kModule, "Compacted {} acceleration structures: {:.1f} MB to {:.1f} MB", compactedCount,
-                     static_cast<double>(builtBytes) / 1048576.0, static_cast<double>(compactedBytes) / 1048576.0);
+                      static_cast<double>(builtBytes) / 1048576.0, static_cast<double>(compactedBytes) / 1048576.0);
     }
     return {};
 }

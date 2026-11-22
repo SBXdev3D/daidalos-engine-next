@@ -489,13 +489,13 @@ core::Result<MeshPass> MeshPass::Create(rhi::Device& device, rhi::Format colorFo
     DAI_TRY(pass.ReplaceShaders(rhi::ToSpirv(kGBufferVsSpirv), rhi::ToSpirv(kGBufferPsSpirv)));
     DAI_TRY_ASSIGN(pass.m_skinningPipeline,
                    device.CreateComputePipeline({.shader = rhi::ToSpirv(kSkinningCsSpirv), .name = "Skinning"}));
-    DAI_TRY_ASSIGN(pass.m_materialGridPipeline, device.CreateComputePipeline({.shader = rhi::ToSpirv(kMaterialGridCsSpirv),
-                                                                              .name = "Material grid"}));
-    DAI_TRY_ASSIGN(pass.m_materialGrid,
-                   device.CreateBuffer({.size = std::uint64_t{kMaterialGrid.x} * kMaterialGrid.y * kMaterialGrid.z *
-                                                sizeof(glm::uvec4),
-                                        .usage = rhi::BufferUsage::Storage,
-                                        .name = "Material grid"}));
+    DAI_TRY_ASSIGN(
+        pass.m_materialGridPipeline,
+        device.CreateComputePipeline({.shader = rhi::ToSpirv(kMaterialGridCsSpirv), .name = "Material grid"}));
+    DAI_TRY_ASSIGN(pass.m_materialGrid, device.CreateBuffer({.size = std::uint64_t{kMaterialGrid.x} * kMaterialGrid.y *
+                                                                     kMaterialGrid.z * sizeof(glm::uvec4),
+                                                             .usage = rhi::BufferUsage::Storage,
+                                                             .name = "Material grid"}));
     DAI_TRY_ASSIGN(pass.m_emissiveAverage,
                    device.CreateComputePipeline(
                        {.shader = rhi::ToSpirv(kEmissiveAverageCsSpirv), .name = "Emission of triangles"}));
