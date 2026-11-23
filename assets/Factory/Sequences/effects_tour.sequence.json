@@ -151,7 +151,7 @@
    "at": 20.2,
    "sound": {
     "clip": "Factory/Sounds/Ambience/explosion.wav",
-    "volume": 1.0,
+    "volume": 5.0,
     "entity": "Explosion: blast A"
    }
   },
@@ -214,7 +214,7 @@
    "at": 25.2,
    "sound": {
     "clip": "Factory/Sounds/Ambience/explosion.wav",
-    "volume": 1.0,
+    "volume": 5.0,
     "entity": "Explosion: blast B"
    }
   },
@@ -277,7 +277,7 @@
    "at": 30.0,
    "sound": {
     "clip": "Factory/Sounds/Ambience/explosion.wav",
-    "volume": 1.0,
+    "volume": 5.0,
     "entity": "Explosion: blast C"
    }
   },
@@ -340,7 +340,7 @@
    "at": 30.5,
    "sound": {
     "clip": "Factory/Sounds/Ambience/explosion.wav",
-    "volume": 1.0,
+    "volume": 5.0,
     "entity": "Explosion: blast A"
    }
   },
@@ -470,7 +470,7 @@
    "at": 41.5,
    "sound": {
     "clip": "Factory/Sounds/Ambience/zap.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Electricity: box sparks"
    }
   },
@@ -501,7 +501,7 @@
    "at": 47.0,
    "sound": {
     "clip": "Factory/Sounds/Ambience/zap.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Electricity: box sparks"
    }
   },
@@ -532,7 +532,7 @@
    "at": 50.2,
    "sound": {
     "clip": "Factory/Sounds/Ambience/zap.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Electricity: box sparks"
    }
   },
@@ -1326,7 +1326,7 @@
    "at": 191.8,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -1342,7 +1342,7 @@
    "at": 191.917,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_concrete_1.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: concrete hit"
    }
   },
@@ -1398,7 +1398,7 @@
    "at": 192.42,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -1414,7 +1414,7 @@
    "at": 192.532,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_metal_2.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: metal hit"
    }
   },
@@ -1462,7 +1462,7 @@
    "at": 193.04,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -1478,7 +1478,7 @@
    "at": 193.147,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_wood_3.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: wood hit"
    }
   },
@@ -1526,7 +1526,7 @@
    "at": 193.66,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -1542,7 +1542,7 @@
    "at": 193.775,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_glass_1.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: glass hit"
    }
   },
@@ -1590,7 +1590,7 @@
    "at": 194.28,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -1606,7 +1606,7 @@
    "at": 194.398,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_metal_2.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: drum hit"
    }
   },
@@ -1654,7 +1654,7 @@
    "at": 195.38,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -1670,7 +1670,7 @@
    "at": 195.492,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_metal_3.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: metal hit"
    }
   },
@@ -1718,7 +1718,7 @@
    "at": 196.0,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -1734,7 +1734,7 @@
    "at": 196.117,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_concrete_1.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: concrete hit"
    }
   },
@@ -1790,7 +1790,7 @@
    "at": 196.62,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -1806,7 +1806,7 @@
    "at": 196.727,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_wood_2.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: wood hit"
    }
   },
@@ -1854,7 +1854,7 @@
    "at": 197.24,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -1870,7 +1870,7 @@
    "at": 197.358,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_metal_3.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: drum hit"
    }
   },
@@ -1918,7 +1918,7 @@
    "at": 197.86,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -1934,7 +1934,7 @@
    "at": 197.975,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_glass_1.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: glass hit"
    }
   },
@@ -1982,7 +1982,7 @@
    "at": 198.96,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -1998,7 +1998,7 @@
    "at": 199.072,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_metal_2.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: metal hit"
    }
   },
@@ -2046,7 +2046,7 @@
    "at": 199.58,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -2062,7 +2062,7 @@
    "at": 199.687,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_wood_3.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: wood hit"
    }
   },
@@ -2110,7 +2110,7 @@
    "at": 200.2,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -2126,7 +2126,7 @@
    "at": 200.317,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_concrete_1.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: concrete hit"
    }
   },
@@ -2182,7 +2182,7 @@
    "at": 200.82,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -2198,7 +2198,7 @@
    "at": 200.938,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_metal_2.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: drum hit"
    }
   },
@@ -2246,7 +2246,7 @@
    "at": 201.44,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -2262,7 +2262,7 @@
    "at": 201.552,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_metal_3.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: metal hit"
    }
   },
@@ -2310,7 +2310,7 @@
    "at": 202.54,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -2326,7 +2326,7 @@
    "at": 202.655,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_glass_1.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: glass hit"
    }
   },
@@ -2374,7 +2374,7 @@
    "at": 203.16,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -2390,7 +2390,7 @@
    "at": 203.267,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_wood_2.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: wood hit"
    }
   },
@@ -2438,7 +2438,7 @@
    "at": 203.78,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -2454,7 +2454,7 @@
    "at": 203.897,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_concrete_3.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: concrete hit"
    }
   },
@@ -2510,7 +2510,7 @@
    "at": 204.4,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -2526,7 +2526,7 @@
    "at": 204.518,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_metal_1.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: drum hit"
    }
   },
@@ -2574,7 +2574,7 @@
    "at": 205.02,
    "sound": {
     "clip": "Factory/Sounds/handgun_fire.wav",
-    "volume": 0.7,
+    "volume": 1.4,
     "entity": "Impacts: muzzle"
    }
   },
@@ -2597,7 +2597,7 @@
    "at": 205.132,
    "sound": {
     "clip": "Factory/Sounds/Surfaces/impact_metal_2.wav",
-    "volume": 1.0,
+    "volume": 1.5,
     "entity": "Impacts: metal hit"
    }
   },

@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <format>
 #include <fstream>
 #include <functional>
@@ -531,6 +532,9 @@ core::Result<void> Application::LoadConfiguration() {
             m_cvars.Register<std::string>("record.format", "jpg", "Image files of a recording: jpg or png");
         m_recordQuality =
             m_cvars.Register<std::int64_t>("record.quality", 95, "Quality of a recording's JPEG frames, from 1 to 100");
+        m_recordNormalize = m_cvars.Register<bool>(
+            "record.normalize", true,
+            "Raise or lower a recording's sound so that its loudest sample is at -1 dBFS; off, it is as mixed");
         m_effectsVolume = m_cvars.Register<double>("audio.effects", 1.0, "Volume of sound effects, from 0 to 1");
         m_musicVolume = m_cvars.Register<double>("audio.music", 1.0, "Volume of music, from 0 to 1");
         m_mouseSensitivity =
@@ -718,6 +722,7 @@ core::Result<void> Application::StartRecording() {
     recording.extension = format == "png" ? ".png" : ".jpg";
     recording.quality = static_cast<int>(std::clamp<std::int64_t>(m_recordQuality->Get(), 1, 100));
     recording.fps = static_cast<double>(std::clamp<std::int64_t>(m_recordFps->Get(), 1, 240));
+    recording.normalize = m_recordNormalize->Get();
     const audio::AudioConfig sound;
     recording.sampleRate = sound.sampleRate;
     recording.channels = sound.channels;
@@ -811,6 +816,22 @@ void Application::FinishRecording() {
                                                                recording.sampleRate / recording.fps)) *
                          recording.channels;
     recording.sound.resize(std::min(samples, recording.sound.size()));
+    // Mixed to be heard at the player's volume, the sound is far quieter than a video's: brought up as one, so
+    // that what is loud stays louder than what is quiet.
+    if (recording.normalize) {
+        float peak = 0.0f;
+        for (const float sample : recording.sound) {
+            peak = std::max(peak, std::isfinite(sample) ? std::abs(sample) : 0.0f);
+        }
+        if (peak > 1.0e-4f) {
+            constexpr float kTarget = 0.891f; // -1 dBFS.
+            const float gain = kTarget / peak;
+            for (float& sample : recording.sound) {
+                sample *= gain;
+            }
+            DAI_LOG_INFO(kModule, "Recording's sound brought to -1 dBFS: {:+.1f} dB", 20.0f * std::log10(gain));
+        }
+    }
     const std::filesystem::path soundPath = recording.directory / "sound.wav";
     core::Result<void> written =
         resources::EncodeWav(recording.sampleRate, recording.channels, recording.sound)
@@ -1268,7 +1289,10 @@ void Application::MainLoop(IApplicationHandler& handler) {
         }
 
         m_workers->Deliver();
-        if (m_audio.has_value()) {
+        if (m_audio.has_value() && m_recording.has_value()) {
+            // A recording is mixed as the game is made to sound, not at the player's volumes (ADR-0123).
+            m_audio->SetVolumes(1.0f, 1.0f, 1.0f);
+        } else if (m_audio.has_value()) {
             m_audio->SetVolumes(static_cast<float>(m_volume->Get()), static_cast<float>(m_effectsVolume->Get()),
                                 static_cast<float>(m_musicVolume->Get()));
         }

@@ -325,6 +325,7 @@ private:
         std::string extension;
         int quality = 95;
         double fps = 60.0;
+        bool normalize = true;
         bool stopping = false;
         std::uint64_t framesAsked = 0;
         std::uint64_t framesTaken = 0;
@@ -349,6 +350,7 @@ private:
     std::optional<core::CVar<std::int64_t>> m_recordFps;
     std::optional<core::CVar<std::string>> m_recordFormat;
     std::optional<core::CVar<std::int64_t>> m_recordQuality;
+    std::optional<core::CVar<bool>> m_recordNormalize;
     std::size_t m_capturesWriting = 0;
     std::vector<std::filesystem::path> m_savedCaptures;
     std::optional<core::CVar<bool>> m_directInput;

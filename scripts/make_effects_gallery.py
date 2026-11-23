@@ -408,7 +408,7 @@ def explosion_room(g):
                 particles_cue(at + 0.02, "explosion_debris", where, 24),
                 particles_cue(at + 0.05, "explosion_shock", where, 70),
                 particles_cue(at + 0.15, "explosion_smoke", where, 14),
-                sound_cue(at, "Factory/Sounds/Ambience/explosion.wav", where), shake(at, strength)]
+                sound_cue(at, "Factory/Sounds/Ambience/explosion.wav", where, 5.0), shake(at, strength)]
     room.shot(19.0, [
         (0.0, (4.5, 1.5, 3.8), (-0.5, 1.8, -4.5)),
         (19.5, (0.5, 1.3, 4.6), (0.0, 2.0, -4.8)),
@@ -460,7 +460,7 @@ def electricity_room(g):
     events = []
     for at in (5.5, 11.0, 14.2):
         events += [particles_cue(at, "sparks", spark_box, 90), particles_cue(at, "explosion_flare", spark_box, 1),
-                   sound_cue(at, "Factory/Sounds/Ambience/zap.wav", spark_box),
+                   sound_cue(at, "Factory/Sounds/Ambience/zap.wav", spark_box, 1.5),
                    {"at": at, "shake": {"strength": 0.2, "seconds": 0.4}}]
     room.shot(17.0, [
         (0.0, (-1.2, 0.7, 4.5), (0.0, 3.2, -3.0), 2.8),
@@ -834,8 +834,8 @@ def impacts_room(g):
         hit = at + distance / 120.0
         events += [particles_cue(at, "muzzle_flash", gun, 3), particles_cue(at, "gun_smoke", gun, 6),
                    particles_cue(at, "tracer", aim, 1), particles_cue(at + 0.05, "shell_casings", ejector, 1),
-                   sound_cue(at, "Factory/Sounds/handgun_fire.wav", gun, 0.7),
-                   sound_cue(hit, f"Factory/Sounds/Surfaces/impact_{surface}_{shot % 3 + 1}.wav", target_at)]
+                   sound_cue(at, "Factory/Sounds/handgun_fire.wav", gun, 1.4),
+                   sound_cue(hit, f"Factory/Sounds/Surfaces/impact_{surface}_{shot % 3 + 1}.wav", target_at, 1.5)]
         for effect in effects:
             count = {"impact_chips": 6, "impact_puff": 3, "sparks": 30, "impact_splinters": 6, "impact_glass": 14,
                      "glass_shards": 5}[effect]

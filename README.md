@@ -149,6 +149,7 @@ sandbox.exe +window.fullscreen true +renderer.antialiasing off
 | `record.fps` | 60 | Frames per second of a recording, whatever each takes to draw |
 | `record.format` | `jpg` | `jpg` or `png` |
 | `record.quality` | 95 | JPEG quality, from 1 to 100 |
+| `record.normalize` | true | Bring the recording's sound to a peak of -1 dBFS; it is mixed at full volume whatever the player's volumes |
 | `input.mouse_sensitivity` | 0.0025 | Radians of turn per mouse unit |
 | `input.rumble` | 1 | Strength of the gamepads' rumble, 0 (off) to 1 |
 
