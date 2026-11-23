@@ -229,6 +229,8 @@ struct Renderer::Impl {
     std::optional<VolumetricFog> volumetricFog;
     bool fog = true;
     bool tracedParticles = true;
+    // A recording's time per frame (ADR-0123), or none for the clock's.
+    std::optional<float> fixedFrameTime;
     FroxelGrid fogGrid;
     bool fogged = false;
     /// Seconds the views drawn have moved on by, which the noise of fog volumes follows.
@@ -648,12 +650,20 @@ const std::optional<DepthPicture>& Renderer::LatestDepth() const {
     return m_impl->depthProbe->Latest();
 }
 
-void Renderer::RequestCapture() {
-    m_impl->capture->Request();
+void Renderer::RequestCapture(bool video) {
+    m_impl->capture->Request(video);
 }
 
 std::optional<CapturedFrame> Renderer::TakeCapture() {
     return m_impl->capture->Take();
+}
+
+std::size_t Renderer::CapturesInFlight() const {
+    return m_impl->capture->InFlight();
+}
+
+void Renderer::SetFixedFrameTime(std::optional<float> seconds) {
+    m_impl->fixedFrameTime = seconds;
 }
 
 void Renderer::SetVolumetricFog(bool enabled, std::uint32_t slices, std::uint32_t tile) {
@@ -796,13 +806,15 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
     // The render resolution (ADR-0049). Only temporal antialiasing upscales: without it, and in debug views,
     // the scene renders at the output's.
     const auto now = std::chrono::steady_clock::now();
-    const float seconds =
-        impl.lastFrameTime.has_value() ? std::chrono::duration<float>(now - *impl.lastFrameTime).count() : 0.0f;
+    const float seconds = impl.fixedFrameTime.has_value() ? *impl.fixedFrameTime
+                          : impl.lastFrameTime.has_value()
+                              ? std::chrono::duration<float>(now - *impl.lastFrameTime).count()
+                              : 0.0f;
     impl.lastFrameTime = now;
     const ResolutionConfig& resolution = impl.resolution;
     impl.renderScale = impl.dynamicResolution.Update(
         impl.frameGpuTime, seconds,
-        {.enabled = taa && resolution.dynamic,
+        {.enabled = taa && resolution.dynamic && !impl.fixedFrameTime.has_value(),
          .maxScale = taa ? resolution.scale : 1.0f,
          .minScale = resolution.minScale,
          .budget = resolution.targetFps > 0.0f ? 0.9 * 1000.0 / resolution.targetFps : 0.0});
@@ -1263,18 +1275,24 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
             reads.push_back({impl.bloom->Output(), rhi::Access::FragmentShaderRead});
         }
         // A photo (ADR-0077): the same image without the interface, in SDR, and the scene's light it comes from.
+        // A video frame (ADR-0123) keeps the interface, where the fades are, and needs no light.
         if (impl.capture->Requested()) {
+            const bool video = impl.capture->Video();
             core::Result<rhi::PipelineHandle> capturePipeline = impl.OutputPipeline(rhi::Format::Rgba8Srgb);
-            core::Result<rhi::TextureHandle> target = impl.capture->DisplayTarget(frame.extent);
+            core::Result<rhi::TextureHandle> target = impl.capture->DisplayTarget(frame.slot, frame.extent);
             if (capturePipeline && target) {
                 OutputPushConstants photo = push;
-                photo.layer = kNoTexture;
+                const bool withLayer = video && layerDrawn;
+                photo.layer = withLayer ? push.layer : kNoTexture;
                 photo.hdr10 = 0;
                 photo.headroom = 1.0f;
                 std::vector<rhi::TextureUse> photoReads{{*target, rhi::Access::ColorTarget, true},
                                                         {source, rhi::Access::FragmentShaderRead}};
                 if (blooms) {
                     photoReads.push_back({impl.bloom->Output(), rhi::Access::FragmentShaderRead});
+                }
+                if (withLayer) {
+                    photoReads.push_back({impl.interfaceLayer, rhi::Access::FragmentShaderRead});
                 }
                 graph.AddPass({.name = "Capture",
                                .rendering = rhi::RenderingDesc{.colorTarget = *target},
@@ -1285,7 +1303,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                   commands.Draw(3);
                               });
                 // The light is the lit scene's, or the path tracer's; other debug views have none worth keeping.
-                const bool lit = impl.debugView == DebugView::Off || path;
+                const bool lit = !video && (impl.debugView == DebugView::Off || path);
                 if (core::Result<void> copied = impl.capture->AddCopies(
                         graph, frame.slot, lit ? std::optional(source) : std::nullopt, sceneExtent, displayScale);
                     !copied) {

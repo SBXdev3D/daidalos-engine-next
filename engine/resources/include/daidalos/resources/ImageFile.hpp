@@ -17,6 +17,11 @@ namespace daidalos::resources {
 [[nodiscard]] core::Result<std::vector<std::byte>> EncodePng(std::uint32_t width, std::uint32_t height,
                                                              std::span<const std::uint8_t> rgba);
 
+/// Encodes an RGBA8 image, rows from the top, to baseline JPEG at a quality from 1 to 100 (ADR-0123), for the
+/// frames of a recording. Alpha is dropped.
+[[nodiscard]] core::Result<std::vector<std::byte>> EncodeJpeg(std::uint32_t width, std::uint32_t height,
+                                                              std::span<const std::uint8_t> rgba, int quality);
+
 /// Encodes an image of linear RGB floats, rows from the top, to OpenEXR (ADR-0077): one part, scanlines,
 /// no compression, 32-bit float channels B, G and R, as every reader takes.
 [[nodiscard]] core::Result<std::vector<std::byte>> EncodeExr(std::uint32_t width, std::uint32_t height,

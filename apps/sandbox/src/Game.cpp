@@ -193,9 +193,36 @@ public:
         return {};
     }
 
+    /// Records the sequence that starts, when record.directory says where (ADR-0123), without the developer
+    /// tools' frame summary.
+    void StartRecording(app::Application& app) {
+        if (!app.RecordingAvailable()) {
+            return;
+        }
+#if DAI_DEV_TOOLS
+        if (app::DevTools* tools = app.Tools()) {
+            tools->SetSummaryShown(false);
+        }
+#endif
+        if (const core::Result<void> started = app.StartRecording(); !started) {
+            DAI_LOG_WARNING("sandbox", "Cannot record: {}", core::Format(started.error()));
+            return;
+        }
+        m_recordingSequence = true;
+    }
+
     void OnUpdate(app::Application& app, const core::FrameTime& time) override {
         const input::InputState& input = app.Input();
         const auto delta = static_cast<float>(time.delta.count());
+        // A recorded sequence (ADR-0123) ends the recording when it ends, and the game once it is written.
+        if (m_recordingSequence && (app.CurrentScene() == nullptr || app.CurrentScene()->PlayingSequences() == 0)) {
+            m_recordingSequence = false;
+            m_quitAfterRecording = true;
+            app.StopRecording();
+        }
+        if (m_quitAfterRecording && !app.Recording()) {
+            app.RequestQuit();
+        }
         // A menu closes in one frame and the game goes on in a later one, once the button that closed it
         // is released: the guns fire for as long as it is held.
         if (m_resumePending && !m_actions.IsDown(input, sandbox::Fire)) {
@@ -398,6 +425,8 @@ private:
                 m_openingPlayed = true;
                 if (const core::Result<void> played = target.PlaySequenceFile(m_startSequence); !played) {
                     DAI_LOG_WARNING("sandbox", "sandbox.sequence: {}", core::Format(played.error()));
+                } else {
+                    StartRecording(app);
                 }
             } else if (m_tour) {
                 // The tour stands in for the menu and the opening: it ends at the player's eyes.
@@ -409,6 +438,7 @@ private:
                 } else {
                     m_tourPlaying = true;
                     m_settings.darkness = m_tourDarkness;
+                    StartRecording(app);
                 }
             } else if (m_menuAtStart && !m_calibrated) {
                 m_screen = sandbox::Screen::Main;
@@ -872,6 +902,9 @@ private:
     /// The legacy demo's flight over the whole factory (ADR-0120), instead of the menu: sandbox.tour.
     static constexpr std::string_view kTourSequence = "Factory/Sequences/tour.sequence.json";
     bool m_tour = false;
+    // Recording the start sequence or the tour (ADR-0123), and quitting once it is written.
+    bool m_recordingSequence = false;
+    bool m_quitAfterRecording = false;
     /// sandbox.sequence: a sequence played at the start instead of the menu (ADR-0122).
     std::string m_startSequence;
     bool m_tourPlaying = false;

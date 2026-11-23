@@ -145,6 +145,10 @@ sandbox.exe +window.fullscreen true +renderer.antialiasing off
 | `view.fov` | 90 | Degrees across the screen, from 30 to 150 |
 | `view.distance` | 150 | Meters: nothing farther is drawn or lit |
 | `audio.volume`, `audio.effects`, `audio.music` | 1 | Volumes, from 0 to 1, read at startup |
+| `record.directory` | | Record into this directory (ADR-0123): the sandbox writes its start sequence or tour as a numbered image per frame and `sound.wav`, then quits; the sound plays on no device meanwhile |
+| `record.fps` | 60 | Frames per second of a recording, whatever each takes to draw |
+| `record.format` | `jpg` | `jpg` or `png` |
+| `record.quality` | 95 | JPEG quality, from 1 to 100 |
 | `input.mouse_sensitivity` | 0.0025 | Radians of turn per mouse unit |
 | `input.rumble` | 1 | Strength of the gamepads' rumble, 0 (off) to 1 |
 

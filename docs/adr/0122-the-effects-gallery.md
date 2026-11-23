@@ -34,6 +34,6 @@ Sequences (ADR-0071) already had what a film needs, except a fade: camera cues, 
 ## Alternatives considered
 
 - **Reworking the test room**: its rows are what its measurements compare; a gallery of rooms is another level.
-- **Built-in capture at a fixed frame rate** (frames to PNG, sound mixed offline): no hitch would show whatever a frame costs, but sound would need an offline mixer. The owner records with OBS.
+- **Built-in capture at a fixed frame rate** (frames to PNG, sound mixed offline): no hitch would show whatever a frame costs, but sound would need an offline mixer. The owner records with OBS. The owner later asked for it after all: ADR-0123.
 - **Prewarming emitters out of view** so that effects are full at the cut: it would mean simulating every room's particles at once, against the pool and the budget, for what a second and a half of black does.
 - **Fades drawn by the renderer**: the game already draws what covers the scene (the loading screen, the menus, the damage flash), and a fade belongs with them.

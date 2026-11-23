@@ -349,10 +349,16 @@ public:
     [[nodiscard]] const std::optional<DepthPicture>& LatestDepth() const;
 
     /// Reads the next frame drawn back (ADR-0077), which TakeCapture returns once the GPU has finished it, a
-    /// frame or two later.
-    void RequestCapture();
-    /// The frame captured, once.
+    /// frame or two later. A video frame (ADR-0123) keeps the interface, which draws the fades, and leaves the
+    /// scene's light out; asked for before each frame, every frame comes back.
+    void RequestCapture(bool video = false);
+    /// The frames captured, oldest first, each once.
     [[nodiscard]] std::optional<CapturedFrame> TakeCapture();
+    /// Captures drawn and not read back yet.
+    [[nodiscard]] std::size_t CapturesInFlight() const;
+    /// Seconds each frame stands for, instead of the time between them, for a recording (ADR-0123): the
+    /// upscaler is told so, and dynamic resolution holds the render scale. Nothing for the clock.
+    void SetFixedFrameTime(std::optional<float> seconds);
 
     /// GPU time of each pass of a recent frame, which the GPU finished a frame or two ago. Empty on a
     /// device without timestamps, and for the first frames.

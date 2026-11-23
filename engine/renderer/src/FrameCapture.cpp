@@ -38,88 +38,92 @@ float HalfToFloat(std::uint16_t half) {
 } // namespace
 
 FrameCapture::FrameCapture(FrameCapture&& other) noexcept
-    : m_device(other.m_device), m_requested(other.m_requested), m_slot(other.m_slot),
-      m_display(std::exchange(other.m_display, {})), m_displayExtent(other.m_displayExtent),
-      m_displayBuffer(std::exchange(other.m_displayBuffer, {})), m_sceneBuffer(std::exchange(other.m_sceneBuffer, {})),
-      m_sceneTexture(other.m_sceneTexture), m_sceneExtent(other.m_sceneExtent), m_sceneFormat(other.m_sceneFormat),
-      m_exposure(other.m_exposure), m_done(std::move(other.m_done)) {}
+    : m_device(other.m_device), m_request(std::exchange(other.m_request, std::nullopt)),
+      m_slots(std::exchange(other.m_slots, {})), m_done(std::move(other.m_done)) {}
 
 FrameCapture::~FrameCapture() {
-    Release();
+    for (Slot& slot : m_slots) {
+        Release(slot);
+    }
 }
 
-void FrameCapture::Release() {
-    if (const rhi::TextureHandle display = std::exchange(m_display, {}); !display.IsNull()) {
+void FrameCapture::Release(Slot& slot) {
+    if (const rhi::TextureHandle display = std::exchange(slot.display, {}); !display.IsNull()) {
         m_device->DestroyTexture(display);
     }
-    for (rhi::BufferHandle* buffer : {&m_displayBuffer, &m_sceneBuffer}) {
+    for (rhi::BufferHandle* buffer : {&slot.displayBuffer, &slot.sceneBuffer}) {
         if (const rhi::BufferHandle released = std::exchange(*buffer, {}); !released.IsNull()) {
             m_device->DestroyBuffer(released);
         }
     }
-    m_displayExtent = {};
+    slot.displayExtent = {};
+    slot.sceneBytes = 0;
+    slot.recorded = false;
 }
 
-core::Result<rhi::TextureHandle> FrameCapture::DisplayTarget(rhi::Extent extent) {
-    if (!m_display.IsNull() && m_displayExtent.width == extent.width && m_displayExtent.height == extent.height) {
-        return m_display;
+core::Result<rhi::TextureHandle> FrameCapture::DisplayTarget(std::uint32_t index, rhi::Extent extent) {
+    DAI_ASSERT(index < m_slots.size(), "A frame slot");
+    Slot& slot = m_slots[index];
+    if (!slot.display.IsNull() && slot.displayExtent.width == extent.width &&
+        slot.displayExtent.height == extent.height) {
+        return slot.display;
     }
-    if (!m_display.IsNull()) {
-        m_device->DestroyTexture(std::exchange(m_display, {}));
-    }
-    DAI_TRY_ASSIGN(m_display,
+    Release(slot);
+    DAI_TRY_ASSIGN(slot.display,
                    m_device->CreateTexture({.extent = extent,
                                             .format = rhi::Format::Rgba8Srgb,
                                             .usage = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::TransferSrc,
                                             .name = "Capture"}));
-    m_displayExtent = extent;
-    return m_display;
+    DAI_TRY_ASSIGN(slot.displayBuffer, m_device->CreateBuffer({.size = std::uint64_t{extent.width} * extent.height * 4,
+                                                               .usage = rhi::BufferUsage::TransferDst,
+                                                               .memory = rhi::MemoryLocation::GpuToCpu,
+                                                               .name = "Capture readback"}));
+    slot.displayExtent = extent;
+    return slot.display;
 }
 
-core::Result<void> FrameCapture::AddCopies(RenderGraph& graph, std::uint32_t slot,
+core::Result<void> FrameCapture::AddCopies(RenderGraph& graph, std::uint32_t index,
                                            std::optional<rhi::TextureHandle> scene, rhi::Extent sceneExtent,
                                            float exposure) {
-    DAI_ASSERT(!m_display.IsNull(), "The display target is drawn before its copy");
-    for (rhi::BufferHandle* buffer : {&m_displayBuffer, &m_sceneBuffer}) {
-        if (const rhi::BufferHandle released = std::exchange(*buffer, {}); !released.IsNull()) {
-            m_device->DestroyBuffer(released);
-        }
-    }
-    DAI_TRY_ASSIGN(m_displayBuffer,
-                   m_device->CreateBuffer({.size = std::uint64_t{m_displayExtent.width} * m_displayExtent.height * 4,
-                                           .usage = rhi::BufferUsage::TransferDst,
-                                           .memory = rhi::MemoryLocation::GpuToCpu,
-                                           .name = "Capture readback"}));
-    m_sceneFormat = rhi::Format::Undefined;
+    DAI_ASSERT(index < m_slots.size(), "A frame slot");
+    Slot& slot = m_slots[index];
+    DAI_ASSERT(!slot.display.IsNull(), "The display target is drawn before its copy");
+    slot.sceneFormat = rhi::Format::Undefined;
     if (scene.has_value()) {
         const rhi::Format format = m_device->TextureFormat(*scene);
         const std::uint64_t pixelBytes = format == rhi::Format::Rgba32Float   ? 16
                                          : format == rhi::Format::Rgba16Float ? 8
                                                                               : 0;
         if (pixelBytes > 0) {
-            m_sceneTexture = m_device->TextureExtent(*scene);
-            DAI_TRY_ASSIGN(m_sceneBuffer, m_device->CreateBuffer({.size = std::uint64_t{m_sceneTexture.width} *
-                                                                          m_sceneTexture.height * pixelBytes,
-                                                                  .usage = rhi::BufferUsage::TransferDst,
-                                                                  .memory = rhi::MemoryLocation::GpuToCpu,
-                                                                  .name = "Capture scene readback"}));
-            m_sceneFormat = format;
-            m_sceneExtent = {std::min(sceneExtent.width, m_sceneTexture.width),
-                             std::min(sceneExtent.height, m_sceneTexture.height)};
+            slot.sceneTexture = m_device->TextureExtent(*scene);
+            const std::uint64_t bytes = std::uint64_t{slot.sceneTexture.width} * slot.sceneTexture.height * pixelBytes;
+            if (slot.sceneBuffer.IsNull() || slot.sceneBytes != bytes) {
+                if (const rhi::BufferHandle released = std::exchange(slot.sceneBuffer, {}); !released.IsNull()) {
+                    m_device->DestroyBuffer(released);
+                }
+                DAI_TRY_ASSIGN(slot.sceneBuffer, m_device->CreateBuffer({.size = bytes,
+                                                                         .usage = rhi::BufferUsage::TransferDst,
+                                                                         .memory = rhi::MemoryLocation::GpuToCpu,
+                                                                         .name = "Capture scene readback"}));
+                slot.sceneBytes = bytes;
+            }
+            slot.sceneFormat = format;
+            slot.sceneExtent = {std::min(sceneExtent.width, slot.sceneTexture.width),
+                                std::min(sceneExtent.height, slot.sceneTexture.height)};
         }
     }
-    m_exposure = exposure;
+    slot.exposure = exposure;
 
-    std::vector<rhi::TextureUse> textures{{m_display, rhi::Access::TransferRead}};
-    std::vector<rhi::BufferUse> buffers{{m_displayBuffer, rhi::Access::TransferWrite}};
-    const bool withScene = m_sceneFormat != rhi::Format::Undefined;
+    std::vector<rhi::TextureUse> textures{{slot.display, rhi::Access::TransferRead}};
+    std::vector<rhi::BufferUse> buffers{{slot.displayBuffer, rhi::Access::TransferWrite}};
+    const bool withScene = slot.sceneFormat != rhi::Format::Undefined;
     if (withScene) {
         textures.push_back({*scene, rhi::Access::TransferRead});
-        buffers.push_back({m_sceneBuffer, rhi::Access::TransferWrite});
+        buffers.push_back({slot.sceneBuffer, rhi::Access::TransferWrite});
     }
-    const rhi::TextureHandle display = m_display;
-    const rhi::BufferHandle displayBuffer = m_displayBuffer;
-    const rhi::BufferHandle sceneBuffer = m_sceneBuffer;
+    const rhi::TextureHandle display = slot.display;
+    const rhi::BufferHandle displayBuffer = slot.displayBuffer;
+    const rhi::BufferHandle sceneBuffer = withScene ? slot.sceneBuffer : rhi::BufferHandle{};
     const rhi::TextureHandle sceneTexture = withScene ? *scene : rhi::TextureHandle{};
     graph.AddPass({.name = "Capture readback",
                    .group = "Capture",
@@ -131,30 +135,35 @@ core::Result<void> FrameCapture::AddCopies(RenderGraph& graph, std::uint32_t slo
                           commands.CopyTextureToBuffer(sceneTexture, sceneBuffer);
                       }
                   });
-    m_slot = slot;
+    slot.recorded = true;
+    m_request.reset();
     return {};
 }
 
-void FrameCapture::Read(std::uint32_t slot) {
-    if (!m_slot.has_value() || *m_slot != slot) {
+void FrameCapture::Read(std::uint32_t index) {
+    if (index >= m_slots.size()) {
+        return;
+    }
+    Slot& slot = m_slots[index];
+    if (!slot.recorded) {
         return;
     }
     DAI_PROFILE_SCOPE("renderer::FrameCapture::Read");
     CapturedFrame frame;
-    frame.width = m_displayExtent.width;
-    frame.height = m_displayExtent.height;
-    const std::span<const std::byte> display = m_device->Mapped(m_displayBuffer);
+    frame.width = slot.displayExtent.width;
+    frame.height = slot.displayExtent.height;
+    const std::span<const std::byte> display = m_device->Mapped(slot.displayBuffer);
     frame.display.resize(std::size_t{frame.width} * frame.height * 4);
     std::memcpy(frame.display.data(), display.data(), frame.display.size());
-    if (m_sceneFormat != rhi::Format::Undefined) {
-        const std::span<const std::byte> scene = m_device->Mapped(m_sceneBuffer);
-        frame.sceneWidth = m_sceneExtent.width;
-        frame.sceneHeight = m_sceneExtent.height;
+    if (slot.sceneFormat != rhi::Format::Undefined) {
+        const std::span<const std::byte> scene = m_device->Mapped(slot.sceneBuffer);
+        frame.sceneWidth = slot.sceneExtent.width;
+        frame.sceneHeight = slot.sceneExtent.height;
         frame.scene.resize(std::size_t{frame.sceneWidth} * frame.sceneHeight * 3);
-        const bool wide = m_sceneFormat == rhi::Format::Rgba32Float;
+        const bool wide = slot.sceneFormat == rhi::Format::Rgba32Float;
         for (std::uint32_t y = 0; y < frame.sceneHeight; ++y) {
             for (std::uint32_t x = 0; x < frame.sceneWidth; ++x) {
-                const std::size_t texel = (std::size_t{y} * m_sceneTexture.width) + x;
+                const std::size_t texel = (std::size_t{y} * slot.sceneTexture.width) + x;
                 float* out = &frame.scene[((std::size_t{y} * frame.sceneWidth) + x) * 3];
                 for (std::size_t channel = 0; channel < 3; ++channel) {
                     float value = 0.0f;
@@ -165,19 +174,30 @@ void FrameCapture::Read(std::uint32_t slot) {
                         std::memcpy(&half, scene.data() + (((texel * 4) + channel) * 2), 2);
                         value = HalfToFloat(half);
                     }
-                    out[channel] = std::isfinite(value) ? std::max(value * m_exposure, 0.0f) : 0.0f;
+                    out[channel] = std::isfinite(value) ? std::max(value * slot.exposure, 0.0f) : 0.0f;
                 }
             }
         }
     }
-    m_done = std::move(frame);
-    m_slot.reset();
-    m_requested = false;
-    Release();
+    m_done.push_back(std::move(frame));
+    slot.recorded = false;
+    // A single photo gives its memory back; a recording keeps it for the next frame of this slot.
+    if (!m_request.has_value()) {
+        Release(slot);
+    }
 }
 
 std::optional<CapturedFrame> FrameCapture::Take() {
-    return std::exchange(m_done, std::nullopt);
+    if (m_done.empty()) {
+        return std::nullopt;
+    }
+    CapturedFrame frame = std::move(m_done.front());
+    m_done.pop_front();
+    return frame;
+}
+
+std::size_t FrameCapture::InFlight() const {
+    return static_cast<std::size_t>(std::ranges::count(m_slots, true, &Slot::recorded));
 }
 
 } // namespace daidalos::renderer

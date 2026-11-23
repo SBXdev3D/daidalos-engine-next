@@ -8,6 +8,7 @@
 #include <daidalos/platform/CrashHandler.hpp>
 #include <daidalos/platform/CrashReport.hpp>
 #include <daidalos/resources/ImageFile.hpp>
+#include <daidalos/resources/WavFile.hpp>
 
 #include <glm/trigonometric.hpp>
 
@@ -36,6 +37,9 @@ constexpr std::uint32_t kMaxWorkerThreads = 4;
 // settle, over this many (ADR-0052).
 constexpr std::uint32_t kProbeWarmupFrames = 90;
 constexpr std::uint32_t kProbeFrames = 120;
+/// Frames of a recording being encoded at once (ADR-0123): drawing waits beyond, so that they do not pile up
+/// in memory.
+constexpr std::size_t kMaxRecordedFramesWriting = 8;
 // The settings the presets decide, which ChooseQuality puts back to the preset.
 constexpr std::array<std::string_view, 17> kPresetSettings{"renderer.render_scale",
                                                            "renderer.min_render_scale",
@@ -341,6 +345,15 @@ core::Result<void> Application::Start(IApplicationHandler& handler) {
 }
 
 void Application::Stop() {
+    // A recording cut short keeps the frames read back so far, and its sound.
+    if (m_recording.has_value() && m_workers.has_value()) {
+        m_recording->stopping = true;
+        while (m_recording->writing > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            m_workers->Deliver();
+        }
+        FinishRecording();
+    }
     // The scene first, because its assets and sounds belong to the renderer and the audio engine. The
     // handler may have created one before failing in OnStart.
     m_pendingScene.reset();
@@ -508,6 +521,16 @@ core::Result<void> Application::LoadConfiguration() {
             "renderer.sync_validation", false,
             "With validation, also check the synchronization between passes (slow), read at startup");
         m_volume = m_cvars.Register<double>("audio.volume", 1.0, "Overall volume, from 0 to 1");
+        m_recordDirectory = m_cvars.Register<std::string>(
+            "record.directory", "",
+            "Where a recording goes (ADR-0123): a numbered image per frame and sound.wav; the sandbox records its "
+            "start sequence or tour into it, then quits. Empty for none; set, the sound plays on no device");
+        m_recordFps = m_cvars.Register<std::int64_t>(
+            "record.fps", 60, "Frames per second of a recording, from 1 to 240, however long they take to draw");
+        m_recordFormat =
+            m_cvars.Register<std::string>("record.format", "jpg", "Image files of a recording: jpg or png");
+        m_recordQuality =
+            m_cvars.Register<std::int64_t>("record.quality", 95, "Quality of a recording's JPEG frames, from 1 to 100");
         m_effectsVolume = m_cvars.Register<double>("audio.effects", 1.0, "Volume of sound effects, from 0 to 1");
         m_musicVolume = m_cvars.Register<double>("audio.music", 1.0, "Volume of music, from 0 to 1");
         m_mouseSensitivity =
@@ -615,6 +638,10 @@ void Application::CaptureFrame(std::filesystem::path base, bool exr) {
         DAI_LOG_WARNING(kModule, "Nothing to capture without rendering");
         return;
     }
+    if (m_recording.has_value()) {
+        DAI_LOG_WARNING(kModule, "No photo while recording");
+        return;
+    }
     m_capture = PendingCapture{.base = std::move(base), .exr = exr};
     m_renderer->RequestCapture();
 }
@@ -661,7 +688,146 @@ core::Result<std::filesystem::path> WriteCapture(const std::filesystem::path& ba
 
 } // namespace
 
+bool Application::RecordingAvailable() const {
+    return m_recordDirectory.has_value() && !m_recordDirectory->Get().empty();
+}
+
+core::Result<void> Application::StartRecording() {
+    if (!RecordingAvailable()) {
+        return core::MakeError(core::ErrorCode::InvalidArgument, kModule, "record.directory is empty");
+    }
+    if (!m_renderer.has_value()) {
+        return core::MakeError(core::ErrorCode::InvalidArgument, kModule, "Nothing to record without rendering");
+    }
+    if (m_recording.has_value()) {
+        return core::MakeError(core::ErrorCode::InvalidArgument, kModule, "Already recording");
+    }
+    ActiveRecording recording;
+    recording.directory = std::filesystem::path(m_recordDirectory->Get());
+    std::error_code error;
+    std::filesystem::create_directories(recording.directory, error);
+    if (error) {
+        return core::MakeError(
+            core::ErrorCode::IoError, kModule,
+            std::format("Cannot make '{}': {}", recording.directory.generic_string(), error.message()));
+    }
+    const std::string format = m_recordFormat->Get();
+    if (format != "jpg" && format != "jpeg" && format != "png") {
+        DAI_LOG_WARNING(kModule, "record.format '{}' is not jpg or png: jpg it is", format);
+    }
+    recording.extension = format == "png" ? ".png" : ".jpg";
+    recording.quality = static_cast<int>(std::clamp<std::int64_t>(m_recordQuality->Get(), 1, 100));
+    recording.fps = static_cast<double>(std::clamp<std::int64_t>(m_recordFps->Get(), 1, 240));
+    const audio::AudioConfig sound;
+    recording.sampleRate = sound.sampleRate;
+    recording.channels = sound.channels;
+    if (!m_soundForRecording) {
+        DAI_LOG_WARNING(kModule, "Recording without sound: record.directory was not set at the start");
+    }
+    m_renderer->SetFixedFrameTime(static_cast<float>(1.0 / recording.fps));
+    DAI_LOG_INFO(kModule, "Recording into '{}' at {} frames per second", recording.directory.generic_string(),
+                 recording.fps);
+    m_recording = std::move(recording);
+    return {};
+}
+
+void Application::StopRecording() {
+    if (m_recording.has_value() && !m_recording->stopping) {
+        m_recording->stopping = true;
+        DAI_LOG_INFO(kModule, "Recording stopped after {} frames; writing the last ones", m_recording->framesAsked);
+    }
+}
+
+void Application::RecordFrame() {
+    if (!m_recording.has_value() || m_recording->stopping || !m_renderer.has_value()) {
+        return;
+    }
+    ActiveRecording& recording = *m_recording;
+    m_renderer->RequestCapture(true);
+    ++recording.framesAsked;
+    // The sound of the time this frame stands for, from where the last one ended, so that rounding never drifts.
+    const auto until = static_cast<std::uint64_t>(
+        std::llround(static_cast<double>(recording.framesAsked) * recording.sampleRate / recording.fps));
+    const std::size_t count = static_cast<std::size_t>(until - recording.soundFrames) * recording.channels;
+    const std::size_t start = recording.sound.size();
+    recording.sound.resize(start + count, 0.0f);
+    if (m_audio.has_value() && m_soundForRecording) {
+        m_audio->Read(std::span(recording.sound).subspan(start, count));
+    }
+    recording.soundFrames = until;
+}
+
+void Application::WriteRecording() {
+    ActiveRecording& recording = *m_recording;
+    while (std::optional<renderer::CapturedFrame> frame = m_renderer->TakeCapture()) {
+        const std::filesystem::path path =
+            recording.directory / std::format("frame_{:06}{}", recording.framesTaken++, recording.extension);
+        auto shared = std::make_shared<renderer::CapturedFrame>(std::move(*frame));
+        ++recording.writing;
+        Workers().Submit(
+            [shared, path, png = recording.extension == ".png", quality = recording.quality]() -> core::Result<void> {
+                DAI_TRY_ASSIGN(const std::vector<std::byte> encoded,
+                               png ? resources::EncodePng(shared->width, shared->height, shared->display)
+                                   : resources::EncodeJpeg(shared->width, shared->height, shared->display, quality));
+                return resources::WriteFile(path, encoded);
+            },
+            [this](core::Result<void> written) {
+                if (!m_recording.has_value()) {
+                    return;
+                }
+                --m_recording->writing;
+                if (!written) {
+                    if (m_recording->framesFailed++ == 0) {
+                        DAI_LOG_WARNING(kModule, "Recording: {}", core::Format(written.error()));
+                    }
+                }
+            });
+        if (recording.framesTaken % static_cast<std::uint64_t>(recording.fps * 10.0) == 0) {
+            DAI_LOG_INFO(kModule, "Recorded {} frames ({:.0f} s)", recording.framesTaken,
+                         static_cast<double>(recording.framesTaken) / recording.fps);
+        }
+        // The frames are drawn faster than they are encoded: wait rather than hold them all in memory.
+        while (recording.writing > kMaxRecordedFramesWriting) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            m_workers->Deliver();
+        }
+    }
+    if (recording.stopping && m_renderer->CapturesInFlight() == 0 && recording.writing == 0) {
+        FinishRecording();
+    }
+}
+
+void Application::FinishRecording() {
+    ActiveRecording recording = std::move(*m_recording);
+    m_recording.reset();
+    if (m_renderer.has_value()) {
+        m_renderer->SetFixedFrameTime(std::nullopt);
+    }
+    if (m_currentScene) {
+        m_currentScene->Sounds().SetFixedStep(std::nullopt);
+    }
+    // As many samples as the frames written stand for.
+    const auto samples = static_cast<std::size_t>(std::llround(static_cast<double>(recording.framesTaken) *
+                                                               recording.sampleRate / recording.fps)) *
+                         recording.channels;
+    recording.sound.resize(std::min(samples, recording.sound.size()));
+    const std::filesystem::path soundPath = recording.directory / "sound.wav";
+    core::Result<void> written =
+        resources::EncodeWav(recording.sampleRate, recording.channels, recording.sound)
+            .and_then([&](const std::vector<std::byte>& wav) { return resources::WriteFile(soundPath, wav); });
+    if (!written) {
+        DAI_LOG_WARNING(kModule, "Recording's sound: {}", core::Format(written.error()));
+    }
+    DAI_LOG_INFO(kModule, "Recorded {} frames ({:.1f} s) into '{}'{}", recording.framesTaken,
+                 static_cast<double>(recording.framesTaken) / recording.fps, recording.directory.generic_string(),
+                 recording.framesFailed > 0 ? std::format(", {} of them not written", recording.framesFailed) : "");
+}
+
 void Application::WriteCaptures() {
+    if (m_recording.has_value() && m_renderer.has_value()) {
+        WriteRecording();
+        return;
+    }
     if (!m_capture.has_value() || !m_renderer.has_value()) {
         return;
     }
@@ -712,13 +878,20 @@ void Application::CreateAudio() {
     if (!m_config.audio) {
         return;
     }
+    // A recording reads the sound itself, at the pace of its frames (ADR-0123).
+    const bool recordable = RecordingAvailable();
+    if (recordable) {
+        DAI_LOG_INFO(kModule, "record.directory is set: the sound goes to recordings, not to a device");
+    }
     core::Result<audio::AudioEngine> created = audio::AudioEngine::Create({
+        .useDevice = !recordable,
         .volume = static_cast<float>(m_volume->Get()),
         .effectsVolume = static_cast<float>(m_effectsVolume->Get()),
         .musicVolume = static_cast<float>(m_musicVolume->Get()),
     });
     if (created) {
         m_audio.emplace(std::move(*created));
+        m_soundForRecording = recordable;
     } else {
         DAI_LOG_WARNING(kModule, "Running without sound: {}", core::Format(created.error()));
     }
@@ -1101,8 +1274,13 @@ void Application::MainLoop(IApplicationHandler& handler) {
         }
 
         const auto now = std::chrono::steady_clock::now();
-        const core::FrameTime time = timer.Advance(now - previous);
+        // A recording's frames each stand for the same time, however long they take (ADR-0123).
+        const core::FrameTime time = timer.Advance(m_recording.has_value() ? core::Seconds(1.0 / m_recording->fps)
+                                                                           : core::Seconds(now - previous));
         previous = now;
+        if (m_recording.has_value() && m_currentScene) {
+            m_currentScene->Sounds().SetFixedStep(static_cast<float>(1.0 / m_recording->fps));
+        }
 
         {
             DAI_PROFILE_SCOPE("FixedUpdate");
@@ -1145,6 +1323,7 @@ void Application::MainLoop(IApplicationHandler& handler) {
 #endif
         if (m_renderer.has_value()) {
             DAI_PROFILE_SCOPE("Render");
+            RecordFrame();
             RenderFrame(handler);
             WriteCaptures();
         }

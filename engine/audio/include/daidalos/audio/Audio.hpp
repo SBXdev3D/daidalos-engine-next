@@ -205,6 +205,9 @@ public:
     /// Releases the voices that ended, moves the mix towards its snapshot and its ducking, then simulates how
     /// each sound reaches the listener through the geometry. Run it once per frame.
     void Update();
+    /// Seconds each Update stands for, instead of the time since the last one: a recording (ADR-0123) reads the
+    /// mix faster or slower than it plays. Nothing for the clock.
+    void SetFixedStep(std::optional<float> seconds);
     /// Milliseconds the last Update spent simulating, for the sound's CPU budget.
     [[nodiscard]] double LastSimulationMilliseconds() const;
     /// Milliseconds the last round of the worker thread took, every 50 ms: the reverb and the paths.
