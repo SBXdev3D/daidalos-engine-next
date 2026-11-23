@@ -1020,7 +1020,7 @@
           0.8,
           1.0
         ],
-        "intensity": 0.0,
+        "intensity": 1.0,
         "radius": 0.05,
         "range": 16.0,
         "type": "point"
@@ -1664,15 +1664,45 @@
     },
     {
       "id": 97,
+      "light": {
+        "color": [
+          0.75,
+          0.8,
+          1.0
+        ],
+        "inner_angle": 50,
+        "intensity": 10.0,
+        "outer_angle": 75,
+        "radius": 1.0,
+        "range": 32.0,
+        "type": "spot"
+      },
+      "name": "Rain: lightning flash",
+      "transform": {
+        "rotation": [
+          -0.5429711,
+          0.0,
+          0.0,
+          0.8397514
+        ],
+        "translation": [
+          180.0,
+          20.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "id": 98,
       "lightning": {
         "bolt": "Effects/lightning.ribbon.json",
         "duration": 0.5,
-        "flash": 500,
+        "flash": 3000,
         "interval": [
           4.0,
           8.0
         ],
-        "light": 2
+        "light": 97
       },
       "name": "Rain: lightning",
       "transform": {
@@ -1705,7 +1735,7 @@
           0.02
         ]
       },
-      "id": 98,
+      "id": 99,
       "name": "Rain: rain haze",
       "transform": {
         "scale": [
@@ -1721,7 +1751,7 @@
       }
     },
     {
-      "id": 99,
+      "id": 100,
       "name": "Rain: sound",
       "sound": {
         "clip": "Sounds/Ambience/rain.wav",
@@ -1738,7 +1768,7 @@
       }
     },
     {
-      "id": 100,
+      "id": 101,
       "model": "Showcase/old_military_crate/old_military_crate.gltf",
       "name": "Snow: old military crate",
       "transform": {
@@ -1750,7 +1780,7 @@
       }
     },
     {
-      "id": 101,
+      "id": 102,
       "model": "Showcase/wooden_crate_02/wooden_crate_02.gltf",
       "name": "Snow: wooden crate 02",
       "transform": {
@@ -1768,7 +1798,7 @@
       }
     },
     {
-      "id": 102,
+      "id": 103,
       "model": "Showcase/wooden_crate_01/wooden_crate_01.gltf",
       "name": "Snow: wooden crate 01",
       "transform": {
@@ -1786,7 +1816,7 @@
       }
     },
     {
-      "id": 103,
+      "id": 104,
       "model": "Showcase/steel_frame_shelves_02/steel_frame_shelves_02.gltf",
       "name": "Snow: steel frame shelves 02",
       "transform": {
@@ -1804,7 +1834,7 @@
       }
     },
     {
-      "id": 104,
+      "id": 105,
       "model": "Showcase/steel_frame_shelves_02/steel_frame_shelves_02.gltf",
       "name": "Snow: steel frame shelves 02",
       "transform": {
@@ -1822,7 +1852,7 @@
       }
     },
     {
-      "id": 105,
+      "id": 106,
       "model": "Showcase/Barrel_02/Barrel_02.gltf",
       "name": "Snow: Barrel 02",
       "transform": {
@@ -1834,7 +1864,7 @@
       }
     },
     {
-      "id": 106,
+      "id": 107,
       "model": "Showcase/hand_truck/hand_truck.gltf",
       "name": "Snow: hand truck",
       "transform": {
@@ -1852,7 +1882,7 @@
       }
     },
     {
-      "id": 107,
+      "id": 108,
       "name": "Snow: snow",
       "transform": {
         "scale": [
@@ -1873,7 +1903,7 @@
       }
     },
     {
-      "id": 108,
+      "id": 109,
       "name": "Snow: snow 2",
       "transform": {
         "scale": [
@@ -1894,7 +1924,7 @@
       }
     },
     {
-      "id": 109,
+      "id": 110,
       "name": "Snow: draft",
       "transform": {
         "scale": [
@@ -1920,7 +1950,7 @@
       }
     },
     {
-      "id": 110,
+      "id": 111,
       "name": "Snow: cold breath",
       "particles": {
         "effect": "Effects/breath.effect.json"
@@ -1950,7 +1980,7 @@
           0.02
         ]
       },
-      "id": 111,
+      "id": 112,
       "name": "Snow: cold air",
       "transform": {
         "scale": [
@@ -1966,7 +1996,7 @@
       }
     },
     {
-      "id": 112,
+      "id": 113,
       "name": "Snow: caged hanging light",
       "prefab": "Prefabs/caged_hanging_light.prefab.json",
       "transform": {
@@ -1978,7 +2008,7 @@
       }
     },
     {
-      "id": 113,
+      "id": 114,
       "light": {
         "color": [
           0.6,
@@ -2008,7 +2038,7 @@
       }
     },
     {
-      "id": 114,
+      "id": 115,
       "light": {
         "color": [
           1.0,
@@ -2030,7 +2060,7 @@
       }
     },
     {
-      "id": 115,
+      "id": 116,
       "name": "Snow: sound",
       "sound": {
         "clip": "Sounds/Ambience/wind.wav",
@@ -2050,7 +2080,7 @@
       "game": {
         "kind": "fan"
       },
-      "id": 116,
+      "id": 117,
       "model": "fan.gltf",
       "name": "Wind: fan",
       "transform": {
@@ -2068,7 +2098,7 @@
       }
     },
     {
-      "id": 117,
+      "id": 118,
       "light": {
         "color": [
           1.0,
@@ -2098,7 +2128,7 @@
       }
     },
     {
-      "id": 118,
+      "id": 119,
       "name": "Wind: caged hanging light",
       "prefab": "Prefabs/caged_hanging_light.prefab.json",
       "transform": {
@@ -2110,7 +2140,7 @@
       }
     },
     {
-      "id": 119,
+      "id": 120,
       "name": "Wind: caged hanging light",
       "prefab": "Prefabs/caged_hanging_light.prefab.json",
       "transform": {
@@ -2122,7 +2152,7 @@
       }
     },
     {
-      "id": 120,
+      "id": 121,
       "name": "Wind: caged hanging light",
       "prefab": "Prefabs/caged_hanging_light.prefab.json",
       "transform": {
@@ -2150,7 +2180,7 @@
           0.0
         ]
       },
-      "id": 121,
+      "id": 122,
       "name": "Wind: dust in the air",
       "transform": {
         "scale": [
@@ -2166,7 +2196,7 @@
       }
     },
     {
-      "id": 122,
+      "id": 123,
       "name": "Wind: gale",
       "transform": {
         "scale": [
@@ -2192,7 +2222,7 @@
       }
     },
     {
-      "id": 123,
+      "id": 124,
       "name": "Wind: wind dust",
       "particles": {
         "effect": "Effects/wind_dust.effect.json"
@@ -2206,7 +2236,7 @@
       }
     },
     {
-      "id": 124,
+      "id": 125,
       "name": "Wind: wind ash",
       "particles": {
         "effect": "Effects/wind_ash.effect.json"
@@ -2220,7 +2250,7 @@
       }
     },
     {
-      "id": 125,
+      "id": 126,
       "name": "Wind: papers blown",
       "particles": {
         "effect": "Effects/papers.effect.json"
@@ -2234,7 +2264,7 @@
       }
     },
     {
-      "id": 126,
+      "id": 127,
       "name": "Wind: papers on the floor",
       "particles": {
         "effect": "Effects/papers.effect.json"
@@ -2248,7 +2278,7 @@
       }
     },
     {
-      "id": 127,
+      "id": 128,
       "name": "Wind: papers in the air",
       "particles": {
         "effect": "Effects/papers.effect.json"
@@ -2262,7 +2292,7 @@
       }
     },
     {
-      "id": 128,
+      "id": 129,
       "name": "Wind: wind wisps",
       "particles": {
         "effect": "Effects/wind_wisps.effect.json"
@@ -2276,7 +2306,7 @@
       }
     },
     {
-      "id": 129,
+      "id": 130,
       "name": "Wind: dust motes",
       "particles": {
         "effect": "Effects/dust_motes.effect.json"
@@ -2290,24 +2320,12 @@
       }
     },
     {
-      "id": 130,
-      "model": "Showcase/modular_industrial_pipes_01/modular_industrial_pipes_01.gltf",
-      "name": "Wind: modular industrial pipes 01",
-      "transform": {
-        "translation": [
-          51.0,
-          2.2,
-          -63.35
-        ]
-      }
-    },
-    {
       "id": 131,
       "model": "Showcase/modular_industrial_pipes_01/modular_industrial_pipes_01.gltf",
       "name": "Wind: modular industrial pipes 01",
       "transform": {
         "translation": [
-          56.0,
+          51.0,
           2.2,
           -63.35
         ]
@@ -2319,7 +2337,7 @@
       "name": "Wind: modular industrial pipes 01",
       "transform": {
         "translation": [
-          61.0,
+          56.0,
           2.2,
           -63.35
         ]
@@ -2331,7 +2349,7 @@
       "name": "Wind: modular industrial pipes 01",
       "transform": {
         "translation": [
-          66.0,
+          61.0,
           2.2,
           -63.35
         ]
@@ -2342,16 +2360,10 @@
       "model": "Showcase/modular_industrial_pipes_01/modular_industrial_pipes_01.gltf",
       "name": "Wind: modular industrial pipes 01",
       "transform": {
-        "rotation": [
-          0.0,
-          1.0,
-          0.0,
-          0.0
-        ],
         "translation": [
-          51.0,
+          66.0,
           2.2,
-          -56.65
+          -63.35
         ]
       }
     },
@@ -2367,7 +2379,7 @@
           0.0
         ],
         "translation": [
-          56.0,
+          51.0,
           2.2,
           -56.65
         ]
@@ -2385,7 +2397,7 @@
           0.0
         ],
         "translation": [
-          61.0,
+          56.0,
           2.2,
           -56.65
         ]
@@ -2403,7 +2415,7 @@
           0.0
         ],
         "translation": [
-          66.0,
+          61.0,
           2.2,
           -56.65
         ]
@@ -2411,6 +2423,24 @@
     },
     {
       "id": 138,
+      "model": "Showcase/modular_industrial_pipes_01/modular_industrial_pipes_01.gltf",
+      "name": "Wind: modular industrial pipes 01",
+      "transform": {
+        "rotation": [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        "translation": [
+          66.0,
+          2.2,
+          -56.65
+        ]
+      }
+    },
+    {
+      "id": 139,
       "model": "Showcase/cement_bag/cement_bag.gltf",
       "name": "Wind: cement bag",
       "transform": {
@@ -2428,7 +2458,7 @@
       }
     },
     {
-      "id": 139,
+      "id": 140,
       "model": "Showcase/plastic_crate_01/plastic_crate_01.gltf",
       "name": "Wind: plastic crate 01",
       "transform": {
@@ -2446,7 +2476,7 @@
       }
     },
     {
-      "id": 140,
+      "id": 141,
       "model": "Showcase/trashbag/trashbag.gltf",
       "name": "Wind: trashbag",
       "transform": {
@@ -2464,7 +2494,7 @@
       }
     },
     {
-      "id": 141,
+      "id": 142,
       "light": {
         "color": [
           0.6,
@@ -2486,7 +2516,7 @@
       }
     },
     {
-      "id": 142,
+      "id": 143,
       "name": "Wind: sound",
       "sound": {
         "clip": "Sounds/Ambience/wind.wav",
@@ -2503,7 +2533,7 @@
       }
     },
     {
-      "id": 143,
+      "id": 144,
       "light": {
         "color": [
           1.0,
@@ -2549,7 +2579,7 @@
           0.02
         ]
       },
-      "id": 144,
+      "id": 145,
       "name": "Fog: room fog",
       "transform": {
         "scale": [
@@ -2582,7 +2612,7 @@
           0.05
         ]
       },
-      "id": 145,
+      "id": 146,
       "name": "Fog: ground fog",
       "transform": {
         "scale": [
@@ -2598,7 +2628,7 @@
       }
     },
     {
-      "id": 146,
+      "id": 147,
       "model": "Showcase/Barrel_02/Barrel_02.gltf",
       "name": "Fog: Barrel 02",
       "transform": {
@@ -2616,7 +2646,7 @@
       }
     },
     {
-      "id": 147,
+      "id": 148,
       "model": "Showcase/Barrel_01/Barrel_01.gltf",
       "name": "Fog: Barrel 01",
       "transform": {
@@ -2656,7 +2686,7 @@
           0.1
         ]
       },
-      "id": 148,
+      "id": 149,
       "name": "Fog: glowing gas",
       "transform": {
         "scale": [
@@ -2672,7 +2702,7 @@
       }
     },
     {
-      "id": 149,
+      "id": 150,
       "name": "Fog: spores",
       "particles": {
         "effect": "Effects/spores.effect.json"
@@ -2686,7 +2716,7 @@
       }
     },
     {
-      "id": 150,
+      "id": 151,
       "light": {
         "color": [
           0.3,
@@ -2708,7 +2738,7 @@
       }
     },
     {
-      "id": 151,
+      "id": 152,
       "model": "Showcase/old_military_crate/old_military_crate.gltf",
       "name": "Fog: old military crate",
       "transform": {
@@ -2726,7 +2756,7 @@
       }
     },
     {
-      "id": 152,
+      "id": 153,
       "model": "Showcase/wooden_crate_02/wooden_crate_02.gltf",
       "name": "Fog: wooden crate 02",
       "transform": {
@@ -2744,7 +2774,7 @@
       }
     },
     {
-      "id": 153,
+      "id": 154,
       "model": "Showcase/steel_frame_shelves_02/steel_frame_shelves_02.gltf",
       "name": "Fog: steel frame shelves 02",
       "transform": {
@@ -2762,7 +2792,7 @@
       }
     },
     {
-      "id": 154,
+      "id": 155,
       "model": "Showcase/steel_frame_shelves_02/steel_frame_shelves_02.gltf",
       "name": "Fog: steel frame shelves 02",
       "transform": {
@@ -2780,7 +2810,7 @@
       }
     },
     {
-      "id": 155,
+      "id": 156,
       "model": "Showcase/metal_stool_01/metal_stool_01.gltf",
       "name": "Fog: metal stool 01",
       "transform": {
@@ -2792,7 +2822,7 @@
       }
     },
     {
-      "id": 156,
+      "id": 157,
       "name": "Fog: wisp",
       "ribbon": {
         "effect": "Effects/wisp.ribbon.json"
@@ -2806,7 +2836,7 @@
       }
     },
     {
-      "id": 157,
+      "id": 158,
       "name": "Fog: sound",
       "sound": {
         "clip": "Sounds/Ambience/wind.wav",
@@ -2823,7 +2853,7 @@
       }
     },
     {
-      "id": 158,
+      "id": 159,
       "name": "Cryo: leaking valve",
       "particles": {
         "effect": "Effects/cryo_jet.effect.json"
@@ -2843,7 +2873,7 @@
       }
     },
     {
-      "id": 159,
+      "id": 160,
       "name": "Cryo: frost by the valve",
       "particles": {
         "effect": "Effects/frost_glitter.effect.json"
@@ -2857,7 +2887,7 @@
       }
     },
     {
-      "id": 160,
+      "id": 161,
       "name": "Cryo: vapour under the jet",
       "particles": {
         "effect": "Effects/cryo_vapour.effect.json"
@@ -2871,7 +2901,7 @@
       }
     },
     {
-      "id": 161,
+      "id": 162,
       "name": "Cryo: second valve",
       "transform": {
         "rotation": [
@@ -2888,7 +2918,7 @@
       }
     },
     {
-      "id": 162,
+      "id": 163,
       "model": "Showcase/metal_office_desk/metal_office_desk.gltf",
       "name": "Cryo: metal office desk",
       "transform": {
@@ -2900,7 +2930,7 @@
       }
     },
     {
-      "id": 163,
+      "id": 164,
       "model": "Showcase/propane_tank/propane_tank.gltf",
       "name": "Cryo: dewar",
       "transform": {
@@ -2912,7 +2942,7 @@
       }
     },
     {
-      "id": 164,
+      "id": 165,
       "name": "Cryo: vapour from the dewar",
       "particles": {
         "effect": "Effects/cryo_vapour.effect.json"
@@ -2926,7 +2956,7 @@
       }
     },
     {
-      "id": 165,
+      "id": 166,
       "name": "Cryo: vapour over the edge",
       "particles": {
         "effect": "Effects/cryo_vapour.effect.json"
@@ -2940,7 +2970,7 @@
       }
     },
     {
-      "id": 166,
+      "id": 167,
       "name": "Cryo: frost over the bench",
       "particles": {
         "effect": "Effects/frost_glitter.effect.json"
@@ -2971,7 +3001,7 @@
           0.15
         ]
       },
-      "id": 167,
+      "id": 168,
       "name": "Cryo: cold layer",
       "transform": {
         "scale": [
@@ -3003,7 +3033,7 @@
           0.02
         ]
       },
-      "id": 168,
+      "id": 169,
       "name": "Cryo: cold air",
       "transform": {
         "scale": [
@@ -3019,49 +3049,49 @@
       }
     },
     {
-      "id": 169,
+      "id": 170,
       "model": "Showcase/mounted_fluorescent_lights/mounted_fluorescent_lights.gltf",
       "name": "Cryo: mounted fluorescent lights",
       "transform": {
         "translation": [
           177.0,
           4.95,
-          -59.0
-        ]
-      }
-    },
-    {
-      "id": 170,
-      "light": {
-        "color": [
-          0.8,
-          0.92,
-          1.0
-        ],
-        "inner_angle": 50,
-        "intensity": 200.0,
-        "outer_angle": 75,
-        "radius": 0.05,
-        "range": 10.0,
-        "type": "spot"
-      },
-      "name": "Cryo: tube",
-      "transform": {
-        "rotation": [
-          -0.7071068,
-          0.0,
-          0.0,
-          0.7071068
-        ],
-        "translation": [
-          177.0,
-          4.85,
           -59.0
         ]
       }
     },
     {
       "id": 171,
+      "light": {
+        "color": [
+          0.8,
+          0.92,
+          1.0
+        ],
+        "inner_angle": 50,
+        "intensity": 200.0,
+        "outer_angle": 75,
+        "radius": 0.05,
+        "range": 10.0,
+        "type": "spot"
+      },
+      "name": "Cryo: tube",
+      "transform": {
+        "rotation": [
+          -0.7071068,
+          0.0,
+          0.0,
+          0.7071068
+        ],
+        "translation": [
+          177.0,
+          4.85,
+          -59.0
+        ]
+      }
+    },
+    {
+      "id": 172,
       "model": "Showcase/mounted_fluorescent_lights/mounted_fluorescent_lights.gltf",
       "name": "Cryo: mounted fluorescent lights",
       "transform": {
@@ -3073,7 +3103,7 @@
       }
     },
     {
-      "id": 172,
+      "id": 173,
       "light": {
         "color": [
           0.8,
@@ -3103,7 +3133,7 @@
       }
     },
     {
-      "id": 173,
+      "id": 174,
       "light": {
         "color": [
           0.7,
@@ -3133,7 +3163,7 @@
       }
     },
     {
-      "id": 174,
+      "id": 175,
       "light": {
         "color": [
           0.7,
@@ -3163,7 +3193,7 @@
       }
     },
     {
-      "id": 175,
+      "id": 176,
       "model": "Showcase/metal_tool_chest/metal_tool_chest.gltf",
       "name": "Cryo: metal tool chest",
       "transform": {
@@ -3181,7 +3211,7 @@
       }
     },
     {
-      "id": 176,
+      "id": 177,
       "model": "Showcase/plastic_crate_01/plastic_crate_01.gltf",
       "name": "Cryo: plastic crate 01",
       "transform": {
@@ -3199,7 +3229,7 @@
       }
     },
     {
-      "id": 177,
+      "id": 178,
       "name": "Cryo: sound",
       "sound": {
         "clip": "Sounds/Ambience/cryo.wav",
@@ -3216,7 +3246,7 @@
       }
     },
     {
-      "id": 178,
+      "id": 179,
       "name": "Water: burst pipe",
       "particles": {
         "effect": "Effects/pipe_spray.effect.json"
@@ -3236,7 +3266,7 @@
       }
     },
     {
-      "id": 179,
+      "id": 180,
       "name": "Water: drip -3.0",
       "particles": {
         "effect": "Effects/drip.effect.json"
@@ -3250,7 +3280,7 @@
       }
     },
     {
-      "id": 180,
+      "id": 181,
       "name": "Water: drip -1.0",
       "particles": {
         "effect": "Effects/drip.effect.json"
@@ -3264,7 +3294,7 @@
       }
     },
     {
-      "id": 181,
+      "id": 182,
       "name": "Water: drip 3.5",
       "particles": {
         "effect": "Effects/drip.effect.json"
@@ -3278,7 +3308,7 @@
       }
     },
     {
-      "id": 182,
+      "id": 183,
       "name": "Water: drip 5.0",
       "particles": {
         "effect": "Effects/drip.effect.json"
@@ -3292,7 +3322,7 @@
       }
     },
     {
-      "id": 183,
+      "id": 184,
       "name": "Water: drip -4.5",
       "particles": {
         "effect": "Effects/drip.effect.json"
@@ -3306,7 +3336,7 @@
       }
     },
     {
-      "id": 184,
+      "id": 185,
       "name": "Water: bubbles",
       "particles": {
         "effect": "Effects/bubbles.effect.json"
@@ -3320,7 +3350,7 @@
       }
     },
     {
-      "id": 185,
+      "id": 186,
       "name": "Water: wet",
       "transform": {
         "scale": [
@@ -3343,7 +3373,7 @@
       }
     },
     {
-      "id": 186,
+      "id": 187,
       "model": "Showcase/WetFloorSign_01/WetFloorSign_01.gltf",
       "name": "Water: WetFloorSign 01",
       "transform": {
@@ -3361,7 +3391,7 @@
       }
     },
     {
-      "id": 187,
+      "id": 188,
       "model": "Showcase/portable_generator/portable_generator.gltf",
       "name": "Water: portable generator",
       "transform": {
@@ -3379,7 +3409,7 @@
       }
     },
     {
-      "id": 188,
+      "id": 189,
       "model": "Showcase/utility_box_02/utility_box_02.gltf",
       "name": "Water: utility box 02",
       "transform": {
@@ -3391,7 +3421,7 @@
       }
     },
     {
-      "id": 189,
+      "id": 190,
       "model": "Showcase/utility_box_01/utility_box_01.gltf",
       "name": "Water: utility box 01",
       "transform": {
@@ -3403,7 +3433,7 @@
       }
     },
     {
-      "id": 190,
+      "id": 191,
       "model": "Showcase/metal_jerrycan/metal_jerrycan.gltf",
       "name": "Water: metal jerrycan",
       "transform": {
@@ -3421,7 +3451,7 @@
       }
     },
     {
-      "id": 191,
+      "id": 192,
       "model": "Showcase/Barrel_02/Barrel_02.gltf",
       "name": "Water: Barrel 02",
       "transform": {
@@ -3433,7 +3463,7 @@
       }
     },
     {
-      "id": 192,
+      "id": 193,
       "name": "Water: caged hanging light",
       "prefab": "Prefabs/caged_hanging_light.prefab.json",
       "transform": {
@@ -3445,7 +3475,7 @@
       }
     },
     {
-      "id": 193,
+      "id": 194,
       "light": {
         "color": [
           0.3,
@@ -3483,7 +3513,7 @@
           0.02
         ]
       },
-      "id": 194,
+      "id": 195,
       "name": "Water: damp air",
       "transform": {
         "scale": [
@@ -3499,7 +3529,7 @@
       }
     },
     {
-      "id": 195,
+      "id": 196,
       "light": {
         "color": [
           0.9,
@@ -3529,7 +3559,7 @@
       }
     },
     {
-      "id": 196,
+      "id": 197,
       "light": {
         "color": [
           0.8,
@@ -3559,7 +3589,7 @@
       }
     },
     {
-      "id": 197,
+      "id": 198,
       "name": "Water: sound",
       "sound": {
         "clip": "Sounds/Ambience/water.wav",
@@ -3576,7 +3606,7 @@
       }
     },
     {
-      "id": 198,
+      "id": 199,
       "light": {
         "animation": {
           "depth": 0.25,
@@ -3603,7 +3633,7 @@
       }
     },
     {
-      "id": 199,
+      "id": 200,
       "name": "Steam: furnace smoke",
       "particles": {
         "effect": "Effects/smoke_column.effect.json"
@@ -3617,7 +3647,7 @@
       }
     },
     {
-      "id": 200,
+      "id": 201,
       "name": "Steam: heat haze",
       "particles": {
         "effect": "Effects/heat_haze.effect.json"
@@ -3631,7 +3661,7 @@
       }
     },
     {
-      "id": 201,
+      "id": 202,
       "name": "Steam: vent 0",
       "particles": {
         "effect": "Effects/steam_vent.effect.json"
@@ -3645,7 +3675,7 @@
       }
     },
     {
-      "id": 202,
+      "id": 203,
       "name": "Steam: vent burst 0",
       "particles": {
         "burst": {
@@ -3663,7 +3693,7 @@
       }
     },
     {
-      "id": 203,
+      "id": 204,
       "name": "Steam: vent mist 0",
       "particles": {
         "effect": "Effects/pipe_mist.effect.json"
@@ -3677,7 +3707,7 @@
       }
     },
     {
-      "id": 204,
+      "id": 205,
       "name": "Steam: vent 1",
       "particles": {
         "effect": "Effects/steam_vent.effect.json"
@@ -3691,7 +3721,7 @@
       }
     },
     {
-      "id": 205,
+      "id": 206,
       "name": "Steam: vent burst 1",
       "particles": {
         "burst": {
@@ -3709,7 +3739,7 @@
       }
     },
     {
-      "id": 206,
+      "id": 207,
       "name": "Steam: vent mist 1",
       "particles": {
         "effect": "Effects/pipe_mist.effect.json"
@@ -3723,7 +3753,7 @@
       }
     },
     {
-      "id": 207,
+      "id": 208,
       "name": "Steam: vent 2",
       "particles": {
         "effect": "Effects/steam_vent.effect.json"
@@ -3737,7 +3767,7 @@
       }
     },
     {
-      "id": 208,
+      "id": 209,
       "name": "Steam: vent burst 2",
       "particles": {
         "burst": {
@@ -3755,7 +3785,7 @@
       }
     },
     {
-      "id": 209,
+      "id": 210,
       "name": "Steam: vent mist 2",
       "particles": {
         "effect": "Effects/pipe_mist.effect.json"
@@ -3769,7 +3799,7 @@
       }
     },
     {
-      "id": 210,
+      "id": 211,
       "name": "Steam: leak left",
       "particles": {
         "effect": "Effects/smoke_leak.effect.json"
@@ -3789,7 +3819,7 @@
       }
     },
     {
-      "id": 211,
+      "id": 212,
       "name": "Steam: leak on the flue",
       "particles": {
         "effect": "Effects/smoke_leak.effect.json"
@@ -3803,7 +3833,7 @@
       }
     },
     {
-      "id": 212,
+      "id": 213,
       "name": "Steam: leak above",
       "particles": {
         "effect": "Effects/smoke_leak.effect.json"
@@ -3823,7 +3853,7 @@
       }
     },
     {
-      "id": 213,
+      "id": 214,
       "model": "Showcase/metal_office_desk/metal_office_desk.gltf",
       "name": "Steam: metal office desk",
       "transform": {
@@ -3841,7 +3871,7 @@
       }
     },
     {
-      "id": 214,
+      "id": 215,
       "model": "Showcase/metal_stool_01/metal_stool_01.gltf",
       "name": "Steam: metal stool 01",
       "transform": {
@@ -3853,7 +3883,7 @@
       }
     },
     {
-      "id": 215,
+      "id": 216,
       "name": "Steam: cigarette smoke",
       "particles": {
         "effect": "Effects/cigarette_smoke.effect.json"
@@ -3867,7 +3897,7 @@
       }
     },
     {
-      "id": 216,
+      "id": 217,
       "model": "Showcase/tool_cart/tool_cart.gltf",
       "name": "Steam: tool cart",
       "transform": {
@@ -3885,7 +3915,7 @@
       }
     },
     {
-      "id": 217,
+      "id": 218,
       "model": "Showcase/korean_fire_extinguisher_01/korean_fire_extinguisher_01.gltf",
       "name": "Steam: korean fire extinguisher 01",
       "transform": {
@@ -3903,7 +3933,7 @@
       }
     },
     {
-      "id": 218,
+      "id": 219,
       "name": "Steam: caged hanging light",
       "prefab": "Prefabs/caged_hanging_light.prefab.json",
       "transform": {
@@ -3915,7 +3945,7 @@
       }
     },
     {
-      "id": 219,
+      "id": 220,
       "light": {
         "color": [
           0.85,
@@ -3961,7 +3991,7 @@
           0.02
         ]
       },
-      "id": 220,
+      "id": 221,
       "name": "Steam: steamy air",
       "transform": {
         "scale": [
@@ -3977,7 +4007,7 @@
       }
     },
     {
-      "id": 221,
+      "id": 222,
       "name": "Steam: sound",
       "sound": {
         "clip": "Sounds/Ambience/steam.wav",
@@ -3994,7 +4024,7 @@
       }
     },
     {
-      "id": 222,
+      "id": 223,
       "model": "Showcase/trashbag/trashbag.gltf",
       "name": "Creatures: body bag",
       "transform": {
@@ -4017,7 +4047,7 @@
       }
     },
     {
-      "id": 223,
+      "id": 224,
       "name": "Creatures: flies swarm",
       "particles": {
         "effect": "Effects/flies_swarm.effect.json"
@@ -4037,7 +4067,7 @@
         "strength": 3,
         "vortex": 2
       },
-      "id": 224,
+      "id": 225,
       "name": "Creatures: flies' pull",
       "transform": {
         "translation": [
@@ -4052,7 +4082,7 @@
         "roughness": 0.3,
         "texture": "Decals/blood_splatter.png"
       },
-      "id": 225,
+      "id": 226,
       "name": "Creatures: decal",
       "transform": {
         "rotation": [
@@ -4078,7 +4108,7 @@
         "roughness": 0.8,
         "texture": "Decals/blood_drips.png"
       },
-      "id": 226,
+      "id": 227,
       "name": "Creatures: decal",
       "transform": {
         "rotation": [
@@ -4100,7 +4130,7 @@
       }
     },
     {
-      "id": 227,
+      "id": 228,
       "name": "Creatures: flies",
       "transform": {
         "translation": [
@@ -4111,7 +4141,7 @@
       }
     },
     {
-      "id": 228,
+      "id": 229,
       "name": "Creatures: hanging industrial lamp",
       "prefab": "Prefabs/hanging_industrial_lamp.prefab.json",
       "transform": {
@@ -4123,7 +4153,7 @@
       }
     },
     {
-      "id": 229,
+      "id": 230,
       "name": "Creatures: moths swarm",
       "particles": {
         "effect": "Effects/moths_swarm.effect.json"
@@ -4143,7 +4173,7 @@
         "strength": 2,
         "vortex": 4
       },
-      "id": 230,
+      "id": 231,
       "name": "Creatures: moths' pull",
       "transform": {
         "translation": [
@@ -4154,7 +4184,7 @@
       }
     },
     {
-      "id": 231,
+      "id": 232,
       "light": {
         "color": [
           1.0,
@@ -4184,7 +4214,7 @@
       }
     },
     {
-      "id": 232,
+      "id": 233,
       "name": "Creatures: moths",
       "transform": {
         "translation": [
@@ -4195,7 +4225,7 @@
       }
     },
     {
-      "id": 233,
+      "id": 234,
       "model": "Showcase/trashbag/trashbag.gltf",
       "name": "Creatures: trashbag",
       "transform": {
@@ -4213,7 +4243,7 @@
       }
     },
     {
-      "id": 234,
+      "id": 235,
       "model": "Showcase/trashbag/trashbag.gltf",
       "name": "Creatures: trashbag",
       "transform": {
@@ -4235,7 +4265,7 @@
         "roughness": 0.8,
         "texture": "Decals/mold.png"
       },
-      "id": 235,
+      "id": 236,
       "name": "Creatures: decal",
       "transform": {
         "rotation": [
@@ -4257,7 +4287,7 @@
       }
     },
     {
-      "id": 236,
+      "id": 237,
       "name": "Creatures: spores",
       "particles": {
         "effect": "Effects/spores.effect.json"
@@ -4293,7 +4323,7 @@
           0.02
         ]
       },
-      "id": 237,
+      "id": 238,
       "name": "Creatures: rot",
       "transform": {
         "scale": [
@@ -4309,7 +4339,7 @@
       }
     },
     {
-      "id": 238,
+      "id": 239,
       "light": {
         "color": [
           0.4,
@@ -4331,7 +4361,7 @@
       }
     },
     {
-      "id": 239,
+      "id": 240,
       "name": "Creatures: wisp",
       "ribbon": {
         "effect": "Effects/wisp.ribbon.json"
@@ -4345,7 +4375,7 @@
       }
     },
     {
-      "id": 240,
+      "id": 241,
       "model": "Showcase/metal_tool_chest/metal_tool_chest.gltf",
       "name": "Creatures: metal tool chest",
       "transform": {
@@ -4363,7 +4393,7 @@
       }
     },
     {
-      "id": 241,
+      "id": 242,
       "model": "Showcase/hand_truck/hand_truck.gltf",
       "name": "Creatures: hand truck",
       "transform": {
@@ -4397,7 +4427,7 @@
           0.02
         ]
       },
-      "id": 242,
+      "id": 243,
       "name": "Creatures: stale air",
       "transform": {
         "scale": [
@@ -4413,7 +4443,7 @@
       }
     },
     {
-      "id": 243,
+      "id": 244,
       "name": "Creatures: sound",
       "sound": {
         "clip": "Sounds/Ambience/flies.wav",
@@ -4430,7 +4460,7 @@
       }
     },
     {
-      "id": 244,
+      "id": 245,
       "model": "Showcase/barrel_03/barrel_03.gltf",
       "name": "Impacts: barrel 03",
       "transform": {
@@ -4448,7 +4478,7 @@
       }
     },
     {
-      "id": 245,
+      "id": 246,
       "model": "Showcase/Barrel_01/Barrel_01.gltf",
       "name": "Impacts: Barrel 01",
       "transform": {
@@ -4460,7 +4490,7 @@
       }
     },
     {
-      "id": 246,
+      "id": 247,
       "light": {
         "color": [
           1.0,
@@ -4490,7 +4520,7 @@
       }
     },
     {
-      "id": 247,
+      "id": 248,
       "light": {
         "color": [
           1.0,
@@ -4520,7 +4550,7 @@
       }
     },
     {
-      "id": 248,
+      "id": 249,
       "light": {
         "color": [
           1.0,
@@ -4550,7 +4580,7 @@
       }
     },
     {
-      "id": 249,
+      "id": 250,
       "light": {
         "color": [
           1.0,
@@ -4580,7 +4610,7 @@
       }
     },
     {
-      "id": 250,
+      "id": 251,
       "light": {
         "color": [
           1.0,
@@ -4610,7 +4640,7 @@
       }
     },
     {
-      "id": 251,
+      "id": 252,
       "name": "Impacts: muzzle",
       "transform": {
         "translation": [
@@ -4621,7 +4651,7 @@
       }
     },
     {
-      "id": 252,
+      "id": 253,
       "name": "Impacts: ejector",
       "transform": {
         "rotation": [
@@ -4638,7 +4668,7 @@
       }
     },
     {
-      "id": 253,
+      "id": 254,
       "model": "Showcase/metal_toolbox/metal_toolbox.gltf",
       "name": "Impacts: metal toolbox",
       "transform": {
@@ -4656,7 +4686,7 @@
       }
     },
     {
-      "id": 254,
+      "id": 255,
       "model": "Showcase/metal_stool_01/metal_stool_01.gltf",
       "name": "Impacts: metal stool 01",
       "transform": {
@@ -4684,7 +4714,7 @@
           0.02
         ]
       },
-      "id": 255,
+      "id": 256,
       "name": "Impacts: gun smoke haze",
       "transform": {
         "scale": [
@@ -4700,7 +4730,7 @@
       }
     },
     {
-      "id": 256,
+      "id": 257,
       "light": {
         "color": [
           0.6,
@@ -4722,7 +4752,7 @@
       }
     },
     {
-      "id": 257,
+      "id": 258,
       "light": {
         "color": [
           0.9,
@@ -4744,7 +4774,7 @@
       }
     },
     {
-      "id": 258,
+      "id": 259,
       "name": "Impacts: concrete hit",
       "transform": {
         "rotation": [
@@ -4761,7 +4791,7 @@
       }
     },
     {
-      "id": 259,
+      "id": 260,
       "name": "Impacts: aim at concrete",
       "transform": {
         "rotation": [
@@ -4778,7 +4808,7 @@
       }
     },
     {
-      "id": 260,
+      "id": 261,
       "name": "Impacts: metal hit",
       "transform": {
         "rotation": [
@@ -4795,7 +4825,7 @@
       }
     },
     {
-      "id": 261,
+      "id": 262,
       "name": "Impacts: aim at metal",
       "transform": {
         "rotation": [
@@ -4812,7 +4842,7 @@
       }
     },
     {
-      "id": 262,
+      "id": 263,
       "name": "Impacts: wood hit",
       "transform": {
         "rotation": [
@@ -4829,7 +4859,7 @@
       }
     },
     {
-      "id": 263,
+      "id": 264,
       "name": "Impacts: aim at wood",
       "transform": {
         "rotation": [
@@ -4846,7 +4876,7 @@
       }
     },
     {
-      "id": 264,
+      "id": 265,
       "name": "Impacts: glass hit",
       "transform": {
         "rotation": [
@@ -4863,7 +4893,7 @@
       }
     },
     {
-      "id": 265,
+      "id": 266,
       "name": "Impacts: aim at glass",
       "transform": {
         "rotation": [
@@ -4880,7 +4910,7 @@
       }
     },
     {
-      "id": 266,
+      "id": 267,
       "name": "Impacts: drum hit",
       "transform": {
         "rotation": [
@@ -4897,7 +4927,7 @@
       }
     },
     {
-      "id": 267,
+      "id": 268,
       "name": "Impacts: aim at drum",
       "transform": {
         "rotation": [

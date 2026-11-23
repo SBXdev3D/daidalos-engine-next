@@ -430,8 +430,9 @@ def electricity_room(g):
     room.ribbon("arc", (2.6, 1.3, -2.6), target=(3.6, 0.0, -1.8), what="arc to the floor")
     room.light("point", (0.0, 3.3, -3.0), 90.0, (0.55, 0.7, 1.0), 12.0,
                animation={"pattern": "flicker", "rate": 14, "depth": 0.6}, what="arc light")
-    # Lightning that strikes between them, now and then.
-    flash = room.light("point", (0.0, 5.5, -3.0), 0.0, (0.75, 0.8, 1.0), 16.0, what="strike light")
+    # Lightning that strikes between them, now and then. A flash multiplies its light, so the light is never
+    # quite off.
+    flash = room.light("point", (0.0, 5.5, -3.0), 1.0, (0.75, 0.8, 1.0), 16.0, what="strike light")
     room.entity("lightning", (0.0, 3.5, -3.0), scale=(1.5, 6.5, 1.5),
                 lightning={"bolt": "Effects/lightning_indoor.ribbon.json", "flash": 900, "interval": [2.5, 5.0],
                            "duration": 0.35, "light": flash})
@@ -492,9 +493,13 @@ def rain_room(g):
                 wet={"wetness": 0.9, "puddles": 0.6, "puddle_height": 1.5, "rain": 60, "streaks": 0.7})
     room.particles("drip_edge", (0.0, 3.18, 3.75), what="drips off the porch")
     room.particles("drip", (-2.0, 3.18, 5.0), what="drip under the porch")
+    # The storm flashes a light of its own over the yard: flashing the moon would light every room of the level,
+    # and the denoisers would show it in each of them as a burst of noise.
+    flash = room.light("spot", (0.0, 20.0, 1.0), 10.0, (0.75, 0.8, 1.0), 32.0, (0.0, -1.0, -0.45), 50, 75, 1.0,
+                       what="lightning flash")
     room.entity("lightning", (0.0, 30.0, -60.0), scale=(80.0, 30.0, 10.0),
-                lightning={"bolt": "Effects/lightning.ribbon.json", "flash": 500, "interval": [4.0, 8.0],
-                           "duration": 0.5, "light": g.moon})
+                lightning={"bolt": "Effects/lightning.ribbon.json", "flash": 3000, "interval": [4.0, 8.0],
+                           "duration": 0.5, "light": flash})
     room.fog((0.0, 3.5, -2.5), (16.0, 7.0, 13.0), 0.04, (0.75, 0.8, 0.85), what="rain haze")
     room.sound("rain", (0.0, 1.5, 0.0), 1.0, 4.0, 22.0)
     room.shot(17.0, [
@@ -1017,7 +1022,7 @@ def main():
                              "look at them without the others (not a file to keep)")
     args = parser.parse_args()
     g = Gallery()
-    # The moon, which lights the open rooms and which the storm's lightning flashes.
+    # The moon, which lights the open rooms.
     g.moon = g.add({"name": "Moon", "transform": {"rotation": r(quat_from_to([0, 0, -1], [0.25, -1.0, -0.35]), 7)},
                     "light": {"type": "directional", "color": [0.7, 0.8, 1.0], "intensity": 18.0,
                               "angular_radius": 1.5}})
