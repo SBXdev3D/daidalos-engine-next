@@ -153,6 +153,17 @@ public:
     /// A file name in CaptureDirectory for a new capture, from the time: daidalos-2026-11-18-071757, without
     /// its extension.
     [[nodiscard]] std::filesystem::path NewCapturePath() const;
+    /// Recording (ADR-0123): whether record.directory names where to record. The sound then plays on no device:
+    /// a recording reads it, so that it keeps pace with the frames however long they take to draw.
+    [[nodiscard]] bool RecordingAvailable() const;
+    /// From the next frame, each frame stands for 1/record.fps seconds, however long it takes, and is saved in
+    /// record.directory as frame_000000.jpg (or .png, by record.format), interface included, the sound beside
+    /// them as sound.wav when the recording ends. Fails without record.directory or rendering.
+    core::Result<void> StartRecording();
+    /// No more frames: those drawn are still written, then the sound; Recording turns false when all is.
+    void StopRecording();
+    /// Whether a recording goes on or is still being written.
+    [[nodiscard]] bool Recording() const noexcept { return m_recording.has_value(); }
     /// Valid between OnStart and OnStop, when ApplicationConfig::rendering is set.
     [[nodiscard]] renderer::Renderer& Renderer();
     /// The game's interface for this frame, begun again before each frame's updates and drawn over the
@@ -308,6 +319,38 @@ private:
         bool exr = false;
     };
     std::optional<PendingCapture> m_capture;
+    // A recording (ADR-0123).
+    struct ActiveRecording {
+        std::filesystem::path directory;
+        std::string extension;
+        int quality = 95;
+        double fps = 60.0;
+        bool normalize = true;
+        bool stopping = false;
+        std::uint64_t framesAsked = 0;
+        std::uint64_t framesTaken = 0;
+        std::uint64_t framesFailed = 0;
+        std::size_t writing = 0;
+        std::uint32_t sampleRate = 48000;
+        std::uint32_t channels = 2;
+        std::uint64_t soundFrames = 0;
+        std::vector<float> sound;
+    };
+    /// Asks for this frame's image and reads its sound, before it is drawn.
+    void RecordFrame();
+    /// Hands the frames read back to workers, waiting for them when too many are being written, and ends a
+    /// stopped recording once all is written.
+    void WriteRecording();
+    /// Writes the sound and closes the recording.
+    void FinishRecording();
+    std::optional<ActiveRecording> m_recording;
+    /// The sound plays on no device, for recordings to read.
+    bool m_soundForRecording = false;
+    std::optional<core::CVar<std::string>> m_recordDirectory;
+    std::optional<core::CVar<std::int64_t>> m_recordFps;
+    std::optional<core::CVar<std::string>> m_recordFormat;
+    std::optional<core::CVar<std::int64_t>> m_recordQuality;
+    std::optional<core::CVar<bool>> m_recordNormalize;
     std::size_t m_capturesWriting = 0;
     std::vector<std::filesystem::path> m_savedCaptures;
     std::optional<core::CVar<bool>> m_directInput;

@@ -66,6 +66,8 @@ TEST(SequenceTest, MistakesNameWhatIsWrong) {
     EXPECT_NE(error(R"({"cues": [{"at": -1, "event": "x"}]})").find("at"), std::string::npos);
     EXPECT_NE(error(R"({"cues": [{"at": 0, "power": {"on": true}}]})").find("circuit"), std::string::npos);
     EXPECT_NE(error(R"({"steps": []})").find("cues"), std::string::npos);
+    EXPECT_NE(error(R"({"cues": [{"at": 0, "fade": {"to": 2}}]})").find("to"), std::string::npos);
+    EXPECT_NE(error(R"({"cues": [{"at": 0, "fade": {"to": 1, "seconds": -1}}]})").find("seconds"), std::string::npos);
     EXPECT_NE(
         error(R"({"cues": [{"at": 0, "camera": {"path": "wobbly", "keys": [{"position": [0, 0, 0]}]}}]})").find("path"),
         std::string::npos);
@@ -203,7 +205,9 @@ TEST(SequenceTest, WritingAndReadingBackGivesTheSameSequence) {
             {"at": 0.75, "subtitle": {"speaker": "speaker.you", "text": "subtitle.x"}},
             {"at": 0.8, "camera": {"keys": [{"at": 1, "position": [0, 2, 0], "target": [0, 1, -5], "focus": 5},
                                             {"at": 0, "position": [0, 2, 3], "target": [0, 1, -5], "aperture": 2}]}},
-            {"at": 0.9, "camera": {"path": "smooth", "keys": [{"at": 0, "position": [0, 2, 0], "target": [0, 2, -1]}]}}
+            {"at": 0.9, "camera": {"path": "smooth", "keys": [{"at": 0, "position": [0, 2, 0], "target": [0, 2, -1]}]}},
+            {"at": 0.95, "fade": {"to": 1, "seconds": 0.5, "color": [1, 0.5, 0]}},
+            {"at": 1.5, "fade": {"to": 0}}
         ]
     })");
     ASSERT_TRUE(sequence.has_value()) << core::Format(sequence.error());

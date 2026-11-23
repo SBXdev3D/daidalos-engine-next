@@ -384,7 +384,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     if ((effect.flags & kEffectTraced) != 0 && effect.distortion <= 0.0) {
         // Where it will be when the next frame's rays meet it, with room for how far it may stray.
         const float3 drawnVelocity = particle.velocity * scales.z;
-        float reach = particle.size * scales.x * 0.5;
+        float reach = TracedRadius(effect, particle.size * scales.x);
         if (effect.orientation == kOrientVelocity && !mesh) {
             reach += 0.5 * length(drawnVelocity) * effect.stretch;
         }

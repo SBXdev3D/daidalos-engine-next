@@ -58,6 +58,10 @@ scene::Cue MakeCue(scene::Cue::Kind kind, float at) {
         cue.keys = {scene::CameraKey{.at = 0.0f, .position = {0.0f, 1.7f, 3.0f}, .target = {0.0f, 1.5f, 0.0f}},
                     scene::CameraKey{.at = 1.0f, .position = {0.0f, 1.7f, 2.0f}, .target = {0.0f, 1.5f, 0.0f}}};
         break;
+    case scene::Cue::Kind::Fade:
+        cue.strength = 1.0f;
+        cue.seconds = 1.0f;
+        break;
     case scene::Cue::Kind::Event:
         cue.name = "event";
         break;
@@ -90,6 +94,8 @@ std::string CueSummary(const scene::Cue& cue) {
     case scene::Cue::Kind::Camera:
         return std::format("camera, {} keys over {:.2g} s", cue.keys.size(),
                            cue.keys.empty() ? 0.0f : cue.keys.back().at);
+    case scene::Cue::Kind::Fade:
+        return std::format("fade to {:.2g} over {:.2g} s", cue.strength, cue.seconds);
     case scene::Cue::Kind::Event:
         return std::format("event \"{}\"", cue.name);
     }
@@ -116,6 +122,8 @@ unsigned CueColor(scene::Cue::Kind kind) {
         return Rgba(120, 220, 140);
     case scene::Cue::Kind::Camera:
         return Rgba(90, 220, 220);
+    case scene::Cue::Kind::Fade:
+        return Rgba(130, 130, 130);
     case scene::Cue::Kind::Event:
         return Rgba(200, 120, 200);
     }

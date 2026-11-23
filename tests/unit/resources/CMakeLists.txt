@@ -6,6 +6,7 @@ dai_add_test(NAME daidalos_resources_tests
         ImageFileTests.cpp
         LightProfileTests.cpp
         ModelDataTests.cpp
+        WavFileTests.cpp
     DEPS
         daidalos::resources
         KTX::ktx)

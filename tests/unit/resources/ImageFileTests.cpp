@@ -76,3 +76,22 @@ TEST(ImageFileTest, AnExrHasItsHeaderOffsetsAndScanlinesOfFloats) {
     EXPECT_FLOAT_EQ(ReadAt<float>(*exr, second + 28), 3.0f);
     EXPECT_FALSE(resources::EncodeExr(2, 2, std::span(rgb).first(3)).has_value());
 }
+
+TEST(ImageFileTest, AJpegReadsBackCloseToItsPixels) {
+    // Eight by eight of one color, which JPEG keeps nearly as it is.
+    std::vector<std::uint8_t> rgba;
+    for (int pixel = 0; pixel < 64; ++pixel) {
+        rgba.insert(rgba.end(), {200, 100, 50, 255});
+    }
+    const core::Result<std::vector<std::byte>> jpeg = resources::EncodeJpeg(8, 8, rgba, 95);
+    ASSERT_TRUE(jpeg.has_value()) << core::Format(jpeg.error());
+    const core::Result<resources::ImageData> image = resources::DecodeImage(*jpeg, resources::TextureUse::Data, "jpg");
+    ASSERT_TRUE(image.has_value()) << core::Format(image.error());
+    ASSERT_EQ(image->width, 8U);
+    ASSERT_EQ(image->height, 8U);
+    for (std::size_t channel = 0; channel < 3; ++channel) {
+        EXPECT_NEAR(static_cast<int>(static_cast<std::uint8_t>(image->pixels[(27 * 4) + channel])), rgba[channel], 4)
+            << channel;
+    }
+    EXPECT_FALSE(resources::EncodeJpeg(8, 8, std::span(rgba).first(4), 95).has_value());
+}

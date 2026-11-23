@@ -295,6 +295,7 @@ struct SoundWorld::State {
     float mixElapsed = 0.0f;
     float ducking = 0.0f;
     std::chrono::steady_clock::time_point lastUpdate = std::chrono::steady_clock::now();
+    std::optional<float> fixedStep;
     // The score's layers (ADR-0068), their levels now and the tension they follow.
     std::vector<VoiceHandle> layers;
     std::vector<float> layerLevels;
@@ -528,6 +529,10 @@ void SoundWorld::SetListener(const glm::vec3& position, const glm::vec3& forward
     }
 }
 
+void SoundWorld::SetFixedStep(std::optional<float> seconds) {
+    m_state->fixedStep = seconds;
+}
+
 void SoundWorld::Update() {
     State& state = *m_state;
     std::erase_if(state.playing, [&state](VoiceHandle handle) {
@@ -541,7 +546,8 @@ void SoundWorld::Update() {
     // The mix moves towards its snapshot, and the ducking towards what the loudest ducking voice asks: fast
     // down, slower back up.
     const auto now = std::chrono::steady_clock::now();
-    const float seconds = std::min(std::chrono::duration<float>(now - state.lastUpdate).count(), 0.25f);
+    const float seconds =
+        state.fixedStep.value_or(std::min(std::chrono::duration<float>(now - state.lastUpdate).count(), 0.25f));
     state.lastUpdate = now;
     if (!state.paused) {
         state.mixElapsed = std::min(state.mixElapsed + seconds, state.mixFade);

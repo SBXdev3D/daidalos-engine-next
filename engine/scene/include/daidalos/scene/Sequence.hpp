@@ -44,7 +44,7 @@ struct Cue {
         Power,     // Cut or restore a power circuit: circuit, on.
         Light,     // Turn a light on or off: entity, on.
         Sound,     // Play a clip: clip, at the entity if any, volume, ducking.
-        Particles, // Spawn an effect: effect, at the entity, count.
+        Particles, // Spawn an effect: effect, at the entity and along its +Y, count.
         Move,      // Move an entity to a position over seconds.
         Visible,   // Show or hide an entity from every ray: entity, on.
         Shake,     // Shake the camera: strength, seconds.
@@ -52,6 +52,7 @@ struct Cue {
         Mix,       // Fade the mix to a snapshot over seconds.
         Event,     // A name the game's code takes (Scene::TakeEvents).
         Subtitle,  // A line someone says (ADR-0075): text and speaker, keys of the text table, for seconds.
+        Fade,      // Cover the picture with a color (ADR-0122): to how much (strength, 0 to 1), over seconds.
     };
     float at = 0.0f;
     Kind kind = Kind::Event;
@@ -68,6 +69,8 @@ struct Cue {
     float strength = 0.0f;
     std::vector<CameraKey> keys;
     CameraPath cameraPath = CameraPath::Eased;
+    /// A fade's color, linear, 0 to 1 (ADR-0122).
+    glm::vec3 color{0.0f};
     audio::MixSnapshot mix;
     [[nodiscard]] bool operator==(const Cue&) const = default;
 };
@@ -77,7 +80,7 @@ struct Cue {
 
 /// A timeline of cues, from a .sequence.json file: {"cues": [{"at": 0.5, "sound": {...}}, ...]}. Each cue is
 /// its time and one kind, named by its key: power, light, sound, particles, move, visible, shake, camera,
-/// mix, event or subtitle.
+/// mix, event, subtitle or fade.
 struct Sequence {
     std::vector<Cue> cues;
     /// What the sequence is for, for people: the file's "comment".

@@ -6,6 +6,7 @@ dai_add_module(NAME resources
         include/daidalos/resources/ImageData.hpp
         include/daidalos/resources/ImageFile.hpp
         include/daidalos/resources/ModelData.hpp
+        include/daidalos/resources/WavFile.hpp
         src/AssetPath.cpp
         src/FontData.cpp
         src/ImageData.cpp
@@ -16,6 +17,7 @@ dai_add_module(NAME resources
         src/StbImageWrite.cpp
         src/StbTrueType.cpp
         src/Tangents.cpp
+        src/WavFile.cpp
     PUBLIC_DEPS
         daidalos::core
     PRIVATE_DEPS

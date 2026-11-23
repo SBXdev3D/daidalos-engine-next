@@ -2907,6 +2907,52 @@ TEST_F(PathTracerTest, ParticlesCastShadows) {
     EXPECT_LT(shaded, lit * 0.97f);
 }
 
+TEST_F(PathTracerTest, MeshParticlesShadeAsMuchAsTheirMesh) {
+    // A mesh particle's size scales its mesh (ADR-0053): a chip of 2 cm at a size of 1 is 2 cm across, and so is
+    // its shadow, not a ball of a meter. The same particle with a mesh of a meter shades the floor.
+    core::Result<renderer::ParticlePass> created = renderer::ParticlePass::Create(Device(), kColorFormat, kDepthFormat);
+    ASSERT_TRUE(created.has_value()) << core::Format(created.error());
+    renderer::ParticlePass& particles = *created;
+    resources::MeshData chipData = renderer::MakeCube();
+    for (resources::Vertex& vertex : chipData.vertices) {
+        vertex.position *= 0.02f;
+    }
+    const core::Result<renderer::MeshHandle> chip = m_pass->CreateMesh(chipData, "Chip");
+    ASSERT_TRUE(chip.has_value()) << core::Format(chip.error());
+    const auto material = [this](const MaterialDesc& desc) { return Material(desc); };
+    const renderer::MaterialHandle grey = Material({.baseColorFactor = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f)});
+    constexpr rhi::Extent kExtent{96, 96};
+    const auto render = [&](std::optional<renderer::MeshHandle> mesh) {
+        SceneView view = BlockOnAFloor(m_cube, material, 0.8f);
+        std::optional<renderer::ParticleEffectHandle> effect;
+        if (mesh.has_value()) {
+            renderer::ParticleEffectDesc desc = StillParticle(glm::vec4(1.0f), false, true);
+            desc.size = {1.0f, 1.0f};
+            desc.mesh = *mesh;
+            desc.material = grey;
+            const core::Result<renderer::ParticleEffectHandle> made = particles.CreateEffect(desc, *m_pass);
+            EXPECT_TRUE(made.has_value());
+            effect = *made;
+            // Halfway from the lamp to the floor, in front of the block.
+            view.particleSpawns.push_back({.effect = *effect, .position = {0.75f, 1.5f, 1.2f}, .count = 1});
+        }
+        const Image image = Rasterize(view, kExtent, {.frames = 16, .warmup = 3, .particles = &particles});
+        if (effect.has_value()) {
+            particles.DestroyEffect(*effect);
+        }
+        return Sum(image);
+    };
+    const float bare = render(std::nullopt);
+    const float chipped = render(*chip);
+    const float blocked = render(m_cube);
+    m_pass->DestroyMesh(*chip);
+    RecordProperty("bare", std::to_string(bare));
+    RecordProperty("chipped", std::to_string(chipped));
+    RecordProperty("blocked", std::to_string(blocked));
+    EXPECT_GT(chipped, bare * 0.995f) << "a chip's shadow is a chip's";
+    EXPECT_LT(blocked, bare * 0.97f) << "a cube of a meter shades the floor";
+}
+
 TEST_F(PathTracerTest, ParticlesShowInMirrors) {
     // A red spark above a mirror floor: the harness does not draw it, but the mirror shows it (ADR-0062); opted
     // out of rays, it is gone from the mirror too.

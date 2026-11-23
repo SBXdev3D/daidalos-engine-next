@@ -1,0 +1,43 @@
+{
+    "comment": "Flies over a body, big enough to be filmed (ADR-0122).",
+    "texture": "sprites.png",
+    "columns": 4,
+    "cell": 8,
+    "frames": 2,
+    "frameRate": 40,
+    "loop": true,
+    "randomStartFrame": true,
+    "color": [
+        [
+            0,
+            [
+                1,
+                1,
+                1,
+                1
+            ]
+        ]
+    ],
+    "fadeIn": 0.05,
+    "lifetime": [
+        20,
+        30
+    ],
+    "size": [
+        0.022,
+        0.028
+    ],
+    "spawnRadius": 0.8,
+    "speed": [
+        0.3,
+        1
+    ],
+    "drag": 0.8,
+    "turbulence": 4,
+    "turbulenceScale": 0.4,
+    "softness": 0.01,
+    "emitter": {
+        "rate": 6,
+        "radius": 2
+    }
+}

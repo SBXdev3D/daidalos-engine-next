@@ -6,6 +6,7 @@
 
 #include <stb_image_write.h>
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstring>
@@ -67,6 +68,26 @@ core::Result<std::vector<std::byte>> EncodePng(std::uint32_t width, std::uint32_
         return core::MakeError(core::ErrorCode::InvalidArgument, kModule, "Cannot encode the PNG");
     }
     return png;
+}
+
+core::Result<std::vector<std::byte>> EncodeJpeg(std::uint32_t width, std::uint32_t height,
+                                                std::span<const std::uint8_t> rgba, int quality) {
+    if (width == 0 || height == 0 || rgba.size() != std::size_t{width} * height * 4) {
+        return core::MakeError(core::ErrorCode::InvalidArgument, kModule,
+                               std::format("A {}x{} JPEG needs {} bytes of RGBA, not {}", width, height,
+                                           std::size_t{width} * height * 4, rgba.size()));
+    }
+    std::vector<std::byte> jpeg;
+    const auto append = [](void* context, void* data, int size) {
+        auto* out = static_cast<std::vector<std::byte>*>(context);
+        const auto* bytes = static_cast<const std::byte*>(data);
+        out->insert(out->end(), bytes, bytes + size);
+    };
+    if (stbi_write_jpg_to_func(append, &jpeg, static_cast<int>(width), static_cast<int>(height), 4, rgba.data(),
+                               std::clamp(quality, 1, 100)) == 0) {
+        return core::MakeError(core::ErrorCode::InvalidArgument, kModule, "Cannot encode the JPEG");
+    }
+    return jpeg;
 }
 
 core::Result<std::vector<std::byte>> EncodeExr(std::uint32_t width, std::uint32_t height, std::span<const float> rgb) {

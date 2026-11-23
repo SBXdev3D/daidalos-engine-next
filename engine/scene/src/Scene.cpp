@@ -202,6 +202,12 @@ void Scene::PlaySequence(std::shared_ptr<const Sequence> sequence) {
     }
 }
 
+glm::vec4 Scene::Fade() const {
+    // Eased in and out, as the camera's keys.
+    const float t = m_fade.seconds > 0.0f ? std::clamp(m_fade.time / m_fade.seconds, 0.0f, 1.0f) : 1.0f;
+    return {m_fade.color, glm::mix(m_fade.from, m_fade.to, t * t * (3.0f - 2.0f * t))};
+}
+
 std::optional<glm::vec3> Scene::CinematicPosition() const {
     if (!m_cinematic.has_value()) {
         return std::nullopt;
@@ -294,6 +300,7 @@ void Scene::RunSequences() {
             m_cut = true;
         }
     }
+    m_fade.time = std::min(m_fade.time + m_frameDelta, m_fade.seconds);
     m_shakeTime = std::max(m_shakeTime - m_frameDelta, 0.0f);
     for (Caption& caption : m_captions) {
         caption.age += m_frameDelta;
@@ -347,9 +354,18 @@ void Scene::RunCue(const Cue& cue) {
     }
     case Cue::Kind::Particles: {
         const core::Result<ParticleEffectAsset> effect = m_assets.LoadParticleEffect(cue.path);
-        const std::optional<glm::vec3> at = entityPosition(Named(cue.name));
+        const ecs::Entity entity = Named(cue.name);
+        const std::optional<glm::vec3> at = entityPosition(entity);
         if (effect && at.has_value()) {
-            SpawnParticles(effect->effect, *at, glm::vec3(0.0f, 1.0f, 0.0f), cue.count);
+            // The effect's +Y is the entity's (ADR-0122): a hit on a wall sprays out of it.
+            glm::vec3 up(0.0f, 1.0f, 0.0f);
+            if (const ecs::WorldTransform* transform = m_world.TryGet<ecs::WorldTransform>(entity)) {
+                const glm::vec3 turned = glm::mat3(transform->matrix) * up;
+                if (const float length = glm::length(turned); length > 1e-6f) {
+                    up = turned / length;
+                }
+            }
+            SpawnParticles(effect->effect, *at, up, cue.count);
         } else if (!effect) {
             DAI_LOG_WARNING(kModule, "Sequence: {}", core::Format(effect.error()));
         }
@@ -375,6 +391,10 @@ void Scene::RunCue(const Cue& cue) {
         m_shake = std::max(cue.strength, 0.0f);
         m_shakeLength = std::max(cue.seconds, 0.01f);
         m_shakeTime = m_shakeLength;
+        break;
+    case Cue::Kind::Fade:
+        // From where the fade is now, so that a fade cut short turns back without a jump.
+        m_fade = {cue.color, Fade().a, cue.strength, std::max(cue.seconds, 0.0f), 0.0f};
         break;
     case Cue::Kind::Camera:
         m_cinematic = Cinematic{cue.keys, cue.cameraPath, 0.0f};

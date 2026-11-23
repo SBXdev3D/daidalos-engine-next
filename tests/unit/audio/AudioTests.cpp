@@ -429,6 +429,62 @@ TEST_F(AudioTest, ARoomRingsAfterTheSoundStops) {
     EXPECT_GT(tail, 0.001f);
 }
 
+TEST_F(AudioTest, ASoundFadesOutPastTwiceItsMaximumDistance) {
+    if (!m_sounds->HearsGeometry()) {
+        GTEST_SKIP() << "Steam Audio did not start";
+    }
+    const ClipHandle clip = Clip("long.wav");
+    const audio::VoiceHandle voice = m_sounds->Play(
+        clip, {.position = glm::vec3(0.0f, 0.0f, -30.0f), .loop = true, .minDistance = 2.0f, .maxDistance = 20.0f});
+    m_sounds->Update();
+    Mix();
+    const float far = Mix().left;
+    m_sounds->SetPosition(voice, {0.0f, 0.0f, -45.0f});
+    m_sounds->Update();
+    for (int block = 0; block < 3; ++block) {
+        Mix(); // The node's block of latency, and the change smoothed.
+    }
+    const float gone = Mix().left;
+    RecordProperty("far", std::to_string(far));
+    RecordProperty("gone", std::to_string(gone));
+    EXPECT_GT(far, 0.001f) << "past the maximum, still heard";
+    EXPECT_LT(gone, 1.0e-4f) << "past twice the maximum, silent";
+}
+
+TEST_F(AudioTest, ASoundOutsideAClosedRoomDoesNotRingInIt) {
+    // The listener's room rings with what is played in it (ARoomRingsAfterTheSoundStops), not with what is played
+    // beyond its walls.
+    if (!m_sounds->HearsGeometry()) {
+        GTEST_SKIP() << "Steam Audio did not start";
+    }
+    std::vector<glm::vec3> positions;
+    std::vector<std::uint32_t> indices;
+    AddRoom(positions, indices, {-6.0f, -2.0f, -8.0f}, {6.0f, 4.0f, 4.0f});
+    m_sounds->AddAcousticMesh(positions, indices, audio::AcousticMaterialOf("concrete"));
+    const auto level = [this](const glm::vec3& position) {
+        const audio::VoiceHandle voice = m_sounds->Play(
+            Clip("long.wav"), {.position = position, .loop = true, .minDistance = 1.0f, .maxDistance = 40.0f});
+        for (int round = 0; round < 20; ++round) {
+            m_sounds->Update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        }
+        float loudest = 0.0f;
+        for (int block = 0; block < 5; ++block) {
+            loudest = std::max(loudest, Mix().left);
+        }
+        m_sounds->Stop(voice);
+        for (int block = 0; block < 40; ++block) {
+            Mix(); // Until its tail has died.
+        }
+        return loudest;
+    };
+    const float inside = level({0.0f, 0.0f, -4.0f});
+    const float outside = level({0.0f, 0.0f, -14.0f});
+    RecordProperty("inside", std::to_string(inside));
+    RecordProperty("outside", std::to_string(outside));
+    EXPECT_LT(outside, inside * 0.05f);
+}
+
 TEST_F(AudioTest, SoundFindsTheWayAroundAWall) {
     // A wall between the sound and the listener, with an opening to the side: muffled through the wall, the sound
     // also comes around once the paths are baked (ADR-0066).

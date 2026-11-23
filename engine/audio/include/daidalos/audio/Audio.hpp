@@ -94,7 +94,8 @@ struct PlayOptions {
     float volume = 1.0f;
     bool loop = false;
     Bus bus = Bus::Effects;
-    /// Meters. Closer than the minimum, the sound is at full volume; it stops fading at the maximum.
+    /// Meters. Closer than the minimum, the sound is at full volume. Through Steam Audio, past the maximum it
+    /// fades out, gone at twice the maximum; panned by miniaudio, it stops fading at the maximum.
     float minDistance = 1.5f;
     float maxDistance = 35.0f;
     /// While it plays, music and ambience drop by this share, so that it is heard over them (ADR-0067): a
@@ -205,6 +206,9 @@ public:
     /// Releases the voices that ended, moves the mix towards its snapshot and its ducking, then simulates how
     /// each sound reaches the listener through the geometry. Run it once per frame.
     void Update();
+    /// Seconds each Update stands for, instead of the time since the last one: a recording (ADR-0123) reads the
+    /// mix faster or slower than it plays. Nothing for the clock.
+    void SetFixedStep(std::optional<float> seconds);
     /// Milliseconds the last Update spent simulating, for the sound's CPU budget.
     [[nodiscard]] double LastSimulationMilliseconds() const;
     /// Milliseconds the last round of the worker thread took, every 50 ms: the reverb and the paths.

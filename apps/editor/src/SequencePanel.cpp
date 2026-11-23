@@ -275,6 +275,14 @@ bool SequencePanel::DrawCue(scene::Cue& cue, const Context& context) {
                                     ImGuiSliderFlags_Logarithmic);
         changed |= ImGui::DragFloat("Fade (s)", &cue.seconds, 0.05f, 0.0f, 30.0f, "%.2f");
         break;
+    case scene::Cue::Kind::Fade:
+        changed |= ImGui::SliderFloat("To", &cue.strength, 0.0f, 1.0f);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("How much the color covers the picture: 1 all of it, 0 none");
+        }
+        changed |= ImGui::DragFloat("Seconds", &cue.seconds, 0.05f, 0.0f, 30.0f, "%.2f");
+        changed |= ImGui::ColorEdit3("Color", &cue.color.x);
+        break;
     case scene::Cue::Kind::Event:
         changed |= InputString("Name", cue.name);
         ImGui::TextDisabled("The game's code takes it: checkpoint, stinger...");

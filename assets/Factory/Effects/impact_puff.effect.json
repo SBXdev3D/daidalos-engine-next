@@ -1,0 +1,53 @@
+{
+    "comment": "A puff of dust where a shot hits (ADR-0122): unlit and pale, so that it reads in the range's light.",
+    "texture": "../particles.png",
+    "columns": 4,
+    "cell": 0,
+    "color": [
+        [
+            0,
+            [
+                0.55,
+                0.52,
+                0.48,
+                0.5
+            ]
+        ],
+        [
+            1,
+            [
+                0.55,
+                0.52,
+                0.48,
+                0
+            ]
+        ]
+    ],
+    "lifetime": [
+        0.6,
+        1.4
+    ],
+    "size": [
+        0.08,
+        0.14
+    ],
+    "sizeOverLife": [
+        [
+            0,
+            1
+        ],
+        [
+            1,
+            3
+        ]
+    ],
+    "spread": 30,
+    "speed": [
+        0.8,
+        2
+    ],
+    "gravity": 0.2,
+    "drag": 3,
+    "softness": 0.1,
+    "lit": false
+}

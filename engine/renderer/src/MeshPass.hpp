@@ -151,6 +151,8 @@ public:
         std::uint32_t indexCount = 0;
         /// The lowest of its vertices along its Y.
         float lowest = 0.0f;
+        /// How far its farthest vertex may be from its origin: a ball of this radius holds it.
+        float radius = 0.0f;
     };
     [[nodiscard]] std::optional<Geometry> GeometryOf(MeshHandle mesh) const;
     /// A material's index in the material table and its sides, or the default material's if it is gone.

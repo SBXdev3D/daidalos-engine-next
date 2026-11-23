@@ -199,6 +199,20 @@ core::Result<Cue> ReadCue(std::string_view sequence, simdjson::dom::object cueOb
         DAI_TRY(reader.Number("lowpass", cue.mix.lowpass));
         cue.seconds = 0.5f;
         DAI_TRY(reader.Number("seconds", cue.seconds));
+    } else if (kind == "fade") {
+        cue.kind = Cue::Kind::Fade;
+        DAI_TRY(reader.Only({"to", "seconds", "color"}));
+        cue.strength = 1.0f;
+        cue.seconds = 1.0f;
+        DAI_TRY(reader.Number("to", cue.strength));
+        DAI_TRY(reader.Number("seconds", cue.seconds));
+        DAI_TRY(reader.Vector("color", cue.color));
+        if (cue.strength < 0.0f || cue.strength > 1.0f) {
+            return reader.Invalid("to", "must be from 0 (clear) to 1 (covered)");
+        }
+        if (cue.seconds < 0.0f) {
+            return reader.Invalid("seconds", "must be 0 or more");
+        }
     } else if (kind == "camera") {
         cue.kind = Cue::Kind::Camera;
         DAI_TRY(reader.Only({"keys", "path"}));
@@ -311,6 +325,8 @@ std::string_view CueKindName(Cue::Kind kind) {
         return "event";
     case Cue::Kind::Subtitle:
         return "subtitle";
+    case Cue::Kind::Fade:
+        return "fade";
     }
     return "event";
 }
@@ -378,6 +394,13 @@ std::string WriteSequence(const Sequence& sequence) {
         case Cue::Kind::Shake:
             body.emplace("strength", number(cue->strength));
             body.emplace("seconds", number(cue->seconds));
+            break;
+        case Cue::Kind::Fade:
+            body.emplace("to", number(cue->strength));
+            body.emplace("seconds", number(cue->seconds));
+            if (cue->color != glm::vec3(0.0f)) {
+                body.emplace("color", vector(cue->color));
+            }
             break;
         case Cue::Kind::Mix:
             body.emplace("effects", number(cue->mix.buses[0]));

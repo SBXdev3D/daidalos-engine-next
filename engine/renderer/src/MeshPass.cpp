@@ -677,7 +677,8 @@ std::optional<MeshPass::Geometry> MeshPass::GeometryOf(MeshHandle mesh) const {
     return Geometry{.vertices = found->vertices,
                     .indices = found->indices,
                     .indexCount = found->indexCount,
-                    .lowest = found->lowest};
+                    .lowest = found->lowest,
+                    .radius = glm::length(glm::vec3(found->bounds)) + found->bounds.w};
 }
 
 MeshPass::MaterialSlot MeshPass::MaterialOf(MaterialHandle material) const {

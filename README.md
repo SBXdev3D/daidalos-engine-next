@@ -145,6 +145,11 @@ sandbox.exe +window.fullscreen true +renderer.antialiasing off
 | `view.fov` | 90 | Degrees across the screen, from 30 to 150 |
 | `view.distance` | 150 | Meters: nothing farther is drawn or lit |
 | `audio.volume`, `audio.effects`, `audio.music` | 1 | Volumes, from 0 to 1, read at startup |
+| `record.directory` | | Record into this directory (ADR-0123): the sandbox writes its start sequence or tour as a numbered image per frame and `sound.wav`, then quits; the sound plays on no device meanwhile |
+| `record.fps` | 60 | Frames per second of a recording, whatever each takes to draw |
+| `record.format` | `jpg` | `jpg` or `png` |
+| `record.quality` | 95 | JPEG quality, from 1 to 100 |
+| `record.normalize` | true | Bring the recording's sound to a peak of -1 dBFS; it is mixed at full volume whatever the player's volumes |
 | `input.mouse_sensitivity` | 0.0025 | Radians of turn per mouse unit |
 | `input.rumble` | 1 | Strength of the gamepads' rumble, 0 (off) to 1 |
 
@@ -159,6 +164,7 @@ The sandbox adds its own:
 | `sandbox.darkness` | 1 | Multiplies the darkness; 0 shows the level |
 | `sandbox.tour` | false | Start in the level with the legacy demo's flight over the whole factory, about 3 min 45 s, instead of the menu; it ends in the player's eyes, and Escape, jump or use skips it (ADR-0120) |
 | `sandbox.tour_darkness` | 0.5 | The darkness while the tour flies; it returns to `sandbox.darkness` as the player takes over |
+| `sandbox.sequence` | | A sequence under `assets/` to play at the start instead of the menu, without the frame summary: `+sandbox.scene Factory/EffectsGallery.level.json +sandbox.sequence Factory/Sequences/effects_tour.sequence.json` films the effects gallery, a room per effect, fading between them (ADR-0122) |
 | `sandbox.ambient` | 0.1 | Light that reaches everywhere in the dark; 0 is pitch black |
 | `sandbox.flashlight` | false | Start with the flashlight on |
 | `sandbox.aperture` | 0 | The camera's f-number for depth of field; 0 keeps everything sharp |
