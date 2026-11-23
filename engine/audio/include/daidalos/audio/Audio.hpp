@@ -94,7 +94,8 @@ struct PlayOptions {
     float volume = 1.0f;
     bool loop = false;
     Bus bus = Bus::Effects;
-    /// Meters. Closer than the minimum, the sound is at full volume; it stops fading at the maximum.
+    /// Meters. Closer than the minimum, the sound is at full volume. Through Steam Audio, past the maximum it
+    /// fades out, gone at twice the maximum; panned by miniaudio, it stops fading at the maximum.
     float minDistance = 1.5f;
     float maxDistance = 35.0f;
     /// While it plays, music and ambience drop by this share, so that it is heard over them (ADR-0067): a

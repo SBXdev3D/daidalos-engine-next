@@ -325,8 +325,11 @@ void SpatialNode::ProcessBlock() {
         path.normalizeEQ = IPL_TRUE;
         iplPathEffectApply(m_path, &path, &in, &pathed);
     }
-    // To the reverb: the sound itself, quieter with distance, but less than the direct path.
-    const float sendGain = std::sqrt(params.distanceAttenuation);
+    // To the reverb: the sound itself, quieter with distance, but less than the direct path; and only as much of it
+    // as comes through the walls, or a sound in another room rings in this one.
+    const float transmitted = (params.transmission[0] + params.transmission[1] + params.transmission[2]) / 3.0f;
+    const float through = params.occlusion + (1.0f - params.occlusion) * transmitted;
+    const float sendGain = std::sqrt(params.distanceAttenuation) * through;
     for (std::uint32_t frame = 0; frame < kFrameSize; ++frame) {
         float out[2] = {m_left[frame], m_right[frame]};
         if (around > 0.0f) {
@@ -693,10 +696,12 @@ DirectParams Scene::Placed(const Listener& listener, const Voice& voice) const {
     } else {
         params.direction = {0.0f, 0.0f, -1.0f};
     }
-    // As miniaudio's inverse model did: full volume within the minimum, no quieter past the maximum.
+    // As miniaudio's inverse model did, full volume within the minimum; past the maximum, it fades out, gone at
+    // twice the maximum, so that a level's far rooms are not all heard at once (ADR-0123's follow-up).
     const float distance = glm::length(offset);
-    params.distanceAttenuation =
-        voice.minDistance / std::clamp(distance, voice.minDistance, std::max(voice.maxDistance, voice.minDistance));
+    const float maximum = std::max(voice.maxDistance, voice.minDistance);
+    const float beyond = maximum > 0.0f ? std::clamp((distance - maximum) / maximum, 0.0f, 1.0f) : 0.0f;
+    params.distanceAttenuation = voice.minDistance / std::clamp(distance, voice.minDistance, maximum) * (1.0f - beyond);
     return params;
 }
 

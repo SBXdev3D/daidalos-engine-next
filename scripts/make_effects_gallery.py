@@ -8,7 +8,8 @@ camera tour that films them one after the other, fading to black between rooms.
     python scripts/make_effects_gallery.py [--check]
 
 It writes, under assets/Factory:
-- EffectsGallery.gltf and .bin: the rooms' walls, floors, ceilings and fittings, of the factory's materials;
+- EffectsGallery.gltf and .bin: the rooms' walls, floors, ceilings and fittings, of the factory's materials,
+  and its .import.json, which makes them walls and floors for physics and sound;
 - EffectsGallery.level.json: the props, lights, emitters, ribbons, fog, wind, weather, sounds and decals;
 - Sequences/effects_tour.sequence.json: the tour.
 
@@ -952,6 +953,11 @@ def write_gltf(g, path):
     }
     path.with_suffix(".bin").write_bytes(bytes(blob))
     path.write_text(json.dumps(gltf, indent=1) + "\n", encoding="utf-8", newline="\n")
+    # The rooms are walls and floors (ADR-0117): physics, the navigation mesh, and sound, which they keep in its
+    # room instead of letting every room's loops be heard in all the others.
+    settings = {"comment": "Written by scripts/make_effects_gallery.py.", "level_collision": True, "scale": 1.0}
+    path.with_name(path.name + ".import.json").write_text(json.dumps(settings, indent=2, sort_keys=True) + "\n",
+                                                          encoding="utf-8", newline="\n")
 
 
 def write_level(g, path):
