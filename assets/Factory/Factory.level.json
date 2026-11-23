@@ -111,7 +111,7 @@
       "model": "Showcase/vintage_flashlight/vintage_flashlight.gltf",
       "name": "Flashlight 16",
       "transform": {
-        "rotation": [0.0, 0.0410037, 0.0, 0.999159],
+        "rotation": [0, 0.0410037, 0, 0.999159],
         "translation": [17.5, 0.001, -38.5]
       }
     },
@@ -124,7 +124,7 @@
       "model": "Showcase/medical_box/medical_box.gltf",
       "name": "Health 17",
       "transform": {
-        "rotation": [0.0, -0.6908824, 0.0, 0.7229671],
+        "rotation": [0, -0.69088244, 0, 0.72296715],
         "translation": [50.25, 3.5885, -29.3]
       }
     },
@@ -137,7 +137,7 @@
       "model": "Showcase/ammo_box/ammo_box.gltf",
       "name": "Handgun ammo 18",
       "transform": {
-        "rotation": [0.0, 0.7489557, 0.0, 0.66262],
+        "rotation": [0, 0.7489558, 0, 0.66262007],
         "translation": [41.45, 3.5884, -49.45]
       }
     },
@@ -150,7 +150,7 @@
       "model": "Showcase/ammo_box/ammo_box.gltf",
       "name": "Handgun ammo 19",
       "transform": {
-        "rotation": [0.0, 0.6691306, 0.0, 0.7431448],
+        "rotation": [0, 0.6691306, 0, 0.7431448],
         "translation": [40.4, 2.801, -50.5]
       }
     },
@@ -176,7 +176,7 @@
       "model": "Showcase/ammo_box/ammo_box.gltf",
       "name": "Rifle ammo 21",
       "transform": {
-        "rotation": [0.0, 0.7253744, 0.0, 0.6883546],
+        "rotation": [0, 0.7253744, 0, 0.6883546],
         "translation": [-15.55, 0.001, -19.52]
       }
     },
@@ -226,7 +226,7 @@
       "model": "Props/card.gltf",
       "name": "Card 26",
       "transform": {
-        "rotation": [-0.6993398, 0.104517, 0.104517, 0.6993398],
+        "rotation": [-0.69933987, 0.104517005, 0.104517005, 0.69933987],
         "scale": [0.3, 0.3, 0.3],
         "translation": [50.45, 3.1022, -78.4]
       }
@@ -326,14 +326,6 @@
       "transform": {
         "rotation": [-0.7071068, 0, 0, 0.7071068],
         "translation": [0, -0.28, 0]
-      }
-    },
-    {
-      "id": 32,
-      "model": "Props/lamp_4.gltf",
-      "name": "Lamp 31",
-      "transform": {
-        "translation": [45.5, 5.6, -79.45]
       }
     },
     {
@@ -480,8 +472,8 @@
       "model": "Showcase/bolt_action_rifle_7_62/bolt_action_rifle_7_62.gltf",
       "name": "Rifle 49",
       "transform": {
-        "rotation": [0.0861746, -0.0861746, 0.7018361, 0.7018361],
-        "translation": [-16.0, 0.6191, -19.405]
+        "rotation": [0.08617461, -0.08617461, 0.70183617, 0.70183617],
+        "translation": [-16, 0.6191, -19.405]
       }
     },
     {
@@ -1428,8 +1420,9 @@
       "name": "Industrial wall lamp",
       "parent": 113,
       "transform": {
-        "rotation": [0, 0.7071068, 0, -0.7071068],
-        "translation": [5.25, 2.5, 0.125]
+        "rotation": [0, 0.7071068, 0, -0.7071067],
+        "scale": [0.9999999, 1, 0.9999999],
+        "translation": [5.25, 2.5000005, -2.8998787]
       }
     },
     {
@@ -1456,8 +1449,9 @@
       "name": "Industrial wall lamp",
       "parent": 113,
       "transform": {
-        "rotation": [0, 0.7071068, 0, 0.7071068],
-        "translation": [-5, 2.5, -7.625]
+        "rotation": [0, 0.7071068, 0, 0.7071067],
+        "scale": [0.99999976, 1, 0.99999976],
+        "translation": [-5.26066, 2.5000007, -3.564542]
       }
     },
     {
@@ -4089,8 +4083,8 @@
       "name": "Wooden crate 01",
       "parent": 315,
       "transform": {
-        "rotation": [0, 0.99962676, 0, 0.027320702],
-        "translation": [-45.375, 2.8079333, -68.474]
+        "rotation": [0, 0.99962676, 0, 0.027320696],
+        "translation": [-45.247147, 2.8079336, -68.45096]
       }
     },
     {
@@ -4377,87 +4371,6 @@
       "transform": {
         "rotation": [0, 0.67221665, 0, 0.74035454],
         "translation": [-36.311, -8.400027, -35.625]
-      }
-    },
-    {
-      "id": 344,
-      "model": "Showcase/caged_hanging_light/caged_hanging_light.gltf",
-      "name": "Caged hanging light",
-      "parent": 335,
-      "transform": {
-        "translation": [-37.625, -5.6, -50.125]
-      }
-    },
-    {
-      "id": 345,
-      "light": {
-        "animation": {
-          "circuit": "pumps",
-          "pattern": "steady"
-        },
-        "color": [1, 0.85, 0.65],
-        "intensity": 140,
-        "range": 9,
-        "type": "point"
-      },
-      "name": "Caged hanging light light",
-      "parent": 344,
-      "transform": {
-        "translation": [0, -0.55, 0]
-      }
-    },
-    {
-      "id": 346,
-      "model": "Showcase/caged_hanging_light/caged_hanging_light.gltf",
-      "name": "Caged hanging light",
-      "parent": 335,
-      "transform": {
-        "translation": [-37.875, -5.6, -38.875]
-      }
-    },
-    {
-      "id": 347,
-      "light": {
-        "animation": {
-          "circuit": "pumps",
-          "pattern": "steady"
-        },
-        "color": [1, 0.85, 0.65],
-        "intensity": 140,
-        "range": 9,
-        "type": "point"
-      },
-      "name": "Caged hanging light light",
-      "parent": 346,
-      "transform": {
-        "translation": [0, -0.55, 0]
-      }
-    },
-    {
-      "id": 348,
-      "model": "Showcase/caged_hanging_light/caged_hanging_light.gltf",
-      "name": "Caged hanging light",
-      "parent": 335,
-      "transform": {
-        "translation": [-38.875, -5.6, -56.625]
-      }
-    },
-    {
-      "id": 349,
-      "light": {
-        "animation": {
-          "circuit": "pumps",
-          "pattern": "steady"
-        },
-        "color": [1, 0.85, 0.65],
-        "intensity": 140,
-        "range": 9,
-        "type": "point"
-      },
-      "name": "Caged hanging light light",
-      "parent": 348,
-      "transform": {
-        "translation": [0, -0.55, 0]
       }
     },
     {
@@ -4849,31 +4762,6 @@
       }
     },
     {
-      "id": 381,
-      "model": "Showcase/security_light/security_light.gltf",
-      "name": "Way out floodlight",
-      "parent": 375,
-      "transform": {
-        "translation": [-37, -5.9, -60.6]
-      }
-    },
-    {
-      "id": 382,
-      "light": {
-        "color": [0.9, 0.95, 1],
-        "intensity": 2500,
-        "outer_angle": 45,
-        "range": 25,
-        "type": "spot"
-      },
-      "name": "Way out floodlight light",
-      "parent": 381,
-      "transform": {
-        "rotation": [0, 0.9659259, 0.258819, 0],
-        "translation": [0, 0, 0.3]
-      }
-    },
-    {
       "id": 383,
       "name": "Cells: factory"
     },
@@ -4976,6 +4864,250 @@
         "scale": [10.75, 12.3, 14.25],
         "translation": [0.125, 3.05, -89.125]
       }
+    },
+    {
+      "id": 394,
+      "model": "Showcase/caged_hanging_light/caged_hanging_light.gltf",
+      "name": "Caged hanging light",
+      "parent": 296,
+      "transform": {
+        "translation": [46.05936, 5.6, -79.261765]
+      }
+    },
+    {
+      "id": 395,
+      "light": {
+        "animation": {
+          "circuit": "store",
+          "pattern": "steady"
+        },
+        "color": [1, 0.85, 0.65],
+        "intensity": 140,
+        "range": 9,
+        "type": "point"
+      },
+      "name": "Caged hanging light light",
+      "parent": 394,
+      "transform": {
+        "translation": [0, -0.55, 0]
+      }
+    },
+    {
+      "id": 396,
+      "model": "Showcase/industrial_wall_lamp/industrial_wall_lamp.gltf",
+      "name": "industrial_wall_lamp"
+    },
+    {
+      "id": 397,
+      "model": "Showcase/industrial_wall_lamp/industrial_wall_lamp.gltf",
+      "name": "industrial_wall_lamp",
+      "transform": {
+        "rotation": [0, 0.7071068, 0, 0.7071067],
+        "translation": [-40.25, 5.167246, -59.340458]
+      }
+    },
+    {
+      "id": 398,
+      "light": {
+        "animation": {
+          "circuit": "start_room",
+          "pattern": "steady"
+        },
+        "color": [1, 0.85, 0.65],
+        "intensity": 110,
+        "range": 8,
+        "type": "point"
+      },
+      "name": "Industrial wall lamp light",
+      "parent": 397,
+      "transform": {
+        "translation": [0, 0, 0.11]
+      }
+    },
+    {
+      "id": 399,
+      "model": "Showcase/industrial_wall_lamp/industrial_wall_lamp.gltf",
+      "name": "industrial_wall_lamp",
+      "transform": {
+        "rotation": [0, 0.7071068, 0, -0.7071067],
+        "scale": [0.99999976, 1, 0.99999976],
+        "translation": [-29.751196, 5.0756054, -59.266888]
+      }
+    },
+    {
+      "id": 400,
+      "light": {
+        "animation": {
+          "circuit": "start_room",
+          "pattern": "steady"
+        },
+        "color": [1, 0.85, 0.65],
+        "intensity": 110,
+        "range": 8,
+        "type": "point"
+      },
+      "name": "Industrial wall lamp light",
+      "parent": 399,
+      "transform": {
+        "translation": [0, 0, 0.1]
+      }
+    },
+    {
+      "id": 401,
+      "model": "Showcase/industrial_wall_lamp/industrial_wall_lamp.gltf",
+      "name": "industrial_wall_lamp",
+      "transform": {
+        "translation": [-34.621647, 5.1620626, -78.72679]
+      }
+    },
+    {
+      "id": 402,
+      "light": {
+        "animation": {
+          "circuit": "start_room",
+          "pattern": "steady"
+        },
+        "color": [1, 0.85, 0.65],
+        "intensity": 110,
+        "range": 8,
+        "type": "point"
+      },
+      "name": "Industrial wall lamp light",
+      "parent": 401,
+      "transform": {
+        "translation": [0, 0, 0.11]
+      }
+    },
+    {
+      "id": 403,
+      "model": "Showcase/industrial_wall_lamp/industrial_wall_lamp.gltf",
+      "name": "industrial_wall_lamp",
+      "transform": {
+        "rotation": [0, 1, 0, -4.371139e-08],
+        "translation": [-21.372414, 5.0505595, -75.25219]
+      }
+    },
+    {
+      "id": 404,
+      "light": {
+        "animation": {
+          "circuit": "start_room",
+          "pattern": "steady"
+        },
+        "color": [1, 0.85, 0.65],
+        "intensity": 110,
+        "range": 8,
+        "type": "point"
+      },
+      "name": "Industrial wall lamp light",
+      "parent": 403,
+      "transform": {
+        "translation": [0, 0, 0.1]
+      }
+    },
+    {
+      "id": 405,
+      "model": "Showcase/industrial_wall_lamp/industrial_wall_lamp.gltf",
+      "name": "industrial_wall_lamp",
+      "transform": {
+        "translation": [-20.67839, 5.2330723, -89.2455]
+      }
+    },
+    {
+      "id": 406,
+      "light": {
+        "animation": {
+          "circuit": "start_room",
+          "pattern": "steady"
+        },
+        "color": [1, 0.85, 0.65],
+        "intensity": 110,
+        "range": 8,
+        "type": "point"
+      },
+      "name": "Industrial wall lamp light",
+      "parent": 405,
+      "transform": {
+        "translation": [0, 0, 0.11]
+      }
+    },
+    {
+      "id": 407,
+      "model": "Props/crate.gltf",
+      "name": "crate",
+      "transform": {
+        "translation": [-39.435375, 3.1, -63.598293]
+      }
+    },
+    {
+      "body": {},
+      "id": 408,
+      "model": "Props/crate.gltf",
+      "name": "crate",
+      "transform": {
+        "translation": [-39.42472, 3.1, -62.803997]
+      }
+    },
+    {
+      "id": 409,
+      "model": "Showcase/industrial_wall_lamp/industrial_wall_lamp.gltf",
+      "name": "industrial_wall_lamp",
+      "transform": {
+        "rotation": [0, 0.7071068, 0, 0.7071067],
+        "scale": [0.9999999, 1, 0.9999999],
+        "translation": [-47.245842, -6.085171, -52.404575]
+      }
+    },
+    {
+      "id": 410,
+      "light": {
+        "animation": {
+          "circuit": "start_room",
+          "pattern": "steady"
+        },
+        "color": [1, 0.85, 0.65],
+        "intensity": 2000,
+        "radius": 0.46,
+        "range": 25,
+        "type": "point"
+      },
+      "name": "Industrial wall lamp light",
+      "parent": 409,
+      "transform": {
+        "rotation": [0, 0.7071068, 0, -0.7071067],
+        "scale": [0.9999998, 1, 0.9999998],
+        "translation": [-7.6293945e-06, 9.536743e-07, 0.12187958]
+      }
+    },
+    {
+      "id": 411,
+      "model": "Showcase/industrial_wall_lamp/industrial_wall_lamp.gltf",
+      "name": "industrial_wall_lamp",
+      "transform": {
+        "rotation": [0, 0.7071068, 0, 0.7071067],
+        "translation": [-47.25, -6.031309, -41.97854]
+      }
+    },
+    {
+      "id": 412,
+      "light": {
+        "animation": {
+          "circuit": "start_room",
+          "pattern": "steady"
+        },
+        "color": [1, 0.85, 0.65],
+        "intensity": 2000,
+        "radius": 1,
+        "range": 25.1,
+        "type": "point"
+      },
+      "name": "Industrial wall lamp light",
+      "parent": 411,
+      "transform": {
+        "rotation": [0, 0.7071068, 0, -0.7071067],
+        "scale": [0.99999946, 1, 0.99999946],
+        "translation": [0, 0, 0.10874939]
+      }
     }
   ],
   "environment": {
@@ -4987,12 +5119,15 @@
     },
     "fog": {
       "albedo": [0.8, 0.82, 0.85],
-      "anisotropy": 0.1
+      "anisotropy": 0
     },
     "sky": {
       "faces": "Sky/sky1",
       "intensity": 9.6,
       "yaw": 180
+    },
+    "wind": {
+      "gust_frequency": 0
     }
   },
   "format": "daidalos-level",
