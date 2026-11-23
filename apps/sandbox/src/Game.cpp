@@ -214,8 +214,11 @@ public:
     void OnUpdate(app::Application& app, const core::FrameTime& time) override {
         const input::InputState& input = app.Input();
         const auto delta = static_cast<float>(time.delta.count());
-        // A recorded sequence (ADR-0123) ends the recording when it ends, and the game once it is written.
-        if (m_recordingSequence && (app.CurrentScene() == nullptr || app.CurrentScene()->PlayingSequences() == 0)) {
+        // A recorded sequence (ADR-0123) ends the recording when it ends, and the game once it is written: its last
+        // cue, and its camera's path, which the factory's tour starts with its only cue.
+        const scene::Scene* playing = app.CurrentScene();
+        if (m_recordingSequence &&
+            (playing == nullptr || (playing->PlayingSequences() == 0 && !playing->InCinematic()))) {
             m_recordingSequence = false;
             m_quitAfterRecording = true;
             app.StopRecording();

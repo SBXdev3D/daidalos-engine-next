@@ -825,11 +825,14 @@ void Application::FinishRecording() {
         }
         if (peak > 1.0e-4f) {
             constexpr float kTarget = 0.891f; // -1 dBFS.
-            const float gain = kTarget / peak;
+            // Near silence is left as it is rather than raised into noise.
+            constexpr float kMostGain = 16.0f; // +24 dB.
+            const float gain = std::min(kTarget / peak, kMostGain);
             for (float& sample : recording.sound) {
                 sample *= gain;
             }
-            DAI_LOG_INFO(kModule, "Recording's sound brought to -1 dBFS: {:+.1f} dB", 20.0f * std::log10(gain));
+            DAI_LOG_INFO(kModule, "Recording's sound raised or lowered by {:+.1f} dB, to a peak of {:.1f} dBFS",
+                         20.0f * std::log10(gain), 20.0f * std::log10(peak * gain));
         }
     }
     const std::filesystem::path soundPath = recording.directory / "sound.wav";
