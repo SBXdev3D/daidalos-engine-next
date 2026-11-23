@@ -102,7 +102,17 @@ struct ParticleEffectData {
     uint meshSlot;         // A mesh effect's list of particles to draw (kMaxMeshEffects), or kNoEffect.
     float meshRest;        // How far above a surface a resting mesh's origin is, per unit of its size.
     float fogDensity;      // Of the fog it adds around it, per meter, where it is opaque (ADR-0062).
+    float meshRadius;      // A mesh effect's ball around its mesh, per unit of its size, which rays meet.
+    uint padding0;
+    uint padding1;
+    uint padding2;
 };
+
+// How far from its center a particle reaches for rays: a quad's half size, or the ball around a mesh, which is
+// drawn at the particle's size times its own (a chip of 2 cm at a size of 1 is 2 cm, not a meter).
+float TracedRadius(ParticleEffectData effect, float size) {
+    return effect.meshSlot != kNoEffect ? size * effect.meshRadius : size * 0.5;
+}
 
 // Mesh effects at once, and the particles each draws (ADR-0053): more are simulated but not drawn.
 static const uint kMaxMeshEffects = 32;

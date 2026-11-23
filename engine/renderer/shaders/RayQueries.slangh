@@ -181,7 +181,7 @@ struct ParticleCrossing {
 
 // Whether the ray from origin along the unit direction meets the particle of that index between tMin and tMax.
 // Shadow rays pass through what gives off light (additive particles); other rays pass through mesh particles,
-// which are drawn in the G-buffer but only cast shadows here, as balls of their size.
+// which are drawn in the G-buffer but only cast shadows here, as the balls around their meshes.
 ParticleCrossing CrossParticle(FrameData frame, float3 origin, float3 direction, uint index, float tMin, float tMax,
                                bool shadow) {
     ParticleCrossing crossing;
@@ -196,7 +196,8 @@ ParticleCrossing CrossParticle(FrameData frame, float3 origin, float3 direction,
     }
     const float life = saturate(particle.age / particle.lifetime);
     const float4 scales = SampleCurveFrom(g_tracedCurves[frame.particleCurves], particle.effect, kCurveScales, life);
-    const float halfSize = max(particle.size * scales.x * 0.5, 1e-4);
+    const float halfSize = max(mesh ? TracedRadius(effect, particle.size * scales.x)
+                                    : particle.size * scales.x * 0.5, 1e-4);
     const float t = dot(particle.position - origin, direction);
     if (t < tMin || t > tMax) {
         return crossing;

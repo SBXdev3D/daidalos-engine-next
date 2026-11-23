@@ -108,8 +108,12 @@ struct GpuEffect {
     std::uint32_t meshSlot;
     float meshRest;
     float fogDensity;
+    float meshRadius;
+    std::uint32_t padding0;
+    std::uint32_t padding1;
+    std::uint32_t padding2;
 };
-static_assert(sizeof(GpuEffect) == 192);
+static_assert(sizeof(GpuEffect) == 208);
 
 // No texture, as the shaders' kNoTexture.
 constexpr std::uint32_t kNoTexture = 0xFFFFFFFF;
@@ -291,7 +295,7 @@ glm::vec3 Normalized(const glm::vec3& direction) {
 
 GpuEffect ToGpu(const ParticleEffectDesc& desc, std::uint32_t texture, std::uint32_t deathEffect,
                 std::uint32_t hitEffect, std::uint32_t lightPositive, std::uint32_t lightNegative,
-                std::uint32_t meshSlot, float meshRest) {
+                std::uint32_t meshSlot, float meshRest, float meshRadius) {
     const std::uint32_t flags = (desc.lit ? kEffectLit : 0U) | (desc.reportHits ? kEffectReportsHits : 0U) |
                                 (desc.additive ? kEffectAdditive : 0U) | (desc.loop ? kEffectLoop : 0U) |
                                 (desc.randomStartFrame ? kEffectRandomStart : 0U) | (desc.traced ? kEffectTraced : 0U);
@@ -336,7 +340,11 @@ GpuEffect ToGpu(const ParticleEffectDesc& desc, std::uint32_t texture, std::uint
             .lightNegative = lightNegative,
             .meshSlot = meshSlot,
             .meshRest = meshRest,
-            .fogDensity = desc.fogDensity};
+            .fogDensity = desc.fogDensity,
+            .meshRadius = meshRadius,
+            .padding0 = 0,
+            .padding1 = 0,
+            .padding2 = 0};
 }
 // The sort's groups, as in ParticleSort.slang: each sorts kSortLocal keys in its own memory.
 constexpr std::uint32_t kSortThreads = 1024;
@@ -585,10 +593,12 @@ void ParticlePass::WriteEffect(ParticleEffectHandle effect, const ParticleEffect
     // A resting mesh lies on its lowest vertex.
     const std::optional<MeshPass::Geometry> geometry = desc.mesh.IsNull() ? std::nullopt : meshes.GeometryOf(desc.mesh);
     const float meshRest = geometry ? std::max(-geometry->lowest, 0.0f) : 0.0f;
+    // Rays meet a mesh particle as the ball around its mesh, at its size (ADR-0053).
+    const float meshRadius = geometry ? geometry->radius : 0.5f;
     const GpuEffect data =
         ToGpu(desc, desc.texture ? m_device->BindlessIndex(desc.texture) : kNoTexture, index_of(desc.onDeath.effect),
               index_of(desc.onHit.effect), sixWay ? m_device->BindlessIndex(desc.lightPositive) : kNoTexture,
-              sixWay ? m_device->BindlessIndex(desc.lightNegative) : kNoTexture, meshSlot, meshRest);
+              sixWay ? m_device->BindlessIndex(desc.lightNegative) : kNoTexture, meshSlot, meshRest, meshRadius);
     if (desc.distortion > 0.0f && desc.mesh.IsNull()) {
         m_distorting.insert(index);
     } else {
