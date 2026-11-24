@@ -83,10 +83,10 @@ dai_add_shaders(TARGET daidalos_renderer
         shaders/RestirSpatialUnbiased.slang shaders/RestirShade.slang
         shaders/EmissiveAverage.slang shaders/EmissiveTriangles.slang shaders/ExposureHistogram.slang shaders/Bloom.slang
         shaders/FogLighting.slang shaders/FogIntegrate.slang shaders/FogSmoke.slang shaders/CameraEffects.slang
-        shaders/MaterialGrid.slang shaders/DepthProbe.slang
+        shaders/MaterialGrid.slang shaders/LightGrid.slang shaders/DepthProbe.slang
     INCLUDES shaders/Bsdf.slang shaders/RayQueries.slangh shaders/GlobalIllumination.slangh shaders/MeshCommon.slangh shaders/GBufferSurface.slangh shaders/MeshTypes.slangh shaders/Particles.slangh shaders/ParticleSpawning.slangh
         shaders/Denoiser.slangh shaders/Random.slangh shaders/Lights.slangh shaders/GBuffer.slangh shaders/Restir.slangh shaders/RestirSpatial.slangh shaders/Fog.slangh
-        shaders/Decals.slangh shaders/Wetness.slangh shaders/ParticleTypes.slangh shaders/MaterialGrid.slangh shaders/GiFill.slangh)
+        shaders/Decals.slangh shaders/Wetness.slangh shaders/ParticleTypes.slangh shaders/MaterialGrid.slangh shaders/LightGrid.slangh shaders/GiFill.slangh)
 
 # AMD FSR 3.1's upscaler (ADR-0050): AMD's passes, unchanged, through the engine's callbacks. Its headers
 # test macros they leave undefined (15205) and keep code after a return (41000); its pyramids use quad

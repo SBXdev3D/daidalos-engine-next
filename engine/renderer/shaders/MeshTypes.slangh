@@ -79,7 +79,7 @@ struct FrameData {
     uint materialGrid;        // Which decals and wet volumes touch each cell (ADR-0094, MaterialGrid.slangh), or
     float materialGridCell;   // kNoTexture; the meters of a cell's side, and the grid's lowest corner.
     float3 materialGridOrigin;
-    uint framePadding;
+    uint lightGrid; // The sources that light each of the material grid's cells most (ADR-0124), or kNoTexture.
 };
 
 // From texture coordinates of the frame, over the corner it draws into, to those of its targets, for

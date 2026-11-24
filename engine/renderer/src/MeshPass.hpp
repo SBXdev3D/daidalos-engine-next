@@ -221,6 +221,11 @@ public:
     /// G-buffer and ray hits: the G-buffer's pass reads MaterialGrid() first, in fragment and compute shaders.
     void AddMaterialGrid(RenderGraph& graph);
     [[nodiscard]] rhi::BufferHandle MaterialGrid() const { return m_materialGrid; }
+    /// Writes which sources light each cell of the material grid most (ADR-0124), from which every point that
+    /// draws lights draws most of its candidates. Every pass that draws lights reads LightGrid() after it, in
+    /// compute or fragment shaders; until it is added, points draw lights by power alone.
+    void AddLightGrid(RenderGraph& graph);
+    [[nodiscard]] rhi::BufferHandle LightGrid() const { return m_lightGrid; }
     /// Adds the passes of the prepared frame's emissive lights, as "Emissive lights" (ADR-0044): the average
     /// emission of each triangle of an emissive mesh and material drawn together for the first time, read
     /// back a few frames later, and the frame's emissive triangles in world space. After AddSkinning, before
@@ -360,6 +365,10 @@ private:
         std::uint64_t sourceCapacity = 0;
         rhi::BufferHandle fogSources;
         std::uint64_t fogSourceCapacity = 0;
+        /// The light sources as the light grid weighs them (ADR-0124), as many as the alias table has.
+        rhi::BufferHandle gridSources;
+        std::uint64_t gridSourceCapacity = 0;
+        std::uint32_t gridSourceCount = 0;
         /// LightMapIndex's buffer.
         rhi::BufferHandle lightMap;
         std::uint64_t lightMapCapacity = 0;
@@ -500,6 +509,8 @@ private:
     std::vector<SkinningJob> m_skinningJobs;
     rhi::PipelineHandle m_materialGridPipeline;
     rhi::BufferHandle m_materialGrid;
+    rhi::PipelineHandle m_lightGridPipeline;
+    rhi::BufferHandle m_lightGrid;
     std::vector<TracedDraw> m_traced;
     glm::mat4 m_viewProjection{1.0f};
     Perspective m_perspective;

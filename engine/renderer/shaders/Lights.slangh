@@ -18,6 +18,7 @@
 
 #include "Random.slangh"
 #include "Fog.slangh"
+#include "LightGrid.slangh"
 import Bsdf;
 
 // Matches AliasEntry in renderer/src/LightSampling.hpp.
@@ -80,6 +81,22 @@ struct LightChoice {
     float probability;
 };
 
+// The light of a source drawn with some probability: the analytic light itself, or one of an emissive draw's
+// triangles, which two numbers draw by power, the draw's probability times the triangle's.
+LightChoice LightOfSource(FrameData frame, uint source, float probability, float2 u) {
+    LightChoice choice;
+    choice.probability = probability;
+    if (source < frame.lightCount) {
+        choice.index = source;
+        return choice;
+    }
+    const EmissiveDraw draw = g_emissiveDraws[frame.emissiveDrawBuffer][source - frame.lightCount];
+    const uint triangle = SampleAlias(draw.aliasTable, draw.triangleCount, u.x, u.y);
+    choice.probability *= g_aliasTables[draw.aliasTable][triangle].probability;
+    choice.index = frame.lightCount + draw.firstTriangle + triangle;
+    return choice;
+}
+
 // From an alias table of the frame's sources: the frame's, by power, or the fog's.
 LightChoice ChooseLight(FrameData frame, uint table, float4 u) {
     LightChoice choice;
@@ -89,16 +106,35 @@ LightChoice ChooseLight(FrameData frame, uint table, float4 u) {
         return choice;
     }
     const uint source = SampleAlias(table, frame.sourceCount, u.x, u.y);
-    choice.probability = g_aliasTables[table][source].probability;
-    if (source < frame.lightCount) {
-        choice.index = source;
+    return LightOfSource(frame, source, g_aliasTables[table][source].probability, u.zw);
+}
+
+// For a point in a cell of the light grid (ADR-0124): from the cell's list kLightGridShare of the time, from
+// the frame's table by power otherwise. Either way, its probability is what both together give it, so that
+// a light the cell lists rarely, or not at all, keeps its odds from the table.
+LightChoice ChooseLight(FrameData frame, LightCell cell, float pick, float4 u) {
+    if (!cell.valid) {
+        return ChooseLight(frame, frame.aliasBuffer, u);
+    }
+    LightChoice choice;
+    choice.index = kNoLight;
+    choice.probability = 0.0;
+    if (frame.sourceCount == 0) {
         return choice;
     }
-    const EmissiveDraw draw = g_emissiveDraws[frame.emissiveDrawBuffer][source - frame.lightCount];
-    const uint triangle = SampleAlias(draw.aliasTable, draw.triangleCount, u.z, u.w);
-    choice.probability *= g_aliasTables[draw.aliasTable][triangle].probability;
-    choice.index = frame.lightCount + draw.firstTriangle + triangle;
-    return choice;
+    uint source;
+    float cellProbability;
+    if (pick < kLightGridShare) {
+        const CellDraw drawn = DrawFromCell(cell, u.x);
+        source = drawn.source;
+        cellProbability = drawn.probability;
+    } else {
+        source = SampleAlias(frame.aliasBuffer, frame.sourceCount, u.x, u.y);
+        cellProbability = CellProbability(cell, source);
+    }
+    const float probability = kLightGridShare * cellProbability +
+                              (1.0 - kLightGridShare) * g_aliasTables[frame.aliasBuffer][source].probability;
+    return LightOfSource(frame, source, probability, u.zw);
 }
 
 LightChoice ChooseLight(FrameData frame, float4 u) {
@@ -116,17 +152,9 @@ LightChoice ChooseLight(FrameData frame, uint first, uint second, float pick, fl
         return choice;
     }
     const uint source = SampleAlias(pick < 0.5 ? first : second, frame.sourceCount, u.x, u.y);
-    choice.probability =
-        0.5 * (g_aliasTables[first][source].probability + g_aliasTables[second][source].probability);
-    if (source < frame.lightCount) {
-        choice.index = source;
-        return choice;
-    }
-    const EmissiveDraw draw = g_emissiveDraws[frame.emissiveDrawBuffer][source - frame.lightCount];
-    const uint triangle = SampleAlias(draw.aliasTable, draw.triangleCount, u.z, u.w);
-    choice.probability *= g_aliasTables[draw.aliasTable][triangle].probability;
-    choice.index = frame.lightCount + draw.firstTriangle + triangle;
-    return choice;
+    return LightOfSource(frame, source,
+                         0.5 * (g_aliasTables[first][source].probability + g_aliasTables[second][source].probability),
+                         u.zw);
 }
 
 bool IsTriangleLight(FrameData frame, uint light) {
@@ -373,12 +401,23 @@ Reservoir Unpack(uint4 packed) {
 // How much of the past a reservoir keeps: its history stands for at most this many frames.
 static const float kMaxHistory = 20.0;
 
-// count lights drawn by power, each with a point on it, and one kept in proportion to the light the
-// receiver would send, unshadowed: resampled importance sampling. Its confidence is 1.
+// count lights drawn mostly from the receiver's cell of the light grid, the rest by power (ChooseLight), each
+// with a point on it, and one kept in proportion to the light the receiver would send, unshadowed:
+// resampled importance sampling. Its confidence is 1. The cell is looked up from a point moved at random
+// within a cell of the receiver, so that neighbouring cells' lists blend rather than meet at a seam: any
+// cell's draws are unbiased, the frame's table keeping every light's odds above zero.
 Reservoir DrawCandidates(FrameData frame, Receiver receiver, inout uint random, uint count) {
     Reservoir reservoir = EmptyReservoir();
+    // Without a grid, the same numbers as before it: a pass that does not use it draws as it did.
+    LightCell cell = EmptyLightCell();
+    if (frame.lightGrid != kNoTexture) {
+        const float3 shift = (float3(Random(random), Random(random), Random(random)) - 0.5) * frame.materialGridCell;
+        cell = LightCellAt(frame, receiver.position + shift);
+    }
     for (uint candidate = 0; candidate < count; ++candidate) {
-        const LightChoice choice = ChooseLight(frame, float4(Random(random), Random(random), Random(random), Random(random)));
+        const float pick = cell.valid ? Random(random) : 1.0;
+        const LightChoice choice =
+            ChooseLight(frame, cell, pick, float4(Random(random), Random(random), Random(random), Random(random)));
         const float2 u = float2(Random(random), Random(random));
         if (choice.index == kNoLight) {
             break;

@@ -62,8 +62,9 @@ public:
         std::uint32_t instanceBuffer = 0;
         std::uint32_t materialBuffer = 0;
         rhi::BufferHandle skinnedVertices;
-        /// The frame's emissive triangles, which light sampling reads.
+        /// The frame's emissive triangles, which light sampling reads, and the light grid (ADR-0124) or null.
         rhi::BufferHandle emissiveTriangles;
+        rhi::BufferHandle lightGrid;
         /// Where the last frame's lights are in this frame's list (MeshPass::LightMapIndex): particles keep
         /// the light they chose.
         std::uint32_t lightMap = 0;

@@ -27,6 +27,8 @@ struct DirectLightingInputs {
     rhi::BufferHandle skinnedVertices;
     /// The frame's emissive triangles (MeshPass::EmissiveTriangles), written before.
     rhi::BufferHandle emissiveTriangles;
+    /// The sources that light each cell most (MeshPass::LightGrid, ADR-0124), written before, or null.
+    rhi::BufferHandle lightGrid;
     /// The G-buffer.
     rhi::TextureHandle depth;
     rhi::TextureHandle normals;

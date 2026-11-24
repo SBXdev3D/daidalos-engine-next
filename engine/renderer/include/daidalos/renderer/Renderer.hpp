@@ -181,6 +181,10 @@ struct RendererConfig {
     /// Filters the noise of soft shadows and indirect light (ADR-0039). Off shows the light as the rays
     /// found it.
     bool denoiser = true;
+    /// Points draw most of their lights from those that light their cell of the world most (ADR-0124). Off,
+    /// they draw every light by its power alone, as a strong lamp in another room is drawn more than a weak
+    /// one beside them.
+    bool lightGrid = true;
     /// Reflections traced along each pixel's specular lobe (ADR-0042), with indirect light. Off, the indirect
     /// diffuse light stands in for them.
     bool reflections = true;
@@ -326,6 +330,8 @@ public:
     void SetNormalStrength(float strength);
     void SetIndirectLight(bool enabled);
     void SetDenoiser(bool enabled);
+    /// See RendererConfig::lightGrid.
+    void SetLightGrid(bool enabled);
     void SetReflections(bool enabled);
     void SetReflectionRoughness(float roughness);
     /// See RendererConfig::volumetricFog, fogSlices and fogTile.

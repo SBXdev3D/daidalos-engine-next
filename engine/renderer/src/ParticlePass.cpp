@@ -930,6 +930,7 @@ core::Result<void> ParticlePass::AddSimulation(RenderGraph& graph, const SceneVi
     simulated.push_back({m_boxes, rhi::Access::ComputeShaderWrite});
     simulated.push_back({shadows.skinnedVertices, rhi::Access::ComputeShaderRead});
     simulated.push_back({shadows.emissiveTriangles, rhi::Access::ComputeShaderRead});
+    simulated.push_back({shadows.lightGrid, rhi::Access::ComputeShaderRead});
     graph.AddPass({.name = "Particle simulation",
                    .group = "Simulation",
                    .buffers = std::move(simulated),

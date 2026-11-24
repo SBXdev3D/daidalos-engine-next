@@ -190,6 +190,9 @@ void DirectLighting::AddTo(RenderGraph& graph, const DirectLightingInputs& input
                         .buffers = {{m_reservoirs, rhi::Access::ComputeShaderWrite}, skinned, lights},
                         .structures = structures};
     candidates.textures.push_back({m_guides[m_current], rhi::Access::ComputeShaderWrite, true});
+    if (!inputs.lightGrid.IsNull()) {
+        candidates.buffers.push_back({inputs.lightGrid, rhi::Access::ComputeShaderRead});
+    }
     graph.AddPass(std::move(candidates), dispatch(m_candidates, push));
 
     // Reads the last frame's reused reservoirs and guides, and its own reservoirs, which it writes.
