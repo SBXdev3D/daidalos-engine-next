@@ -213,6 +213,58 @@ core::Result<Cue> ReadCue(std::string_view sequence, simdjson::dom::object cueOb
         if (cue.seconds < 0.0f) {
             return reader.Invalid("seconds", "must be 0 or more");
         }
+    } else if (kind == "blast") {
+        // ADR-0127.
+        cue.kind = Cue::Kind::Blast;
+        DAI_TRY(reader.Only({"entity", "radius", "strength"}));
+        DAI_TRY(reader.Text("entity", cue.name, true));
+        cue.radius = 5.0f;
+        cue.strength = 300.0f;
+        DAI_TRY(reader.Number("radius", cue.radius));
+        DAI_TRY(reader.Number("strength", cue.strength));
+        if (cue.radius <= 0.0f) {
+            return reader.Invalid("radius", "must be more than 0");
+        }
+        if (cue.strength < 0.0f) {
+            return reader.Invalid("strength", "must be 0 or more");
+        }
+    } else if (kind == "impulse") {
+        cue.kind = Cue::Kind::Impulse;
+        DAI_TRY(reader.Only({"entity", "impulse", "point"}));
+        DAI_TRY(reader.Text("entity", cue.name, true));
+        DAI_TRY(reader.Vector("impulse", cue.vector, true));
+        DAI_TRY(reader.Vector("point", cue.point));
+    } else if (kind == "release") {
+        cue.kind = Cue::Kind::Release;
+        DAI_TRY(reader.Only({"entity"}));
+        DAI_TRY(reader.Text("entity", cue.name, true));
+    } else if (kind == "break" || kind == "motor") {
+        const bool motor = kind == "motor";
+        cue.kind = motor ? Cue::Kind::Motor : Cue::Kind::Break;
+        DAI_TRY(motor ? reader.Only({"entity", "joint", "mode", "target", "strength"})
+                      : reader.Only({"entity", "joint"}));
+        DAI_TRY(reader.Text("entity", cue.name, true));
+        float joint = 0.0f;
+        DAI_TRY(reader.Number("joint", joint));
+        if (joint < 0.0f || joint != std::floor(joint)) {
+            return reader.Invalid("joint", "must be the place of a joint in the entity's list, from 0");
+        }
+        cue.joint = static_cast<std::uint32_t>(joint);
+        if (motor) {
+            std::string mode = "speed";
+            DAI_TRY(reader.Text("mode", mode));
+            if (mode == "speed") {
+                cue.motor.mode = physics::MotorMode::Speed;
+            } else if (mode == "position") {
+                cue.motor.mode = physics::MotorMode::Position;
+            } else if (mode == "off") {
+                cue.motor.mode = physics::MotorMode::Off;
+            } else {
+                return reader.Invalid("mode", "must be \"speed\", \"position\" or \"off\"");
+            }
+            DAI_TRY(reader.Number("target", cue.motor.target));
+            DAI_TRY(reader.Number("strength", cue.motor.strength));
+        }
     } else if (kind == "camera") {
         cue.kind = Cue::Kind::Camera;
         DAI_TRY(reader.Only({"keys", "path"}));
@@ -327,6 +379,16 @@ std::string_view CueKindName(Cue::Kind kind) {
         return "subtitle";
     case Cue::Kind::Fade:
         return "fade";
+    case Cue::Kind::Blast:
+        return "blast";
+    case Cue::Kind::Impulse:
+        return "impulse";
+    case Cue::Kind::Release:
+        return "release";
+    case Cue::Kind::Break:
+        return "break";
+    case Cue::Kind::Motor:
+        return "motor";
     }
     return "event";
 }
@@ -401,6 +463,34 @@ std::string WriteSequence(const Sequence& sequence) {
             if (cue->color != glm::vec3(0.0f)) {
                 body.emplace("color", vector(cue->color));
             }
+            break;
+        case Cue::Kind::Blast:
+            body.emplace("entity", text(cue->name));
+            body.emplace("radius", number(cue->radius));
+            body.emplace("strength", number(cue->strength));
+            break;
+        case Cue::Kind::Impulse:
+            body.emplace("entity", text(cue->name));
+            body.emplace("impulse", vector(cue->vector));
+            if (cue->point != glm::vec3(0.0f)) {
+                body.emplace("point", vector(cue->point));
+            }
+            break;
+        case Cue::Kind::Release:
+            body.emplace("entity", text(cue->name));
+            break;
+        case Cue::Kind::Break:
+            body.emplace("entity", text(cue->name));
+            body.emplace("joint", Json{static_cast<double>(cue->joint)});
+            break;
+        case Cue::Kind::Motor:
+            body.emplace("entity", text(cue->name));
+            body.emplace("joint", Json{static_cast<double>(cue->joint)});
+            body.emplace("mode", text(cue->motor.mode == physics::MotorMode::Speed      ? "speed"
+                                      : cue->motor.mode == physics::MotorMode::Position ? "position"
+                                                                                        : "off"));
+            body.emplace("target", number(cue->motor.target));
+            body.emplace("strength", number(cue->motor.strength));
             break;
         case Cue::Kind::Mix:
             body.emplace("effects", number(cue->mix.buses[0]));

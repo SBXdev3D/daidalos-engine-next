@@ -1,6 +1,6 @@
 # Proposal: better physics, and a physics gallery to film
 
-*2026-11-24. Approved on 2026-11-24 as Phase 21. Steps 21.1 (ADR-0125) and 21.2 (ADR-0126) done. Replaces `explosion-forces.md`, which becomes step 21.3. Asked for after the effects gallery (ADR-0122): explosions that throw things, physics in general, then a sequence of rooms with one physics theme per room, to record as a video. Sizes are guesses from reading the code.*
+*2026-11-24. Approved on 2026-11-24 as Phase 21. Steps 21.1 (ADR-0125), 21.2 (ADR-0126) and 21.3 (ADR-0127) done. Replaces `explosion-forces.md`, which becomes step 21.3. Asked for after the effects gallery (ADR-0122): explosions that throw things, physics in general, then a sequence of rooms with one physics theme per room, to record as a video. Sizes are guesses from reading the code.*
 
 ## Where physics is
 

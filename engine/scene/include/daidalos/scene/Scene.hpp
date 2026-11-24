@@ -72,6 +72,12 @@ public:
 
     /// Emits particles once, in this frame's view: count of them, leaving along direction, which stands for
     /// the effect's own direction (+Y unless it says otherwise). For impacts, flashes and the like.
+    /// Throws the loose objects within radius of center away from it (ADR-0127): an impulse of strength
+    /// kilogram-meters per second at the center, falling to none at the radius as the square of what is left, lifted a
+    /// little, at most what gives a body 25 m/s, at a point a little off its center so that it spins, and a fifth of
+    /// it behind a wall. Joints pulled past their force break. Returns how many bodies it pushed.
+    std::size_t Blast(const glm::vec3& center, float radius, float strength);
+
     void SpawnParticles(renderer::ParticleEffectHandle effect, const glm::vec3& position, const glm::vec3& direction,
                         std::uint32_t count);
 
@@ -248,6 +254,8 @@ private:
     std::deque<TransientDecal> m_transientDecals;
     std::deque<renderer::Ripple> m_ripples;
     std::uint32_t m_decalSeed = 0x9e3779b9U;
+    /// The blasts' spin, the same in every run (ADR-0127).
+    std::uint32_t m_blastSeed = 0x2545f491U;
     PowerCircuits m_power;
     std::vector<renderer::ParticleSpawn> m_bursts;
     EmissionView m_emission;

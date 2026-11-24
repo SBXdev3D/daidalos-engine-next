@@ -83,6 +83,9 @@ constexpr float kReloadRoll = 30.0f;  // Degrees.
 constexpr float kReloadPitch = 15.0f; // Degrees.
 
 constexpr float kWeaponRange = 100.0f * kLegacyUnit;
+// Kilogram-meters per second a shot gives a loose object per point of damage (ADR-0127): more than a real round's
+// momentum, so that a shot crate is seen to move. The handgun sends a 10 kg crate off at 2 m/s, the rifle at 10.
+constexpr float kShotPushPerDamage = 2.0f;
 constexpr float kSwitchTime = 0.4f;    // Seconds for the new weapon to come up.
 constexpr float kWeaponDrop = 0.6f;    // Meters below its place, where a weapon is out of view.
 constexpr float kGunshotNoise = 30.0f; // Meters a shot carries, walked around walls (ADR-0070).
@@ -443,6 +446,17 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
         if (const std::optional<physics::RayHit> hit =
                 physics.CastRay(eye.translation, direction, kWeaponRange, self)) {
             hits.push_back(*hit);
+        }
+    }
+
+    // Loose objects hit are pushed where the shot lands, so that they spin (ADR-0127): more by the heavier round.
+    for (const physics::RayHit& hit : hits) {
+        if (physics.IsDynamic(hit.body)) {
+            const glm::vec3 along = glm::normalize(hit.position - eye.translation);
+            physics.AddImpulseAt(hit.body,
+                                 along * (kShotPushPerDamage * static_cast<float>(spec.damage) /
+                                          static_cast<float>(std::max(spec.pellets, 1))),
+                                 hit.position);
         }
     }
 

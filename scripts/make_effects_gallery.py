@@ -220,10 +220,19 @@ class Room:
         entity.update(components)
         return self.g.add(entity)
 
-    def prop(self, model, position, turn=0.0, what=None, scale=None):
+    def prop(self, model, position, turn=0.0, what=None, scale=None, body=None):
+        """A prop of the showcase kit. body makes it a loose object (ADR-0125): {"mass": kg} and, if not a box,
+        "shape"; a box, a cylinder or a sphere is sized from the prop's bounds."""
         rotation = yaw(turn) if turn else None
-        self.entity(what or model.replace("_", " "), position, rotation, scale,
-                    model=f"Showcase/{model}/{model}.gltf")
+        components = {"model": f"Showcase/{model}/{model}.gltf"}
+        if body is not None:
+            component = dict(body)
+            if component.get("shape", "box") != "hull" and model in PROPS:
+                low, high = PROPS[model]
+                component["size"] = r([high[i] - low[i] for i in range(3)])
+                component["center"] = r([(high[i] + low[i]) / 2 for i in range(3)])
+            components["body"] = component
+        self.entity(what or model.replace("_", " "), position, rotation, scale, **components)
         if model in PROPS:
             low, high = PROPS[model]
             if scale:
@@ -314,6 +323,11 @@ def particles_cue(at, effect, entity, count):
                                     "count": count}}
 
 
+def blast_cue(at, entity, radius, strength):
+    """Throws the loose objects around the entity (ADR-0127)."""
+    return {"at": at, "blast": {"entity": entity, "radius": radius, "strength": strength}}
+
+
 def sound_cue(at, clip, entity=None, volume=1.0):
     cue = {"clip": clip, "volume": volume}
     if entity:
@@ -381,20 +395,23 @@ def explosion_room(g):
     for x in (-6.0, 6.0):
         for z in (-4.0, 2.0):
             room.column("walls", x, z, 0.7, 0.0, 7.0, "pillar")
-    # Gas bottles and drums, and where they blow.
+    # Gas bottles and drums, and where they blow. Each prop is a loose object of its real weight (ADR-0125), which
+    # the blasts throw (ADR-0127): bottles and drums roll, crates tumble, sacks land dead.
+    bottle = {"shape": "cylinder", "mass": 15.0}
+    drum = {"shape": "cylinder", "mass": 20.0}
     blasts = []
     for name, (x, z) in (("A", (-3.0, -4.0)), ("B", (3.2, -3.0)), ("C", (0.0, -6.0))):
         for dx, dz in ((-0.4, 0.0), (0.4, 0.2), (0.0, -0.4)):
-            room.prop("propane_tank", (x + dx, 0.0, z + dz), 30.0 * dx)
+            room.prop("propane_tank", (x + dx, 0.0, z + dz), 30.0 * dx, body=bottle)
         blasts.append(room.marker(f"blast {name}", (x, 0.6, z)))
-    room.prop("barrel_03", (-5.0, 0.0, -6.2))
-    room.prop("Barrel_01", (-4.3, 0.0, -6.6))
-    room.prop("Barrel_02", (5.2, 0.0, -6.0))
-    room.prop("old_military_crate", (5.0, 0.0, -1.0), 90.0)
-    room.prop("wooden_crate_02", (-6.2, 0.0, 0.5))
-    room.prop("cement_bag", (-5.5, 0.0, 2.6), 60.0)
-    room.prop("cement_bag", (-5.4, 0.18, 2.5), 75.0)
-    room.prop("industrial_storage_cart", (5.8, 0.0, 4.0), 90.0)
+    room.prop("barrel_03", (-5.0, 0.0, -6.2), body=drum)
+    room.prop("Barrel_01", (-4.3, 0.0, -6.6), body=drum)
+    room.prop("Barrel_02", (5.2, 0.0, -6.0), body=drum)
+    room.prop("old_military_crate", (5.0, 0.0, -1.0), 90.0, body={"mass": 25.0})
+    room.prop("wooden_crate_02", (-6.2, 0.0, 0.5), body={"mass": 15.0})
+    room.prop("cement_bag", (-5.5, 0.0, 2.6), 60.0, body={"mass": 25.0})
+    room.prop("cement_bag", (-5.4, 0.18, 2.5), 75.0, body={"mass": 25.0})
+    room.prop("industrial_storage_cart", (5.8, 0.0, 4.0), 90.0, body={"shape": "hull", "mass": 40.0})
     room.prefab("caged_hanging_light", (-4.0, 7.0, -2.0))
     room.prefab("caged_hanging_light", (4.0, 7.0, 2.0))
     room.light("spot", (0.0, 6.6, 3.0), 2200.0, (1.0, 0.85, 0.7), 20.0, (0.0, -0.45, -1.0), 35, 60, 0.2,
@@ -404,7 +421,8 @@ def explosion_room(g):
     shake = lambda at, s: {"at": at, "shake": {"strength": s, "seconds": 1.4}}
 
     def blast(at, where, strength=0.7):
-        return [particles_cue(at, "explosion_flare", where, 1), particles_cue(at, "explosion_fireball", where, 9),
+        return [blast_cue(at + 0.02, where, 6.0, 300.0 * strength),
+                particles_cue(at, "explosion_flare", where, 1), particles_cue(at, "explosion_fireball", where, 9),
                 particles_cue(at + 0.02, "explosion_sparks", where, 160),
                 particles_cue(at + 0.02, "explosion_debris", where, 24),
                 particles_cue(at + 0.05, "explosion_shock", where, 70),

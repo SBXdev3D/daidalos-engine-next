@@ -503,6 +503,20 @@
       }
     },
     {
+      "body": {
+        "center": [
+          0.0,
+          0.275,
+          0.0
+        ],
+        "mass": 15.0,
+        "shape": "cylinder",
+        "size": [
+          0.34,
+          0.55,
+          0.34
+        ]
+      },
       "id": 31,
       "model": "Showcase/propane_tank/propane_tank.gltf",
       "name": "Explosion: propane tank",
@@ -521,6 +535,20 @@
       }
     },
     {
+      "body": {
+        "center": [
+          0.0,
+          0.275,
+          0.0
+        ],
+        "mass": 15.0,
+        "shape": "cylinder",
+        "size": [
+          0.34,
+          0.55,
+          0.34
+        ]
+      },
       "id": 32,
       "model": "Showcase/propane_tank/propane_tank.gltf",
       "name": "Explosion: propane tank",
@@ -539,6 +567,20 @@
       }
     },
     {
+      "body": {
+        "center": [
+          0.0,
+          0.275,
+          0.0
+        ],
+        "mass": 15.0,
+        "shape": "cylinder",
+        "size": [
+          0.34,
+          0.55,
+          0.34
+        ]
+      },
       "id": 33,
       "model": "Showcase/propane_tank/propane_tank.gltf",
       "name": "Explosion: propane tank",
@@ -562,6 +604,20 @@
       }
     },
     {
+      "body": {
+        "center": [
+          0.0,
+          0.275,
+          0.0
+        ],
+        "mass": 15.0,
+        "shape": "cylinder",
+        "size": [
+          0.34,
+          0.55,
+          0.34
+        ]
+      },
       "id": 35,
       "model": "Showcase/propane_tank/propane_tank.gltf",
       "name": "Explosion: propane tank",
@@ -580,6 +636,20 @@
       }
     },
     {
+      "body": {
+        "center": [
+          0.0,
+          0.275,
+          0.0
+        ],
+        "mass": 15.0,
+        "shape": "cylinder",
+        "size": [
+          0.34,
+          0.55,
+          0.34
+        ]
+      },
       "id": 36,
       "model": "Showcase/propane_tank/propane_tank.gltf",
       "name": "Explosion: propane tank",
@@ -598,6 +668,20 @@
       }
     },
     {
+      "body": {
+        "center": [
+          0.0,
+          0.275,
+          0.0
+        ],
+        "mass": 15.0,
+        "shape": "cylinder",
+        "size": [
+          0.34,
+          0.55,
+          0.34
+        ]
+      },
       "id": 37,
       "model": "Showcase/propane_tank/propane_tank.gltf",
       "name": "Explosion: propane tank",
@@ -621,6 +705,20 @@
       }
     },
     {
+      "body": {
+        "center": [
+          0.0,
+          0.275,
+          0.0
+        ],
+        "mass": 15.0,
+        "shape": "cylinder",
+        "size": [
+          0.34,
+          0.55,
+          0.34
+        ]
+      },
       "id": 39,
       "model": "Showcase/propane_tank/propane_tank.gltf",
       "name": "Explosion: propane tank",
@@ -639,6 +737,20 @@
       }
     },
     {
+      "body": {
+        "center": [
+          0.0,
+          0.275,
+          0.0
+        ],
+        "mass": 15.0,
+        "shape": "cylinder",
+        "size": [
+          0.34,
+          0.55,
+          0.34
+        ]
+      },
       "id": 40,
       "model": "Showcase/propane_tank/propane_tank.gltf",
       "name": "Explosion: propane tank",
@@ -657,6 +769,20 @@
       }
     },
     {
+      "body": {
+        "center": [
+          0.0,
+          0.275,
+          0.0
+        ],
+        "mass": 15.0,
+        "shape": "cylinder",
+        "size": [
+          0.34,
+          0.55,
+          0.34
+        ]
+      },
       "id": 41,
       "model": "Showcase/propane_tank/propane_tank.gltf",
       "name": "Explosion: propane tank",
@@ -680,6 +806,20 @@
       }
     },
     {
+      "body": {
+        "center": [
+          0.0,
+          0.465,
+          0.0
+        ],
+        "mass": 20.0,
+        "shape": "cylinder",
+        "size": [
+          0.64,
+          0.93,
+          0.64
+        ]
+      },
       "id": 43,
       "model": "Showcase/barrel_03/barrel_03.gltf",
       "name": "Explosion: barrel 03",
@@ -692,6 +832,20 @@
       }
     },
     {
+      "body": {
+        "center": [
+          0.0,
+          0.435,
+          0.0
+        ],
+        "mass": 20.0,
+        "shape": "cylinder",
+        "size": [
+          0.56,
+          0.87,
+          0.56
+        ]
+      },
       "id": 44,
       "model": "Showcase/Barrel_01/Barrel_01.gltf",
       "name": "Explosion: Barrel 01",
@@ -704,6 +858,20 @@
       }
     },
     {
+      "body": {
+        "center": [
+          0.0,
+          0.44,
+          0.0
+        ],
+        "mass": 20.0,
+        "shape": "cylinder",
+        "size": [
+          0.48,
+          0.88,
+          0.48
+        ]
+      },
       "id": 45,
       "model": "Showcase/Barrel_02/Barrel_02.gltf",
       "name": "Explosion: Barrel 02",
@@ -716,6 +884,19 @@
       }
     },
     {
+      "body": {
+        "center": [
+          -0.005,
+          0.15,
+          0.04
+        ],
+        "mass": 25.0,
+        "size": [
+          1.81,
+          0.3,
+          0.54
+        ]
+      },
       "id": 46,
       "model": "Showcase/old_military_crate/old_military_crate.gltf",
       "name": "Explosion: old military crate",
@@ -734,6 +915,19 @@
       }
     },
     {
+      "body": {
+        "center": [
+          0.0,
+          0.225,
+          0.0
+        ],
+        "mass": 15.0,
+        "size": [
+          0.52,
+          0.45,
+          1.16
+        ]
+      },
       "id": 47,
       "model": "Showcase/wooden_crate_02/wooden_crate_02.gltf",
       "name": "Explosion: wooden crate 02",
@@ -746,6 +940,19 @@
       }
     },
     {
+      "body": {
+        "center": [
+          0.0,
+          0.09,
+          0.0
+        ],
+        "mass": 25.0,
+        "size": [
+          0.46,
+          0.18,
+          0.7
+        ]
+      },
       "id": 48,
       "model": "Showcase/cement_bag/cement_bag.gltf",
       "name": "Explosion: cement bag",
@@ -764,6 +971,19 @@
       }
     },
     {
+      "body": {
+        "center": [
+          0.0,
+          0.09,
+          0.0
+        ],
+        "mass": 25.0,
+        "size": [
+          0.46,
+          0.18,
+          0.7
+        ]
+      },
       "id": 49,
       "model": "Showcase/cement_bag/cement_bag.gltf",
       "name": "Explosion: cement bag",
@@ -782,6 +1002,10 @@
       }
     },
     {
+      "body": {
+        "mass": 40.0,
+        "shape": "hull"
+      },
       "id": 50,
       "model": "Showcase/industrial_storage_cart/industrial_storage_cart.gltf",
       "name": "Explosion: industrial storage cart",

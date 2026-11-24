@@ -240,6 +240,13 @@ void SaveScene(Scene& scene, SaveData& data) {
         if (const WetVolume* wet = world.TryGet<WetVolume>(entity)) {
             data.Put(*key + ".wetness", static_cast<double>(wet->wetness));
         }
+        // A held body that was let go (ADR-0127).
+        if (const Body* body = world.TryGet<Body>(entity); body != nullptr && body->held) {
+            if (const RigidBody* rigid = world.TryGet<RigidBody>(entity);
+                rigid != nullptr && !scene.Physics().IsHeld(rigid->body)) {
+                data.Put(*key + ".released", true);
+            }
+        }
         // Joints that broke (ADR-0126), by their place in the entity's list.
         if (const Joints* joints = world.TryGet<Joints>(entity)) {
             for (std::size_t index = 0; index < joints->handles.size(); ++index) {
@@ -269,6 +276,9 @@ void LoadScene(Scene& scene, const SaveData& data) {
         transform.rotation = data.Rotation(*key + ".rotation").value_or(transform.rotation);
         // A loose object's body goes with it (ADR-0073).
         if (const RigidBody* body = world.TryGet<RigidBody>(entity)) {
+            if (data.Flag(*key + ".released").value_or(false)) {
+                scene.Physics().ReleaseBody(body->body);
+            }
             scene.Physics().SetBodyTransform(body->body, transform.translation, transform.rotation);
             scene.Physics().SetBodyVelocity(body->body, glm::vec3(0.0f));
         }

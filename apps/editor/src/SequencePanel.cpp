@@ -287,6 +287,43 @@ bool SequencePanel::DrawCue(scene::Cue& cue, const Context& context) {
         changed |= InputString("Name", cue.name);
         ImGui::TextDisabled("The game's code takes it: checkpoint, stinger...");
         break;
+    case scene::Cue::Kind::Blast:
+        changed |= EntityField("From", cue.name, context);
+        changed |= ImGui::DragFloat("Radius (m)", &cue.radius, 0.05f, 0.1f, 50.0f, "%.2f");
+        changed |= ImGui::DragFloat("Strength (kg m/s)", &cue.strength, 5.0f, 0.0f, 100000.0f, "%.0f");
+        ImGui::TextDisabled("At the center; none at the radius. A 20 kg drum takes 200 to leave at 10 m/s");
+        break;
+    case scene::Cue::Kind::Impulse:
+        changed |= EntityField("Loose object", cue.name, context);
+        changed |= ImGui::DragFloat3("Impulse (kg m/s)", &cue.vector.x, 0.5f);
+        changed |= ImGui::DragFloat3("At (m, its frame)", &cue.point.x, 0.01f);
+        break;
+    case scene::Cue::Kind::Release:
+        changed |= EntityField("Loose object", cue.name, context);
+        ImGui::TextDisabled("Lets a body held where it is fall");
+        break;
+    case scene::Cue::Kind::Break:
+    case scene::Cue::Kind::Motor: {
+        changed |= EntityField("Loose object", cue.name, context);
+        int joint = static_cast<int>(cue.joint) + 1;
+        if (ImGui::DragInt("Joint", &joint, 0.1f, 1, 64)) {
+            cue.joint = static_cast<std::uint32_t>(std::max(joint, 1) - 1);
+            changed = true;
+        }
+        if (cue.kind == scene::Cue::Kind::Motor) {
+            int mode = static_cast<int>(cue.motor.mode);
+            if (ImGui::Combo("Mode", &mode, "Off\0Speed\0Position\0")) {
+                cue.motor.mode = static_cast<physics::MotorMode>(mode);
+                changed = true;
+            }
+            changed |= ImGui::DragFloat("Target", &cue.motor.target, 0.01f);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Radians (per second) for a hinge, meters (per second) for a slider");
+            }
+            changed |= ImGui::DragFloat("Strength", &cue.motor.strength, 10.0f, 0.0f, 1.0e6f, "%.0f");
+        }
+        break;
+    }
     case scene::Cue::Kind::Camera: {
         bool smooth = cue.cameraPath == scene::CameraPath::Smooth;
         if (ImGui::Checkbox("Smooth path", &smooth)) {

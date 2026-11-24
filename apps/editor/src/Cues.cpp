@@ -4,6 +4,8 @@
 
 #include "Cues.hpp"
 
+#include <glm/geometric.hpp>
+
 #include <filesystem>
 #include <format>
 
@@ -65,7 +67,20 @@ scene::Cue MakeCue(scene::Cue::Kind kind, float at) {
     case scene::Cue::Kind::Event:
         cue.name = "event";
         break;
+    case scene::Cue::Kind::Blast:
+        // A gas bottle's worth: a 20 kg drum 2 m away leaves at about 10 m/s.
+        cue.radius = 5.0f;
+        cue.strength = 400.0f;
+        break;
+    case scene::Cue::Kind::Impulse:
+        cue.vector = {0.0f, 50.0f, 0.0f};
+        break;
+    case scene::Cue::Kind::Motor:
+        cue.motor = {.mode = daidalos::physics::MotorMode::Speed, .target = 1.0f};
+        break;
     case scene::Cue::Kind::Sound:
+    case scene::Cue::Kind::Release:
+    case scene::Cue::Kind::Break:
         break;
     }
     return cue;
@@ -98,6 +113,16 @@ std::string CueSummary(const scene::Cue& cue) {
         return std::format("fade to {:.2g} over {:.2g} s", cue.strength, cue.seconds);
     case scene::Cue::Kind::Event:
         return std::format("event \"{}\"", cue.name);
+    case scene::Cue::Kind::Blast:
+        return std::format("blast {:.3g} over {:.2g} m{}", cue.strength, cue.radius, At(cue.name));
+    case scene::Cue::Kind::Impulse:
+        return std::format("push {} by {:.3g}", cue.name, glm::length(cue.vector));
+    case scene::Cue::Kind::Release:
+        return std::format("release {}", cue.name);
+    case scene::Cue::Kind::Break:
+        return std::format("break joint {} of {}", cue.joint + 1, cue.name);
+    case scene::Cue::Kind::Motor:
+        return std::format("motor of joint {} of {} to {:.3g}", cue.joint + 1, cue.name, cue.motor.target);
     }
     return {};
 }
@@ -126,6 +151,13 @@ unsigned CueColor(scene::Cue::Kind kind) {
         return Rgba(130, 130, 130);
     case scene::Cue::Kind::Event:
         return Rgba(200, 120, 200);
+    case scene::Cue::Kind::Blast:
+        return Rgba(255, 90, 40);
+    case scene::Cue::Kind::Impulse:
+    case scene::Cue::Kind::Release:
+    case scene::Cue::Kind::Break:
+    case scene::Cue::Kind::Motor:
+        return Rgba(190, 160, 110);
     }
     return Rgba(200, 200, 200);
 }

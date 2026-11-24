@@ -129,6 +129,44 @@ void Scene::RunFixedStep(core::Seconds step) {
         seconds);
 }
 
+std::size_t Scene::Blast(const glm::vec3& center, float radius, float strength) {
+    // ADR-0127. How much a blast lifts what it throws, the fastest it throws anything, and how much of it passes a
+    // wall: a blast wraps around corners.
+    constexpr float kLift = 0.3f;
+    constexpr float kTopSpeed = 25.0f;
+    constexpr float kShielded = 0.2f;
+    const std::vector<physics::BodyId> bodies = m_physics.DynamicBodiesInSphere(center, radius);
+    std::size_t pushed = 0;
+    for (const physics::BodyId body : bodies) {
+        const glm::vec3 at = m_physics.BodyPosition(body);
+        const glm::vec3 away = at - center;
+        const float distance = glm::length(away);
+        const glm::vec3 direction = glm::normalize((distance > 1e-3f ? away / distance : glm::vec3(0.0f, 1.0f, 0.0f)) +
+                                                   glm::vec3(0.0f, kLift, 0.0f));
+        const float left = std::clamp(1.0f - distance / radius, 0.0f, 1.0f);
+        float impulse = std::min(strength * left * left, m_physics.BodyMass(body) * kTopSpeed);
+        // A wall between the blast and the body takes most of it.
+        if (distance > 1e-3f) {
+            const std::optional<physics::RayHit> hit = m_physics.CastRay(center, away / distance, distance);
+            if (hit.has_value() && hit->body != body && !m_physics.IsDynamic(hit->body)) {
+                impulse *= kShielded;
+            }
+        }
+        if (impulse <= 0.0f) {
+            continue;
+        }
+        // A little off the center, from a seed of the scene's, so that it spins and a recording repeats.
+        const auto random = [this] {
+            m_blastSeed = m_blastSeed * 1664525U + 1013904223U;
+            return static_cast<float>(m_blastSeed >> 8U) / static_cast<float>(1U << 24U) - 0.5f;
+        };
+        const glm::vec3 offset = glm::vec3(random(), random(), random()) * 0.3f;
+        m_physics.AddImpulseAt(body, direction * impulse, at + offset);
+        ++pushed;
+    }
+    return pushed;
+}
+
 void Scene::SpawnParticles(renderer::ParticleEffectHandle effect, const glm::vec3& position, const glm::vec3& direction,
                            std::uint32_t count) {
     const float length = glm::length(direction);
@@ -468,6 +506,49 @@ void Scene::RunCue(const Cue& cue) {
     case Cue::Kind::Subtitle:
         ShowCaption({.text = cue.caption, .speaker = cue.name, .seconds = cue.seconds});
         break;
+    case Cue::Kind::Blast: {
+        // From where the entity is (ADR-0127).
+        const ecs::Entity entity = Named(cue.name);
+        if (m_world.IsAlive(entity)) {
+            ecs::PropagateTransforms(m_world);
+            Blast(glm::vec3(m_world.Get<ecs::WorldTransform>(entity).matrix[3]), cue.radius, cue.strength);
+        }
+        break;
+    }
+    case Cue::Kind::Impulse:
+    case Cue::Kind::Release:
+    case Cue::Kind::Break:
+    case Cue::Kind::Motor: {
+        // Among loose objects only: a model's node may have the same name.
+        ecs::Entity entity;
+        m_world.Each<NodeName, RigidBody>([&](ecs::Entity named, const NodeName& node, const RigidBody&) {
+            if (entity.IsNull() && node.value == cue.name) {
+                entity = named;
+            }
+        });
+        const RigidBody* body = entity.IsNull() ? nullptr : m_world.TryGet<RigidBody>(entity);
+        if (body == nullptr) {
+            DAI_LOG_WARNING(kModule, "Sequence: '{}' is no loose object to {}", cue.name, CueKindName(cue.kind));
+            break;
+        }
+        if (cue.kind == Cue::Kind::Impulse) {
+            const glm::vec3 point = m_physics.BodyPosition(body->body) + m_physics.BodyRotation(body->body) * cue.point;
+            m_physics.ReleaseBody(body->body);
+            m_physics.AddImpulseAt(body->body, cue.vector, point);
+        } else if (cue.kind == Cue::Kind::Release) {
+            m_physics.ReleaseBody(body->body);
+        } else {
+            const Joints* joints = m_world.TryGet<Joints>(entity);
+            if (joints == nullptr || cue.joint >= joints->handles.size()) {
+                DAI_LOG_WARNING(kModule, "Sequence: '{}' has no joint {}", cue.name, cue.joint);
+            } else if (cue.kind == Cue::Kind::Break) {
+                m_physics.BreakJoint(joints->handles[cue.joint]);
+            } else {
+                m_physics.SetJointMotor(joints->handles[cue.joint], cue.motor);
+            }
+        }
+        break;
+    }
     }
 }
 

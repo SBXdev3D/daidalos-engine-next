@@ -259,6 +259,15 @@ public:
                    : JPH::ValidateResult::AcceptAllContactsForThisBodyPair;
     }
 
+    /// A conveyor's surface velocity, or none to stop it (ADR-0127).
+    void SetSurfaceVelocity(JPH::BodyID body, const glm::vec3& velocity) {
+        if (velocity == glm::vec3(0.0f)) {
+            m_surfaces.erase(body.GetIndexAndSequenceNumber());
+        } else {
+            m_surfaces[body.GetIndexAndSequenceNumber()] = ToJolt(velocity);
+        }
+    }
+
     /// Bodies held by more joints than one stay apart until the last goes.
     void Join(JPH::BodyID first, JPH::BodyID second) { ++m_jointed[Pair(first, second)]; }
     void Part(JPH::BodyID first, JPH::BodyID second) {
@@ -269,12 +278,14 @@ public:
     }
 
     void OnContactAdded(const JPH::Body& first, const JPH::Body& second, const JPH::ContactManifold& manifold,
-                        JPH::ContactSettings& /*settings*/) override {
+                        JPH::ContactSettings& settings) override {
+        Carry(first, second, settings);
         Add(first, second, manifold, true);
     }
 
     void OnContactPersisted(const JPH::Body& first, const JPH::Body& second, const JPH::ContactManifold& manifold,
-                            JPH::ContactSettings& /*settings*/) override {
+                            JPH::ContactSettings& settings) override {
+        Carry(first, second, settings);
         const auto moving = [](const JPH::Body& body) {
             return body.IsDynamic() && body.GetLinearVelocity().LengthSq() > kRestingSpeed * kRestingSpeed;
         };
@@ -317,6 +328,19 @@ private:
         m_contacts.push_back(contact);
     }
 
+    /// What lies on a conveyor moves with its surface: Jolt takes the second body's surface velocity relative to
+    /// the first's.
+    void Carry(const JPH::Body& first, const JPH::Body& second, JPH::ContactSettings& settings) const {
+        if (m_surfaces.empty()) {
+            return;
+        }
+        const auto velocity = [this](const JPH::Body& body) {
+            const auto found = m_surfaces.find(body.GetID().GetIndexAndSequenceNumber());
+            return found == m_surfaces.end() ? JPH::Vec3::sZero() : found->second;
+        };
+        settings.mRelativeLinearSurfaceVelocity = velocity(second) - velocity(first);
+    }
+
     [[nodiscard]] static std::uint64_t Pair(JPH::BodyID first, JPH::BodyID second) {
         const std::uint32_t low = std::min(first.GetIndexAndSequenceNumber(), second.GetIndexAndSequenceNumber());
         const std::uint32_t high = std::max(first.GetIndexAndSequenceNumber(), second.GetIndexAndSequenceNumber());
@@ -327,6 +351,7 @@ private:
     std::vector<Contact> m_contacts;
     // Read by Jolt during Update, changed only between steps.
     std::unordered_map<std::uint64_t, int> m_jointed;
+    std::unordered_map<std::uint32_t, JPH::Vec3> m_surfaces;
 };
 
 } // namespace
@@ -493,8 +518,10 @@ core::Result<BodyId> PhysicsWorld::AddDynamicBox(const glm::vec3& halfExtents, f
 
 core::Result<BodyId> PhysicsWorld::AddDynamicBody(const DynamicBodyDesc& desc, const math::Transform& transform) {
     DAI_TRY_ASSIGN(const JPH::RefConst<JPH::Shape> shape, MakeShape(desc.shape));
+    // A held body waits as a kinematic one, which can become dynamic (ADR-0127).
     JPH::BodyCreationSettings body(shape, JPH::RVec3(ToJolt(transform.translation)), ToJolt(transform.rotation),
-                                   JPH::EMotionType::Dynamic, kMovingLayer);
+                                   desc.held ? JPH::EMotionType::Kinematic : JPH::EMotionType::Dynamic, kMovingLayer);
+    body.mAllowDynamicOrKinematic = desc.held;
     body.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
     body.mMassPropertiesOverride.mMass = std::max(desc.mass, 0.01f);
     body.mFriction = std::max(desc.material.friction, 0.0f);
@@ -541,6 +568,29 @@ void PhysicsWorld::AddImpulseAt(BodyId body, const glm::vec3& impulse, const glm
     m_state->system.GetBodyInterface().AddImpulse(JPH::BodyID(body.value), ToJolt(impulse), JPH::RVec3(ToJolt(point)));
 }
 
+void PhysicsWorld::ReleaseBody(BodyId body) {
+    JPH::BodyInterface& bodies = m_state->system.GetBodyInterface();
+    const JPH::BodyID id(body.value);
+    if (bodies.GetMotionType(id) == JPH::EMotionType::Kinematic) {
+        bodies.SetMotionType(id, JPH::EMotionType::Dynamic, JPH::EActivation::Activate);
+    }
+}
+
+bool PhysicsWorld::IsHeld(BodyId body) const {
+    const JPH::BodyLockRead lock(m_state->system.GetBodyLockInterface(), JPH::BodyID(body.value));
+    return lock.Succeeded() && lock.GetBody().IsKinematic() && lock.GetBody().CanBeKinematicOrDynamic();
+}
+
+void PhysicsWorld::SetSurfaceVelocity(BodyId body, const glm::vec3& velocity) {
+    m_state->contacts.SetSurfaceVelocity(JPH::BodyID(body.value), velocity);
+    // What lies on it asleep wakes up and goes.
+    if (velocity != glm::vec3(0.0f)) {
+        for (const BodyId lying : DynamicBodiesInSphere(BodyPosition(body), 50.0f)) {
+            m_state->system.GetBodyInterface().ActivateBody(JPH::BodyID(lying.value));
+        }
+    }
+}
+
 bool PhysicsWorld::IsSleeping(BodyId body) const {
     const JPH::BodyInterface& bodies = m_state->system.GetBodyInterface();
     const JPH::BodyID id(body.value);
@@ -584,6 +634,7 @@ float PhysicsWorld::BodyMass(BodyId body) const {
 }
 
 void PhysicsWorld::RemoveBody(BodyId body) {
+    m_state->contacts.SetSurfaceVelocity(JPH::BodyID(body.value), glm::vec3(0.0f));
     // Its joints first: Jolt keeps them pointing at the body.
     std::vector<JointHandle> held;
     m_state->joints.ForEach([&held, body](const State::Joint& joint) {
@@ -662,7 +713,7 @@ core::Result<JointHandle> PhysicsWorld::AddJoint(const JointDesc& desc) {
     const auto invalid = [](std::string message) {
         return tl::unexpected(core::Error{core::ErrorCode::InvalidArgument, kModule, std::move(message)});
     };
-    if (!desc.first.IsValid() || !IsDynamic(desc.first)) {
+    if (!desc.first.IsValid() || !(IsDynamic(desc.first) || IsHeld(desc.first))) {
         return invalid("A joint's first body must be dynamic");
     }
     if (desc.second == desc.first) {
