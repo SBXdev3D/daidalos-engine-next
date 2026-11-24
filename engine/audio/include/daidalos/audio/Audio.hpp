@@ -104,6 +104,8 @@ struct PlayOptions {
     /// Seconds before it starts, counted on the mixer's clock: voices played with the same delay in one frame
     /// start on the same sample, as the layers of a score must.
     float delay = 0.0f;
+    /// Playback speed: 2 is an octave up and twice as short (ADR-0125).
+    float pitch = 1.0f;
 };
 
 /// How a surface treats sound (ADR-0065), in three bands, low (around 400 Hz), middle (2.5 kHz) and high

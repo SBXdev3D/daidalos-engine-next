@@ -2,6 +2,7 @@
 // Copyright (C) 2011-2026 Stéphane Baudoux
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+#include <daidalos/scene/Bodies.hpp>
 #include <daidalos/scene/Level.hpp>
 
 #include <glm/gtc/quaternion.hpp>
@@ -242,9 +243,28 @@ core::Result<Light> ReadLight(Reader reader) {
 
 core::Result<Body> ReadBody(Reader reader) {
     Body body;
+    std::string shape = "box";
+    DAI_LEVEL_TRY(reader.Text("shape", shape));
+    if (const std::optional<physics::ShapeKind> kind = BodyShapeOf(shape)) {
+        body.shape = *kind;
+    } else {
+        return Invalid(reader.Where() + ".shape",
+                       std::format("'{}' is no shape: box, sphere, cylinder, capsule or hull", shape));
+    }
     DAI_LEVEL_TRY(reader.Vector("size", body.size));
     DAI_LEVEL_TRY(reader.Vector("center", body.center));
     DAI_LEVEL_TRY(reader.Number("mass", body.mass));
+    DAI_LEVEL_TRY(reader.Text("surface", body.surface));
+    // Friction and bounce from the surface, unless the file says otherwise.
+    for (const auto& [key, value] :
+         {std::pair{"friction", &body.friction}, std::pair{"restitution", &body.restitution}}) {
+        float number = -1.0f;
+        DAI_LEVEL_TRY(reader.Number(key, number));
+        if (number >= 0.0f) {
+            *value = number;
+        }
+    }
+    DAI_LEVEL_TRY(reader.Flag("fast", body.fast));
     DAI_LEVEL_TRY(reader.Finish());
     return body;
 }
@@ -912,9 +932,20 @@ Json WriteEntity(const LevelEntity& entity) {
     if (entity.body) {
         const Body fallback;
         JsonObject body;
+        if (entity.body->shape != fallback.shape) {
+            body.emplace("shape", Json{std::string(BodyShapeName(entity.body->shape))});
+        }
         Put(body, "size", entity.body->size, fallback.size);
         Put(body, "center", entity.body->center, fallback.center);
         Put(body, "mass", entity.body->mass, fallback.mass);
+        Put(body, "surface", entity.body->surface, fallback.surface);
+        if (entity.body->friction.has_value()) {
+            body.emplace("friction", Number(*entity.body->friction));
+        }
+        if (entity.body->restitution.has_value()) {
+            body.emplace("restitution", Number(*entity.body->restitution));
+        }
+        Put(body, "fast", entity.body->fast, fallback.fast);
         object.emplace("body", Json{std::move(body)});
     }
     if (entity.decal) {

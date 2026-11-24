@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <daidalos/scene/AssetLibrary.hpp>
 #include <daidalos/scene/Level.hpp>
 
 #include <glm/vec3.hpp>
@@ -16,8 +17,8 @@ namespace editor {
 bool InputString(const char* label, std::string& value);
 
 /// The fields of each component the entity has, a button to remove each, and a menu to add one. Returns true
-/// when anything changed. Angles show in degrees.
-bool InspectComponents(daidalos::scene::LevelEntity& entity);
+/// when anything changed. Angles show in degrees. The model the entity places, if any, sizes its body.
+bool InspectComponents(daidalos::scene::LevelEntity& entity, const daidalos::scene::Model* model = nullptr);
 
 /// The sky, fog, exposure and wind of the level. Returns true when anything changed.
 bool InspectEnvironment(daidalos::scene::LevelEnvironment& environment);

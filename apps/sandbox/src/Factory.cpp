@@ -1140,6 +1140,8 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
         }
     }
     world.Add<ParticleEffects>(playerEntity, LoadParticleEffects(scene, directory));
+    // Loose objects are heard when they hit, roll and scrape, and heavy ones raise dust (ADR-0125).
+    scene.LoadPhysicsSounds("Factory/Sounds/Physics", EffectPath(directory, "dust_puff"));
     // After the level's tags are listed: the weapons have tagged nodes too, which are not the level's.
     SetUpCombat(scene, playerEntity, directory);
     std::minstd_rand random{std::random_device{}()};

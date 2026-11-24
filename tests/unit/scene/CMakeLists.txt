@@ -2,6 +2,7 @@ dai_add_test(NAME daidalos_scene_tests
     SOURCES
         AnimationTests.cpp
         BlocksTests.cpp
+        BodiesTests.cpp
         EffectDocumentTests.cpp
         AssertCapture.hpp
         EntityTests.cpp
