@@ -156,6 +156,18 @@ bool IsHeavyHit(float approach, float mass) {
     return approach * mass >= kHeavyMomentum;
 }
 
+std::uint32_t BodyGroupOf(std::string_view name) {
+    if (name.empty()) {
+        return 0;
+    }
+    // FNV-1a, kept off 0 (no group) and off Jolt's "no group" (all ones).
+    std::uint32_t hash = 2166136261U;
+    for (const char c : name) {
+        hash = (hash ^ static_cast<std::uint8_t>(c)) * 16777619U;
+    }
+    return std::clamp(hash, 1U, 0xFFFFFFFEU);
+}
+
 float HitPitch(float mass) {
     return std::clamp(std::pow(10.0f / std::max(mass, 0.1f), 0.12f), 0.75f, 1.3f);
 }
@@ -205,10 +217,15 @@ void PhysicsFeedback::Update(ecs::World& world, const physics::PhysicsWorld& phy
         }
         m_lastHit[id] = m_clock;
         ++hits;
-        Hit(sounds, sounding.surface, contact.point, contact.approach, sounding.mass);
+        // How hard they meet goes by their reduced mass: a light link knocking on a heavy lamp is a light knock,
+        // and against a wall or the floor it is the body's own mass.
+        const float impact = first != nullptr && second != nullptr
+                                 ? first->mass * second->mass / std::max(first->mass + second->mass, 1e-3f)
+                                 : sounding.mass;
+        Hit(sounds, sounding.surface, contact.point, contact.approach, sounding.mass, impact);
         if (spawnDust && !m_sounds.dust.IsNull() && contact.approach >= kDustSpeed &&
-            contact.approach * sounding.mass >= kDustMomentum) {
-            const float momentum = contact.approach * sounding.mass;
+            contact.approach * impact >= kDustMomentum) {
+            const float momentum = contact.approach * impact;
             const auto count = static_cast<std::uint32_t>(std::clamp(momentum / 30.0f, 2.0f, 10.0f));
             const glm::vec3 up = contact.normal.y >= 0.0f ? contact.normal : -contact.normal;
             spawnDust(contact.point, up, count);
@@ -286,8 +303,8 @@ void PhysicsFeedback::Update(ecs::World& world, const physics::PhysicsWorld& phy
 }
 
 void PhysicsFeedback::Hit(audio::SoundWorld& sounds, std::string_view surface, const glm::vec3& point, float approach,
-                          float mass) {
-    const auto* clips = Find(IsHeavyHit(approach, mass) ? m_sounds.heavyHits : m_sounds.lightHits, surface);
+                          float mass, float impact) {
+    const auto* clips = Find(IsHeavyHit(approach, impact) ? m_sounds.heavyHits : m_sounds.lightHits, surface);
     if (clips == nullptr || clips->empty()) {
         clips = Find(m_sounds.lightHits, surface);
     }

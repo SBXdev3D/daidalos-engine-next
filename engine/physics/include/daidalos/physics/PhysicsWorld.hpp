@@ -76,6 +76,9 @@ struct DynamicBodyDesc {
     /// Held where it is, as if hung on nothing, until ReleaseBody lets it fall (ADR-0127): crates waiting at the
     /// ceiling for their cue. Dynamic bodies push against it as against a wall.
     bool held = false;
+    /// Bodies of the same group, other than 0, never touch one another (ADR-0128): a chain's links and what hangs
+    /// from it, which would otherwise knock together wherever the chain bends.
+    std::uint32_t group = 0;
 };
 
 /// Two bodies touching (ADR-0125), at least one of them dynamic. Collected during Step.

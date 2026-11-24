@@ -1,0 +1,122 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "scripts/make_physics_props.py"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "name": "rubber_ball",
+   "mesh": 0
+  }
+ ],
+ "meshes": [
+  {
+   "name": "rubber_ball",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "materials": [
+  {
+   "name": "rubber",
+   "pbrMetallicRoughness": {
+    "baseColorFactor": [
+     0.55,
+     0.06,
+     0.04,
+     1.0
+    ],
+    "metallicFactor": 0.0,
+    "roughnessFactor": 0.55
+   },
+   "extras": {
+    "surface": "rubber"
+   }
+  }
+ ],
+ "buffers": [
+  {
+   "uri": "rubber_ball.bin",
+   "byteLength": 30240
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteOffset": 0,
+   "byteLength": 6732,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 6732,
+   "byteLength": 6732,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 13464,
+   "byteLength": 4488,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 17952,
+   "byteLength": 12288,
+   "target": 34963
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 561,
+   "type": "VEC3",
+   "min": [
+    -0.15,
+    -0.15,
+    -0.15
+   ],
+   "max": [
+    0.15,
+    0.15,
+    0.15
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 561,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 561,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5125,
+   "count": 3072,
+   "type": "SCALAR"
+  }
+ ]
+}

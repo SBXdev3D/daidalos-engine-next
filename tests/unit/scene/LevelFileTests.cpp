@@ -295,6 +295,7 @@ TEST(LevelFileTest, LooseObjectsKeepTheirShapeAndSurface) {
                             .friction = 0.3f};
     LevelEntity scrap{.id = 2, .name = "Scrap"};
     scrap.body = scene::Body{.shape = physics::ShapeKind::Hull, .mass = 0.5f, .restitution = 0.7f, .fast = true};
+    scrap.body->group = "chain"; // ADR-0128.
     level.entities.push_back(drum);
     level.entities.push_back(scrap);
     const std::string text = WriteLevel(level);

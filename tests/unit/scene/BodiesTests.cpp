@@ -121,6 +121,48 @@ TEST(Bodies, ALandingIsHeardOnceAndRaisesDust) {
     EXPECT_EQ(dust, 1);
 }
 
+TEST(Bodies, ALightThingOnAHeavyOneIsALightHit) {
+    // ADR-0128: a 0.5 kg box dropped 3 m onto a 200 kg crate. How hard they meet goes by their reduced mass,
+    // about the box's own: no dust, as a chain link knocking on its lamp raises none.
+    ecs::World world;
+    physics::PhysicsWorld physics;
+    audio::SoundWorld sounds(nullptr, ".");
+    AddFloor(physics);
+    const auto add = [&](float mass, float size, float y) {
+        physics::DynamicBodyDesc desc;
+        desc.shape.size = glm::vec3(size);
+        desc.mass = mass;
+        math::Transform start;
+        start.translation = {0.0f, y, 0.0f};
+        const physics::BodyId body = physics.AddDynamicBody(desc, start).value();
+        world.Add<RigidBody>(world.Create(), body, std::string("wood"));
+    };
+    add(200.0f, 1.0f, 0.5f);
+    add(0.5f, 0.2f, 4.0f);
+    PhysicsFeedback feedback;
+    PhysicsSounds bank;
+    bank.lightHits["wood"] = {audio::ClipHandle{}};
+    bank.heavyHits["wood"] = {audio::ClipHandle{}};
+    bank.dust = renderer::ParticleEffectHandle(1, 1);
+    feedback.SetSounds(bank);
+    int dust = 0;
+    const PhysicsFeedback::SpawnDust spawn = [&dust](const glm::vec3&, const glm::vec3&, std::uint32_t) { ++dust; };
+    for (int step = 0; step < 120; ++step) {
+        physics.Step(kStep);
+        feedback.Update(world, physics, sounds, spawn, kStep);
+    }
+    EXPECT_GE(feedback.HitCount(), 1u) << "It is heard";
+    EXPECT_EQ(dust, 0);
+}
+
+TEST(Bodies, AGroupNameIsTheSameNumberEveryTime) {
+    EXPECT_EQ(BodyGroupOf(""), 0u);
+    EXPECT_EQ(BodyGroupOf("lamp chain"), BodyGroupOf("lamp chain"));
+    EXPECT_NE(BodyGroupOf("lamp chain"), BodyGroupOf("hook chain"));
+    EXPECT_NE(BodyGroupOf("x"), 0u);
+    EXPECT_NE(BodyGroupOf("x"), 0xFFFFFFFFu);
+}
+
 TEST(Bodies, AGentleTouchIsSilent) {
     ecs::World world;
     physics::PhysicsWorld physics;

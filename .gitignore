@@ -40,3 +40,5 @@ assets/Factory/Showcase/*/Source/
 
 # The effects gallery preview (scripts/make_effects_gallery.py --only), not a file to keep.
 assets/Factory/Sequences/effects_preview.sequence.json
+# The physics gallery preview (scripts/make_physics_gallery.py --only), not a file to keep.
+assets/Factory/Sequences/physics_preview.sequence.json

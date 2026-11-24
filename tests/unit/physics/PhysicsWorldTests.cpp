@@ -739,6 +739,49 @@ TEST(PhysicsWorldJoints, MotorsTurnAndSlide) {
     EXPECT_NEAR(physics.BodyPosition(ram).x, 3.0f, 0.05f);
 }
 
+TEST(PhysicsWorldJoints, AMotorThatTurnsKeepsItsBodiesAwake) {
+    // ADR-0128: a 2 m bar on a motor whose end is stopped by the floor. Stopped, a body would fall asleep and its
+    // motor would not wake it; a motor that turns keeps it awake. Off, it may sleep again.
+    PhysicsWorld physics;
+    AddFloor(physics);
+    const BodyId bar = AddWeight(physics, {0.0f, 0.5f, 0.0f}, 20.0f, {2.0f, 0.1f, 0.2f});
+    const core::Result<JointHandle> axle =
+        physics.AddJoint({.kind = JointKind::Hinge,
+                          .first = bar,
+                          .anchor = {0.0f, 0.5f, 0.0f},
+                          .axis = {0.0f, 0.0f, 1.0f},
+                          .motor = {.mode = MotorMode::Speed, .target = 2.0f, .strength = 30.0f}});
+    ASSERT_TRUE(axle.has_value());
+    RunSteps(physics, 240);
+    EXPECT_LT(std::abs(physics.BodyAngularVelocity(bar).z), 0.1f) << "The floor stops it";
+    EXPECT_FALSE(physics.IsSleeping(bar));
+    physics.SetJointMotor(*axle, {});
+    RunSteps(physics, 240);
+    EXPECT_TRUE(physics.IsSleeping(bar));
+}
+
+TEST(PhysicsWorld, BodiesOfAGroupPassThroughOneAnother) {
+    // ADR-0128: a box dropped on a box of its own group falls through it to the floor; one of another group stands
+    // on it.
+    PhysicsWorld physics;
+    AddFloor(physics);
+    const auto box = [&physics](float x, float y, std::uint32_t group) {
+        DynamicBodyDesc desc;
+        desc.shape.size = glm::vec3(0.4f);
+        desc.group = group;
+        math::Transform start;
+        start.translation = {x, y, 0.0f};
+        return physics.AddDynamicBody(desc, start).value();
+    };
+    box(0.0f, 0.2f, 7);
+    const BodyId same = box(0.0f, 2.0f, 7);
+    box(3.0f, 0.2f, 7);
+    const BodyId other = box(3.0f, 2.0f, 8);
+    RunSteps(physics, 180);
+    EXPECT_NEAR(physics.BodyPosition(same).y, 0.2f, 0.05f);
+    EXPECT_NEAR(physics.BodyPosition(other).y, 0.6f, 0.05f);
+}
+
 TEST(PhysicsWorldJoints, AChainHoldsALampWithoutStretching) {
     // Ten links of 10 cm and 0.3 kg each, ball-jointed, holding a 10 kg lamp. Light links under a heavy weight
     // stretch even with the joints' extra solver steps, so a chain also has a hidden rope as long as itself from

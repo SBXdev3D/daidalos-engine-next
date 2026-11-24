@@ -64,6 +64,9 @@ struct PhysicsSounds {
 [[nodiscard]] bool IsHeavyHit(float approach, float mass);
 /// Lighter things sound higher, heavier ones lower.
 [[nodiscard]] float HitPitch(float mass);
+/// The physics group of a body's group name (Body::group, ADR-0128): 0 for none, the same number for the same
+/// name, whatever the level or the order its bodies are made in.
+[[nodiscard]] std::uint32_t BodyGroupOf(std::string_view name);
 
 /// Turns each step's contacts into sounds and dust (ADR-0125): a hit for each body that meets something, at most
 /// once in a short while, a rolling or scraping loop for each body that rolls or slides along something, and a snap
@@ -94,7 +97,8 @@ private:
         float rollLevel = 0.0f;
         float scrapeLevel = 0.0f;
     };
-    void Hit(audio::SoundWorld& sounds, std::string_view surface, const glm::vec3& point, float approach, float mass);
+    void Hit(audio::SoundWorld& sounds, std::string_view surface, const glm::vec3& point, float approach, float mass,
+             float impact);
     void Loop(audio::SoundWorld& sounds, audio::VoiceHandle& voice, audio::ClipHandle clip, float level,
               const glm::vec3& position);
 

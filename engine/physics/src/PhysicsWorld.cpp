@@ -246,6 +246,22 @@ constexpr JPH::uint kJointPositionSteps = 10;
 // Below this, a touch that goes on is not worth reporting: neither body is moving.
 constexpr float kRestingSpeed = 0.05f;
 
+/// Keeps a joint's dynamic bodies from sleeping, or lets them sleep again.
+void KeepAwake(JPH::PhysicsSystem& system, BodyId first, BodyId second, bool awake) {
+    for (const BodyId body : {first, second}) {
+        if (!body.IsValid()) {
+            continue;
+        }
+        const JPH::BodyLockWrite lock(system.GetBodyLockInterface(), JPH::BodyID(body.value));
+        if (lock.Succeeded() && lock.GetBody().IsDynamic()) {
+            lock.GetBody().SetAllowSleeping(!awake);
+        }
+    }
+    if (awake) {
+        system.GetBodyInterface().ActivateBody(JPH::BodyID(first.value));
+    }
+}
+
 /// Collects what touched during a step. Jolt may call it from its jobs, so it locks, although the world steps on
 /// one thread today.
 class ContactCollector final : public JPH::ContactListener {
@@ -254,7 +270,10 @@ public:
     /// meet, a door its frame.
     JPH::ValidateResult OnContactValidate(const JPH::Body& first, const JPH::Body& second, JPH::RVec3Arg /*offset*/,
                                           const JPH::CollideShapeResult& /*result*/) override {
-        return m_jointed.contains(Pair(first.GetID(), second.GetID()))
+        const JPH::CollisionGroup::GroupID group = first.GetCollisionGroup().GetGroupID();
+        const bool grouped =
+            group != JPH::CollisionGroup::cInvalidGroup && group == second.GetCollisionGroup().GetGroupID();
+        return grouped || m_jointed.contains(Pair(first.GetID(), second.GetID()))
                    ? JPH::ValidateResult::RejectAllContactsForThisBodyPair
                    : JPH::ValidateResult::AcceptAllContactsForThisBodyPair;
     }
@@ -529,6 +548,10 @@ core::Result<BodyId> PhysicsWorld::AddDynamicBody(const DynamicBodyDesc& desc, c
     body.mLinearDamping = std::max(desc.material.linearDamping, 0.0f);
     body.mAngularDamping = std::max(desc.material.angularDamping, 0.0f);
     body.mMotionQuality = desc.fast ? JPH::EMotionQuality::LinearCast : JPH::EMotionQuality::Discrete;
+    if (desc.group != 0) {
+        // No group filter: ContactCollector::OnContactValidate keeps a group apart.
+        body.mCollisionGroup.SetGroupID(desc.group);
+    }
     const JPH::BodyID id = m_state->system.GetBodyInterface().CreateAndAddBody(body, JPH::EActivation::Activate);
     if (id.IsInvalid()) {
         return tl::unexpected(core::Error{core::ErrorCode::InvalidArgument, kModule, "Too many bodies"});
@@ -823,6 +846,7 @@ void PhysicsWorld::RemoveJoint(JointHandle joint) {
         if (!found->broken && found->second.IsValid()) {
             m_state->contacts.Part(JPH::BodyID(found->first.value), JPH::BodyID(found->second.value));
         }
+        KeepAwake(m_state->system, found->first, found->second, false);
         m_state->RemoveJoint(*found);
         m_state->joints.Remove(joint);
     }
@@ -839,6 +863,7 @@ void PhysicsWorld::BreakJoint(JointHandle joint) {
     }
     found->broken = true;
     found->constraint->SetEnabled(false);
+    KeepAwake(m_state->system, found->first, found->second, false);
     if (found->second.IsValid()) {
         m_state->contacts.Part(JPH::BodyID(found->first.value), JPH::BodyID(found->second.value));
     }
@@ -879,6 +904,9 @@ void PhysicsWorld::SetJointMotor(JointHandle joint, const JointMotor& motor) {
         return;
     }
     m_state->system.GetBodyInterface().ActivateConstraint(found->constraint);
+    // A motor that turns keeps its bodies awake (ADR-0128): stopped for a moment against a load, they would fall
+    // asleep, and a motor does not wake what sleeps.
+    KeepAwake(m_state->system, found->first, found->second, motor.mode == MotorMode::Speed);
 }
 
 float PhysicsWorld::JointPosition(JointHandle joint) const {

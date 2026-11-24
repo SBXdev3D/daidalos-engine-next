@@ -1,0 +1,1523 @@
+{
+ "comment": "The physics gallery's tour (ADR-0128): a shot of each room, fading through black between them, with the cues that set its loose objects off, made by scripts/make_physics_gallery.py; changes belong there. +sandbox.sequence plays it at the start.",
+ "cues": [
+  {
+   "at": 0,
+   "fade": {
+    "to": 1,
+    "seconds": 0
+   }
+  },
+  {
+   "at": 0,
+   "mix": {
+    "music": 0,
+    "effects": 1,
+    "ambience": 1,
+    "interface": 1,
+    "lowpass": 20000,
+    "seconds": 0
+   }
+  },
+  {
+   "at": 0.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       -1.2,
+       1.3,
+       4.8
+      ],
+      "target": [
+       0.0,
+       1.9,
+       -2.2
+      ],
+      "aperture": 1.2,
+      "focus": 7.13
+     },
+     {
+      "at": 9.0,
+      "position": [
+       0.4,
+       1.2,
+       4.2
+      ],
+      "target": [
+       0.0,
+       1.8,
+       -2.2
+      ],
+      "aperture": 1.2,
+      "focus": 6.44
+     },
+     {
+      "at": 18.5,
+      "position": [
+       1.8,
+       1.4,
+       3.6
+      ],
+      "target": [
+       -0.3,
+       1.6,
+       -2.2
+      ],
+      "aperture": 1.2,
+      "focus": 6.17
+     }
+    ]
+   }
+  },
+  {
+   "at": 1.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 2.6,
+   "impulse": {
+    "entity": "Swinging: lamp 1",
+    "impulse": [
+     20.0,
+     0.0,
+     -6.0
+    ],
+    "point": [
+     0.0,
+     -1.2,
+     0.0
+    ]
+   }
+  },
+  {
+   "at": 4.0,
+   "impulse": {
+    "entity": "Swinging: lamp 2",
+    "impulse": [
+     0.0,
+     0.0,
+     19.0
+    ],
+    "point": [
+     0.0,
+     -1.2,
+     0.0
+    ]
+   }
+  },
+  {
+   "at": 5.4,
+   "impulse": {
+    "entity": "Swinging: lamp 3",
+    "impulse": [
+     -17.0,
+     0.0,
+     10.0
+    ],
+    "point": [
+     0.0,
+     -1.2,
+     0.0
+    ]
+   }
+  },
+  {
+   "at": 7.6,
+   "release": {
+    "entity": "Swinging: hook"
+   }
+  },
+  {
+   "at": 17.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 18.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       57.4,
+       1.2,
+       3.4
+      ],
+      "target": [
+       60.0,
+       1.7,
+       -2.0
+      ],
+      "aperture": 1.2,
+      "focus": 6.01
+     },
+     {
+      "at": 17.5,
+      "position": [
+       62.2,
+       1.0,
+       3.0
+      ],
+      "target": [
+       60.0,
+       1.2,
+       -2.0
+      ],
+      "aperture": 1.2,
+      "focus": 5.47
+     }
+    ]
+   }
+  },
+  {
+   "at": 19.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 20.6,
+   "release": {
+    "entity": "Falling: falling crate"
+   }
+  },
+  {
+   "at": 21.6,
+   "release": {
+    "entity": "Falling: falling sack"
+   }
+  },
+  {
+   "at": 22.4,
+   "release": {
+    "entity": "Falling: falling jerrycan"
+   }
+  },
+  {
+   "at": 23.1,
+   "release": {
+    "entity": "Falling: falling box"
+   }
+  },
+  {
+   "at": 23.3,
+   "release": {
+    "entity": "Falling: falling box 2"
+   }
+  },
+  {
+   "at": 24.4,
+   "release": {
+    "entity": "Falling: falling heavy crate"
+   }
+  },
+  {
+   "at": 26.0,
+   "release": {
+    "entity": "Falling: falling drum"
+   }
+  },
+  {
+   "at": 26.9,
+   "release": {
+    "entity": "Falling: falling sack 2"
+   }
+  },
+  {
+   "at": 27.8,
+   "release": {
+    "entity": "Falling: falling crate 2"
+   }
+  },
+  {
+   "at": 28.0,
+   "release": {
+    "entity": "Falling: falling crate 3"
+   }
+  },
+  {
+   "at": 28.25,
+   "release": {
+    "entity": "Falling: falling crate 4"
+   }
+  },
+  {
+   "at": 29.4,
+   "release": {
+    "entity": "Falling: falling drum 2"
+   }
+  },
+  {
+   "at": 34.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 35.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       125.0,
+       1.6,
+       -1.5
+      ],
+      "target": [
+       119.5,
+       0.9,
+       -5.5
+      ],
+      "aperture": 1.2,
+      "focus": 6.84
+     },
+     {
+      "at": 6.0,
+      "position": [
+       125.0,
+       1.5,
+       -0.4
+      ],
+      "target": [
+       119.7,
+       0.6,
+       -1.5
+      ],
+      "aperture": 1.2,
+      "focus": 5.49
+     },
+     {
+      "at": 18.5,
+      "position": [
+       124.6,
+       1.5,
+       0.8
+      ],
+      "target": [
+       119.7,
+       0.5,
+       2.8
+      ],
+      "aperture": 1.2,
+      "focus": 5.39
+     }
+    ]
+   }
+  },
+  {
+   "at": 36.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 37.4,
+   "release": {
+    "entity": "Rolling: rolling drum"
+   }
+  },
+  {
+   "at": 38.6,
+   "release": {
+    "entity": "Rolling: rolling big drum"
+   }
+  },
+  {
+   "at": 39.8,
+   "release": {
+    "entity": "Rolling: rolling bottle"
+   }
+  },
+  {
+   "at": 40.1,
+   "release": {
+    "entity": "Rolling: rolling bottle 2"
+   }
+  },
+  {
+   "at": 41.4,
+   "release": {
+    "entity": "Rolling: rolling drum 2"
+   }
+  },
+  {
+   "at": 52.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 53.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       183.4,
+       1.6,
+       5.2
+      ],
+      "target": [
+       178.2,
+       1.0,
+       -3.5
+      ],
+      "aperture": 1.2,
+      "focus": 10.15
+     },
+     {
+      "at": 8.5,
+      "position": [
+       182.6,
+       1.7,
+       6.0
+      ],
+      "target": [
+       180.6,
+       1.0,
+       -3.5
+      ],
+      "aperture": 1.2,
+      "focus": 9.73
+     },
+     {
+      "at": 19.5,
+      "position": [
+       181.6,
+       1.8,
+       7.2
+      ],
+      "target": [
+       180.0,
+       0.6,
+       -1.5
+      ],
+      "aperture": 1.2,
+      "focus": 8.93
+     }
+    ]
+   }
+  },
+  {
+   "at": 54.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 56.0,
+   "particles": {
+    "effect": "Factory/Effects/explosion_flare.effect.json",
+    "entity": "Explosions: blast A",
+    "count": 1
+   }
+  },
+  {
+   "at": 56.0,
+   "particles": {
+    "effect": "Factory/Effects/explosion_fireball.effect.json",
+    "entity": "Explosions: blast A",
+    "count": 9
+   }
+  },
+  {
+   "at": 56.0,
+   "sound": {
+    "clip": "Factory/Sounds/Ambience/explosion.wav",
+    "volume": 5.0,
+    "entity": "Explosions: blast A"
+   }
+  },
+  {
+   "at": 56.0,
+   "shake": {
+    "strength": 0.7,
+    "seconds": 1.4
+   }
+  },
+  {
+   "at": 56.02,
+   "blast": {
+    "entity": "Explosions: blast A",
+    "radius": 3.6,
+    "strength": 200.0
+   }
+  },
+  {
+   "at": 56.02,
+   "particles": {
+    "effect": "Factory/Effects/explosion_sparks.effect.json",
+    "entity": "Explosions: blast A",
+    "count": 160
+   }
+  },
+  {
+   "at": 56.02,
+   "particles": {
+    "effect": "Factory/Effects/explosion_debris.effect.json",
+    "entity": "Explosions: blast A",
+    "count": 24
+   }
+  },
+  {
+   "at": 56.05,
+   "particles": {
+    "effect": "Factory/Effects/explosion_shock.effect.json",
+    "entity": "Explosions: blast A",
+    "count": 70
+   }
+  },
+  {
+   "at": 56.15,
+   "particles": {
+    "effect": "Factory/Effects/explosion_smoke.effect.json",
+    "entity": "Explosions: blast A",
+    "count": 14
+   }
+  },
+  {
+   "at": 60.4,
+   "particles": {
+    "effect": "Factory/Effects/explosion_flare.effect.json",
+    "entity": "Explosions: blast B",
+    "count": 1
+   }
+  },
+  {
+   "at": 60.4,
+   "particles": {
+    "effect": "Factory/Effects/explosion_fireball.effect.json",
+    "entity": "Explosions: blast B",
+    "count": 9
+   }
+  },
+  {
+   "at": 60.4,
+   "sound": {
+    "clip": "Factory/Sounds/Ambience/explosion.wav",
+    "volume": 5.0,
+    "entity": "Explosions: blast B"
+   }
+  },
+  {
+   "at": 60.4,
+   "shake": {
+    "strength": 0.6,
+    "seconds": 1.4
+   }
+  },
+  {
+   "at": 60.42,
+   "blast": {
+    "entity": "Explosions: blast B",
+    "radius": 3.6,
+    "strength": 190.0
+   }
+  },
+  {
+   "at": 60.42,
+   "particles": {
+    "effect": "Factory/Effects/explosion_sparks.effect.json",
+    "entity": "Explosions: blast B",
+    "count": 160
+   }
+  },
+  {
+   "at": 60.42,
+   "particles": {
+    "effect": "Factory/Effects/explosion_debris.effect.json",
+    "entity": "Explosions: blast B",
+    "count": 24
+   }
+  },
+  {
+   "at": 60.45,
+   "particles": {
+    "effect": "Factory/Effects/explosion_shock.effect.json",
+    "entity": "Explosions: blast B",
+    "count": 70
+   }
+  },
+  {
+   "at": 60.55,
+   "particles": {
+    "effect": "Factory/Effects/explosion_smoke.effect.json",
+    "entity": "Explosions: blast B",
+    "count": 14
+   }
+  },
+  {
+   "at": 65.0,
+   "particles": {
+    "effect": "Factory/Effects/explosion_flare.effect.json",
+    "entity": "Explosions: blast C",
+    "count": 1
+   }
+  },
+  {
+   "at": 65.0,
+   "particles": {
+    "effect": "Factory/Effects/explosion_fireball.effect.json",
+    "entity": "Explosions: blast C",
+    "count": 9
+   }
+  },
+  {
+   "at": 65.0,
+   "sound": {
+    "clip": "Factory/Sounds/Ambience/explosion.wav",
+    "volume": 5.0,
+    "entity": "Explosions: blast C"
+   }
+  },
+  {
+   "at": 65.0,
+   "shake": {
+    "strength": 0.9,
+    "seconds": 1.4
+   }
+  },
+  {
+   "at": 65.02,
+   "blast": {
+    "entity": "Explosions: blast C",
+    "radius": 6.0,
+    "strength": 140.0
+   }
+  },
+  {
+   "at": 65.02,
+   "particles": {
+    "effect": "Factory/Effects/explosion_sparks.effect.json",
+    "entity": "Explosions: blast C",
+    "count": 160
+   }
+  },
+  {
+   "at": 65.02,
+   "particles": {
+    "effect": "Factory/Effects/explosion_debris.effect.json",
+    "entity": "Explosions: blast C",
+    "count": 24
+   }
+  },
+  {
+   "at": 65.05,
+   "particles": {
+    "effect": "Factory/Effects/explosion_shock.effect.json",
+    "entity": "Explosions: blast C",
+    "count": 70
+   }
+  },
+  {
+   "at": 65.15,
+   "particles": {
+    "effect": "Factory/Effects/explosion_smoke.effect.json",
+    "entity": "Explosions: blast C",
+    "count": 14
+   }
+  },
+  {
+   "at": 71.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 72.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       -2.6,
+       1.7,
+       -52.8
+      ],
+      "target": [
+       -0.8,
+       2.4,
+       -60.0
+      ],
+      "aperture": 1.2,
+      "focus": 7.45
+     },
+     {
+      "at": 17.5,
+      "position": [
+       1.6,
+       1.4,
+       -53.0
+      ],
+      "target": [
+       1.0,
+       1.4,
+       -60.0
+      ],
+      "aperture": 1.2,
+      "focus": 7.03
+     }
+    ]
+   }
+  },
+  {
+   "at": 73.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 74.6,
+   "release": {
+    "entity": "Wrecking: ball"
+   }
+  },
+  {
+   "at": 88.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 89.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       52.5,
+       3.6,
+       -52.0
+      ],
+      "target": [
+       56.0,
+       0.3,
+       -56.0
+      ],
+      "aperture": 1.2,
+      "focus": 6.26
+     },
+     {
+      "at": 7.0,
+      "position": [
+       62.5,
+       4.0,
+       -52.5
+      ],
+      "target": [
+       59.5,
+       0.2,
+       -59.5
+      ],
+      "aperture": 1.2,
+      "focus": 8.51
+     },
+     {
+      "at": 12.0,
+      "position": [
+       64.5,
+       2.6,
+       -59.0
+      ],
+      "target": [
+       58.5,
+       0.4,
+       -65.0
+      ],
+      "aperture": 1.2,
+      "focus": 8.77
+     },
+     {
+      "at": 19.5,
+      "position": [
+       65.0,
+       1.8,
+       -62.4
+      ],
+      "target": [
+       61.2,
+       0.8,
+       -66.4
+      ],
+      "aperture": 1.2,
+      "focus": 5.61
+     }
+    ]
+   }
+  },
+  {
+   "at": 90.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 91.4,
+   "impulse": {
+    "entity": "Dominoes: plank 1",
+    "impulse": [
+     3.0,
+     0.0,
+     0.0
+    ],
+    "point": [
+     0.0,
+     0.85,
+     0.0
+    ]
+   }
+  },
+  {
+   "at": 107.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 108.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       115.6,
+       1.4,
+       -59.4
+      ],
+      "target": [
+       115.8,
+       2.3,
+       -63.5
+      ],
+      "aperture": 1.2,
+      "focus": 4.2
+     },
+     {
+      "at": 2.9,
+      "position": [
+       115.7,
+       1.35,
+       -59.5
+      ],
+      "target": [
+       115.8,
+       2.1,
+       -63.5
+      ],
+      "aperture": 1.2,
+      "focus": 4.07
+     },
+     {
+      "at": 3.7,
+      "position": [
+       115.9,
+       1.2,
+       -59.7
+      ],
+      "target": [
+       115.8,
+       0.9,
+       -63.5
+      ],
+      "aperture": 1.2,
+      "focus": 3.81
+     },
+     {
+      "at": 6.0,
+      "position": [
+       116.1,
+       1.1,
+       -60.0
+      ],
+      "target": [
+       115.8,
+       0.6,
+       -63.5
+      ],
+      "aperture": 1.2,
+      "focus": 3.55
+     },
+     {
+      "at": 7.6,
+      "position": [
+       119.6,
+       1.6,
+       -59.2
+      ],
+      "target": [
+       124.0,
+       0.2,
+       -62.4
+      ],
+      "aperture": 1.2,
+      "focus": 5.62
+     },
+     {
+      "at": 15.5,
+      "position": [
+       120.6,
+       1.7,
+       -58.8
+      ],
+      "target": [
+       124.6,
+       0.2,
+       -62.4
+      ],
+      "aperture": 1.2,
+      "focus": 5.59
+     }
+    ]
+   }
+  },
+  {
+   "at": 109.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 111.0,
+   "release": {
+    "entity": "Materials: dropped box"
+   }
+  },
+  {
+   "at": 111.0,
+   "release": {
+    "entity": "Materials: dropped tool chest"
+   }
+  },
+  {
+   "at": 111.0,
+   "release": {
+    "entity": "Materials: dropped ball"
+   }
+  },
+  {
+   "at": 111.0,
+   "release": {
+    "entity": "Materials: dropped sack"
+   }
+  },
+  {
+   "at": 116.6,
+   "impulse": {
+    "entity": "Materials: crate on the dry lane",
+    "impulse": [
+     52.0,
+     0.0,
+     0.0
+    ]
+   }
+  },
+  {
+   "at": 116.6,
+   "impulse": {
+    "entity": "Materials: crate on the oily lane",
+    "impulse": [
+     52.0,
+     0.0,
+     0.0
+    ]
+   }
+  },
+  {
+   "at": 122.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 123.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       174.4,
+       1.5,
+       -56.4
+      ],
+      "target": [
+       173.4,
+       1.1,
+       -62.6
+      ],
+      "aperture": 1.2,
+      "focus": 6.29
+     },
+     {
+      "at": 5.0,
+      "position": [
+       175.0,
+       1.5,
+       -56.4
+      ],
+      "target": [
+       173.6,
+       1.1,
+       -62.6
+      ],
+      "aperture": 1.2,
+      "focus": 6.37
+     },
+     {
+      "at": 6.2,
+      "position": [
+       177.8,
+       1.4,
+       -56.8
+      ],
+      "target": [
+       177.6,
+       2.4,
+       -63.0
+      ],
+      "aperture": 1.2,
+      "focus": 6.28
+     },
+     {
+      "at": 9.4,
+      "position": [
+       178.2,
+       1.4,
+       -56.8
+      ],
+      "target": [
+       177.8,
+       2.2,
+       -63.0
+      ],
+      "aperture": 1.2,
+      "focus": 6.26
+     },
+     {
+      "at": 10.4,
+      "position": [
+       181.6,
+       1.4,
+       -57.0
+      ],
+      "target": [
+       181.8,
+       0.9,
+       -63.4
+      ],
+      "aperture": 1.2,
+      "focus": 6.42
+     },
+     {
+      "at": 13.4,
+      "position": [
+       182.4,
+       1.4,
+       -57.0
+      ],
+      "target": [
+       182.4,
+       0.8,
+       -63.4
+      ],
+      "aperture": 1.2,
+      "focus": 6.43
+     },
+     {
+      "at": 14.2,
+      "position": [
+       185.6,
+       1.6,
+       -56.4
+      ],
+      "target": [
+       186.4,
+       1.3,
+       -62.4
+      ],
+      "aperture": 1.2,
+      "focus": 6.06
+     },
+     {
+      "at": 18.5,
+      "position": [
+       185.2,
+       1.6,
+       -55.8
+      ],
+      "target": [
+       186.0,
+       1.6,
+       -62.4
+      ],
+      "aperture": 1.2,
+      "focus": 6.65
+     }
+    ]
+   }
+  },
+  {
+   "at": 124.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 125.4,
+   "impulse": {
+    "entity": "Joints: door",
+    "impulse": [
+     0.0,
+     0.0,
+     75.0
+    ],
+    "point": [
+     0.9,
+     1.0,
+     0.0
+    ]
+   }
+  },
+  {
+   "at": 127.8,
+   "impulse": {
+    "entity": "Joints: door",
+    "impulse": [
+     0.0,
+     0.0,
+     -75.0
+    ],
+    "point": [
+     0.9,
+     1.0,
+     0.0
+    ]
+   }
+  },
+  {
+   "at": 129.6,
+   "impulse": {
+    "entity": "Joints: sign",
+    "impulse": [
+     0.0,
+     0.0,
+     8.0
+    ],
+    "point": [
+     0.4,
+     0.0,
+     0.0
+    ]
+   }
+  },
+  {
+   "at": 130.8,
+   "break": {
+    "entity": "Joints: sign",
+    "joint": 1
+   }
+  },
+  {
+   "at": 130.8,
+   "break": {
+    "entity": "Joints: sign",
+    "joint": 3
+   }
+  },
+  {
+   "at": 134.0,
+   "particles": {
+    "effect": "Factory/Effects/explosion_flare.effect.json",
+    "entity": "Joints: shelf blast",
+    "count": 1
+   }
+  },
+  {
+   "at": 134.0,
+   "particles": {
+    "effect": "Factory/Effects/explosion_fireball.effect.json",
+    "entity": "Joints: shelf blast",
+    "count": 4
+   }
+  },
+  {
+   "at": 134.0,
+   "sound": {
+    "clip": "Factory/Sounds/Ambience/explosion.wav",
+    "volume": 3.0,
+    "entity": "Joints: shelf blast"
+   }
+  },
+  {
+   "at": 134.0,
+   "shake": {
+    "strength": 0.5,
+    "seconds": 1.4
+   }
+  },
+  {
+   "at": 134.02,
+   "blast": {
+    "entity": "Joints: shelf blast",
+    "radius": 3.5,
+    "strength": 160.0
+   }
+  },
+  {
+   "at": 134.02,
+   "particles": {
+    "effect": "Factory/Effects/explosion_sparks.effect.json",
+    "entity": "Joints: shelf blast",
+    "count": 80
+   }
+  },
+  {
+   "at": 134.02,
+   "particles": {
+    "effect": "Factory/Effects/explosion_debris.effect.json",
+    "entity": "Joints: shelf blast",
+    "count": 10
+   }
+  },
+  {
+   "at": 134.05,
+   "particles": {
+    "effect": "Factory/Effects/explosion_shock.effect.json",
+    "entity": "Joints: shelf blast",
+    "count": 30
+   }
+  },
+  {
+   "at": 134.15,
+   "particles": {
+    "effect": "Factory/Effects/explosion_smoke.effect.json",
+    "entity": "Joints: shelf blast",
+    "count": 6
+   }
+  },
+  {
+   "at": 137.2,
+   "release": {
+    "entity": "Joints: dropped drum"
+   }
+  },
+  {
+   "at": 140.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 141.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       -2.2,
+       2.0,
+       -116.4
+      ],
+      "target": [
+       -0.8,
+       1.6,
+       -123.0
+      ],
+      "aperture": 1.2,
+      "focus": 6.76
+     },
+     {
+      "at": 6.4,
+      "position": [
+       -0.6,
+       2.0,
+       -116.0
+      ],
+      "target": [
+       0.6,
+       1.5,
+       -123.0
+      ],
+      "aperture": 1.2,
+      "focus": 7.12
+     },
+     {
+      "at": 8.4,
+      "position": [
+       1.8,
+       2.0,
+       -116.4
+      ],
+      "target": [
+       3.4,
+       1.1,
+       -124.6
+      ],
+      "aperture": 1.2,
+      "focus": 8.4
+     },
+     {
+      "at": 17.5,
+      "position": [
+       1.2,
+       2.2,
+       -115.6
+      ],
+      "target": [
+       2.2,
+       1.2,
+       -124.0
+      ],
+      "aperture": 1.2,
+      "focus": 8.52
+     }
+    ]
+   }
+  },
+  {
+   "at": 142.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 148.6,
+   "motor": {
+    "entity": "Machines: piston",
+    "joint": 0,
+    "mode": "speed",
+    "target": 0.7,
+    "strength": 4000.0
+   }
+  },
+  {
+   "at": 153.6,
+   "motor": {
+    "entity": "Machines: piston",
+    "joint": 0,
+    "mode": "speed",
+    "target": -1.5,
+    "strength": 4000.0
+   }
+  },
+  {
+   "at": 157.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 158.0,
+   "camera": {
+    "path": "smooth",
+    "keys": [
+     {
+      "at": 0.0,
+      "position": [
+       52.2,
+       2.2,
+       -117.0
+      ],
+      "target": [
+       55.5,
+       1.0,
+       -126.0
+      ],
+      "aperture": 1.2,
+      "focus": 9.66
+     },
+     {
+      "at": 4.0,
+      "position": [
+       52.4,
+       1.8,
+       -115.2
+      ],
+      "target": [
+       56.1,
+       0.4,
+       -120.0
+      ],
+      "aperture": 1.2,
+      "focus": 6.22
+     },
+     {
+      "at": 8.0,
+      "position": [
+       57.0,
+       2.0,
+       -113.0
+      ],
+      "target": [
+       60.258,
+       0.5,
+       -117.092
+      ],
+      "aperture": 1.2,
+      "focus": 5.44
+     },
+     {
+      "at": 11.0,
+      "position": [
+       60.0,
+       2.4,
+       -112.4
+      ],
+      "target": [
+       64.267,
+       0.6,
+       -117.092
+      ],
+      "aperture": 1.2,
+      "focus": 6.59
+     },
+     {
+      "at": 22.5,
+      "position": [
+       59.5,
+       3.0,
+       -111.8
+      ],
+      "target": [
+       65.767,
+       0.5,
+       -117.092
+      ],
+      "aperture": 1.2,
+      "focus": 8.58
+     }
+    ]
+   }
+  },
+  {
+   "at": 159.6,
+   "fade": {
+    "to": 0,
+    "seconds": 1.0
+   }
+  },
+  {
+   "at": 160.4,
+   "release": {
+    "entity": "Finale: ball"
+   }
+  },
+  {
+   "at": 169.3,
+   "particles": {
+    "effect": "Factory/Effects/explosion_flare.effect.json",
+    "entity": "Finale: blast",
+    "count": 1
+   }
+  },
+  {
+   "at": 169.3,
+   "particles": {
+    "effect": "Factory/Effects/explosion_fireball.effect.json",
+    "entity": "Finale: blast",
+    "count": 9
+   }
+  },
+  {
+   "at": 169.3,
+   "sound": {
+    "clip": "Factory/Sounds/Ambience/explosion.wav",
+    "volume": 5.0,
+    "entity": "Finale: blast"
+   }
+  },
+  {
+   "at": 169.3,
+   "shake": {
+    "strength": 0.9,
+    "seconds": 1.4
+   }
+  },
+  {
+   "at": 169.32,
+   "blast": {
+    "entity": "Finale: blast",
+    "radius": 7.0,
+    "strength": 260.0
+   }
+  },
+  {
+   "at": 169.32,
+   "particles": {
+    "effect": "Factory/Effects/explosion_sparks.effect.json",
+    "entity": "Finale: blast",
+    "count": 160
+   }
+  },
+  {
+   "at": 169.32,
+   "particles": {
+    "effect": "Factory/Effects/explosion_debris.effect.json",
+    "entity": "Finale: blast",
+    "count": 24
+   }
+  },
+  {
+   "at": 169.35,
+   "particles": {
+    "effect": "Factory/Effects/explosion_shock.effect.json",
+    "entity": "Finale: blast",
+    "count": 70
+   }
+  },
+  {
+   "at": 169.45,
+   "particles": {
+    "effect": "Factory/Effects/explosion_smoke.effect.json",
+    "entity": "Finale: blast",
+    "count": 14
+   }
+  },
+  {
+   "at": 179.1,
+   "fade": {
+    "to": 1,
+    "seconds": 0.9
+   }
+  },
+  {
+   "at": 180.8,
+   "fade": {
+    "to": 0,
+    "seconds": 2.0
+   }
+  }
+ ]
+}
