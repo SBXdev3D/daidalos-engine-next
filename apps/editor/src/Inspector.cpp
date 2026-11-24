@@ -15,6 +15,8 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <format>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -139,6 +141,96 @@ bool OptionalFloat(const char* label, std::optional<float>& value, float fallbac
     }
     ImGui::EndDisabled();
     ImGui::PopID();
+    return changed;
+}
+
+/// The joints of a loose object (ADR-0126): each with its kind, what it holds to, where, and how it limits, drives
+/// and breaks. Hinge angles show in degrees.
+bool InspectJoints(std::vector<scene::LevelJoint>& joints) {
+    if (joints.empty() || !ImGui::CollapsingHeader("Joints", ImGuiTreeNodeFlags_DefaultOpen)) {
+        return false;
+    }
+    bool changed = false;
+    std::optional<std::size_t> removed;
+    for (std::size_t index = 0; index < joints.size(); ++index) {
+        scene::LevelJoint& joint = joints[index];
+        ImGui::PushID(static_cast<int>(index));
+        const bool hinge = joint.kind == physics::JointKind::Hinge;
+        const bool slider = joint.kind == physics::JointKind::Slider;
+        const bool distance = joint.kind == physics::JointKind::Distance;
+        const std::string title = std::format("{} {}", index + 1, scene::JointKindName(joint.kind));
+        if (ImGui::TreeNodeEx(title.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+            int kind = static_cast<int>(joint.kind);
+            if (ImGui::Combo("Kind", &kind, "Point (ball)\0Hinge\0Distance (rope)\0Fixed (glue)\0Slider\0")) {
+                joint.kind = static_cast<physics::JointKind>(kind);
+                changed = true;
+            }
+            changed |= ImGui::InputScalar("Holds to (id)", ImGuiDataType_U64, &joint.to);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("The id of the loose object or static box it holds to; 0: the world");
+            }
+            changed |= ImGui::DragFloat3("Anchor (m)", &joint.anchor.x, 0.01f, -20.0f, 20.0f, "%.2f");
+            if (distance) {
+                changed |= ImGui::DragFloat3("Other end (m)", &joint.toAnchor.x, 0.01f, -100.0f, 100.0f, "%.2f");
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("In the frame of what it holds to, or the world's");
+                }
+            }
+            if (hinge || slider) {
+                changed |= ImGui::DragFloat3("Axis", &joint.axis.x, 0.01f, -1.0f, 1.0f, "%.2f");
+            }
+            if (hinge || slider || distance) {
+                changed |= ImGui::Checkbox("Limits", &joint.limited);
+                if (joint.limited) {
+                    float range[2] = {hinge ? glm::degrees(joint.lowest) : joint.lowest,
+                                      hinge ? glm::degrees(joint.highest) : joint.highest};
+                    if (ImGui::DragFloat2(hinge ? "Lowest, highest (deg)" : "Lowest, highest (m)", range,
+                                          hinge ? 0.5f : 0.01f, hinge ? -180.0f : -50.0f, hinge ? 180.0f : 50.0f,
+                                          "%.2f")) {
+                        joint.lowest = hinge ? glm::radians(range[0]) : range[0];
+                        joint.highest =
+                            hinge ? glm::radians(std::max(range[0], range[1])) : std::max(range[0], range[1]);
+                        changed = true;
+                    }
+                }
+            }
+            if (hinge || slider) {
+                changed |= ImGui::DragFloat(hinge ? "Friction (N m)" : "Friction (N)", &joint.friction, 0.5f, 0.0f,
+                                            10000.0f, "%.1f");
+                int mode = static_cast<int>(joint.motor.mode);
+                if (ImGui::Combo("Motor", &mode, "Off\0Speed\0Position\0")) {
+                    joint.motor.mode = static_cast<physics::MotorMode>(mode);
+                    changed = true;
+                }
+                if (joint.motor.mode != physics::MotorMode::Off) {
+                    const bool speed = joint.motor.mode == physics::MotorMode::Speed;
+                    float target = hinge ? glm::degrees(joint.motor.target) : joint.motor.target;
+                    const char* label =
+                        hinge ? (speed ? "Target (deg/s)" : "Target (deg)") : (speed ? "Target (m/s)" : "Target (m)");
+                    if (ImGui::DragFloat(label, &target, hinge ? 1.0f : 0.01f)) {
+                        joint.motor.target = hinge ? glm::radians(target) : target;
+                        changed = true;
+                    }
+                    changed |= ImGui::DragFloat(hinge ? "Strength (N m)" : "Strength (N)", &joint.motor.strength, 10.0f,
+                                                0.0f, 1.0e6f, "%.0f");
+                }
+            }
+            changed |= ImGui::DragFloat("Breaks at (N)", &joint.breakForce, 10.0f, 0.0f, 1.0e6f, "%.0f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Pulled harder than this, it breaks for good; 0 never breaks. A body's weight is "
+                                  "about 10 N a kilogram");
+            }
+            if (ImGui::SmallButton("Remove this joint")) {
+                removed = index;
+            }
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+    if (removed.has_value()) {
+        joints.erase(joints.begin() + static_cast<std::ptrdiff_t>(*removed));
+        changed = true;
+    }
     return changed;
 }
 
@@ -505,6 +597,7 @@ bool InspectComponents(scene::LevelEntity& entity, const scene::Model* model) {
     });
     changed |= Section("Trigger", entity.trigger, InspectTrigger);
     changed |= Section("Loose object", entity.body, [model](scene::Body& body) { return InspectBody(body, model); });
+    changed |= InspectJoints(entity.joints);
 
     ImGui::Separator();
     if (ImGui::Button("Add a component")) {
@@ -521,6 +614,10 @@ bool InspectComponents(scene::LevelEntity& entity, const scene::Model* model) {
         }
         if (!entity.body && ImGui::MenuItem("Loose object")) {
             entity.body = scene::Body{};
+            changed = true;
+        }
+        if (entity.body && entity.body->mass > 0.0f && ImGui::MenuItem("Joint")) {
+            entity.joints.emplace_back();
             changed = true;
         }
         if (!entity.trigger && ImGui::MenuItem("Trigger")) {

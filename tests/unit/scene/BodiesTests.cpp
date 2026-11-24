@@ -142,3 +142,34 @@ TEST(Bodies, AGentleTouchIsSilent) {
     }
     EXPECT_EQ(feedback.HitCount(), 0u);
 }
+
+TEST(Bodies, ABreakingJointSnaps) {
+    // ADR-0126: a 50 kg crate glued with a 200 N joint breaks at once, and is heard once.
+    ecs::World world;
+    physics::PhysicsWorld physics;
+    audio::SoundWorld sounds(nullptr, ".");
+    physics::DynamicBodyDesc desc;
+    desc.mass = 50.0f;
+    math::Transform start;
+    start.translation = {0.0f, 3.0f, 0.0f};
+    const physics::BodyId crate = physics.AddDynamicBody(desc, start).value();
+    const physics::JointHandle glue = physics
+                                          .AddJoint({.kind = physics::JointKind::Fixed,
+                                                     .first = crate,
+                                                     .anchor = {0.0f, 3.25f, 0.0f},
+                                                     .breakForce = 200.0f})
+                                          .value();
+    const ecs::Entity entity = world.Create();
+    world.Add<RigidBody>(entity, crate, std::string("wood"));
+    world.Add<Joints>(entity, Joints{{glue}});
+    PhysicsFeedback feedback;
+    PhysicsSounds bank;
+    bank.snaps["wood"] = audio::ClipHandle{};
+    feedback.SetSounds(bank);
+    for (int step = 0; step < 30; ++step) {
+        physics.Step(kStep);
+        feedback.Update(world, physics, sounds, {}, kStep);
+    }
+    EXPECT_TRUE(physics.IsBroken(glue));
+    EXPECT_EQ(feedback.SnapCount(), 1u);
+}

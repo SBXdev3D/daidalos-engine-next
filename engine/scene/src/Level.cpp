@@ -607,7 +607,124 @@ void LevelInstance::Make(const LevelEntity& entity) {
     }
 }
 
+std::string_view JointKindName(physics::JointKind kind) {
+    switch (kind) {
+    case physics::JointKind::Point:
+        return "point";
+    case physics::JointKind::Hinge:
+        return "hinge";
+    case physics::JointKind::Distance:
+        return "distance";
+    case physics::JointKind::Fixed:
+        return "fixed";
+    case physics::JointKind::Slider:
+        return "slider";
+    }
+    return "point";
+}
+
+std::optional<physics::JointKind> JointKindOf(std::string_view name) {
+    for (const physics::JointKind kind :
+         {physics::JointKind::Point, physics::JointKind::Hinge, physics::JointKind::Distance, physics::JointKind::Fixed,
+          physics::JointKind::Slider}) {
+        if (JointKindName(kind) == name) {
+            return kind;
+        }
+    }
+    return std::nullopt;
+}
+
+namespace {
+
+/// Where an entity is in the world, from its own and its parents' local transforms, which are current even before
+/// the transforms are propagated.
+glm::mat4 PlacementOf(const ecs::World& world, ecs::Entity entity) {
+    glm::mat4 placement(1.0f);
+    for (ecs::Entity current = entity; !current.IsNull(); current = world.Parent(current)) {
+        placement = math::ToMatrix(world.Get<ecs::LocalTransform>(current)) * placement;
+    }
+    return placement;
+}
+
+} // namespace
+
+void LevelInstance::MakeJoints(const Level& level) {
+    ecs::World& world = m_scene->World();
+    physics::PhysicsWorld& physics = m_scene->Physics();
+    // Joints are made again between the bodies as they are: those of entities made again went with their bodies.
+    for (const auto& [id, entity] : m_entities) {
+        if (Joints* joints = world.TryGet<Joints>(entity)) {
+            for (const physics::JointHandle joint : joints->handles) {
+                physics.RemoveJoint(joint);
+            }
+            world.Remove<Joints>(entity);
+        }
+    }
+    const auto bodyOf = [&world](ecs::Entity entity) {
+        if (const RigidBody* body = world.TryGet<RigidBody>(entity)) {
+            return body->body;
+        }
+        if (const StaticBox* box = world.TryGet<StaticBox>(entity)) {
+            return box->body;
+        }
+        return physics::BodyId{};
+    };
+    for (const LevelEntity& entity : level.entities) {
+        if (entity.joints.empty()) {
+            continue;
+        }
+        const ecs::Entity created = Find(entity.id);
+        const RigidBody* body = created.IsNull() ? nullptr : world.TryGet<RigidBody>(created);
+        if (body == nullptr) {
+            DAI_LOG_WARNING(kModule, "Level entity {} '{}': joints hold loose objects, and it is none", entity.id,
+                            entity.name);
+            continue;
+        }
+        const glm::mat4 placement = PlacementOf(world, created);
+        Joints made;
+        for (const LevelJoint& joint : entity.joints) {
+            physics::JointDesc desc;
+            desc.kind = joint.kind;
+            desc.first = body->body;
+            desc.anchor = math::TransformPoint(placement, joint.anchor);
+            desc.axis = glm::mat3(placement) * joint.axis;
+            desc.limited = joint.limited;
+            desc.lowest = joint.lowest;
+            desc.highest = joint.highest;
+            desc.friction = joint.friction;
+            desc.motor = joint.motor;
+            desc.breakForce = joint.breakForce;
+            // The other end: another entity's body, or the world.
+            glm::mat4 other(1.0f);
+            if (joint.to != 0) {
+                const ecs::Entity to = Find(joint.to);
+                if (to.IsNull()) {
+                    // Not to the world instead: a chain whose link went must fall.
+                    DAI_LOG_WARNING(kModule, "Level entity {} '{}': its joint holds to entity {}, which is not there",
+                                    entity.id, entity.name, joint.to);
+                    made.handles.emplace_back();
+                    continue;
+                }
+                {
+                    desc.second = bodyOf(to);
+                    other = PlacementOf(world, to);
+                }
+            }
+            desc.secondAnchor = math::TransformPoint(other, joint.toAnchor);
+            if (core::Result<physics::JointHandle> handle = physics.AddJoint(desc)) {
+                made.handles.push_back(*handle);
+            } else {
+                DAI_LOG_WARNING(kModule, "Level entity {} '{}': {}", entity.id, entity.name,
+                                core::Format(handle.error()));
+                made.handles.emplace_back();
+            }
+        }
+        world.Add<Joints>(created, std::move(made));
+    }
+}
+
 void LevelInstance::Link(const Level& level) {
+    MakeJoints(level);
     ecs::World& world = m_scene->World();
     for (const LevelEntity& entity : level.entities) {
         const ecs::Entity created = Find(entity.id);

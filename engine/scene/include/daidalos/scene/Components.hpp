@@ -515,6 +515,12 @@ struct RigidBody {
     std::string surface;
 };
 
+/// ECS component: the joints a level entity's `joints` made (ADR-0126), in the level's order; the entity has the body
+/// they hold.
+struct Joints {
+    std::vector<physics::JointHandle> handles;
+};
+
 /// ECS component: what sets off triggers, as the player.
 struct TriggerActivator {};
 

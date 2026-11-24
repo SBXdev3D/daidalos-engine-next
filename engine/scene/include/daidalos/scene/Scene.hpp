@@ -153,8 +153,9 @@ public:
     [[nodiscard]] bool IsPhysicsPaused() const { return m_physicsPaused; }
 
     /// The sounds and dust of loose objects hitting, rolling and scraping (ADR-0125), from a directory under the
-    /// asset root that holds hit_<surface>_light_<n>.wav, hit_<surface>_heavy_<n>.wav, roll_<surface>.wav and
-    /// scrape_<surface>.wav for the surfaces it has, and a dust effect if any. Without them, bodies are silent.
+    /// asset root that holds hit_<surface>_light_<n>.wav, hit_<surface>_heavy_<n>.wav, roll_<surface>.wav,
+    /// scrape_<surface>.wav and snap_<surface>.wav (a joint breaking, ADR-0126) for the surfaces it has, and a dust
+    /// effect if any. Without them, bodies are silent.
     void LoadPhysicsSounds(std::string_view directory, std::string_view dustEffect = {});
     [[nodiscard]] const PhysicsFeedback& Feedback() const { return m_feedback; }
 

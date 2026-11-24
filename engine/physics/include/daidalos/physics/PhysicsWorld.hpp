@@ -32,6 +32,10 @@ struct CharacterTag;
 /// A character of a PhysicsWorld. The default value is no character.
 using CharacterHandle = core::Handle<CharacterTag>;
 
+struct JointTag;
+/// A joint between two bodies, or a body and the world (ADR-0126). The default value is no joint.
+using JointHandle = core::Handle<JointTag>;
+
 struct RayHit {
     glm::vec3 position{0.0f};
     glm::vec3 normal{0.0f};
@@ -86,6 +90,68 @@ struct Contact {
     float slide = 0.0f;
     /// They met in this step; false for a touch that goes on from an earlier one.
     bool fresh = true;
+};
+
+/// How a joint holds two bodies together (ADR-0126).
+enum class JointKind : std::uint8_t {
+    /// A ball joint: the anchor stays shared, the bodies turn freely about it. Chains, a hanging lamp.
+    Point,
+    /// Turns about the axis through the anchor only: a door, a lid, a see-saw, a wheel.
+    Hinge,
+    /// Keeps the two anchors between a shortest and a longest distance: a rope, which goes slack.
+    Distance,
+    /// Holds the bodies as they are: glued, until it breaks.
+    Fixed,
+    /// Slides along the axis only, without turning: a drawer, a piston.
+    Slider,
+};
+
+/// What drives a hinge or a slider (ADR-0126).
+enum class MotorMode : std::uint8_t {
+    Off,
+    /// To a speed: radians per second for a hinge, meters per second for a slider.
+    Speed,
+    /// To a position: radians from where the hinge started, meters along the slider from where it started.
+    Position,
+};
+
+struct JointMotor {
+    MotorMode mode = MotorMode::Off;
+    float target = 0.0f;
+    /// The most it pushes: newton-meters for a hinge, newtons for a slider.
+    float strength = 1000.0f;
+    bool operator==(const JointMotor&) const = default;
+};
+
+struct JointDesc {
+    JointKind kind = JointKind::Point;
+    BodyId first;
+    /// None: the joint holds the first body to the world.
+    BodyId second;
+    /// Where the joint is, in the world, as the bodies are now. A distance joint's first end.
+    glm::vec3 anchor{0.0f};
+    /// A distance joint's second end, in the world.
+    glm::vec3 secondAnchor{0.0f};
+    /// The hinge's or the slider's axis, in the world.
+    glm::vec3 axis{0.0f, 1.0f, 0.0f};
+    /// Limits: radians either side of where a hinge starts (within -pi to pi), meters along a slider from where it
+    /// starts, or the shortest and longest distance of a distance joint. Without limits, a distance joint keeps
+    /// the distance its anchors have now.
+    bool limited = false;
+    float lowest = 0.0f;
+    float highest = 0.0f;
+    /// What a hinge or a slider resists turning or sliding with: newton-meters or newtons. A heavy door swings
+    /// less long.
+    float friction = 0.0f;
+    JointMotor motor;
+    /// Newtons: past this pull, the joint breaks for good. 0 never breaks.
+    float breakForce = 0.0f;
+};
+
+/// A joint that broke in the last Step, and where.
+struct JointBreak {
+    JointHandle joint;
+    glm::vec3 position{0.0f};
 };
 
 /// The edges of a body's shape where it is, for debug views.
@@ -161,6 +227,7 @@ public:
     [[nodiscard]] std::vector<BodyId> DynamicBodiesInSphere(const glm::vec3& center, float radius) const;
     [[nodiscard]] bool IsDynamic(BodyId body) const;
     [[nodiscard]] float BodyMass(BodyId body) const;
+    /// Removes its joints with it.
     void RemoveBody(BodyId body);
     [[nodiscard]] std::size_t BodyCount() const;
 
@@ -172,6 +239,26 @@ public:
     void Step(float step);
     /// What touched during the last Step (ADR-0125): new contacts, and contacts that go on and slide or roll.
     [[nodiscard]] std::span<const Contact> Contacts() const;
+
+    /// Joins two bodies, or a body to the world (ADR-0126). Fails with InvalidArgument if the first body is not
+    /// dynamic, if the second is the first, or for an axis of no length.
+    [[nodiscard]] core::Result<JointHandle> AddJoint(const JointDesc& desc);
+    void RemoveJoint(JointHandle joint);
+    [[nodiscard]] std::size_t JointCount() const;
+    /// Breaks it for good, as if pulled past its break force, waking what it held.
+    void BreakJoint(JointHandle joint);
+    [[nodiscard]] bool IsBroken(JointHandle joint) const;
+    /// Changes what drives a hinge or a slider; nothing for other joints.
+    void SetJointMotor(JointHandle joint, const JointMotor& motor);
+    /// How far a hinge has turned (radians) or a slider has slid (meters) from where it started; 0 for others.
+    [[nodiscard]] float JointPosition(JointHandle joint) const;
+    /// How hard the joint pulled in the last Step, in newtons.
+    [[nodiscard]] float JointForce(JointHandle joint) const;
+    /// Where the joint is now, on its first body; and its other end, which a distance joint has apart.
+    [[nodiscard]] glm::vec3 JointAnchor(JointHandle joint) const;
+    [[nodiscard]] glm::vec3 JointSecondAnchor(JointHandle joint) const;
+    /// The joints that broke in the last Step.
+    [[nodiscard]] std::span<const JointBreak> BrokenJoints() const;
 
     /// The outlines of the bodies whose bounds reach within radius of center, characters' bodies left out.
     [[nodiscard]] std::vector<BodyOutline> Outlines(const glm::vec3& center, float radius) const;

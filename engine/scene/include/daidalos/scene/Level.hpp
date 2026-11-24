@@ -102,6 +102,34 @@ struct LevelLightning {
     [[nodiscard]] bool operator==(const LevelLightning&) const = default;
 };
 
+/// A joint that holds a loose object to another entity's body, or to the world (ADR-0126). It is on the entity
+/// whose body it holds, which must be a loose object; points and axes are in that entity's frame, as its scale
+/// makes it.
+struct LevelJoint {
+    physics::JointKind kind = physics::JointKind::Point;
+    /// The level id of the entity it holds to: a loose object, or a static box. 0, or an entity without a body:
+    /// the world. An entity that is not there: no joint.
+    std::uint64_t to = 0;
+    glm::vec3 anchor{0.0f};
+    /// A distance joint's other end, in the frame of the entity it holds to, or the world's.
+    glm::vec3 toAnchor{0.0f};
+    glm::vec3 axis{0.0f, 1.0f, 0.0f};
+    /// Limits (physics::JointDesc): radians for a hinge (degrees in the file), meters otherwise.
+    bool limited = false;
+    float lowest = 0.0f;
+    float highest = 0.0f;
+    float friction = 0.0f;
+    /// A hinge's target is in radians, or radians per second (degrees in the file).
+    physics::JointMotor motor;
+    /// Newtons; 0 never breaks.
+    float breakForce = 0.0f;
+    [[nodiscard]] bool operator==(const LevelJoint&) const = default;
+};
+
+/// The name of a joint kind as level files write it: point, hinge, distance, fixed or slider.
+[[nodiscard]] std::string_view JointKindName(physics::JointKind kind);
+[[nodiscard]] std::optional<physics::JointKind> JointKindOf(std::string_view name);
+
 /// What only the editor reads of an entity (ADR-0107): the folder the hierarchy shows it in, and whether it is
 /// hidden from the editor's view or locked against clicks there. The game ignores it.
 struct LevelEditing {
@@ -190,6 +218,8 @@ struct LevelEntity {
     std::optional<Trigger> trigger;
     /// A loose object (ADR-0073): physics moves it.
     std::optional<Body> body;
+    /// What holds its body to others or to the world (ADR-0126).
+    std::vector<LevelJoint> joints;
     std::optional<Tags> game;
     LevelEditing editing;
     [[nodiscard]] bool operator==(const LevelEntity&) const;
@@ -328,6 +358,8 @@ private:
     /// Creates or replaces one entity, without linking the ribbons and lightning to their targets.
     void Make(const LevelEntity& entity);
     void Link(const Level& level);
+    /// Makes the level's joints again, between the bodies as they are (ADR-0126).
+    void MakeJoints(const Level& level);
     /// The entities of a level in an order that creates parents, and the models emitters sit on, first.
     [[nodiscard]] static std::vector<const LevelEntity*> CreationOrder(const Level& level);
 

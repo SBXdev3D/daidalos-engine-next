@@ -3451,6 +3451,28 @@ void Editor::DrawShownExtras() {
                 Line3D(draw, outline.lines[point], outline.lines[point + 1], color, 1.0f);
             }
         }
+        // Joints (ADR-0126): a yellow cross where each is, and a line to its other end when it has one apart.
+        const physics::PhysicsWorld& physics = m_scene->Physics();
+        world.Each<scene::Joints>([&](ecs::Entity, const scene::Joints& joints) {
+            for (const physics::JointHandle joint : joints.handles) {
+                if (joint.IsNull() || physics.IsBroken(joint)) {
+                    continue;
+                }
+                const glm::vec3 at = physics.JointAnchor(joint);
+                if (glm::distance(at, Focus()) > 80.0f) {
+                    continue;
+                }
+                const ImU32 yellow = IM_COL32(250, 220, 60, 230);
+                for (const glm::vec3& arm :
+                     {glm::vec3(0.06f, 0.0f, 0.0f), glm::vec3(0.0f, 0.06f, 0.0f), glm::vec3(0.0f, 0.0f, 0.06f)}) {
+                    Line3D(draw, at - arm, at + arm, yellow, 2.0f);
+                }
+                const glm::vec3 other = physics.JointSecondAnchor(joint);
+                if (glm::distance(at, other) > 0.01f) {
+                    Line3D(draw, at, other, IM_COL32(250, 160, 40, 200), 1.5f);
+                }
+            }
+        });
     }
     for (const Bounds& opening : Openings(rooms)) {
         Box3D(draw, glm::mat4(1.0f), opening.min, opening.max, IM_COL32(255, 90, 200, 230), 2.5f);

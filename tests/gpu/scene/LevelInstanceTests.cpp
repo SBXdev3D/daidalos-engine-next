@@ -6,10 +6,12 @@
 #include <daidalos/platform/Platform.hpp>
 #include <daidalos/scene/Components.hpp>
 #include <daidalos/scene/Level.hpp>
+#include <daidalos/scene/SaveGame.hpp>
 #include <daidalos/scene/Scene.hpp>
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -213,6 +215,84 @@ TEST_F(LevelInstanceTest, ALooseObjectFallsAndGoesWithItsEntity) {
     EXPECT_LT(m_scene->World().Get<ecs::LocalTransform>(made).translation.y, 9.0f);
     m_instance->Sync(level, Level{});
     EXPECT_EQ(m_scene->Physics().BodyCount(), bodies - 1);
+}
+
+TEST_F(LevelInstanceTest, ALampHangsOnItsChainAndItsLightGoesWithIt) {
+    // ADR-0126: three links from a hook at 6 m, a lamp at the end with a light under it, pushed: the lamp swings,
+    // stays on its chain, and its light follows it.
+    Level level;
+    std::uint64_t above = 0;
+    for (std::uint64_t link = 1; link <= 3; ++link) {
+        LevelEntity entity{.id = link, .name = "Link"};
+        entity.transform.translation = {0.0f, 5.9f - 0.2f * static_cast<float>(link - 1), 0.0f};
+        entity.body = scene::Body{.size = {0.04f, 0.2f, 0.04f}, .mass = 0.5f, .surface = "metal"};
+        entity.joints.push_back({.kind = physics::JointKind::Point, .to = above, .anchor = {0.0f, 0.1f, 0.0f}});
+        level.entities.push_back(entity);
+        above = link;
+    }
+    LevelEntity lamp{.id = 10, .name = "Lamp"};
+    lamp.transform.translation = {0.0f, 5.2f, 0.0f};
+    lamp.body = scene::Body{.size = glm::vec3(0.2f), .mass = 3.0f, .surface = "metal"};
+    lamp.joints.push_back({.kind = physics::JointKind::Point, .to = 3, .anchor = {0.0f, 0.1f, 0.0f}});
+    lamp.joints.push_back(
+        {.kind = physics::JointKind::Distance, .toAnchor = {0.0f, 6.0f, 0.0f}, .limited = true, .highest = 0.8f});
+    LevelEntity bulb{.id = 11, .name = "Bulb", .parent = 10};
+    bulb.transform.translation = {0.0f, -0.15f, 0.0f};
+    bulb.light = scene::Light{};
+    level.entities.push_back(lamp);
+    level.entities.push_back(bulb);
+    m_instance->Build(level);
+    EXPECT_EQ(m_scene->Physics().JointCount(), 5u);
+
+    const ecs::Entity lampEntity = m_instance->Find(10);
+    const scene::RigidBody& body = m_scene->World().Get<scene::RigidBody>(lampEntity);
+    m_scene->Physics().SetBodyVelocity(body.body, {2.0f, 0.0f, 0.0f});
+    float farthest = 0.0f;
+    float widest = 0.0f;
+    for (int step = 0; step < 120; ++step) {
+        m_scene->RunFixedStep(core::Seconds(1.0 / 60.0));
+        const glm::vec3 at = m_scene->Physics().BodyPosition(body.body);
+        farthest = std::max(farthest, glm::distance(at, glm::vec3(0.0f, 6.0f, 0.0f)));
+        widest = std::max(widest, std::abs(at.x));
+    }
+    EXPECT_LT(farthest, 0.85f);
+    EXPECT_GT(widest, 0.2f) << "It swung";
+    ecs::PropagateTransforms(m_scene->World());
+    const glm::vec3 light(m_scene->World().Get<ecs::WorldTransform>(m_instance->Find(11)).matrix[3]);
+    const glm::vec3 lampAt = m_scene->Physics().BodyPosition(body.body);
+    EXPECT_LT(glm::distance(light, lampAt), 0.16f) << "The bulb hangs 15 cm under the lamp, wherever it is";
+
+    // Made again with the level, the joints are not made twice.
+    m_instance->Sync(level, level);
+    EXPECT_EQ(m_scene->Physics().JointCount(), 5u);
+    // A link that goes takes its joints, and the rest stay.
+    Level shorter = level;
+    std::erase_if(shorter.entities, [](const LevelEntity& entity) { return entity.id == 2; });
+    m_instance->Sync(level, shorter);
+    EXPECT_EQ(m_scene->Physics().JointCount(), 3u) << "Link 1 to the hook, the lamp to link 3, and the rope";
+}
+
+TEST_F(LevelInstanceTest, ABrokenJointStaysBrokenInASavedGame) {
+    Level level;
+    LevelEntity crate{.id = 1, .name = "Crate"};
+    crate.transform.translation = {0.0f, 3.0f, 0.0f};
+    crate.body = scene::Body{.size = glm::vec3(0.5f), .mass = 10.0f};
+    crate.joints.push_back({.kind = physics::JointKind::Fixed, .anchor = {0.0f, 0.25f, 0.0f}});
+    level.entities.push_back(crate);
+    m_instance->Build(level);
+    m_scene->World().Add<scene::SaveKey>(m_instance->Find(1), std::string("crate"));
+    const physics::JointHandle joint = m_scene->World().Get<scene::Joints>(m_instance->Find(1)).handles.at(0);
+    m_scene->Physics().BreakJoint(joint);
+    scene::SaveData saved;
+    scene::SaveScene(*m_scene, saved);
+
+    m_instance->Sync(level, Level{});
+    m_instance->Sync(Level{}, level);
+    m_scene->World().Add<scene::SaveKey>(m_instance->Find(1), std::string("crate"));
+    const physics::JointHandle again = m_scene->World().Get<scene::Joints>(m_instance->Find(1)).handles.at(0);
+    EXPECT_FALSE(m_scene->Physics().IsBroken(again));
+    scene::LoadScene(*m_scene, saved);
+    EXPECT_TRUE(m_scene->Physics().IsBroken(again));
 }
 
 TEST_F(LevelInstanceTest, ALooseObjectIsMadeOfItsModelsSurfaceAndCanWrapIt) {

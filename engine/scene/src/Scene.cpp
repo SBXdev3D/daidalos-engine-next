@@ -88,6 +88,9 @@ void Scene::LoadPhysicsSounds(std::string_view directory, std::string_view dustE
         if (const audio::ClipHandle scrape = load(std::format("scrape_{}.wav", surface)); !scrape.IsNull()) {
             bank.scrapes.emplace(surface, scrape);
         }
+        if (const audio::ClipHandle snap = load(std::format("snap_{}.wav", surface)); !snap.IsNull()) {
+            bank.snaps.emplace(surface, snap);
+        }
     }
     if (!dustEffect.empty()) {
         if (core::Result<ParticleEffectAsset> dust = m_assets.LoadParticleEffect(dustEffect)) {

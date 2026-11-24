@@ -269,6 +269,58 @@ core::Result<Body> ReadBody(Reader reader) {
     return body;
 }
 
+core::Result<LevelJoint> ReadJoint(Reader reader) {
+    LevelJoint joint;
+    std::string kind = "point";
+    DAI_LEVEL_TRY(reader.Text("kind", kind));
+    if (const std::optional<physics::JointKind> known = JointKindOf(kind)) {
+        joint.kind = *known;
+    } else {
+        return Invalid(reader.Where() + ".kind",
+                       std::format("'{}' is no joint: point, hinge, distance, fixed or slider", kind));
+    }
+    DAI_LEVEL_TRY(reader.Id("to", joint.to));
+    DAI_LEVEL_TRY(reader.Vector("anchor", joint.anchor));
+    DAI_LEVEL_TRY(reader.Vector("to_anchor", joint.toAnchor));
+    DAI_LEVEL_TRY(reader.Vector("axis", joint.axis));
+    const bool hinge = joint.kind == physics::JointKind::Hinge;
+    core::Result<std::optional<Reader>> limits = reader.Object("limits");
+    DAI_LEVEL_TRY(limits);
+    if (limits->has_value()) {
+        Reader& range = **limits;
+        joint.limited = true;
+        DAI_LEVEL_TRY(hinge ? range.Angle("lowest", joint.lowest) : range.Number("lowest", joint.lowest));
+        DAI_LEVEL_TRY(hinge ? range.Angle("highest", joint.highest) : range.Number("highest", joint.highest));
+        DAI_LEVEL_TRY(range.Finish());
+        if (joint.lowest > joint.highest) {
+            return Invalid(range.Where(), "lowest is above highest");
+        }
+    }
+    DAI_LEVEL_TRY(reader.Number("friction", joint.friction));
+    core::Result<std::optional<Reader>> motor = reader.Object("motor");
+    DAI_LEVEL_TRY(motor);
+    if (motor->has_value()) {
+        Reader& drive = **motor;
+        std::string mode = "speed";
+        DAI_LEVEL_TRY(drive.Text("mode", mode));
+        if (mode == "speed") {
+            joint.motor.mode = physics::MotorMode::Speed;
+        } else if (mode == "position") {
+            joint.motor.mode = physics::MotorMode::Position;
+        } else if (mode == "off") {
+            joint.motor.mode = physics::MotorMode::Off;
+        } else {
+            return Invalid(drive.Where() + ".mode", std::format("'{}' is no motor mode: speed, position or off", mode));
+        }
+        DAI_LEVEL_TRY(hinge ? drive.Angle("target", joint.motor.target) : drive.Number("target", joint.motor.target));
+        DAI_LEVEL_TRY(drive.Number("strength", joint.motor.strength));
+        DAI_LEVEL_TRY(drive.Finish());
+    }
+    DAI_LEVEL_TRY(reader.Number("break_force", joint.breakForce));
+    DAI_LEVEL_TRY(reader.Finish());
+    return joint;
+}
+
 core::Result<Trigger> ReadTrigger(Reader reader) {
     Trigger trigger;
     DAI_LEVEL_TRY(reader.Text("sequence", trigger.sequence));
@@ -553,6 +605,22 @@ core::Result<LevelEntity> ReadEntity(const JsonObject& object, std::size_t index
     DAI_LEVEL_TRY(component("cell", entity.cell, &ReadCell));
     DAI_LEVEL_TRY(component("trigger", entity.trigger, &ReadTrigger));
     DAI_LEVEL_TRY(component("body", entity.body, &ReadBody));
+    if (const Json* joints = reader.Take("joints")) {
+        const JsonArray* array = std::get_if<JsonArray>(&joints->value);
+        if (array == nullptr) {
+            return Invalid(reader.Where() + ".joints", "must be an array");
+        }
+        for (std::size_t slot = 0; slot < array->size(); ++slot) {
+            const JsonObject* fields = std::get_if<JsonObject>(&(*array)[slot].value);
+            if (fields == nullptr) {
+                return Invalid(std::format("{}.joints[{}]", reader.Where(), slot), "must be an object");
+            }
+            core::Result<LevelJoint> joint =
+                ReadJoint(Reader(*fields, std::format("{}.joints[{}]", reader.Where(), slot)));
+            DAI_LEVEL_TRY(joint);
+            entity.joints.push_back(*joint);
+        }
+    }
     DAI_LEVEL_TRY(component("fog", entity.fog, &ReadFog));
     DAI_LEVEL_TRY(component("wind", entity.wind, &ReadWind));
     DAI_LEVEL_TRY(component("particles", entity.particles, &ReadParticles));
@@ -877,6 +945,37 @@ Json WriteEntity(const LevelEntity& entity) {
     if (entity.light) {
         object.emplace("light", WriteLight(*entity.light));
     }
+    if (!entity.joints.empty()) {
+        JsonArray joints;
+        const LevelJoint fallback;
+        for (const LevelJoint& joint : entity.joints) {
+            JsonObject fields;
+            const bool hinge = joint.kind == physics::JointKind::Hinge;
+            fields.emplace("kind", Json{std::string(JointKindName(joint.kind))});
+            Put(fields, "to", joint.to, fallback.to);
+            Put(fields, "anchor", joint.anchor, fallback.anchor);
+            Put(fields, "to_anchor", joint.toAnchor, fallback.toAnchor);
+            Put(fields, "axis", joint.axis, fallback.axis);
+            if (joint.limited) {
+                JsonObject limits;
+                limits.emplace("lowest", Number(hinge ? glm::degrees(joint.lowest) : joint.lowest));
+                limits.emplace("highest", Number(hinge ? glm::degrees(joint.highest) : joint.highest));
+                fields.emplace("limits", Json{std::move(limits)});
+            }
+            Put(fields, "friction", joint.friction, fallback.friction);
+            if (joint.motor.mode != physics::MotorMode::Off) {
+                JsonObject motor;
+                motor.emplace("mode",
+                              Json{std::string(joint.motor.mode == physics::MotorMode::Speed ? "speed" : "position")});
+                motor.emplace("target", Number(hinge ? glm::degrees(joint.motor.target) : joint.motor.target));
+                Put(motor, "strength", joint.motor.strength, fallback.motor.strength);
+                fields.emplace("motor", Json{std::move(motor)});
+            }
+            Put(fields, "break_force", joint.breakForce, fallback.breakForce);
+            joints.push_back(Json{std::move(fields)});
+        }
+        object.emplace("joints", Json{std::move(joints)});
+    }
     if (entity.sound) {
         const LevelSound fallback;
         JsonObject sound;
@@ -1074,7 +1173,7 @@ bool LevelEntity::operator==(const LevelEntity& other) const {
            weather == other.weather && ribbon == other.ribbon && lightning == other.lightning && game == other.game &&
            visibility == other.visibility && decal == other.decal && wet == other.wet && cell == other.cell &&
            trigger == other.trigger && body == other.body && editing == other.editing && overrides == other.overrides &&
-           block == other.block && sound == other.sound;
+           block == other.block && sound == other.sound && joints == other.joints;
 }
 
 const LevelEntity* Level::Find(std::uint64_t id) const {

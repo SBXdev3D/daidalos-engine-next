@@ -53,6 +53,8 @@ struct PhysicsSounds {
     std::map<std::string, std::vector<audio::ClipHandle>, std::less<>> heavyHits;
     std::map<std::string, audio::ClipHandle, std::less<>> rolls;
     std::map<std::string, audio::ClipHandle, std::less<>> scrapes;
+    /// A joint breaking (ADR-0126), by the surface of the body it held.
+    std::map<std::string, audio::ClipHandle, std::less<>> snaps;
     renderer::ParticleEffectHandle dust;
 };
 
@@ -64,7 +66,8 @@ struct PhysicsSounds {
 [[nodiscard]] float HitPitch(float mass);
 
 /// Turns each step's contacts into sounds and dust (ADR-0125): a hit for each body that meets something, at most
-/// once in a short while, and a rolling or scraping loop for each body that rolls or slides along something.
+/// once in a short while, a rolling or scraping loop for each body that rolls or slides along something, and a snap
+/// for each joint that breaks.
 /// Its random numbers start from a fixed seed, so that a recording plays the same each time.
 class PhysicsFeedback {
 public:
@@ -81,6 +84,8 @@ public:
 
     /// Hits played since the start, for tests.
     [[nodiscard]] std::uint32_t HitCount() const { return m_hits; }
+    /// Joints heard breaking since the start, for tests.
+    [[nodiscard]] std::uint32_t SnapCount() const { return m_snaps; }
 
 private:
     struct Loops {
@@ -99,6 +104,7 @@ private:
     std::minstd_rand m_random{0x5eed};
     float m_clock = 0.0f;
     std::uint32_t m_hits = 0;
+    std::uint32_t m_snaps = 0;
 };
 
 } // namespace daidalos::scene
