@@ -1,8 +1,10 @@
 # Takes the factory showcase's screenshots from fixed places (ADR-0086), to compare a change with the last set.
 #
-#   powershell -File scripts/showcase_shots.ps1 [-Out <folder>] [-Only 1-start,5-pumps] [-Bright] [-Extra +name,value]
+#   powershell -File scripts/showcase_shots.ps1 [-Out <folder>] [-Only 1-start,5-pumps] [-Bright] [-NoFlashlight]
+#                                               [-Extra +name,value]
 #
-# Starts the sandbox at each place with the flashlight on, waits for the level and its effects to settle,
+# Starts the sandbox at each place with the flashlight on (off with -NoFlashlight, to judge the level's own
+# lights), waits for the level and its effects to settle,
 # and saves what the window shows (PrintWindow) as <folder>/<place>.png. -Bright shows the level 16 times
 # brighter without its haze (sandbox.darkness 0), to check where things stand. -Extra adds settings to the
 # command line, to compare one. Windows only.
@@ -10,6 +12,7 @@ param(
     [string]$Out = "build/showcase",
     [string[]]$Only = @(),
     [switch]$Bright,
+    [switch]$NoFlashlight,
     [string[]]$Extra = @(),
     [int]$Wait = 22
 )
@@ -47,7 +50,8 @@ public static class ShowcaseWindow {
 foreach ($name in $places.Keys) {
     if ($Only.Count -gt 0 -and -not ($Only -contains $name)) { continue }
     $arguments = @("+window.fullscreen", "false", "+window.width", "1280", "+window.height", "720",
-                   "+sandbox.menu", "false", "+sandbox.flashlight", "true", "+sandbox.start", ('"' + $places[$name] + '"'))
+                   "+sandbox.menu", "false", "+sandbox.flashlight", $(if ($NoFlashlight) { "false" } else { "true" }),
+                   "+sandbox.start", ('"' + $places[$name] + '"'))
     if ($Bright) { $arguments += @("+sandbox.darkness", "0") }
     $arguments += $Extra
     $process = Start-Process -FilePath $exe.FullName -ArgumentList $arguments -WorkingDirectory $exe.DirectoryName -PassThru

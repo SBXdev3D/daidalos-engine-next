@@ -266,9 +266,9 @@
     {
       "id": 27,
       "light": {
-        "inner_angle": 12.5002,
+        "inner_angle": 25,
         "intensity": 289.6,
-        "outer_angle": 24.9999,
+        "outer_angle": 45,
         "range": 7,
         "type": "spot"
       },
@@ -290,9 +290,9 @@
     {
       "id": 29,
       "light": {
-        "inner_angle": 17.4998,
+        "inner_angle": 25,
         "intensity": 289.6,
-        "outer_angle": 35.0003,
+        "outer_angle": 45,
         "range": 7,
         "type": "spot"
       },
@@ -315,9 +315,9 @@
       "id": 31,
       "light": {
         "color": [1, 0.6667, 0.6667],
-        "inner_angle": 17.4998,
+        "inner_angle": 25,
         "intensity": 434.5,
-        "outer_angle": 35.0003,
+        "outer_angle": 45,
         "range": 7,
         "type": "spot"
       },
@@ -388,9 +388,9 @@
     {
       "id": 38,
       "light": {
-        "inner_angle": 12.5002,
+        "inner_angle": 25,
         "intensity": 289.6,
-        "outer_angle": 24.9999,
+        "outer_angle": 45,
         "range": 7,
         "type": "spot"
       },
@@ -426,9 +426,9 @@
     {
       "id": 41,
       "light": {
-        "inner_angle": 12.5002,
+        "inner_angle": 25,
         "intensity": 289.6,
-        "outer_angle": 24.9999,
+        "outer_angle": 45,
         "range": 7,
         "type": "spot"
       },
@@ -450,9 +450,9 @@
     {
       "id": 43,
       "light": {
-        "inner_angle": 12.5002,
+        "inner_angle": 25,
         "intensity": 289.6,
-        "outer_angle": 24.9999,
+        "outer_angle": 45,
         "range": 7,
         "type": "spot"
       },
@@ -5107,6 +5107,136 @@
         "rotation": [0, 0.7071068, 0, -0.7071067],
         "scale": [0.99999946, 1, 0.99999946],
         "translation": [0, 0, 0.10874939]
+      }
+    },
+    {
+      "id": 414,
+      "light": {
+        "color": [0.6, 0.7, 1.0],
+        "intensity": 25,
+        "range": 12,
+        "type": "point"
+      },
+      "name": "Fill: corridor to the hall",
+      "transform": {
+        "translation": [0, 3.0, -18]
+      }
+    },
+    {
+      "id": 415,
+      "light": {
+        "color": [0.6, 0.7, 1.0],
+        "intensity": 40,
+        "range": 14,
+        "type": "point"
+      },
+      "name": "Fill: hall north-west",
+      "transform": {
+        "translation": [-14, 5, -28]
+      }
+    },
+    {
+      "id": 416,
+      "light": {
+        "color": [0.6, 0.7, 1.0],
+        "intensity": 40,
+        "range": 14,
+        "type": "point"
+      },
+      "name": "Fill: hall north-east",
+      "transform": {
+        "translation": [14, 5, -28]
+      }
+    },
+    {
+      "id": 417,
+      "light": {
+        "color": [0.6, 0.7, 1.0],
+        "intensity": 40,
+        "range": 14,
+        "type": "point"
+      },
+      "name": "Fill: hall south-west",
+      "transform": {
+        "translation": [-14, 5, -46]
+      }
+    },
+    {
+      "id": 418,
+      "light": {
+        "color": [0.6, 0.7, 1.0],
+        "intensity": 40,
+        "range": 14,
+        "type": "point"
+      },
+      "name": "Fill: hall south-east",
+      "transform": {
+        "translation": [14, 5, -46]
+      }
+    },
+    {
+      "id": 419,
+      "light": {
+        "color": [0.6, 0.7, 1.0],
+        "intensity": 40,
+        "range": 14,
+        "type": "point"
+      },
+      "name": "Fill: hall middle",
+      "transform": {
+        "translation": [0, 5, -40]
+      }
+    },
+    {
+      "id": 420,
+      "light": {
+        "color": [0.6, 0.7, 1.0],
+        "intensity": 30,
+        "range": 12,
+        "type": "point"
+      },
+      "name": "Fill: hall south",
+      "transform": {
+        "translation": [0, 3.5, -52]
+      }
+    },
+    {
+      "id": 421,
+      "light": {
+        "color": [0.6, 0.7, 1.0],
+        "intensity": 30,
+        "range": 12,
+        "type": "point"
+      },
+      "name": "Fill: workshop north",
+      "transform": {
+        "translation": [32, 2.8, -36]
+      }
+    },
+    {
+      "id": 422,
+      "light": {
+        "color": [0.6, 0.7, 1.0],
+        "intensity": 30,
+        "range": 12,
+        "type": "point"
+      },
+      "name": "Fill: workshop south",
+      "transform": {
+        "translation": [42, 2.8, -44]
+      }
+    },
+    {
+      "id": 424,
+      "light": {
+        "color": [0.6, 0.7, 1.0],
+        "intensity": 15,
+        "range": 8,
+        "type": "point"
+      },
+      "name": "Fill: basement",
+      "transform": {
+        "translation": [0, -4.3, -34]
       }
     }
   ],
