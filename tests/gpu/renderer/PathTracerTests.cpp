@@ -88,6 +88,8 @@ struct RasterOptions {
     std::function<void(SceneView&, std::uint32_t)> animate;
     /// How ReSTIR DI reuses its samples (ADR-0044).
     renderer::DirectLightingSettings restir;
+    /// Lights drawn mostly from each point's cell of the light grid (ADR-0124); off, by power alone.
+    bool lightGrid = true;
     /// With indirect: how its light is traced (ADR-0045).
     renderer::GlobalIlluminationSettings gi;
     /// Called with each frame drawn after the warmup, through the denoiser if there is one, and its number.
@@ -314,6 +316,11 @@ protected:
                         m_pass->AddSkinning(graph);
                         m_scene->AddBuild(graph);
                         m_pass->AddEmissiveLights(graph);
+                        if (options.lightGrid) {
+                            m_pass->AddLightGrid(graph);
+                        }
+                        const rhi::BufferHandle lightGrid =
+                            options.lightGrid ? m_pass->LightGrid() : rhi::BufferHandle{};
                         if (options.particles != nullptr) {
                             animated.timeStep = 1.0f / 60.0f;
                             ASSERT_TRUE(options.particles
@@ -323,6 +330,7 @@ protected:
                                                              .materialBuffer = m_pass->MaterialDataIndex(),
                                                              .skinnedVertices = m_pass->SkinnedVertices(),
                                                              .emissiveTriangles = m_pass->EmissiveTriangles(),
+                                                             .lightGrid = lightGrid,
                                                              .lightMap = m_pass->LightMapIndex(),
                                                              .previousLightCount = m_pass->PreviousLightCount()},
                                                             *m_pass)
@@ -335,6 +343,8 @@ protected:
                             {.name = "G-buffer",
                              .rendering = MeshPass::GBufferRendering(*shading, normals, motion, depth, renderExtent),
                              .buffers = {{m_pass->MaterialGrid(),
+                                          rhi::Access::FragmentShaderRead | rhi::Access::ComputeShaderRead},
+                                         {lightGrid,
                                           rhi::Access::FragmentShaderRead | rhi::Access::ComputeShaderRead}}},
                             [&](rhi::CommandList& list) { m_pass->RecordGBuffer(list); });
                         if (indirect != nullptr) {
@@ -344,6 +354,7 @@ protected:
                                                     .materialBuffer = m_pass->MaterialDataIndex(),
                                                     .structure = m_scene->Structure(),
                                                     .emissiveTriangles = m_pass->EmissiveTriangles(),
+                                                    .lightGrid = lightGrid,
                                                     .depth = depth,
                                                     .normals = normals,
                                                     .denoiserGuides = denoiser.has_value() ? denoiser->PreviousGuides()
@@ -360,6 +371,7 @@ protected:
                                          .materialBuffer = m_pass->MaterialDataIndex(),
                                          .structure = m_scene->Structure(),
                                          .emissiveTriangles = m_pass->EmissiveTriangles(),
+                                         .lightGrid = lightGrid,
                                          .depth = depth,
                                          .normals = normals,
                                          .motion = motion,
@@ -1027,6 +1039,47 @@ TEST_F(PathTracerTest, ARoomOfAThousandLightsMatchesThePathTracer) {
     EXPECT_LT(noisyFlip, noisyWithoutSpatialFlip);
 }
 
+TEST_F(PathTracerTest, AWeakLampIsDrawnOverAStrongOneInAnotherRoom) {
+    // A room lit by one weak lamp, and 30 m away a closed room with a lamp sixty times as strong, as the
+    // factory's lamps beside its fan rooms (ADR-0124). Drawn by power, the strong lamp takes nearly every
+    // candidate, and the room shows the noise of the few that find its own lamp; drawn mostly from the light
+    // grid, it finds its lamp most of the time. Either way the light is the path tracer's.
+    MaterialDesc matte;
+    matte.baseColorFactor = glm::vec4(0.7f, 0.7f, 0.7f, 1.0f);
+    matte.metallicFactor = 0.0f;
+    const renderer::MaterialHandle walls = Material(matte);
+    const auto slab = [&](const glm::vec3& center, const glm::vec3& size) {
+        return renderer::DrawItem{
+            .mesh = m_cube, .world = glm::scale(glm::translate(glm::mat4(1.0f), center), size), .material = walls};
+    };
+    const auto room = [&](SceneView& view, float z) {
+        view.draws.push_back(slab({0.0f, -0.05f, z}, {6.2f, 0.1f, 6.2f}));
+        view.draws.push_back(slab({0.0f, 3.05f, z}, {6.2f, 0.1f, 6.2f}));
+        view.draws.push_back(slab({-3.05f, 1.5f, z}, {0.1f, 3.0f, 6.2f}));
+        view.draws.push_back(slab({3.05f, 1.5f, z}, {0.1f, 3.0f, 6.2f}));
+        view.draws.push_back(slab({0.0f, 1.5f, z - 3.05f}, {6.0f, 3.0f, 0.1f}));
+        view.draws.push_back(slab({0.0f, 1.5f, z + 3.05f}, {6.0f, 3.0f, 0.1f}));
+    };
+    SceneView view;
+    view.camera = LookAt({0.0f, 1.6f, 2.6f}, {0.0f, 1.2f, -3.0f}, glm::radians(70.0f));
+    view.atmosphere = Dark();
+    room(view, 0.0f);
+    room(view, -30.0f);
+    view.lights.push_back({.position = {1.0f, 2.6f, -1.0f}, .color = glm::vec3(50.0f), .range = 8.0f, .radius = 0.05f});
+    view.lights.push_back(
+        {.position = {0.0f, 2.0f, -30.0f}, .color = glm::vec3(3000.0f), .range = 40.0f, .radius = 0.05f});
+    constexpr rhi::Extent kExtent{64, 64};
+    const Image traced = Trace(view, kExtent, {.maxBounces = 2, .seed = 41, .jitter = false, .directOnly = true}, 256);
+    const Image averaged = Rasterize(view, kExtent, {.frames = 128, .warmup = 4, .restir = {.unbiased = true}});
+    const float gridFlip = Flip(traced, Rasterize(view, kExtent, {.warmup = 8}), kExtent);
+    const float powerFlip = Flip(traced, Rasterize(view, kExtent, {.warmup = 8, .lightGrid = false}), kExtent);
+    RecordProperty("flipNoisy", std::to_string(gridFlip));
+    RecordProperty("flipNoisyByPower", std::to_string(powerFlip));
+    RecordProperty("luminanceRatio", std::to_string(TotalLuminance(averaged) / TotalLuminance(traced)));
+    EXPECT_NEAR(TotalLuminance(averaged) / TotalLuminance(traced), 1.0, 0.03);
+    EXPECT_LT(gridFlip, powerFlip * 0.8f);
+}
+
 TEST_F(PathTracerTest, DISABLED_TimeTheDirectLightOfAThousandLightsAt1080p) {
     // Not a test: the GPU time of the G-buffer and of ReSTIR DI at 1920 x 1080 in the room of a thousand
     // lights, through frames with timestamps (ADR-0044 sets a budget of 1 ms for ReSTIR DI on an RTX 3090).
@@ -1082,6 +1135,7 @@ TEST_F(PathTracerTest, DISABLED_TimeTheDirectLightOfAThousandLightsAt1080p) {
         renderer::RenderGraph graph;
         m_scene->AddBuild(graph);
         m_pass->AddEmissiveLights(graph);
+        m_pass->AddLightGrid(graph);
         graph.AddPass({.name = "G-buffer", .rendering = MeshPass::GBufferRendering(*shading, normals, motion, depth)},
                       [&](rhi::CommandList& list) { m_pass->RecordGBuffer(list); });
         lighting->AddTo(graph,
@@ -1090,6 +1144,7 @@ TEST_F(PathTracerTest, DISABLED_TimeTheDirectLightOfAThousandLightsAt1080p) {
                          .materialBuffer = m_pass->MaterialDataIndex(),
                          .structure = m_scene->Structure(),
                          .emissiveTriangles = m_pass->EmissiveTriangles(),
+                         .lightGrid = m_pass->LightGrid(),
                          .depth = depth,
                          .normals = normals,
                          .motion = motion,

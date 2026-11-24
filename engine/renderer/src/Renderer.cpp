@@ -246,6 +246,8 @@ struct Renderer::Impl {
     /// The last frame went through the denoiser: its history can be reprojected.
     bool denoised = false;
     bool denoise = true;
+    /// Lights are drawn by the light grid (ADR-0124).
+    bool lightGrid = true;
     /// The last frame went through the temporal resolve: its history can be reprojected.
     bool resolved = false;
     /// Bursts and emissions of the last view drawn, for FrameStats.
@@ -524,6 +526,7 @@ core::Result<Renderer> Renderer::Create(platform::Window& window, const Renderer
     impl->restir.candidates = config.restirCandidates;
     impl->SetIndirect(config.indirect);
     impl->denoise = config.denoiser;
+    impl->lightGrid = config.lightGrid;
     impl->reflections = config.reflections;
     impl->reflectionRoughness = config.reflectionRoughness;
     impl->meshPass->SetNormalStrength(config.normalStrength);
@@ -599,6 +602,10 @@ void Renderer::SetIndirectLight(bool enabled) {
 
 void Renderer::SetDenoiser(bool enabled) {
     m_impl->denoise = enabled;
+}
+
+void Renderer::SetLightGrid(bool enabled) {
+    m_impl->lightGrid = enabled;
 }
 
 void Renderer::SetReflections(bool enabled) {
@@ -883,7 +890,12 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
         impl.meshPass->AddSkinning(graph);
         impl.rayTracing->AddBuild(graph);
         impl.meshPass->AddEmissiveLights(graph);
+        // Before everything that draws lights: particles, the radiance cache, ReSTIR and glass (ADR-0124).
+        if (impl.lightGrid) {
+            impl.meshPass->AddLightGrid(graph);
+        }
     }
+    const rhi::BufferHandle lightGrid = impl.lightGrid ? impl.meshPass->LightGrid() : rhi::BufferHandle{};
     // Particles move before the G-buffer, which draws mesh particles (ADR-0053).
     if (status && hasFrame) {
         status = impl.particlePass->AddSimulation(graph, view, impl.meshPass->FrameDataIndex(),
@@ -892,6 +904,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                                    .materialBuffer = impl.meshPass->MaterialDataIndex(),
                                                    .skinnedVertices = impl.meshPass->SkinnedVertices(),
                                                    .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
+                                                   .lightGrid = lightGrid,
                                                    .lightMap = impl.meshPass->LightMapIndex(),
                                                    .previousLightCount = impl.meshPass->PreviousLightCount()},
                                                   *impl.meshPass);
@@ -912,6 +925,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
             .skinnedVertices = impl.meshPass->SkinnedVertices(),
             .materialGrid = impl.meshPass->MaterialGrid(),
             .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
+            .lightGrid = lightGrid,
             .depth = impl.depth,
             .normals = impl.normals,
             // Where the denoiser barely knows a surface, more rays (ADR-0121); after a cut, it will forget all.
@@ -941,6 +955,8 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
             impl.meshPass->AddMaterialGrid(graph);
             buffers.push_back(
                 {impl.meshPass->MaterialGrid(), rhi::Access::FragmentShaderRead | rhi::Access::ComputeShaderRead});
+            // So is the light grid, by glass and by every pass that draws lights after it (ADR-0124).
+            buffers.push_back({lightGrid, rhi::Access::FragmentShaderRead | rhi::Access::ComputeShaderRead});
         }
         if (meshParticles) {
             std::ranges::copy(impl.particlePass->MeshBuffers(), std::back_inserter(buffers));
@@ -1004,6 +1020,7 @@ core::Result<void> Renderer::Render(const SceneView& view, const ui::Canvas* can
                                     .structure = impl.rayTracing->Structure(),
                                     .skinnedVertices = impl.meshPass->SkinnedVertices(),
                                     .emissiveTriangles = impl.meshPass->EmissiveTriangles(),
+                                    .lightGrid = lightGrid,
                                     .depth = impl.depth,
                                     .normals = impl.normals,
                                     .motion = impl.motion,

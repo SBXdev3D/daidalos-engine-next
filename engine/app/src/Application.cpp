@@ -449,6 +449,9 @@ core::Result<void> Application::LoadConfiguration() {
                                                  "Light that bounces off surfaces; off leaves direct light only");
         m_denoiser = m_cvars.Register<bool>(
             "renderer.denoiser", true, "Filter the noise of soft shadows and indirect light; off shows it as traced");
+        m_lightGrid = m_cvars.Register<bool>(
+            "renderer.light_grid", true,
+            "Draw each point's lights mostly from those that light its part of the world most; off, by power alone");
         m_reflections = m_cvars.Register<bool>("renderer.reflections", true,
                                                "Ray-traced reflections; off, the indirect light stands in for them");
         m_reflectionRoughness = m_cvars.Register<double>(
@@ -943,6 +946,7 @@ core::Result<void> Application::CreateRenderer() {
              .normalStrength = static_cast<float>(m_normalStrength->Get()),
              .indirectLight = quality.indirectLight,
              .denoiser = m_denoiser->Get(),
+             .lightGrid = m_lightGrid->Get(),
              .reflections = quality.reflections,
              .reflectionRoughness = ReflectionRoughness(quality.reflectionRoughness),
              .volumetricFog = quality.volumetricFog,
@@ -1194,6 +1198,7 @@ void Application::RenderFrame(IApplicationHandler& handler) {
     const QualitySettings quality = EffectiveQualitySettings();
     m_renderer->SetIndirectLight(quality.indirectLight);
     m_renderer->SetDenoiser(m_denoiser->Get());
+    m_renderer->SetLightGrid(m_lightGrid->Get());
     m_renderer->SetReflections(quality.reflections);
     m_renderer->SetReflectionRoughness(ReflectionRoughness(quality.reflectionRoughness));
     m_renderer->SetVolumetricFog(quality.volumetricFog, FogSlices(quality.fogSlices), FogTile(quality.fogTile));

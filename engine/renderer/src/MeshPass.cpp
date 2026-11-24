@@ -20,6 +20,7 @@
 #include <shaders/GBuffer.ps.spv.h>
 #include <shaders/GBuffer.vs.spv.h>
 #include <shaders/Glass.ps.spv.h>
+#include <shaders/LightGrid.cs.spv.h>
 #include <shaders/MaterialGrid.cs.spv.h>
 #include <shaders/Skinning.cs.spv.h>
 
@@ -87,6 +88,25 @@ struct MaterialGridPushConstants {
 constexpr glm::uvec3 kMaterialGrid{64, 16, 64};
 constexpr float kMaterialGridCell = 2.0f;
 constexpr std::uint32_t kMaterialGridGroup = 4;
+
+// Matches LightGridPushConstants in shaders/LightGrid.slang.
+struct LightGridPushConstants {
+    std::uint32_t frameBuffer;
+    std::uint32_t sources;
+    std::uint32_t sourceCount;
+    std::uint32_t grid;
+};
+/// One source as the light grid weighs it (ADR-0124). Matches GridSource in shaders/LightGrid.slang.
+struct GridSource {
+    glm::vec4 sphere;   // Its center, and the radius of the sphere around it.
+    glm::vec4 axis;     // Where a spot shines, and the cosine of its outer angle: -1 for every direction.
+    glm::vec4 strength; // Its intensity's luminance (lux for a directional light), its range, 1 if directional.
+};
+static_assert(sizeof(GridSource) == 48);
+/// Sources each cell of the light grid lists, as kLightGridEntries in shaders/LightGrid.slangh: a word each.
+constexpr std::uint32_t kLightGridEntries = 16;
+/// The range of a source without one: an emissive draw's light reaches as far as it goes.
+constexpr float kUnboundedRange = 1e30f;
 
 // Match EmissiveAveragePushConstants and EmissiveTrianglesPushConstants in shaders/EmissiveAverage.slang and
 // shaders/EmissiveTriangles.slang.
@@ -174,7 +194,7 @@ struct FrameData {
     std::uint32_t materialGrid; // Which decals and wet volumes touch each cell (ADR-0094), and where it is.
     float materialGridCell;
     glm::vec3 materialGridOrigin;
-    std::uint32_t framePadding;
+    std::uint32_t lightGrid; // The sources that light each cell most (ADR-0124), or kNoTexture.
 };
 static_assert(sizeof(FrameData) == 512);
 
@@ -445,7 +465,9 @@ MeshPass::MeshPass(MeshPass&& other) noexcept
       m_skinnedCapacity(std::exchange(other.m_skinnedCapacity, 0)),
       m_skinningPipeline(std::exchange(other.m_skinningPipeline, {})),
       m_materialGridPipeline(std::exchange(other.m_materialGridPipeline, {})),
-      m_materialGrid(std::exchange(other.m_materialGrid, {})) {}
+      m_materialGrid(std::exchange(other.m_materialGrid, {})),
+      m_lightGridPipeline(std::exchange(other.m_lightGridPipeline, {})),
+      m_lightGrid(std::exchange(other.m_lightGrid, {})) {}
 
 MeshPass::~MeshPass() {
     DestroyPipelines(m_pipelines);
@@ -461,6 +483,8 @@ MeshPass::~MeshPass() {
     m_device->DestroyPipeline(m_skinningPipeline);
     m_device->DestroyPipeline(m_materialGridPipeline);
     m_device->DestroyBuffer(m_materialGrid);
+    m_device->DestroyPipeline(m_lightGridPipeline);
+    m_device->DestroyBuffer(m_lightGrid);
     m_device->DestroyPipeline(m_emissiveAverage);
     m_device->DestroyPipeline(m_emissiveTriangles);
     for (auto& [key, source] : m_emissiveSources) {
@@ -472,6 +496,7 @@ MeshPass::~MeshPass() {
         m_device->DestroyBuffer(slot.joints);
         m_device->DestroyBuffer(slot.lights);
         m_device->DestroyBuffer(slot.sources);
+        m_device->DestroyBuffer(slot.gridSources);
         m_device->DestroyBuffer(slot.fogSources);
         m_device->DestroyBuffer(slot.lightMap);
         m_device->DestroyBuffer(slot.emissiveDraws);
@@ -496,6 +521,13 @@ core::Result<MeshPass> MeshPass::Create(rhi::Device& device, rhi::Format colorFo
                                                                      kMaterialGrid.z * sizeof(glm::uvec4),
                                                              .usage = rhi::BufferUsage::Storage,
                                                              .name = "Material grid"}));
+    DAI_TRY_ASSIGN(pass.m_lightGridPipeline,
+                   device.CreateComputePipeline({.shader = rhi::ToSpirv(kLightGridCsSpirv), .name = "Light grid"}));
+    DAI_TRY_ASSIGN(pass.m_lightGrid,
+                   device.CreateBuffer({.size = std::uint64_t{kMaterialGrid.x} * kMaterialGrid.y * kMaterialGrid.z *
+                                                kLightGridEntries * sizeof(std::uint32_t),
+                                        .usage = rhi::BufferUsage::Storage,
+                                        .name = "Light grid"}));
     DAI_TRY_ASSIGN(pass.m_emissiveAverage,
                    device.CreateComputePipeline(
                        {.shader = rhi::ToSpirv(kEmissiveAverageCsSpirv), .name = "Emission of triangles"}));
@@ -926,6 +958,8 @@ core::Result<MeshPass::FrameLights> MeshPass::PrepareLights(FrameSlot& slot, con
     auto* lights = reinterpret_cast<LightData*>(m_device->Mapped(slot.lights).data());
     std::vector<float> powers;
     std::vector<float> fogPowers;
+    // And as the light grid weighs them (ADR-0124), by what each could send to a cell.
+    std::vector<GridSource> gridSources;
     std::vector<LightSourceRange> ranges;
     // Lights that moved since the last frame, whose light the histories must follow at once.
     std::vector<bool> moved;
@@ -937,6 +971,18 @@ core::Result<MeshPass::FrameLights> MeshPass::PrepareLights(FrameSlot& slot, con
         };
         lights[index] = ToGpu(light, exposure, bindless(light.profile), bindless(light.cookie));
         powers.push_back(LightPower(light));
+        const float intensity = std::max(Luminance(light.color), 0.0f);
+        if (light.type == LightType::Directional) {
+            gridSources.push_back({.sphere = glm::vec4(0.0f),
+                                   .axis = glm::vec4(0.0f, 0.0f, 0.0f, -1.0f),
+                                   .strength = glm::vec4(intensity, kUnboundedRange, 1.0f, 0.0f)});
+        } else {
+            gridSources.push_back({.sphere = glm::vec4(light.position, std::max(light.radius, 0.0f)),
+                                   .axis = light.type == LightType::Spot
+                                               ? glm::vec4(light.direction, std::cos(light.outerAngle))
+                                               : glm::vec4(0.0f, 0.0f, 0.0f, -1.0f),
+                                   .strength = glm::vec4(intensity, std::max(light.range, 0.0f), 0.0f, 0.0f)});
+        }
         fogPowers.push_back(FogSourceWeight(powers.back(), light.type == LightType::Directional
                                                                ? kFogReach
                                                                : glm::distance(light.position, cameraPosition)));
@@ -985,6 +1031,12 @@ core::Result<MeshPass::FrameLights> MeshPass::PrepareLights(FrameSlot& slot, con
         const glm::vec3 center(draw.world * glm::vec4(glm::vec3(bounds), 1.0f));
         fogPowers.push_back(
             FogSourceWeight(powers.back(), std::max(glm::distance(center, cameraPosition) - bounds.w * scale, 0.0f)));
+        // To the grid, a ball around the draw that sends its flux over a hemisphere: a guess, which only
+        // steers sampling.
+        gridSources.push_back(
+            {.sphere = glm::vec4(center, bounds.w * scale),
+             .axis = glm::vec4(0.0f, 0.0f, 0.0f, -1.0f),
+             .strength = glm::vec4(powers.back() / (2.0f * std::numbers::pi_v<float>), kUnboundedRange, 0.0f, 0.0f)});
         // A lamp whose glow changes moves for the histories, as a flickering light does.
         moved.push_back(skinned || draw.emissiveScale != 1.0f ||
                         (draw.previousWorld.has_value() && *draw.previousWorld != draw.world));
@@ -1000,6 +1052,8 @@ core::Result<MeshPass::FrameLights> MeshPass::PrepareLights(FrameSlot& slot, con
                     sizeof(AliasEntry), "Light sources"));
     DAI_TRY(Reserve(*m_device, slot.fogSources, slot.fogSourceCapacity, fogPowers.size(), kInitialLightCapacity,
                     sizeof(AliasEntry), "Fog light sources"));
+    DAI_TRY(Reserve(*m_device, slot.gridSources, slot.gridSourceCapacity, gridSources.size(), kInitialLightCapacity,
+                    sizeof(GridSource), "Light grid sources"));
     DAI_TRY(Reserve(*m_device, slot.emissiveDraws, slot.emissiveDrawCapacity, draws.size(), 16,
                     sizeof(EmissiveDrawData), "Emissive draws"));
     DAI_TRY(Reserve(*m_device, slot.emissiveTriangles, slot.emissiveTriangleCapacity, triangleCount, 256,
@@ -1019,6 +1073,11 @@ core::Result<MeshPass::FrameLights> MeshPass::PrepareLights(FrameSlot& slot, con
     if (!draws.empty()) {
         std::memcpy(m_device->Mapped(slot.emissiveDraws).data(), draws.data(), draws.size() * sizeof(EmissiveDrawData));
     }
+    if (!gridSources.empty()) {
+        std::memcpy(m_device->Mapped(slot.gridSources).data(), gridSources.data(),
+                    gridSources.size() * sizeof(GridSource));
+    }
+    slot.gridSourceCount = static_cast<std::uint32_t>(gridSources.size());
 
     // Each light keeps its name from frame to frame: the reservoirs that chose it follow it.
     std::vector<std::uint32_t> map = MapLights(m_previousRanges, ranges, m_lightCount);
@@ -1273,6 +1332,8 @@ core::Result<void> MeshPass::Prepare(const SceneView& view, const FrameTargets& 
     frame.materialGridCell = kMaterialGridCell;
     frame.materialGridOrigin =
         (glm::floor(cameraPosition / kMaterialGridCell) - glm::vec3(kMaterialGrid / 2u)) * kMaterialGridCell;
+    // The light grid shares its cells (ADR-0124); until AddLightGrid writes it, points draw lights by power.
+    frame.lightGrid = kNoTexture;
     frame.wetVolumeBuffer = m_device->StorageIndex(slot.wetVolumes);
     frame.wetVolumeCount = static_cast<std::uint32_t>(wetCount);
     frame.rippleBuffer = m_device->StorageIndex(slot.ripples);
@@ -1479,6 +1540,24 @@ void MeshPass::AddMaterialGrid(RenderGraph& graph) {
                       commands.Push(MaterialGridPushConstants{m_device->StorageIndex(m_prepared->frame),
                                                               m_device->StorageIndex(m_prepared->materialBoxes),
                                                               m_device->StorageIndex(m_materialGrid)});
+                      commands.Dispatch(kMaterialGrid.x / kMaterialGridGroup, kMaterialGrid.y / kMaterialGridGroup,
+                                        kMaterialGrid.z / kMaterialGridGroup);
+                  });
+}
+
+void MeshPass::AddLightGrid(RenderGraph& graph) {
+    if (m_prepared == nullptr || m_prepared->gridSourceCount == 0) {
+        return;
+    }
+    reinterpret_cast<FrameData*>(m_device->Mapped(m_prepared->frame).data())->lightGrid =
+        m_device->StorageIndex(m_lightGrid);
+    graph.AddPass({.name = "Light grid", .buffers = {{m_lightGrid, rhi::Access::ComputeShaderWrite}}},
+                  [this](rhi::CommandList& commands) {
+                      DAI_PROFILE_SCOPE("renderer::MeshPass::LightGrid");
+                      commands.BindPipeline(m_lightGridPipeline);
+                      commands.Push(LightGridPushConstants{
+                          m_device->StorageIndex(m_prepared->frame), m_device->StorageIndex(m_prepared->gridSources),
+                          m_prepared->gridSourceCount, m_device->StorageIndex(m_lightGrid)});
                       commands.Dispatch(kMaterialGrid.x / kMaterialGridGroup, kMaterialGrid.y / kMaterialGridGroup,
                                         kMaterialGrid.z / kMaterialGridGroup);
                   });

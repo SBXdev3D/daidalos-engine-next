@@ -279,6 +279,7 @@ private:
     std::optional<core::CVar<double>> m_normalStrength;
     std::optional<core::CVar<bool>> m_indirectLight;
     std::optional<core::CVar<bool>> m_denoiser;
+    std::optional<core::CVar<bool>> m_lightGrid;
     std::optional<core::CVar<bool>> m_reflections;
     std::optional<core::CVar<double>> m_reflectionRoughness;
     std::optional<core::CVar<std::int64_t>> m_reflectionPixelsPerRay;

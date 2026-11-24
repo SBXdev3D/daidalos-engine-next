@@ -1,0 +1,110 @@
+// Daidalos Engine Next
+// Copyright (C) 2011-2026 Stéphane Baudoux
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+#ifndef DAIDALOS_LIGHT_GRID_SLANGH
+#define DAIDALOS_LIGHT_GRID_SLANGH
+
+// The light grid (ADR-0124): the material grid's cells (ADR-0094), each listing up to kLightGridEntries sources
+// of the frame, those that light it most, by what each would send to the cell's center. A point draws most
+// of its candidate lights from its cell's list, and the rest from the frame's table by power, so that a weak
+// lamp nearby is drawn as often as a strong one in another room is not (Lights.slangh, DrawCandidates).
+// LightGrid.slang writes it each frame. Include after MeshTypes.slangh.
+
+#include "MaterialGrid.slangh"
+
+// Sources a cell lists. Matches kLightGridEntries in renderer/src/MeshPass.cpp.
+static const uint kLightGridEntries = 16;
+// Per cell, kLightGridEntries words, in four uint4: each a source in its low 16 bits and, in its high 16
+// bits, the probability of drawing it or a source before it, out of 65535. The sources are in increasing
+// order; an empty entry is kNoGridSource, with 65535.
+static const uint kNoGridSource = 0xFFFF;
+[[vk::binding(2, 0)]] StructuredBuffer<uint4> g_lightGrids[];
+
+// The share of candidates a point draws from its cell's list, when it has one; the rest come from the frame's
+// table by power, which draws every source, so that a source the cell left out is still drawn.
+static const float kLightGridShare = 0.75;
+
+// A point's cell: where its list starts in the grid. Only the address is kept, not the list, so that what
+// draws lights keeps its registers: the list's 64 bytes stay in the cache between its candidates.
+struct LightCell {
+    uint grid;  // The grid's storage index.
+    uint first; // Its first uint4.
+    bool valid; // The point is inside the grid and its cell lists a source.
+};
+
+LightCell EmptyLightCell() {
+    LightCell cell;
+    cell.grid = 0;
+    cell.first = 0;
+    cell.valid = false;
+    return cell;
+}
+
+// The cell around a point; not valid outside the grid, or without one.
+LightCell LightCellAt(FrameData frame, float3 position) {
+    LightCell cell = EmptyLightCell();
+    if (frame.lightGrid == kNoTexture) {
+        return cell;
+    }
+    const float3 place = floor((position - frame.materialGridOrigin) / frame.materialGridCell);
+    if (any(place < 0.0) || any(place >= float3(kMaterialGridCells))) {
+        return cell;
+    }
+    const uint3 index = uint3(place);
+    cell.grid = frame.lightGrid;
+    cell.first = ((index.z * kMaterialGridCells.y + index.y) * kMaterialGridCells.x + index.x) * 4;
+    cell.valid = (g_lightGrids[cell.grid][cell.first].x & 0xFFFF) != kNoGridSource;
+    return cell;
+}
+
+// The source a number in [0, 1) draws from a valid cell's list, and the probability that the list draws it,
+// found on the way.
+struct CellDraw {
+    uint source;
+    float probability;
+};
+
+CellDraw DrawFromCell(LightCell cell, float u) {
+    const uint target = min(uint(u * 65535.0), 65534u);
+    uint before = 0;
+    for (uint word = 0; word < 4; ++word) {
+        const uint4 entries = g_lightGrids[cell.grid][cell.first + word];
+        for (uint lane = 0; lane < 4; ++lane) {
+            const uint upTo = entries[lane] >> 16;
+            if (upTo > target) {
+                CellDraw draw;
+                draw.source = entries[lane] & 0xFFFF;
+                draw.probability = float(upTo - before) / 65535.0;
+                return draw;
+            }
+            before = upTo;
+        }
+    }
+    CellDraw none;
+    none.source = kNoGridSource;
+    none.probability = 0.0;
+    return none;
+}
+
+// The probability that a cell's list draws a source: 0 for a source it does not list.
+float CellProbability(LightCell cell, uint source) {
+    uint before = 0;
+    for (uint word = 0; word < 4; ++word) {
+        const uint4 entries = g_lightGrids[cell.grid][cell.first + word];
+        for (uint lane = 0; lane < 4; ++lane) {
+            const uint drawn = entries[lane] & 0xFFFF;
+            const uint upTo = entries[lane] >> 16;
+            if (drawn == kNoGridSource || drawn > source) {
+                return 0.0;
+            }
+            if (drawn == source) {
+                return float(upTo - before) / 65535.0;
+            }
+            before = upTo;
+        }
+    }
+    return 0.0;
+}
+
+#endif

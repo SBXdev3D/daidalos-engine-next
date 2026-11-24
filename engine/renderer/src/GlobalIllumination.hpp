@@ -56,6 +56,8 @@ struct GlobalIlluminationInputs {
     rhi::BufferHandle materialGrid;
     /// The frame's emissive triangles, which light sampling reads (MeshPass::EmissiveTriangles).
     rhi::BufferHandle emissiveTriangles;
+    /// The sources that light each cell most, which light sampling reads (MeshPass::LightGrid), or null.
+    rhi::BufferHandle lightGrid;
     /// The G-buffer's depth and normals.
     rhi::TextureHandle depth;
     rhi::TextureHandle normals;

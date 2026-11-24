@@ -235,6 +235,7 @@ void GlobalIllumination::AddCache(RenderGraph& graph, const GlobalIlluminationIn
     traced.push_back({inputs.skinnedVertices, rhi::Access::ComputeShaderRead});
     traced.push_back({inputs.emissiveTriangles, rhi::Access::ComputeShaderRead});
     traced.push_back({inputs.materialGrid, rhi::Access::ComputeShaderRead});
+    traced.push_back({inputs.lightGrid, rhi::Access::ComputeShaderRead});
     const std::uint32_t tilesX = (extent.width + kPathSpacing - 1) / kPathSpacing;
     const std::uint32_t tilesY = (extent.height + kPathSpacing - 1) / kPathSpacing;
     graph.AddPass({.name = "Radiance cache update",
@@ -275,7 +276,8 @@ void GlobalIllumination::AddTo(RenderGraph& graph, const GlobalIlluminationInput
                                              {m_anchors, rhi::Access::ComputeShaderWrite},
                                              {inputs.skinnedVertices, rhi::Access::ComputeShaderRead},
                                              {inputs.emissiveTriangles, rhi::Access::ComputeShaderRead},
-                                             {inputs.materialGrid, rhi::Access::ComputeShaderRead}};
+                                             {inputs.materialGrid, rhi::Access::ComputeShaderRead},
+                                             {inputs.lightGrid, rhi::Access::ComputeShaderRead}};
     // Half the pixels trace, or a quarter, and the upsample fills the others (ADR-0093). The cache's debug view
     // shows every pixel's own cell.
     const std::uint32_t perRay = mode == Mode::Indirect ? inputs.settings.pixelsPerRay : 1;
