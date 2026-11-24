@@ -35,21 +35,76 @@
  ],
  "materials": [
   {
-   "name": "rubber",
+   "name": "rubberized_track",
    "pbrMetallicRoughness": {
-    "baseColorFactor": [
-     0.55,
-     0.06,
-     0.04,
-     1.0
-    ],
-    "metallicFactor": 0.0,
-    "roughnessFactor": 0.55
+    "baseColorTexture": {
+     "index": 0
+    },
+    "metallicRoughnessTexture": {
+     "index": 2
+    },
+    "metallicFactor": 1.0,
+    "roughnessFactor": 1.0
+   },
+   "normalTexture": {
+    "index": 1
+   },
+   "occlusionTexture": {
+    "index": 2
    },
    "extras": {
     "surface": "rubber"
    }
   }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "extensions": {
+    "KHR_texture_basisu": {
+     "source": 0
+    }
+   }
+  },
+  {
+   "sampler": 0,
+   "extensions": {
+    "KHR_texture_basisu": {
+     "source": 1
+    }
+   }
+  },
+  {
+   "sampler": 0,
+   "extensions": {
+    "KHR_texture_basisu": {
+     "source": 2
+    }
+   }
+  }
+ ],
+ "images": [
+  {
+   "uri": "textures/rubberized_track_d.ktx2",
+   "mimeType": "image/ktx2"
+  },
+  {
+   "uri": "textures/rubberized_track_n.ktx2",
+   "mimeType": "image/ktx2"
+  },
+  {
+   "uri": "textures/rubberized_track_arm.ktx2",
+   "mimeType": "image/ktx2"
+  }
+ ],
+ "samplers": [
+  {}
+ ],
+ "extensionsUsed": [
+  "KHR_texture_basisu"
+ ],
+ "extensionsRequired": [
+  "KHR_texture_basisu"
  ],
  "buffers": [
   {

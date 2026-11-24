@@ -35,7 +35,7 @@
  ],
  "materials": [
   {
-   "name": "steel",
+   "name": "rusty_metal_02",
    "pbrMetallicRoughness": {
     "baseColorTexture": {
      "index": 0
@@ -43,19 +43,17 @@
     "metallicRoughnessTexture": {
      "index": 2
     },
-    "metallicFactor": 0.0,
+    "metallicFactor": 1.0,
     "roughnessFactor": 1.0
    },
    "normalTexture": {
     "index": 1
    },
    "occlusionTexture": {
-    "index": 2,
-    "strength": 0.81
+    "index": 2
    },
    "extras": {
-    "surface": "metal",
-    "height": 0.006
+    "surface": "metal"
    }
   }
  ],
@@ -87,15 +85,15 @@
  ],
  "images": [
   {
-   "uri": "../crate_2d.ktx2",
+   "uri": "textures/rusty_metal_02_d.ktx2",
    "mimeType": "image/ktx2"
   },
   {
-   "uri": "../crate_2n.ktx2",
+   "uri": "textures/rusty_metal_02_n.ktx2",
    "mimeType": "image/ktx2"
   },
   {
-   "uri": "../crate_2mrh.ktx2",
+   "uri": "textures/rusty_metal_02_arm.ktx2",
    "mimeType": "image/ktx2"
   }
  ],

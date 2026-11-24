@@ -37,6 +37,8 @@ assets/Factory/*.cavity
 
 # The showcase kit's downloaded sources (scripts/fetch_showcase_props.py): only converted files are committed.
 assets/Factory/Showcase/*/Source/
+# The physics props' texture sources (scripts/make_physics_props.py), converted to KTX2 beside.
+assets/Factory/Props/Source/
 
 # The effects gallery preview (scripts/make_effects_gallery.py --only), not a file to keep.
 assets/Factory/Sequences/effects_preview.sequence.json

@@ -35,7 +35,7 @@
  ],
  "materials": [
   {
-   "name": "metal",
+   "name": "rubber_tiles",
    "pbrMetallicRoughness": {
     "baseColorTexture": {
      "index": 0
@@ -43,19 +43,17 @@
     "metallicRoughnessTexture": {
      "index": 2
     },
-    "metallicFactor": 0.0,
+    "metallicFactor": 1.0,
     "roughnessFactor": 1.0
    },
    "normalTexture": {
     "index": 1
    },
    "occlusionTexture": {
-    "index": 2,
-    "strength": 0.81
+    "index": 2
    },
    "extras": {
-    "surface": "metal",
-    "height": 0.006
+    "surface": "rubber"
    }
   }
  ],
@@ -87,15 +85,15 @@
  ],
  "images": [
   {
-   "uri": "../lift_d.ktx2",
+   "uri": "textures/rubber_tiles_d.ktx2",
    "mimeType": "image/ktx2"
   },
   {
-   "uri": "../lift_n.ktx2",
+   "uri": "textures/rubber_tiles_n.ktx2",
    "mimeType": "image/ktx2"
   },
   {
-   "uri": "../lift_mrh.ktx2",
+   "uri": "textures/rubber_tiles_arm.ktx2",
    "mimeType": "image/ktx2"
   }
  ],

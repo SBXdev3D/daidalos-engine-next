@@ -54,6 +54,12 @@ MATERIALS = {
     "glass": ("shaft_glass", "glass"),
     "logs": ("crate_1d.png", "wood"),
 }
+# Parts of textures of their own, beside the factory's (KTX2 color, normals, occlusion-roughness-metal, relative to
+# assets/Factory): the physics props' Poly Haven textures (make_physics_props.py), about 2 m a repeat as the
+# rooms' texture coordinates are.
+TEXTURED = {
+    "rust": ("Props/textures/rust_coarse_01", "metal"),
+}
 # Glowing strips: the factory's white glow, tinted (linear color, strength, gives light).
 GLOWS = {
     "glow_cyan": ([0.3, 0.8, 1.0], 25.0, True),
@@ -400,6 +406,21 @@ def write_gltf(g, path):
         material["extras"] = {**material.get("extras", {}), "surface": surface}
         material_index[part] = len(materials)
         materials.append(material)
+    for part, (prefix, surface) in TEXTURED.items():
+        if part not in used:
+            continue
+        sources = []
+        for suffix in ("d", "n", "arm"):
+            images.append({"uri": f"{prefix}_{suffix}.ktx2", "mimeType": "image/ktx2"})
+            textures.append({"sampler": 0, "extensions": {"KHR_texture_basisu": {"source": len(images) - 1}}})
+            sources.append(len(textures) - 1)
+        material_index[part] = len(materials)
+        materials.append({"name": part,
+                          "pbrMetallicRoughness": {"baseColorTexture": {"index": sources[0]},
+                                                   "metallicRoughnessTexture": {"index": sources[2]},
+                                                   "metallicFactor": 1.0, "roughnessFactor": 1.0},
+                          "normalTexture": {"index": sources[1]}, "occlusionTexture": {"index": sources[2]},
+                          "extras": {"surface": surface}})
     for part, (color, strength, light) in GLOWS.items():
         if part not in used:
             continue

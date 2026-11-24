@@ -50,12 +50,10 @@
     "index": 1
    },
    "occlusionTexture": {
-    "index": 2,
-    "strength": 0.81
+    "index": 2
    },
    "extras": {
-    "surface": "metal",
-    "height": 0.006
+    "surface": "metal"
    }
   }
  ],

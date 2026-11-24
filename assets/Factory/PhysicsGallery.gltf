@@ -65,15 +65,6 @@
       "TEXCOORD_0": 14
      },
      "indices": 15,
-     "material": 4
-    },
-    {
-     "attributes": {
-      "POSITION": 16,
-      "NORMAL": 17,
-      "TEXCOORD_0": 18
-     },
-     "indices": 19,
      "material": 3
     }
    ]
@@ -153,51 +144,25 @@
    }
   },
   {
-   "name": "metal",
+   "name": "rust",
    "pbrMetallicRoughness": {
     "baseColorTexture": {
      "index": 9
     },
-    "metallicFactor": 1.0,
-    "roughnessFactor": 1.0,
     "metallicRoughnessTexture": {
-     "index": 10
-    }
+     "index": 11
+    },
+    "metallicFactor": 1.0,
+    "roughnessFactor": 1.0
    },
    "normalTexture": {
+    "index": 10
+   },
+   "occlusionTexture": {
     "index": 11
    },
    "extras": {
-    "surface": "metal",
-    "height": 0.005
-   },
-   "occlusionTexture": {
-    "index": 10,
-    "strength": 0.87
-   }
-  },
-  {
-   "name": "steel",
-   "pbrMetallicRoughness": {
-    "baseColorTexture": {
-     "index": 12
-    },
-    "metallicFactor": 0.0,
-    "roughnessFactor": 1.0,
-    "metallicRoughnessTexture": {
-     "index": 13
-    }
-   },
-   "normalTexture": {
-    "index": 14
-   },
-   "extras": {
-    "surface": "metal",
-    "height": 0.006
-   },
-   "occlusionTexture": {
-    "index": 13,
-    "strength": 0.91
+    "surface": "metal"
    }
   }
  ],
@@ -297,30 +262,6 @@
      "source": 11
     }
    }
-  },
-  {
-   "sampler": 0,
-   "extensions": {
-    "KHR_texture_basisu": {
-     "source": 12
-    }
-   }
-  },
-  {
-   "sampler": 0,
-   "extensions": {
-    "KHR_texture_basisu": {
-     "source": 13
-    }
-   }
-  },
-  {
-   "sampler": 0,
-   "extensions": {
-    "KHR_texture_basisu": {
-     "source": 14
-    }
-   }
   }
  ],
  "images": [
@@ -361,27 +302,15 @@
    "mimeType": "image/ktx2"
   },
   {
-   "uri": "lift_d.ktx2",
+   "uri": "Props/textures/rust_coarse_01_d.ktx2",
    "mimeType": "image/ktx2"
   },
   {
-   "uri": "lift_mrh.ktx2",
+   "uri": "Props/textures/rust_coarse_01_n.ktx2",
    "mimeType": "image/ktx2"
   },
   {
-   "uri": "lift_n.ktx2",
-   "mimeType": "image/ktx2"
-  },
-  {
-   "uri": "crate_2d.ktx2",
-   "mimeType": "image/ktx2"
-  },
-  {
-   "uri": "crate_2mrh.ktx2",
-   "mimeType": "image/ktx2"
-  },
-  {
-   "uri": "crate_2n.ktx2",
+   "uri": "Props/textures/rust_coarse_01_arm.ktx2",
    "mimeType": "image/ktx2"
   }
  ],
@@ -470,49 +399,25 @@
   {
    "buffer": 0,
    "byteOffset": 59280,
-   "byteLength": 6336,
+   "byteLength": 6672,
    "target": 34962
   },
   {
    "buffer": 0,
-   "byteOffset": 65616,
-   "byteLength": 6336,
+   "byteOffset": 65952,
+   "byteLength": 6672,
    "target": 34962
   },
   {
    "buffer": 0,
-   "byteOffset": 71952,
-   "byteLength": 4224,
+   "byteOffset": 72624,
+   "byteLength": 4448,
    "target": 34962
   },
   {
    "buffer": 0,
-   "byteOffset": 76176,
-   "byteLength": 3168,
-   "target": 34963
-  },
-  {
-   "buffer": 0,
-   "byteOffset": 79344,
-   "byteLength": 336,
-   "target": 34962
-  },
-  {
-   "buffer": 0,
-   "byteOffset": 79680,
-   "byteLength": 336,
-   "target": 34962
-  },
-  {
-   "buffer": 0,
-   "byteOffset": 80016,
-   "byteLength": 224,
-   "target": 34962
-  },
-  {
-   "buffer": 0,
-   "byteOffset": 80240,
-   "byteLength": 144,
+   "byteOffset": 77072,
+   "byteLength": 3312,
    "target": 34963
   }
  ],
@@ -622,7 +527,7 @@
   {
    "bufferView": 12,
    "componentType": 5126,
-   "count": 528,
+   "count": 556,
    "type": "VEC3",
    "min": [
     -8.450000000000001,
@@ -638,53 +543,19 @@
   {
    "bufferView": 13,
    "componentType": 5126,
-   "count": 528,
+   "count": 556,
    "type": "VEC3"
   },
   {
    "bufferView": 14,
    "componentType": 5126,
-   "count": 528,
+   "count": 556,
    "type": "VEC2"
   },
   {
    "bufferView": 15,
    "componentType": 5125,
-   "count": 792,
-   "type": "SCALAR"
-  },
-  {
-   "bufferView": 16,
-   "componentType": 5126,
-   "count": 28,
-   "type": "VEC3",
-   "min": [
-    54.7,
-    0.0,
-    -129.0
-   ],
-   "max": [
-    122.6,
-    2.0,
-    -2.5
-   ]
-  },
-  {
-   "bufferView": 17,
-   "componentType": 5126,
-   "count": 28,
-   "type": "VEC3"
-  },
-  {
-   "bufferView": 18,
-   "componentType": 5126,
-   "count": 28,
-   "type": "VEC2"
-  },
-  {
-   "bufferView": 19,
-   "componentType": 5125,
-   "count": 36,
+   "count": 828,
    "type": "SCALAR"
   }
  ]

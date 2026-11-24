@@ -230,7 +230,7 @@ def swinging_room(g):
     for index, (x, z, kick, at) in enumerate(((-2.8, -2.0, (20.0, 0.0, -6.0), 2.6), (0.0, -2.8, (0.0, 0.0, 19.0), 4.0),
                                               (2.8, -2.0, (-17.0, 0.0, 10.0), 5.4))):
         top = (x, room.h - 0.05, z)
-        room.box("steel", (x - 0.12, room.h - 0.05, z - 0.12), (x + 0.12, room.h, z + 0.12), "ceiling plate")
+        room.box("rust", (x - 0.12, room.h - 0.05, z - 0.12), (x + 0.12, room.h, z + 0.12), "ceiling plate")
         made = room.chain(f"lamp {index + 1} chain", top, (x, top[1] - 0.784, z))
         name = f"lamp {index + 1}"
         lamp_id = room.loose(name, lamp, made[1], {"shape": "hull", "mass": 6.0, "surface": "metal", "group": made[3]},
@@ -245,7 +245,7 @@ def swinging_room(g):
     room.showcase("sign", "WetFloorSign_01", (1.7, 0.0, -1.2), 2.0, turn=-30.0, surface="plastic")
     # The hook, held out to the side on its chain, let go to swing across the room in front of the lamps.
     pivot = (0.0, room.h - 0.05, 0.6)
-    room.box("steel", (-0.15, room.h - 0.05, 0.45), (0.15, room.h, 0.75), "hook plate")
+    room.box("rust", (-0.15, room.h - 0.05, 0.45), (0.15, room.h, 0.75), "hook plate")
     angle = math.radians(72.0)
     reach = 12 * LINK_PITCH * 1.5
     made = room.chain("hook chain", pivot, (pivot[0] - reach * math.sin(angle), pivot[1] - reach * math.cos(angle),
@@ -324,7 +324,7 @@ def rolling_room(g):
     stools, a sign and boxes, and crash into a low wall of crates."""
     room = PhysicsRoom(g, "Rolling", 2, 8.0, 9.0, 6.0)
     z_top, z_foot, height = -9.0, -2.5, 1.8
-    room.ramp("metal", -2.6, 2.6, z_top, z_foot, height)
+    room.ramp("rust", -2.6, 2.6, z_top, z_foot, height)
     rise = height / (z_foot - z_top)
     normal = normalize([0.0, 1.0, rise])
 
@@ -416,7 +416,7 @@ def wrecking_room(g):
     """A steel ball on a heavy chain, held out to the side, let go through a wall of crates."""
     room = PhysicsRoom(g, "Wrecking", 4, 8.0, 8.0, 9.0)
     pivot = (0.0, room.h - 0.15, 0.0)
-    room.box("steel", (-8.0, room.h - 0.15, -0.25), (8.0, room.h, 0.25), "beam")
+    room.box("rust", (-8.0, room.h - 0.15, -0.25), (8.0, room.h, 0.25), "beam")
     angle = math.radians(60.0)
     chain_length = 26 * LINK_PITCH * 2.5
     end = (pivot[0] - chain_length * math.sin(angle), pivot[1] - chain_length * math.cos(angle), 0.0)
@@ -524,7 +524,7 @@ def materials_room(g):
         else:
             room.showcase(name, model, (x, 2.8, -3.5), mass, shape=shape, held=True, **more)
         events.append(release_cue(3.0, room.label(name)))
-    room.box("steel", (-7.0, 3.6, -3.9), (-1.4, 3.75, -3.1), "beam over the drops")
+    room.box("rust", (-7.0, 3.6, -3.9), (-1.4, 3.75, -3.1), "beam over the drops")
     # Two lanes: dry, and oily (its friction almost none, wet to the eye).
     for what, model, z, friction in (("dry lane", "lane", -1.5, 0.7), ("oily lane", "oily_lane", -3.3, 0.02)):
         room.entity(what, (4.2, 0.02, z), model=f"Props/{model}.gltf",
@@ -553,9 +553,9 @@ def joints_room(g):
     events = []
     # The door, in a frame standing on its own.
     dx, dz = -7.0, -2.6
-    room.box("steel", (dx - 0.17, 0.0, dz - 0.1), (dx - 0.05, 2.25, dz + 0.1), "door post")
-    room.box("steel", (dx + 1.05, 0.0, dz - 0.1), (dx + 1.17, 2.25, dz + 0.1), "door post")
-    room.box("steel", (dx - 0.17, 2.15, dz - 0.1), (dx + 1.17, 2.27, dz + 0.1), "lintel")
+    room.box("rust", (dx - 0.17, 0.0, dz - 0.1), (dx - 0.05, 2.25, dz + 0.1), "door post")
+    room.box("rust", (dx + 1.05, 0.0, dz - 0.1), (dx + 1.17, 2.25, dz + 0.1), "door post")
+    room.box("rust", (dx - 0.17, 2.15, dz - 0.1), (dx + 1.17, 2.27, dz + 0.1), "lintel")
     room.loose("door", "Props/door.gltf", (dx, 0.02, dz), {"size": [1.0, 2.1, 0.06], "center": [0.5, 1.05, 0.0],
                                                            "mass": 30.0, "surface": "metal"},
                joints=[hinge(0, [0.0, 1.05, 0.0], [0.0, 1.0, 0.0], limits=(-110.0, 110.0), friction=4.0)],
@@ -569,7 +569,7 @@ def joints_room(g):
     holds = []
     for side in (-0.5, 0.5):
         top = (sx + side, room.h - 0.05, sz)
-        room.box("steel", (top[0] - 0.08, room.h - 0.05, sz - 0.08), (top[0] + 0.08, room.h, sz + 0.08), "sign hook")
+        room.box("rust", (top[0] - 0.08, room.h - 0.05, sz - 0.08), (top[0] + 0.08, room.h, sz + 0.08), "sign hook")
         made = room.chain(f"sign chain {'left' if side < 0 else 'right'}", top, (top[0], sign_y + 0.25, sz),
                           scale=1.5, group="sign")
         holds.append(room.hang(made, top)([side, 0.25, 0.0]))
@@ -597,7 +597,7 @@ def joints_room(g):
     # The see-saw: a board on a hinge over a block, its left end down with a crate on it; a drum dropped on its
     # right end throws the crate.
     px, pz, tilt = 6.6, -2.4, 20.0
-    room.box("steel", (px - 0.15, 0.0, pz - 0.3), (px + 0.15, 0.5, pz + 0.3), "see-saw block")
+    room.box("rust", (px - 0.15, 0.0, pz - 0.3), (px + 0.15, 0.5, pz + 0.3), "see-saw block")
     pivot = (px, 0.56, pz)
     board_turn = quat_axis([0, 0, 1], tilt)
     room.loose("see-saw", "Props/seesaw_board.gltf", pivot, {"size": [3.0, 0.08, 0.45], "mass": 12.0,
@@ -638,7 +638,7 @@ def machines_room(g):
                 body={"mass": 0.0, "size": [7.7, 0.1, 0.9], "surface": "metal", "conveyor": [0.8, 0.0, 0.0]})
     for x in (belt_end - 0.3, belt_center, belt_end - 7.4):
         for side in (-0.4, 0.4):
-            room.box("steel", (x - 0.05, 0.0, bz + side - 0.05), (x + 0.05, belt_top - 0.1, bz + side + 0.05),
+            room.box("rust", (x - 0.05, 0.0, bz + side - 0.05), (x + 0.05, belt_top - 0.1, bz + side + 0.05),
                      "belt leg")
     for index in range(7):
         x = -2.6 - 0.95 * index
@@ -652,7 +652,7 @@ def machines_room(g):
     room.loose("paddle", "Props/paddle.gltf", hub, {"size": [2.4, 0.08, 0.8], "mass": 20.0, "surface": "wood"},
                joints=[hinge(0, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0],
                              motor={"mode": "speed", "target": PADDLE_SPEED, "strength": 3000.0})], extent=1.3)
-    room.box("steel", (hub[0] - 0.1, 0.0, bz - 0.6), (hub[0] + 0.1, hub[1], bz - 0.45), "paddle post")
+    room.box("rust", (hub[0] - 0.1, 0.0, bz - 0.6), (hub[0] + 0.1, hub[1], bz - 0.45), "paddle post")
     # The piston on a ledge to the right, three crates in front of it, pushed off toward the camera.
     room.box("walls", (3.4, 0.0, -7.0), (6.2, 1.2, -3.8), "ledge")
     px = 4.8
@@ -689,9 +689,9 @@ def finale_room(g):
     events = []
     ox = -4.5  # The ramp's middle, across X.
     z_top, z_foot, height = -9.0, -3.0, 2.0
-    room.ramp("metal", ox - 0.8, ox + 0.8, z_top, z_foot, height)
+    room.ramp("rust", ox - 0.8, ox + 0.8, z_top, z_foot, height)
     for x in (ox - 0.85, ox + 0.85):
-        room.box("steel", (x - 0.05, 0.0, z_top), (x + 0.05, 0.25, z_foot), "ramp rail")
+        room.box("rust", (x - 0.05, 0.0, z_top), (x + 0.05, 0.25, z_foot), "ramp rail")
     rise = height / (z_foot - z_top)
     normal = normalize([0.0, 1.0, rise])
     radius = 0.45 * 0.6
@@ -737,7 +737,7 @@ def finale_room(g):
     tilt = -20.0
     board_turn = quat_axis([0, 0, 1], tilt)
     pivot = (last_x + 1.6 + 1.5 * math.cos(math.radians(tilt)), 0.56, last_z)
-    room.box("steel", (pivot[0] - 0.15, 0.0, pivot[2] - 0.3), (pivot[0] + 0.15, 0.5, pivot[2] + 0.3), "see-saw block")
+    room.box("rust", (pivot[0] - 0.15, 0.0, pivot[2] - 0.3), (pivot[0] + 0.15, 0.5, pivot[2] + 0.3), "see-saw block")
     room.loose("see-saw", "Props/seesaw_board.gltf", pivot, {"size": [3.0, 0.08, 0.45], "mass": 12.0,
                                                              "surface": "wood"}, board_turn,
                joints=[hinge(0, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0])], extent=1.6)

@@ -35,7 +35,7 @@
  ],
  "materials": [
   {
-   "name": "wood",
+   "name": "rough_wood",
    "pbrMetallicRoughness": {
     "baseColorTexture": {
      "index": 0
@@ -43,19 +43,17 @@
     "metallicRoughnessTexture": {
      "index": 2
     },
-    "metallicFactor": 0.0,
+    "metallicFactor": 1.0,
     "roughnessFactor": 1.0
    },
    "normalTexture": {
     "index": 1
    },
    "occlusionTexture": {
-    "index": 2,
-    "strength": 0.81
+    "index": 2
    },
    "extras": {
-    "surface": "wood",
-    "height": 0.006
+    "surface": "wood"
    }
   }
  ],
@@ -87,15 +85,15 @@
  ],
  "images": [
   {
-   "uri": "../crate_1d.ktx2",
+   "uri": "textures/rough_wood_d.ktx2",
    "mimeType": "image/ktx2"
   },
   {
-   "uri": "../crate_1n.ktx2",
+   "uri": "textures/rough_wood_n.ktx2",
    "mimeType": "image/ktx2"
   },
   {
-   "uri": "../crate_1mrh.ktx2",
+   "uri": "textures/rough_wood_arm.ktx2",
    "mimeType": "image/ktx2"
   }
  ],
