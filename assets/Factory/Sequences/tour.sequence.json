@@ -1,5 +1,5 @@
 {
-  "comment": "The factory tour (ADR-0120): the legacy demo's flight over its whole level, made by scripts/make_factory_tour.py from the legacy intro.dgc, ending at the player's eyes. sandbox.tour plays it instead of the menu.",
+  "comment": "The factory tour (ADR-0120): the legacy demo's flight over its whole level, made by daidalos-engine-next-scripts/make_factory_tour.py from the legacy intro.dgc, ending at the player's eyes. sandbox.tour plays it instead of the menu.",
   "cues": [
     {"at": 0, "camera": {"path": "smooth", "keys": [
       {"at": 0, "position": [0, 2.1, 0], "target": [0, 2.1, -4], "aperture": 0, "focus": 4},

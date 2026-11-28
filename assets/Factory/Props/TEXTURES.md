@@ -2,7 +2,7 @@
 
 From [Poly Haven](https://polyhaven.com), under CC0 1.0 (public domain): free for any use, without
 attribution. Their authors are credited here all the same. Fetched and converted by
-`scripts/make_physics_props.py` (ADR-0128).
+`daidalos-engine-next-scripts/make_physics_props.py` (ADR-0128).
 
 | Texture | Authors | Source |
 |---|---|---|

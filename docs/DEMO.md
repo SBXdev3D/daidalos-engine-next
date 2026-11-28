@@ -65,7 +65,7 @@ The level loads behind the legacy loading screen, then waits behind the main men
 
 In development builds, the key under Escape opens the developer tools: the console (`help` lists its commands, `restart` starts over), statistics, the entities with the player's state, and the loaded resources.
 
-`scripts/import_legacy_level.py` is not part of running the demo. It converts the legacy level again, or brings more legacy content over. It also bakes the animated MilkShape models to glTF files of their own: the zombie, the fans and the handgun, whose clips are the frame ranges the legacy game played. The committed level has since been edited by later steps, so the importer no longer reproduces it. Since Phase 10 the level is `Factory/Factory.level.json` (ADR-0054): its lights, fog, effects, sky, exposure, props and the game's objects, around the walls and doors of `Factory.gltf`; `scripts/gltf_to_level.py` made it once from the dressed glTF level.
+`daidalos-engine-next-scripts/import_legacy_level.py` is not part of running the demo. It converts the legacy level again, or brings more legacy content over. It also bakes the animated MilkShape models to glTF files of their own: the zombie, the fans and the handgun, whose clips are the frame ranges the legacy game played. The committed level has since been edited by later steps, so the importer no longer reproduces it. Since Phase 10 the level is `Factory/Factory.level.json` (ADR-0054): its lights, fog, effects, sky, exposure, props and the game's objects, around the walls and doors of `Factory.gltf`; `daidalos-engine-next-scripts/gltf_to_level.py` made it once from the dressed glTF level.
 
 ## The fight
 

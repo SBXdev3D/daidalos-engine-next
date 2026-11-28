@@ -65,7 +65,7 @@ struct WeaponSpec {
     float kickPitch;
 };
 
-// The weapons are Poly Haven's models, at their real size (scripts/fetch_showcase_props.py): a service pistol
+// The weapons are Poly Haven's models, at their real size (daidalos-engine-next-scripts/fetch_showcase_props.py): a service pistol
 // and a bolt-action rifle, which replaced the legacy shotgun. The rifle holds five rounds, fires one at a time,
 // slowly, and kills a zombie with one hit. The sounds are still the legacy handgun's and shotgun's.
 constexpr std::array<WeaponSpec, kWeaponKinds> kWeapons{{
@@ -103,7 +103,7 @@ constexpr float kZombieViewAngle = glm::radians(60.0f); // From the direction it
 // Faster than the original's 0.7 m/s, for a faster game (docs/DEMO.md). The walk clip speeds up with it.
 constexpr float kZombieSpeed = 1.3f;
 // How fast the zombie's walk clip walks: Quaternius' zombie walk, 1.4 m in 1.33 s, on legs 1.1 times longer
-// (scripts/make_hazmat_zombie.py).
+// (daidalos-engine-next-scripts/make_hazmat_zombie.py).
 constexpr float kZombieWalkClipSpeed = 1.4f / 1.333f * 1.1f;
 constexpr float kZombieTurnSpeed = glm::radians(180.0f);
 constexpr float kZombieReach = 4.0f * kLegacyUnit;

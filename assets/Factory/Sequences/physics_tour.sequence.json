@@ -1,5 +1,5 @@
 {
- "comment": "The physics gallery's tour (ADR-0128): a shot of each room, fading through black between them, with the cues that set its loose objects off, made by scripts/make_physics_gallery.py; changes belong there. +sandbox.sequence plays it at the start.",
+ "comment": "The physics gallery's tour (ADR-0128): a shot of each room, fading through black between them, with the cues that set its loose objects off, made by daidalos-engine-next-scripts/make_physics_gallery.py; changes belong there. +sandbox.sequence plays it at the start.",
  "cues": [
   {
    "at": 0,
