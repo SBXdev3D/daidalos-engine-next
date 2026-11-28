@@ -498,6 +498,8 @@ struct Body {
     /// A static box's surface carries what lies on it at this velocity, meters per second in the entity's frame:
     /// a conveyor belt (ADR-0127).
     glm::vec3 conveyor{0.0f};
+    /// Loose objects of the same group never touch one another (ADR-0128): a chain's links and what hangs from it.
+    std::string group;
     [[nodiscard]] bool operator==(const Body&) const = default;
 };
 

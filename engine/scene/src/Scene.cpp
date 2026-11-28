@@ -518,7 +518,8 @@ void Scene::RunCue(const Cue& cue) {
     case Cue::Kind::Impulse:
     case Cue::Kind::Release:
     case Cue::Kind::Break:
-    case Cue::Kind::Motor: {
+    case Cue::Kind::Motor:
+    case Cue::Kind::Shot: {
         // Among loose objects only: a model's node may have the same name.
         ecs::Entity entity;
         m_world.Each<NodeName, RigidBody>([&](ecs::Entity named, const NodeName& node, const RigidBody&) {
@@ -537,6 +538,10 @@ void Scene::RunCue(const Cue& cue) {
             m_physics.AddImpulseAt(body->body, cue.vector, point);
         } else if (cue.kind == Cue::Kind::Release) {
             m_physics.ReleaseBody(body->body);
+        } else if (cue.kind == Cue::Kind::Shot) {
+            // The game casts the shot, from where it is fired through this point (ADR-0129).
+            const glm::vec3 point = m_physics.BodyPosition(body->body) + m_physics.BodyRotation(body->body) * cue.point;
+            m_shots.push_back({cue.position, point, cue.path});
         } else {
             const Joints* joints = m_world.TryGet<Joints>(entity);
             if (joints == nullptr || cue.joint >= joints->handles.size()) {

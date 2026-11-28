@@ -234,6 +234,18 @@ core::Result<Cue> ReadCue(std::string_view sequence, simdjson::dom::object cueOb
         DAI_TRY(reader.Text("entity", cue.name, true));
         DAI_TRY(reader.Vector("impulse", cue.vector, true));
         DAI_TRY(reader.Vector("point", cue.point));
+    } else if (kind == "shot") {
+        // ADR-0129: the game fires it, as its own weapon would, and says if it knows no such weapon.
+        cue.kind = Cue::Kind::Shot;
+        DAI_TRY(reader.Only({"entity", "point", "from", "weapon"}));
+        DAI_TRY(reader.Text("entity", cue.name, true));
+        DAI_TRY(reader.Vector("point", cue.point));
+        DAI_TRY(reader.Vector("from", cue.position, true));
+        cue.path = "handgun";
+        DAI_TRY(reader.Text("weapon", cue.path));
+        if (cue.path.empty()) {
+            return reader.Invalid("weapon", "must name a weapon");
+        }
     } else if (kind == "release") {
         cue.kind = Cue::Kind::Release;
         DAI_TRY(reader.Only({"entity"}));
@@ -389,6 +401,8 @@ std::string_view CueKindName(Cue::Kind kind) {
         return "break";
     case Cue::Kind::Motor:
         return "motor";
+    case Cue::Kind::Shot:
+        return "shot";
     }
     return "event";
 }
@@ -478,6 +492,14 @@ std::string WriteSequence(const Sequence& sequence) {
             break;
         case Cue::Kind::Release:
             body.emplace("entity", text(cue->name));
+            break;
+        case Cue::Kind::Shot:
+            body.emplace("entity", text(cue->name));
+            if (cue->point != glm::vec3(0.0f)) {
+                body.emplace("point", vector(cue->point));
+            }
+            body.emplace("from", vector(cue->position));
+            body.emplace("weapon", text(cue->path));
             break;
         case Cue::Kind::Break:
             body.emplace("entity", text(cue->name));

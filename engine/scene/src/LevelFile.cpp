@@ -267,6 +267,7 @@ core::Result<Body> ReadBody(Reader reader) {
     DAI_LEVEL_TRY(reader.Flag("fast", body.fast));
     DAI_LEVEL_TRY(reader.Flag("held", body.held));
     DAI_LEVEL_TRY(reader.Vector("conveyor", body.conveyor));
+    DAI_LEVEL_TRY(reader.Text("group", body.group));
     DAI_LEVEL_TRY(reader.Finish());
     return body;
 }
@@ -1049,6 +1050,7 @@ Json WriteEntity(const LevelEntity& entity) {
         Put(body, "fast", entity.body->fast, fallback.fast);
         Put(body, "held", entity.body->held, fallback.held);
         Put(body, "conveyor", entity.body->conveyor, fallback.conveyor);
+        Put(body, "group", entity.body->group, fallback.group);
         object.emplace("body", Json{std::move(body)});
     }
     if (entity.decal) {

@@ -303,6 +303,10 @@ bool InspectBody(scene::Body& body, const scene::Model* model) {
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Stays where it is until a sequence's release or impulse cue lets it go");
         }
+        changed |= InputString("Group", body.group);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Loose objects of the same group never touch one another: a chain and its load");
+        }
     } else {
         changed |= ImGui::DragFloat3("Conveyor (m/s)", &body.conveyor.x, 0.01f, -10.0f, 10.0f, "%.2f");
         if (ImGui::IsItemHovered()) {

@@ -39,6 +39,10 @@ void AddAmmo(Player& player, WeaponKind weapon, int rounds);
 void UpdateWeapons(daidalos::scene::Scene& scene, daidalos::ecs::Entity player,
                    const daidalos::input::InputState& input, const daidalos::input::ActionMap& actions, float delta);
 
+/// Fires the shot cues the level's sequences played (ADR-0129), as the player's weapon of that name would, from
+/// an unseen gun: heard where it is fired, landing as the player's shots land. It hurts no zombie.
+void FireCueShots(daidalos::scene::Scene& scene, daidalos::ecs::Entity player);
+
 /// What the zombies see, decide and do, on every fixed step.
 void UpdateZombies(daidalos::scene::Scene& scene, daidalos::ecs::Entity player, float step);
 

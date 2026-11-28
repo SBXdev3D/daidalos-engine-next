@@ -78,6 +78,9 @@ scene::Cue MakeCue(scene::Cue::Kind kind, float at) {
     case scene::Cue::Kind::Motor:
         cue.motor = {.mode = daidalos::physics::MotorMode::Speed, .target = 1.0f};
         break;
+    case scene::Cue::Kind::Shot:
+        cue.path = "handgun";
+        break;
     case scene::Cue::Kind::Sound:
     case scene::Cue::Kind::Release:
     case scene::Cue::Kind::Break:
@@ -123,6 +126,8 @@ std::string CueSummary(const scene::Cue& cue) {
         return std::format("break joint {} of {}", cue.joint + 1, cue.name);
     case scene::Cue::Kind::Motor:
         return std::format("motor of joint {} of {} to {:.3g}", cue.joint + 1, cue.name, cue.motor.target);
+    case scene::Cue::Kind::Shot:
+        return std::format("shoot {} with the {}", cue.name, cue.path);
     }
     return {};
 }
@@ -152,6 +157,7 @@ unsigned CueColor(scene::Cue::Kind kind) {
     case scene::Cue::Kind::Event:
         return Rgba(200, 120, 200);
     case scene::Cue::Kind::Blast:
+    case scene::Cue::Kind::Shot:
         return Rgba(255, 90, 40);
     case scene::Cue::Kind::Impulse:
     case scene::Cue::Kind::Release:

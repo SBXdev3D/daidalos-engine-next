@@ -1068,6 +1068,12 @@ core::Result<ecs::Entity> BuildLevel(scene::Scene& scene, const scene::Level& le
             surfaces.surfaces.emplace(box.body.value, surface);
         }
     });
+    // Loose objects (ADR-0125), of what the level says they are made of: a shot at a lamp throws sparks.
+    world.Each<scene::RigidBody>([&surfaces](ecs::Entity, const scene::RigidBody& body) {
+        if (!body.surface.empty()) {
+            surfaces.surfaces.emplace(body.body.value, body.surface);
+        }
+    });
 
     // Sound finds its way around the walls (ADR-0066): the paths bake on a worker thread while the game starts.
     scene.Sounds().StartPathing(3.0f);
@@ -1452,6 +1458,11 @@ void AddSystems(scene::Scene& scene, const input::InputState& input, const input
     systems.Add("Weapons", [&, player](ecs::World& world, core::Seconds delta) {
         if (const ecs::Entity entity = player(); world.IsAlive(entity) && !scene.InCinematic()) {
             UpdateWeapons(scene, entity, input, actions, static_cast<float>(delta.count()));
+        }
+    });
+    systems.Add("Cue shots", [&scene, player](ecs::World& world, core::Seconds /*delta*/) {
+        if (const ecs::Entity entity = player(); world.IsAlive(entity)) {
+            FireCueShots(scene, entity);
         }
     });
     systems.Add("Zombie positions", [&scene](ecs::World& /*world*/, core::Seconds /*delta*/) { PlaceZombies(scene); });

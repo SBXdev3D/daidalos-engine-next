@@ -63,10 +63,12 @@ TEST(SequenceTest, PhysicsCuesParseAndRoundTrip) {
         {"at": 0.1, "impulse": {"entity": "Crate", "impulse": [0, 50, -20], "point": [0, 0.3, 0]}},
         {"at": 0.2, "release": {"entity": "Hanging crate"}},
         {"at": 0.3, "break": {"entity": "Sign", "joint": 1}},
-        {"at": 0.4, "motor": {"entity": "Wheel", "joint": 0, "mode": "position", "target": 1.5, "strength": 900}}
+        {"at": 0.4, "motor": {"entity": "Wheel", "joint": 0, "mode": "position", "target": 1.5, "strength": 900}},
+        {"at": 0.5, "shot": {"entity": "Lamp", "point": [0, -0.5, 0], "from": [4, 1.5, 2], "weapon": "rifle"}},
+        {"at": 0.6, "shot": {"entity": "Door", "from": [1, 1, 1]}}
     ]})");
     ASSERT_TRUE(sequence.has_value()) << core::Format(sequence.error());
-    ASSERT_EQ(sequence->cues.size(), 5u);
+    ASSERT_EQ(sequence->cues.size(), 7u);
     EXPECT_EQ(sequence->cues[0].kind, Cue::Kind::Blast);
     EXPECT_FLOAT_EQ(sequence->cues[0].radius, 6.0f);
     EXPECT_FLOAT_EQ(sequence->cues[0].strength, 400.0f);
@@ -76,6 +78,12 @@ TEST(SequenceTest, PhysicsCuesParseAndRoundTrip) {
     EXPECT_EQ(sequence->cues[3].joint, 1u);
     EXPECT_EQ(sequence->cues[4].motor.mode, physics::MotorMode::Position);
     EXPECT_FLOAT_EQ(sequence->cues[4].motor.strength, 900.0f);
+    // ADR-0129.
+    EXPECT_EQ(sequence->cues[5].kind, Cue::Kind::Shot);
+    EXPECT_EQ(sequence->cues[5].point, glm::vec3(0.0f, -0.5f, 0.0f));
+    EXPECT_EQ(sequence->cues[5].position, glm::vec3(4.0f, 1.5f, 2.0f));
+    EXPECT_EQ(sequence->cues[5].path, "rifle");
+    EXPECT_EQ(sequence->cues[6].path, "handgun"); // The weapon unless one is named.
     const core::Result<scene::Sequence> read = scene::ParseSequence(scene::WriteSequence(*sequence));
     ASSERT_TRUE(read.has_value()) << core::Format(read.error());
     EXPECT_EQ(*read, *sequence);
@@ -91,6 +99,7 @@ TEST(SequenceTest, PhysicsCuesParseAndRoundTrip) {
               std::string::npos);
     EXPECT_NE(error(R"({"cues": [{"at": 0, "motor": {"entity": "A", "mode": "fast"}}]})").find("mode"),
               std::string::npos);
+    EXPECT_NE(error(R"({"cues": [{"at": 0, "shot": {"entity": "A"}}]})").find("from"), std::string::npos);
 }
 
 TEST(SequenceTest, MistakesNameWhatIsWrong) {

@@ -474,6 +474,7 @@ void LevelInstance::Make(const LevelEntity& entity) {
         desc.material = bodyMaterial;
         desc.fast = entity.body->fast;
         desc.held = entity.body->held;
+        desc.group = BodyGroupOf(entity.body->group);
         if (desc.shape.kind == physics::ShapeKind::Hull) {
             // The hull wraps the model where the entity's scale makes it.
             if (const ModelInstance* instance = world.TryGet<ModelInstance>(created)) {

@@ -53,6 +53,7 @@ bool NamesEntity(scene::Cue::Kind kind) {
     case scene::Cue::Kind::Release:
     case scene::Cue::Kind::Break:
     case scene::Cue::Kind::Motor:
+    case scene::Cue::Kind::Shot:
         return true;
     default:
         return false;

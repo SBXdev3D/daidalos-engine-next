@@ -59,17 +59,19 @@ struct Cue {
         Release,   // Let a held loose object fall: entity.
         Break,     // Break one of a loose object's joints: entity, joint.
         Motor,     // Drive one of its joints: entity, joint, motor.
+        Shot,      // Fire at a loose object from an unseen gun (ADR-0129): entity, point, from, weapon.
     };
     float at = 0.0f;
     Kind kind = Kind::Event;
     std::string name; // The circuit, the entity, or the event.
-    std::string path; // The clip or the effect.
+    std::string path; // The clip, the effect, or a shot's weapon.
     /// A subtitle's text, or the caption of a sound; a key of the text table (ADR-0075).
     std::string caption;
     bool on = true;
     float volume = 1.0f;
     float ducking = 0.0f;
     std::uint32_t count = 1;
+    /// Where a move goes, or where a shot is fired from, in the world.
     glm::vec3 position{0.0f};
     float seconds = 0.0f;
     float strength = 0.0f;
@@ -79,7 +81,8 @@ struct Cue {
     glm::vec3 color{0.0f};
     /// A blast's reach, meters (ADR-0127).
     float radius = 0.0f;
-    /// An impulse, kilogram-meters per second in the world, and where it pushes in the entity's frame.
+    /// An impulse, kilogram-meters per second in the world, and where it pushes (or a shot aims) in the
+    /// entity's frame.
     glm::vec3 vector{0.0f};
     glm::vec3 point{0.0f};
     /// Which of the entity's joints, by its place in the level's list.
@@ -94,7 +97,7 @@ struct Cue {
 
 /// A timeline of cues, from a .sequence.json file: {"cues": [{"at": 0.5, "sound": {...}}, ...]}. Each cue is
 /// its time and one kind, named by its key: power, light, sound, particles, move, visible, shake, camera,
-/// mix, event, subtitle, fade, blast, impulse, release, break or motor.
+/// mix, event, subtitle, fade, blast, impulse, release, break, motor or shot.
 struct Sequence {
     std::vector<Cue> cues;
     /// What the sequence is for, for people: the file's "comment".

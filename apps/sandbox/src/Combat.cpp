@@ -338,6 +338,10 @@ void LeaveMark(scene::Scene& scene, physics::PhysicsWorld& physics, const Partic
     // A shot into a puddle rings its water (ADR-0061).
     scene.AddRipple(hit.position, 2.0f);
     if (!flesh) {
+        // A hole would stay where a loose object was hit, in the air, once it moves: no hole on one.
+        if (physics.IsDynamic(hit.body)) {
+            return;
+        }
         const bool metal = surface == "metal";
         const rhi::TextureHandle albedo = metal ? effects.holeMetal : effects.hole;
         scene.SpawnDecal({.position = hit.position,
@@ -405,6 +409,44 @@ constexpr glm::vec3 kEjectDirection{0.8f, 0.55f, 0.25f};
 // How long a shot lights the room, in seconds.
 constexpr float kMuzzleFlashTime = 0.06f;
 
+// Where a shot fired from `from` lands: loose objects hit are pushed where it lands, so that they spin (ADR-0127),
+// more by the heavier round; and what the surface each pellet hits throws out: blood from a zombie, sparks from
+// metal, chips from stone, splinters from wood, glass. The player's shots and the sequences' (ADR-0129).
+void LandShot(scene::Scene& scene, ecs::Entity playerEntity, const WeaponSpec& spec, const glm::vec3& from,
+              const glm::vec3& aim, const std::vector<physics::RayHit>& hits) {
+    ecs::World& world = scene.World();
+    physics::PhysicsWorld& physics = scene.Physics();
+    for (const physics::RayHit& hit : hits) {
+        if (physics.IsDynamic(hit.body)) {
+            const glm::vec3 along = glm::normalize(hit.position - from);
+            physics.AddImpulseAt(hit.body,
+                                 along * (kShotPushPerDamage * static_cast<float>(spec.damage) /
+                                          static_cast<float>(std::max(spec.pellets, 1))),
+                                 hit.position);
+        }
+    }
+    const ParticleEffects* effects = world.TryGet<ParticleEffects>(playerEntity);
+    if (effects == nullptr) {
+        return;
+    }
+    std::vector<physics::BodyId> zombieBodies;
+    world.Each<Zombie>([&](ecs::Entity, const Zombie& zombie) { zombieBodies.push_back(zombie.body); });
+    const BodySurfaces* surfaces = world.TryGet<BodySurfaces>(playerEntity);
+    bool heard = false;
+    for (const physics::RayHit& hit : hits) {
+        const bool flesh = std::ranges::find(zombieBodies, hit.body) != zombieBodies.end();
+        const std::string_view surface = surfaces != nullptr ? surfaces->Of(hit.body) : std::string_view{};
+        for (const Impact& impact : ImpactsOf(*effects, flesh ? "flesh" : surface)) {
+            scene.SpawnParticles(impact.effect, hit.position, hit.normal, static_cast<std::uint32_t>(impact.count));
+        }
+        LeaveMark(scene, physics, *effects, hit, flesh, surface, aim);
+        // One impact heard per shot, however many pellets land.
+        if (!std::exchange(heard, true)) {
+            PlayImpact(scene, playerEntity, flesh ? "flesh" : surface, hit.position);
+        }
+    }
+}
+
 void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsenal* arsenal) {
     ecs::World& world = scene.World();
     physics::PhysicsWorld& physics = scene.Physics();
@@ -449,42 +491,15 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
         }
     }
 
-    // Loose objects hit are pushed where the shot lands, so that they spin (ADR-0127): more by the heavier round.
-    for (const physics::RayHit& hit : hits) {
-        if (physics.IsDynamic(hit.body)) {
-            const glm::vec3 along = glm::normalize(hit.position - eye.translation);
-            physics.AddImpulseAt(hit.body,
-                                 along * (kShotPushPerDamage * static_cast<float>(spec.damage) /
-                                          static_cast<float>(std::max(spec.pellets, 1))),
-                                 hit.position);
-        }
-    }
-
-    // A flash and a puff of smoke at the muzzle, and where each pellet lands, what the surface it hits
-    // throws out: blood from a zombie, sparks from metal, chips from stone, splinters from wood, glass.
+    // A flash and a puff of smoke at the muzzle.
     if (const ParticleEffects* effects = world.TryGet<ParticleEffects>(playerEntity)) {
         const glm::vec3 muzzle = eye.translation + eye.rotation * MuzzleOffset(spec);
         scene.SpawnParticles(effects->muzzleFlash, muzzle, aim, 3);
         scene.SpawnParticles(effects->gunSmoke, muzzle, math::kUp, 6);
         scene.SpawnParticles(effects->casings, eye.translation + eye.rotation * kEjectOffset,
                              eye.rotation * glm::normalize(kEjectDirection), 1);
-        std::vector<physics::BodyId> zombieBodies;
-        world.Each<Zombie>([&](ecs::Entity, const Zombie& zombie) { zombieBodies.push_back(zombie.body); });
-        const BodySurfaces* surfaces = world.TryGet<BodySurfaces>(playerEntity);
-        bool heard = false;
-        for (const physics::RayHit& hit : hits) {
-            const bool flesh = std::ranges::find(zombieBodies, hit.body) != zombieBodies.end();
-            const std::string_view surface = surfaces != nullptr ? surfaces->Of(hit.body) : std::string_view{};
-            for (const Impact& impact : ImpactsOf(*effects, flesh ? "flesh" : surface)) {
-                scene.SpawnParticles(impact.effect, hit.position, hit.normal, static_cast<std::uint32_t>(impact.count));
-            }
-            LeaveMark(scene, physics, *effects, hit, flesh, surface, aim);
-            // One impact heard per shot, however many pellets land.
-            if (!std::exchange(heard, true)) {
-                PlayImpact(scene, playerEntity, flesh ? "flesh" : surface, hit.position);
-            }
-        }
     }
+    LandShot(scene, playerEntity, spec, eye.translation, aim, hits);
 
     world.Each<Zombie>([&](ecs::Entity /*entity*/, Zombie& zombie) {
         if (zombie.state == ZombieState::Dying) {
@@ -513,6 +528,38 @@ void Shoot(scene::Scene& scene, ecs::Entity playerEntity, Player& player, Arsena
         }
     });
 }
+
+} // namespace
+
+void FireCueShots(scene::Scene& scene, ecs::Entity playerEntity) {
+    constexpr std::array<std::string_view, kWeaponKinds> kNames{"handgun", "rifle"};
+    for (const scene::Scene::CueShot& shot : scene.TakeShots()) {
+        const auto kind = std::ranges::find(kNames, shot.weapon);
+        if (kind == kNames.end()) {
+            DAI_LOG_WARNING("sandbox", "Sequence: no weapon '{}' to shoot with: handgun or rifle", shot.weapon);
+            continue;
+        }
+        const auto index = static_cast<std::size_t>(kind - kNames.begin());
+        const glm::vec3 toward = shot.to - shot.from;
+        const float distance = glm::length(toward);
+        if (distance < 1e-3f) {
+            continue;
+        }
+        // Heard where it is fired; seen only where it lands, with no spread: the same shot every time.
+        if (const Arsenal* arsenal = scene.World().TryGet<Arsenal>(playerEntity)) {
+            scene.Sounds().Play(arsenal->fire[index], {.position = shot.from});
+        }
+        const glm::vec3 aim = toward / distance;
+        std::vector<physics::RayHit> hits;
+        // A little past the point aimed at, so that a point inside the object still finds its surface.
+        if (const std::optional<physics::RayHit> hit = scene.Physics().CastRay(shot.from, aim, distance + 1.0f)) {
+            hits.push_back(*hit);
+        }
+        LandShot(scene, playerEntity, kWeapons[index], shot.from, aim, hits);
+    }
+}
+
+namespace {
 
 void StartReload(scene::Scene& scene, Player& player, const Arsenal* arsenal) {
     const WeaponSpec& spec = kWeapons[static_cast<std::size_t>(player.weapon)];
