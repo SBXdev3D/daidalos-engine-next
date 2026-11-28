@@ -493,6 +493,11 @@ struct Body {
     std::optional<float> restitution;
     /// Small and fast, as debris: swept so that it does not pass through walls.
     bool fast = false;
+    /// Held where it is until a release cue lets it fall (ADR-0127).
+    bool held = false;
+    /// A static box's surface carries what lies on it at this velocity, meters per second in the entity's frame:
+    /// a conveyor belt (ADR-0127).
+    glm::vec3 conveyor{0.0f};
     [[nodiscard]] bool operator==(const Body&) const = default;
 };
 

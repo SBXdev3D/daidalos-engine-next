@@ -299,6 +299,15 @@ bool InspectBody(scene::Body& body, const scene::Model* model) {
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Swept each step, so that it does not fly through thin walls");
         }
+        changed |= ImGui::Checkbox("Held until released", &body.held);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Stays where it is until a sequence's release or impulse cue lets it go");
+        }
+    } else {
+        changed |= ImGui::DragFloat3("Conveyor (m/s)", &body.conveyor.x, 0.01f, -10.0f, 10.0f, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("What lies on it is carried at this velocity, in the entity's frame");
+        }
     }
     return changed;
 }

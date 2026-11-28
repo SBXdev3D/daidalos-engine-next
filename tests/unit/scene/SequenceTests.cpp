@@ -56,6 +56,43 @@ TEST(SequenceTest, EveryKindOfCueParses) {
     EXPECT_FLOAT_EQ(sequence->Length(), 2.0f);
 }
 
+TEST(SequenceTest, PhysicsCuesParseAndRoundTrip) {
+    // ADR-0127.
+    const core::Result<scene::Sequence> sequence = scene::ParseSequence(R"({"cues": [
+        {"at": 0.0, "blast": {"entity": "Blast A", "radius": 6, "strength": 400}},
+        {"at": 0.1, "impulse": {"entity": "Crate", "impulse": [0, 50, -20], "point": [0, 0.3, 0]}},
+        {"at": 0.2, "release": {"entity": "Hanging crate"}},
+        {"at": 0.3, "break": {"entity": "Sign", "joint": 1}},
+        {"at": 0.4, "motor": {"entity": "Wheel", "joint": 0, "mode": "position", "target": 1.5, "strength": 900}}
+    ]})");
+    ASSERT_TRUE(sequence.has_value()) << core::Format(sequence.error());
+    ASSERT_EQ(sequence->cues.size(), 5u);
+    EXPECT_EQ(sequence->cues[0].kind, Cue::Kind::Blast);
+    EXPECT_FLOAT_EQ(sequence->cues[0].radius, 6.0f);
+    EXPECT_FLOAT_EQ(sequence->cues[0].strength, 400.0f);
+    EXPECT_EQ(sequence->cues[1].vector, glm::vec3(0.0f, 50.0f, -20.0f));
+    EXPECT_EQ(sequence->cues[1].point, glm::vec3(0.0f, 0.3f, 0.0f));
+    EXPECT_EQ(sequence->cues[2].kind, Cue::Kind::Release);
+    EXPECT_EQ(sequence->cues[3].joint, 1u);
+    EXPECT_EQ(sequence->cues[4].motor.mode, physics::MotorMode::Position);
+    EXPECT_FLOAT_EQ(sequence->cues[4].motor.strength, 900.0f);
+    const core::Result<scene::Sequence> read = scene::ParseSequence(scene::WriteSequence(*sequence));
+    ASSERT_TRUE(read.has_value()) << core::Format(read.error());
+    EXPECT_EQ(*read, *sequence);
+
+    const auto error = [](std::string_view json) {
+        const core::Result<scene::Sequence> bad = scene::ParseSequence(json, "test");
+        return bad.has_value() ? std::string() : core::Format(bad.error());
+    };
+    EXPECT_NE(error(R"({"cues": [{"at": 0, "blast": {"entity": "A", "radius": -1}}]})").find("radius"),
+              std::string::npos);
+    EXPECT_NE(error(R"({"cues": [{"at": 0, "impulse": {"entity": "A"}}]})").find("impulse"), std::string::npos);
+    EXPECT_NE(error(R"({"cues": [{"at": 0, "break": {"entity": "A", "joint": 0.5}}]})").find("joint"),
+              std::string::npos);
+    EXPECT_NE(error(R"({"cues": [{"at": 0, "motor": {"entity": "A", "mode": "fast"}}]})").find("mode"),
+              std::string::npos);
+}
+
 TEST(SequenceTest, MistakesNameWhatIsWrong) {
     const auto error = [](std::string_view json) {
         const core::Result<scene::Sequence> sequence = scene::ParseSequence(json, "test");

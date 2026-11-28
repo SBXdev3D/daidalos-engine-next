@@ -6,6 +6,7 @@
 
 #include <daidalos/audio/Audio.hpp>
 #include <daidalos/core/Result.hpp>
+#include <daidalos/physics/PhysicsWorld.hpp>
 
 #include <glm/vec3.hpp>
 
@@ -53,6 +54,11 @@ struct Cue {
         Event,     // A name the game's code takes (Scene::TakeEvents).
         Subtitle,  // A line someone says (ADR-0075): text and speaker, keys of the text table, for seconds.
         Fade,      // Cover the picture with a color (ADR-0122): to how much (strength, 0 to 1), over seconds.
+        Blast,     // Throw loose objects from the entity (ADR-0127): radius, strength.
+        Impulse,   // Push a loose object: entity, vector, at a point of its own frame.
+        Release,   // Let a held loose object fall: entity.
+        Break,     // Break one of a loose object's joints: entity, joint.
+        Motor,     // Drive one of its joints: entity, joint, motor.
     };
     float at = 0.0f;
     Kind kind = Kind::Event;
@@ -71,6 +77,14 @@ struct Cue {
     CameraPath cameraPath = CameraPath::Eased;
     /// A fade's color, linear, 0 to 1 (ADR-0122).
     glm::vec3 color{0.0f};
+    /// A blast's reach, meters (ADR-0127).
+    float radius = 0.0f;
+    /// An impulse, kilogram-meters per second in the world, and where it pushes in the entity's frame.
+    glm::vec3 vector{0.0f};
+    glm::vec3 point{0.0f};
+    /// Which of the entity's joints, by its place in the level's list.
+    std::uint32_t joint = 0;
+    physics::JointMotor motor;
     audio::MixSnapshot mix;
     [[nodiscard]] bool operator==(const Cue&) const = default;
 };
@@ -80,7 +94,7 @@ struct Cue {
 
 /// A timeline of cues, from a .sequence.json file: {"cues": [{"at": 0.5, "sound": {...}}, ...]}. Each cue is
 /// its time and one kind, named by its key: power, light, sound, particles, move, visible, shake, camera,
-/// mix, event, subtitle or fade.
+/// mix, event, subtitle, fade, blast, impulse, release, break or motor.
 struct Sequence {
     std::vector<Cue> cues;
     /// What the sequence is for, for people: the file's "comment".

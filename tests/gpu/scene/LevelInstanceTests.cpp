@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <format>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -270,6 +271,88 @@ TEST_F(LevelInstanceTest, ALampHangsOnItsChainAndItsLightGoesWithIt) {
     std::erase_if(shorter.entities, [](const LevelEntity& entity) { return entity.id == 2; });
     m_instance->Sync(level, shorter);
     EXPECT_EQ(m_scene->Physics().JointCount(), 3u) << "Link 1 to the hook, the lamp to link 3, and the rope";
+}
+
+TEST_F(LevelInstanceTest, ABlastThrowsNearerThingsFasterAndNotThroughWalls) {
+    // ADR-0127: four 10 kg crates around a blast at the origin of 5 m: at 1.5 m, at 3 m, at 7 m, and at 1.5 m
+    // behind a wall.
+    Level level;
+    const auto crate = [&level](std::uint64_t id, glm::vec3 at) {
+        LevelEntity entity{.id = id, .name = std::format("Crate {}", id)};
+        entity.transform.translation = at;
+        entity.body = scene::Body{.size = glm::vec3(0.4f), .mass = 10.0f};
+        level.entities.push_back(entity);
+    };
+    crate(1, {1.5f, 0.0f, 0.0f});
+    crate(2, {3.0f, 0.0f, 0.0f});
+    crate(3, {7.0f, 0.0f, 0.0f});
+    crate(4, {-1.5f, 0.0f, 0.0f});
+    LevelEntity wall{.id = 5, .name = "Wall"};
+    wall.transform.translation = {-0.8f, 0.0f, 0.0f};
+    wall.body = scene::Body{.size = {0.2f, 4.0f, 4.0f}, .mass = 0.0f};
+    level.entities.push_back(wall);
+    m_instance->Build(level);
+    const auto speed = [this](std::uint64_t id) {
+        const physics::BodyId body = m_scene->World().Get<scene::RigidBody>(m_instance->Find(id)).body;
+        const glm::vec3 velocity = m_scene->Physics().BodyVelocity(body);
+        return glm::length(glm::vec2(velocity.x, velocity.z));
+    };
+    EXPECT_EQ(m_scene->Blast(glm::vec3(0.0f), 5.0f, 300.0f), 3u) << "The far crate is out of reach";
+    EXPECT_GT(speed(1), speed(2));
+    EXPECT_GT(speed(2), 0.5f);
+    EXPECT_EQ(speed(3), 0.0f);
+    EXPECT_LT(speed(4), speed(1) * 0.3f) << "Behind the wall";
+    EXPECT_GT(speed(4), 0.0f) << "A blast wraps around corners";
+    // A blast adds at most 25 m/s, however strong.
+    const physics::BodyId nearest = m_scene->World().Get<scene::RigidBody>(m_instance->Find(1)).body;
+    const glm::vec3 before = m_scene->Physics().BodyVelocity(nearest);
+    m_scene->Blast(glm::vec3(0.0f), 5.0f, 1.0e6f);
+    EXPECT_NEAR(glm::distance(m_scene->Physics().BodyVelocity(nearest), before), 25.0f, 0.01f);
+}
+
+TEST_F(LevelInstanceTest, SequencesPushReleaseBreakAndDrive) {
+    // ADR-0127: a crate pushed, a crate held until released, a sign whose joint is broken, a wheel driven.
+    Level level;
+    LevelEntity pushed{.id = 1, .name = "Pushed"};
+    pushed.transform.translation = {0.0f, 5.0f, 0.0f};
+    pushed.body = scene::Body{.size = glm::vec3(0.4f), .mass = 10.0f, .held = true};
+    LevelEntity held{.id = 2, .name = "Held"};
+    held.transform.translation = {3.0f, 5.0f, 0.0f};
+    held.body = scene::Body{.size = glm::vec3(0.4f), .mass = 10.0f, .held = true};
+    LevelEntity sign{.id = 3, .name = "Sign"};
+    sign.transform.translation = {6.0f, 5.0f, 0.0f};
+    sign.body = scene::Body{.size = glm::vec3(0.4f), .mass = 5.0f};
+    sign.joints.push_back({.kind = physics::JointKind::Fixed});
+    LevelEntity wheel{.id = 4, .name = "Wheel"};
+    wheel.transform.translation = {9.0f, 5.0f, 0.0f};
+    wheel.body = scene::Body{.size = {1.0f, 0.2f, 0.2f}, .mass = 5.0f};
+    wheel.joints.push_back({.kind = physics::JointKind::Hinge, .axis = {0.0f, 0.0f, 1.0f}});
+    level.entities = {pushed, held, sign, wheel};
+    m_instance->Build(level);
+    const core::Result<scene::Sequence> sequence = scene::ParseSequence(R"({"cues": [
+        {"at": 0.0, "impulse": {"entity": "Pushed", "impulse": [0, 0, -30]}},
+        {"at": 0.5, "release": {"entity": "Held"}},
+        {"at": 0.0, "break": {"entity": "Sign", "joint": 0}},
+        {"at": 0.0, "motor": {"entity": "Wheel", "joint": 0, "mode": "speed", "target": 3}}
+    ]})");
+    ASSERT_TRUE(sequence.has_value()) << core::Format(sequence.error());
+    m_scene->PlaySequence(std::make_shared<const scene::Sequence>(*sequence));
+    const auto body = [this](std::uint64_t id) {
+        return m_scene->World().Get<scene::RigidBody>(m_instance->Find(id)).body;
+    };
+    for (int step = 0; step < 15; ++step) {
+        m_scene->RunFrame(core::Seconds(1.0 / 60.0));
+        m_scene->RunFixedStep(core::Seconds(1.0 / 60.0));
+    }
+    EXPECT_LT(m_scene->Physics().BodyPosition(body(1)).z, -0.4f) << "Pushed, and let go to fly";
+    EXPECT_NEAR(m_scene->Physics().BodyPosition(body(2)).y, 5.0f, 1e-3f) << "Still held";
+    EXPECT_LT(m_scene->Physics().BodyPosition(body(3)).y, 4.8f) << "Its glue broken, it falls";
+    for (int step = 0; step < 45; ++step) {
+        m_scene->RunFrame(core::Seconds(1.0 / 60.0));
+        m_scene->RunFixedStep(core::Seconds(1.0 / 60.0));
+    }
+    EXPECT_LT(m_scene->Physics().BodyPosition(body(2)).y, 4.8f) << "Released at 0.5 s";
+    EXPECT_NEAR(std::abs(m_scene->Physics().BodyAngularVelocity(body(4)).z), 3.0f, 0.2f);
 }
 
 TEST_F(LevelInstanceTest, ABrokenJointStaysBrokenInASavedGame) {

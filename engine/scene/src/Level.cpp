@@ -451,6 +451,13 @@ void LevelInstance::Make(const LevelEntity& entity) {
         if (core::Result<physics::BodyId> body =
                 m_scene->Physics().AddStaticMesh(box.corners, kBoxIndices, {}, bodyMaterial)) {
             box.body = *body;
+            if (entity.body->conveyor != glm::vec3(0.0f)) {
+                // Its belt runs along the box as it is turned, at the speed given (ADR-0127).
+                const glm::vec3 along = glm::mat3(placement) * entity.body->conveyor;
+                m_scene->Physics().SetSurfaceVelocity(
+                    *body, glm::length(along) > 0.0f ? glm::normalize(along) * glm::length(entity.body->conveyor)
+                                                     : glm::vec3(0.0f));
+            }
             world.Add<Body>(created, *entity.body);
             world.Add<StaticBox>(created, box);
         } else {
@@ -466,6 +473,7 @@ void LevelInstance::Make(const LevelEntity& entity) {
         desc.mass = entity.body->mass;
         desc.material = bodyMaterial;
         desc.fast = entity.body->fast;
+        desc.held = entity.body->held;
         if (desc.shape.kind == physics::ShapeKind::Hull) {
             // The hull wraps the model where the entity's scale makes it.
             if (const ModelInstance* instance = world.TryGet<ModelInstance>(created)) {

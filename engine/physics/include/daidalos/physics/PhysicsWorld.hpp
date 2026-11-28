@@ -73,6 +73,9 @@ struct DynamicBodyDesc {
     BodyMaterial material;
     /// Swept every step against what it could pass through: for small things that fly fast, such as debris.
     bool fast = false;
+    /// Held where it is, as if hung on nothing, until ReleaseBody lets it fall (ADR-0127): crates waiting at the
+    /// ceiling for their cue. Dynamic bodies push against it as against a wall.
+    bool held = false;
 };
 
 /// Two bodies touching (ADR-0125), at least one of them dynamic. Collected during Step.
@@ -221,6 +224,12 @@ public:
     void AddImpulse(BodyId body, const glm::vec3& impulse);
     /// A push at a point in the world: off the center of mass, it also turns the body. Wakes it.
     void AddImpulseAt(BodyId body, const glm::vec3& impulse, const glm::vec3& point);
+    /// Lets a held body fall (ADR-0127). Nothing for others.
+    void ReleaseBody(BodyId body);
+    [[nodiscard]] bool IsHeld(BodyId body) const;
+    /// What lies on the body is carried along at this velocity in the world, meters per second, as on a conveyor
+    /// belt, while the body itself does not move (ADR-0127). Zero stops it.
+    void SetSurfaceVelocity(BodyId body, const glm::vec3& velocity);
     /// Asleep: it has come to rest, and the simulation leaves it until something touches or pushes it.
     [[nodiscard]] bool IsSleeping(BodyId body) const;
     /// The dynamic bodies whose shapes reach into a sphere, in no set order.

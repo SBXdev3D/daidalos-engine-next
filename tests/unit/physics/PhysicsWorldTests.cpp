@@ -791,3 +791,63 @@ TEST(PhysicsWorldJoints, RemovingABodyRemovesItsJoints) {
     RunSteps(physics, 10);
     EXPECT_LT(physics.BodyPosition(second).y, 2.0f) << "It falls now";
 }
+
+// Forces (ADR-0127).
+
+TEST(PhysicsWorldForces, AHeldBodyWaitsUntilReleased) {
+    PhysicsWorld physics;
+    AddFloor(physics);
+    DynamicBodyDesc desc;
+    desc.held = true;
+    math::Transform start;
+    start.translation = {0.0f, 4.0f, 0.0f};
+    const BodyId crate = physics.AddDynamicBody(desc, start).value();
+    EXPECT_TRUE(physics.IsHeld(crate));
+    EXPECT_FALSE(physics.IsDynamic(crate));
+    // Another crate dropped on it rests on it.
+    const BodyId other = AddWeight(physics, {0.0f, 5.0f, 0.0f}, 10.0f, glm::vec3(0.5f));
+    RunSteps(physics, 120);
+    EXPECT_NEAR(physics.BodyPosition(crate).y, 4.0f, 1e-4f);
+    EXPECT_NEAR(physics.BodyPosition(other).y, 4.5f, 0.05f);
+    physics.ReleaseBody(crate);
+    EXPECT_FALSE(physics.IsHeld(crate));
+    EXPECT_TRUE(physics.IsDynamic(crate));
+    EXPECT_NEAR(physics.BodyMass(crate), 10.0f, 0.01f);
+    RunSteps(physics, 180);
+    EXPECT_NEAR(physics.BodyPosition(crate).y, 0.25f, 0.05f);
+}
+
+TEST(PhysicsWorldForces, AConveyorCarriesWhatLiesOnIt) {
+    // A belt 10 m long running at 1.5 m/s along +X: a crate on it goes along, one beside it stays.
+    PhysicsWorld physics;
+    AddFloor(physics);
+    const std::array<glm::vec3, 4> belt{glm::vec3(-5.0f, 0.3f, -1.0f), glm::vec3(-5.0f, 0.3f, 1.0f),
+                                        glm::vec3(5.0f, 0.3f, 1.0f), glm::vec3(5.0f, 0.3f, -1.0f)};
+    const std::array<std::uint32_t, 6> indices{0, 1, 2, 0, 2, 3};
+    const BodyId conveyor = physics.AddStaticMesh(belt, indices).value();
+    physics.SetSurfaceVelocity(conveyor, {1.5f, 0.0f, 0.0f});
+    const BodyId carried = AddWeight(physics, {-4.0f, 0.6f, 0.0f}, 10.0f, glm::vec3(0.5f));
+    const BodyId beside = AddWeight(physics, {-4.0f, 0.25f, 3.0f}, 10.0f, glm::vec3(0.5f));
+    RunSteps(physics, 180);
+    EXPECT_NEAR(physics.BodyPosition(carried).x, -4.0f + 1.5f * 3.0f, 0.6f);
+    EXPECT_NEAR(physics.BodyPosition(beside).x, -4.0f, 0.01f);
+    // Stopped, the belt lets the crate slide to a stop, as a belt that halts does.
+    physics.SetSurfaceVelocity(conveyor, glm::vec3(0.0f));
+    RunSteps(physics, 60);
+    EXPECT_LT(glm::length(physics.BodyVelocity(carried)), 0.05f);
+}
+
+TEST(PhysicsWorldForces, AHeldBodyCanHaveJoints) {
+    // A sign held up, hanging from a ball joint: released, it swings rather than falls.
+    PhysicsWorld physics;
+    DynamicBodyDesc desc;
+    desc.held = true;
+    math::Transform start;
+    start.translation = {0.0f, 3.0f, 0.0f};
+    const BodyId sign = physics.AddDynamicBody(desc, start).value();
+    ASSERT_TRUE(physics.AddJoint({.kind = JointKind::Point, .first = sign, .anchor = {0.5f, 3.5f, 0.0f}}));
+    physics.ReleaseBody(sign);
+    RunSteps(physics, 120);
+    EXPECT_NEAR(glm::distance(physics.BodyPosition(sign), glm::vec3(0.5f, 3.5f, 0.0f)),
+                glm::distance(glm::vec3(0.0f, 3.0f, 0.0f), glm::vec3(0.5f, 3.5f, 0.0f)), 0.05f);
+}
