@@ -58,7 +58,7 @@ constexpr float kEyeHeight = 1.5f; // Above the floor.
 constexpr float kCrouchEyeHeight = 0.75f;
 constexpr float kEyeSpeed = 4.0f; // Meters per second, when crouching and standing up.
 constexpr float kPickupRadius = 1.75f;
-// Items rest where they are, as they would (scripts/place_items.py): what shows them in the dark is a glint
+// Items rest where they are, as they would (daidalos-engine-next-scripts/place_items.py): what shows them in the dark is a glint
 // where the flashlight's beam catches them, now and then, the nearer the more often.
 constexpr float kGlintRate = 1.2f;     // Glints per second, close up.
 constexpr float kGlintRange = 18.0f;   // Meters: farther, none.
@@ -130,7 +130,7 @@ struct LoopedSound {
 /// The sounds of the game, with the player's entity.
 struct SoundBank {
     std::array<audio::ClipHandle, 4> steps;
-    /// Footsteps and impacts by what the surface is made of (ADR-0067): scripts/make_surface_sounds.py.
+    /// Footsteps and impacts by what the surface is made of (ADR-0067): daidalos-engine-next-scripts/make_surface_sounds.py.
     std::map<std::string, std::vector<audio::ClipHandle>, std::less<>> surfaceSteps;
     std::map<std::string, std::vector<audio::ClipHandle>, std::less<>> surfaceImpacts;
     /// The mix the player's state asks for (ADR-0067): 0 normal, 1 hurt, 2 dead.
@@ -149,7 +149,7 @@ struct SoundBank {
     /// towards kClassicUnderScore since the tour handed over, from 1 to 0.
     audio::VoiceHandle tourMusic;
     float tourMusicLevel = 1.0f;
-    /// The score in layers and its stingers (ADR-0068): scripts/make_music.py.
+    /// The score in layers and its stingers (ADR-0068): daidalos-engine-next-scripts/make_music.py.
     std::vector<audio::ClipHandle> tension;
     std::vector<audio::ClipHandle> stingers;
     audio::ClipHandle hum;

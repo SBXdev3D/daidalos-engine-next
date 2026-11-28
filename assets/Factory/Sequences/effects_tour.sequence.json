@@ -1,5 +1,5 @@
 {
- "comment": "The effects gallery's tour (ADR-0122): a shot of each room, fading through black between them, made by scripts/make_effects_gallery.py; changes belong there. +sandbox.sequence plays it at the start.",
+ "comment": "The effects gallery's tour (ADR-0122): a shot of each room, fading through black between them, made by daidalos-engine-next-scripts/make_effects_gallery.py; changes belong there. +sandbox.sequence plays it at the start.",
  "cues": [
   {
    "at": 0,

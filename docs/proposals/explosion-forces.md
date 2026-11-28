@@ -41,7 +41,7 @@ Shots do not push bodies either; that is a separate change, which the blast's im
 
 ### Gallery
 
-- The explosion room's props get bodies of real masses: propane tank 15 kg (cylinder), barrel 20 kg empty (cylinder), crates 10 to 20 kg, cement bag 25 kg, storage cart 30 kg, sized from their models' bounds by `scripts/make_effects_gallery.py`.
+- The explosion room's props get bodies of real masses: propane tank 15 kg (cylinder), barrel 20 kg empty (cylinder), crates 10 to 20 kg, cement bag 25 kg, storage cart 30 kg, sized from their models' bounds by `daidalos-engine-next-scripts/make_effects_gallery.py`.
 - Each blast gets a `blast` cue with its flare. Props must not start inside a blast's radius core, or they fly through the camera: placed by the script, checked by `--check`, which learns to keep the shots clear of where things land (the landing spots of a recorded run, or a margin around the props' reach).
 - Three blasts in the same room: the props pile up differently after each, which is what a viewer expects.
 

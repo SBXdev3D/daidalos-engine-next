@@ -2,7 +2,7 @@
 
 All from [Poly Haven](https://polyhaven.com), under CC0 1.0 (public domain): free for any use,
 without attribution. Their authors are credited here all the same. Fetched and converted by
-`scripts/fetch_showcase_props.py` (ADR-0082).
+`daidalos-engine-next-scripts/fetch_showcase_props.py` (ADR-0082).
 
 | Model | Authors | Source |
 |---|---|---|

@@ -11,4 +11,4 @@ Changes from the original:
 - it stands on the ground facing -Z;
 - its textures are KTX2 at 1024 texels.
 
-`scripts/make_hazmat_zombie.py` makes it again from the three downloaded archives (ADR-0119).
+`daidalos-engine-next-scripts/make_hazmat_zombie.py` makes it again from the three downloaded archives (ADR-0119).

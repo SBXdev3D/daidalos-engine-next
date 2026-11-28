@@ -1,5 +1,5 @@
 {
-  "comment": "Into the workshop: a groan behind the wall, the lights cut, and every zombie near hears the player. Staged by scripts/stage_showcase_scares.py (ADR-0084).",
+  "comment": "Into the workshop: a groan behind the wall, the lights cut, and every zombie near hears the player. Staged by daidalos-engine-next-scripts/stage_showcase_scares.py (ADR-0084).",
   "cues": [
     {
       "at": 0.0,

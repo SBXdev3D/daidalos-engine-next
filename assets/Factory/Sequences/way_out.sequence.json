@@ -1,5 +1,5 @@
 {
-  "comment": "The far end of the pumps: a shaft going up, the way out. Staged by scripts/stage_showcase_scares.py (ADR-0084).",
+  "comment": "The far end of the pumps: a shaft going up, the way out. Staged by daidalos-engine-next-scripts/stage_showcase_scares.py (ADR-0084).",
   "cues": [
     {
       "at": 0.0,

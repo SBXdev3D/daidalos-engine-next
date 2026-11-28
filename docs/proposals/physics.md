@@ -24,7 +24,7 @@
 
 Scene:
 - **Impact sounds:** the surface's impact clips (ADR-0067) at the contact, with volume and pitch from the approach speed, and a short cooldown per body pair so that a resting crate doesn't buzz.
-- **Rolling and scraping loops:** a loop per body that rolls or slides, with volume from the speed, made by a new `scripts/make_physics_sounds.py` in the same way as the surface sounds.
+- **Rolling and scraping loops:** a loop per body that rolls or slides, with volume from the speed, made by a new `daidalos-engine-next-scripts/make_physics_sounds.py` in the same way as the surface sounds.
 - **Dust:** a small puff (an existing effect) when something heavy lands hard.
 
 Editor: the shape list, **Fit to model** (sizes the shape from the model's bounds), surface and material fields, and the debug view in the viewport.
@@ -53,7 +53,7 @@ Editor: the shape list, **Fit to model** (sizes the shape from the model's bound
 
 ### 21.4 The physics gallery (ADR-0128)
 
-`scripts/make_physics_gallery.py` writes `Factory/PhysicsGallery` and `Sequences/physics_tour.sequence.json`, using the effects gallery's room, shot, fade and `--check` helpers, which move into a shared `scripts/gallery.py`. Same rules as before: no titles, room sounds and the bodies' own sounds, no music, black holds between rooms, recorded with `record.directory`.
+`daidalos-engine-next-scripts/make_physics_gallery.py` writes `Factory/PhysicsGallery` and `Sequences/physics_tour.sequence.json`, using the effects gallery's room, shot, fade and `--check` helpers, which move into a shared `daidalos-engine-next-scripts/gallery.py`. Same rules as before: no titles, room sounds and the bodies' own sounds, no music, black holds between rooms, recorded with `record.directory`.
 
 Rooms, about 15 to 20 s each, about 4 minutes in all:
 
