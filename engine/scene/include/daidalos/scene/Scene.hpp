@@ -13,6 +13,7 @@
 #include <daidalos/renderer/Renderer.hpp>
 #include <daidalos/renderer/SceneView.hpp>
 #include <daidalos/scene/AssetLibrary.hpp>
+#include <daidalos/scene/Bodies.hpp>
 #include <daidalos/scene/Perception.hpp>
 #include <daidalos/scene/Sequence.hpp>
 #include <daidalos/scene/Systems.hpp>
@@ -148,8 +149,14 @@ public:
     void SetPaused(bool paused);
     [[nodiscard]] bool IsPaused() const { return m_paused; }
     /// Physics holds still while everything else runs: an editor's scene, until it simulates (ADR-0110).
-    void SetPhysicsPaused(bool paused) { m_physicsPaused = paused; }
+    void SetPhysicsPaused(bool paused);
     [[nodiscard]] bool IsPhysicsPaused() const { return m_physicsPaused; }
+
+    /// The sounds and dust of loose objects hitting, rolling and scraping (ADR-0125), from a directory under the
+    /// asset root that holds hit_<surface>_light_<n>.wav, hit_<surface>_heavy_<n>.wav, roll_<surface>.wav and
+    /// scrape_<surface>.wav for the surfaces it has, and a dust effect if any. Without them, bodies are silent.
+    void LoadPhysicsSounds(std::string_view directory, std::string_view dustEffect = {});
+    [[nodiscard]] const PhysicsFeedback& Feedback() const { return m_feedback; }
 
     /// Runs the fixed systems, then moves the physics to where they left the entities. Does nothing
     /// while paused.
@@ -220,6 +227,7 @@ private:
     std::vector<Caption> m_captions;
     std::vector<std::string> m_events;
     audio::SoundWorld m_sounds;
+    PhysicsFeedback m_feedback;
     ecs::Schedule m_fixedSystems;
     ecs::Schedule m_frameSystems;
     ecs::Entity m_activeCamera;

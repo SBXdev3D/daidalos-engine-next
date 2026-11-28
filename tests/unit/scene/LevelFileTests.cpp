@@ -283,6 +283,49 @@ TEST(LevelFileTest, LooseObjectsKeepTheirBody) {
     EXPECT_EQ(*read, level);
 }
 
+TEST(LevelFileTest, LooseObjectsKeepTheirShapeAndSurface) {
+    // ADR-0125: a drum that rolls, of its own friction, and a fast scrap of rubber.
+    Level level;
+    LevelEntity drum{.id = 1, .name = "Drum", .model = "Showcase/barrel_03/barrel_03.gltf"};
+    drum.body = scene::Body{.shape = physics::ShapeKind::Cylinder,
+                            .size = {0.64f, 0.93f, 0.64f},
+                            .center = {0.0f, 0.465f, 0.0f},
+                            .mass = 20.0f,
+                            .surface = "metal",
+                            .friction = 0.3f};
+    LevelEntity scrap{.id = 2, .name = "Scrap"};
+    scrap.body = scene::Body{.shape = physics::ShapeKind::Hull, .mass = 0.5f, .restitution = 0.7f, .fast = true};
+    level.entities.push_back(drum);
+    level.entities.push_back(scrap);
+    const std::string text = WriteLevel(level);
+    const core::Result<Level> read = ParseLevel(text);
+    ASSERT_TRUE(read.has_value()) << core::Format(read.error());
+    EXPECT_EQ(*read, level);
+    EXPECT_NE(text.find("\"cylinder\""), std::string::npos);
+}
+
+TEST(LevelFileTest, ABodyWithoutAShapeIsABox) {
+    // Levels written before ADR-0125 load unchanged.
+    const core::Result<Level> read = ParseLevel(R"({"format": "daidalos-level", "version": 1, "entities": [
+        {"id": 1, "name": "Crate", "body": {"size": [0.6, 0.6, 0.6], "mass": 15}}]})");
+    ASSERT_TRUE(read.has_value()) << core::Format(read.error());
+    ASSERT_TRUE(read->entities.front().body.has_value());
+    const scene::Body& body = *read->entities.front().body;
+    EXPECT_EQ(body.shape, physics::ShapeKind::Box);
+    EXPECT_TRUE(body.surface.empty());
+    EXPECT_FALSE(body.friction.has_value());
+    EXPECT_FALSE(body.fast);
+    // And are written as they were.
+    EXPECT_EQ(WriteLevel(*read).find("shape"), std::string::npos);
+}
+
+TEST(LevelFileTest, AnUnknownBodyShapeIsAnError) {
+    const std::string message = ErrorOf(R"({"format": "daidalos-level", "version": 1, "entities": [
+        {"id": 1, "name": "Crate", "body": {"shape": "cone"}}]})");
+    EXPECT_NE(message.find("cone"), std::string::npos) << message;
+    EXPECT_NE(message.find("cylinder"), std::string::npos) << message;
+}
+
 TEST(LevelFileTest, EntitiesKeepWhatTheEditorKeeps) {
     Level level;
     LevelEntity entity{.id = 1, .name = "Lamp"};

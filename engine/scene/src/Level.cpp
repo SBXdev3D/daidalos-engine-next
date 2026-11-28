@@ -7,6 +7,7 @@
 #include <daidalos/math/Transform.hpp>
 #include <daidalos/scene/AssetLibrary.hpp>
 #include <daidalos/scene/Blocks.hpp>
+#include <daidalos/scene/Bodies.hpp>
 #include <daidalos/scene/Level.hpp>
 #include <daidalos/scene/Scene.hpp>
 
@@ -421,6 +422,20 @@ void LevelInstance::Make(const LevelEntity& entity) {
     if (entity.cell) {
         world.Add<VisibilityCell>(created, *entity.cell);
     }
+    // What a body is made of (ADR-0125): what the level says, or what most of its model is.
+    std::string bodySurface;
+    physics::BodyMaterial bodyMaterial;
+    if (entity.body) {
+        bodySurface = entity.body->surface;
+        if (bodySurface.empty()) {
+            if (const ModelInstance* instance = world.TryGet<ModelInstance>(created)) {
+                bodySurface = MainSurface(*instance->model);
+            }
+        }
+        bodyMaterial = SurfaceMaterial(bodySurface);
+        bodyMaterial.friction = entity.body->friction.value_or(bodyMaterial.friction);
+        bodyMaterial.restitution = entity.body->restitution.value_or(bodyMaterial.restitution);
+    }
     if (entity.body && entity.body->mass <= 0.0f) {
         // A static box (ADR-0083), where the entity is in the world, parents included.
         glm::mat4 placement = math::ToMatrix(entity.transform);
@@ -433,7 +448,8 @@ void LevelInstance::Make(const LevelEntity& entity) {
                                  (corner & 4) != 0 ? 0.5f : -0.5f);
             box.corners[corner] = math::TransformPoint(placement, entity.body->center + sign * entity.body->size);
         }
-        if (core::Result<physics::BodyId> body = m_scene->Physics().AddStaticMesh(box.corners, kBoxIndices)) {
+        if (core::Result<physics::BodyId> body =
+                m_scene->Physics().AddStaticMesh(box.corners, kBoxIndices, {}, bodyMaterial)) {
             box.body = *body;
             world.Add<Body>(created, *entity.body);
             world.Add<StaticBox>(created, box);
@@ -441,15 +457,41 @@ void LevelInstance::Make(const LevelEntity& entity) {
             DAI_LOG_WARNING(kModule, "Level entity {} '{}': {}", entity.id, entity.name, core::Format(body.error()));
         }
     } else if (entity.body) {
-        // A loose object (ADR-0073): physics moves it from where the level puts it.
+        // A loose object (ADR-0073, ADR-0125): physics moves it from where the level puts it.
         const math::Transform& placed = entity.transform;
-        const glm::vec3 half = glm::max(entity.body->size * placed.scale * 0.5f, glm::vec3(0.02f));
+        physics::DynamicBodyDesc desc;
+        desc.shape.kind = entity.body->shape;
+        desc.shape.size = glm::max(entity.body->size * placed.scale, glm::vec3(0.04f));
+        desc.shape.center = entity.body->center * placed.scale;
+        desc.mass = entity.body->mass;
+        desc.material = bodyMaterial;
+        desc.fast = entity.body->fast;
+        if (desc.shape.kind == physics::ShapeKind::Hull) {
+            // The hull wraps the model where the entity's scale makes it.
+            if (const ModelInstance* instance = world.TryGet<ModelInstance>(created)) {
+                desc.shape.points = ModelPoints(*instance->model);
+                for (glm::vec3& point : desc.shape.points) {
+                    point *= placed.scale;
+                }
+            }
+            if (desc.shape.points.size() < 4) {
+                DAI_LOG_WARNING(kModule, "Level entity {} '{}': a hull needs a model; it is a box", entity.id,
+                                entity.name);
+                desc.shape.kind = physics::ShapeKind::Box;
+            }
+        }
         math::Transform at = placed;
         at.scale = glm::vec3(1.0f);
-        if (core::Result<physics::BodyId> body =
-                m_scene->Physics().AddDynamicBox(half, entity.body->mass, at, entity.body->center * placed.scale)) {
+        core::Result<physics::BodyId> body = m_scene->Physics().AddDynamicBody(desc, at);
+        if (!body && desc.shape.kind == physics::ShapeKind::Hull) {
+            DAI_LOG_WARNING(kModule, "Level entity {} '{}': {}; it is a box", entity.id, entity.name,
+                            core::Format(body.error()));
+            desc.shape.kind = physics::ShapeKind::Box;
+            body = m_scene->Physics().AddDynamicBody(desc, at);
+        }
+        if (body) {
             world.Add<Body>(created, *entity.body);
-            world.Add<RigidBody>(created, *body);
+            world.Add<RigidBody>(created, *body, bodySurface);
         } else {
             DAI_LOG_WARNING(kModule, "Level entity {} '{}': {}", entity.id, entity.name, core::Format(body.error()));
         }

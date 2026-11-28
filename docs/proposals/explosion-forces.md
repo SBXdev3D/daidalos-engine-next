@@ -1,6 +1,6 @@
 # Proposal: explosions that throw loose objects
 
-*2026-11-23. Not approved, not started. Asked for after the effects gallery (ADR-0122): the explosion room's blasts move nothing. Estimates are from reading the code.*
+*2026-11-23. Superseded by `physics.md` (Phase 21), whose step 21.3 does it. Asked for after the effects gallery (ADR-0122): the explosion room's blasts move nothing. Estimates are from reading the code.*
 
 ## What is there
 

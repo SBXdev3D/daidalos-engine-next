@@ -36,7 +36,7 @@ struct ShowFlags {
     bool grid = true;
     /// Every light's reach, not only the selected one's.
     bool lightReach = false;
-    /// The physics boxes of entities with a body.
+    /// The shapes of the physics bodies near the view (ADR-0125).
     bool collision = false;
     /// Where walkers can go, built from the level's triangles on request.
     bool navigation = false;

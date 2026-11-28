@@ -4,6 +4,10 @@
 
 #include "Inspector.hpp"
 
+#include <daidalos/scene/AssetLibrary.hpp>
+#include <daidalos/scene/Bodies.hpp>
+
+#include <glm/common.hpp>
 #include <glm/trigonometric.hpp>
 
 #include <imgui.h>
@@ -117,12 +121,92 @@ bool InspectWet(scene::WetVolume& wet) {
     return changed;
 }
 
-bool InspectBody(scene::Body& body) {
-    bool changed = ImGui::DragFloat3("Size (m)", &body.size.x, 0.01f, 0.02f, 20.0f, "%.2f");
-    changed |= ImGui::DragFloat3("Center (m)", &body.center.x, 0.01f, -20.0f, 20.0f, "%.2f");
-    changed |= ImGui::DragFloat("Mass (kg)", &body.mass, 0.5f, 0.1f, 5000.0f, "%.1f");
+/// An optional number: a box to set it, and the value from elsewhere while it is not.
+bool OptionalFloat(const char* label, std::optional<float>& value, float fallback, float most) {
+    bool set = value.has_value();
+    bool changed = false;
+    ImGui::PushID(label);
+    if (ImGui::Checkbox("##set", &set)) {
+        value = set ? std::optional<float>(fallback) : std::nullopt;
+        changed = true;
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!set);
+    float shown = value.value_or(fallback);
+    if (ImGui::DragFloat(label, &shown, 0.01f, 0.0f, most, "%.2f") && set) {
+        value = shown;
+        changed = true;
+    }
+    ImGui::EndDisabled();
+    ImGui::PopID();
+    return changed;
+}
+
+bool InspectBody(scene::Body& body, const scene::Model* model) {
+    bool changed = false;
+    int shape = static_cast<int>(body.shape);
+    if (ImGui::Combo("Shape", &shape, "Box\0Sphere\0Cylinder\0Capsule\0Hull of the model\0")) {
+        body.shape = static_cast<physics::ShapeKind>(shape);
+        changed = true;
+    }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Up to 40 kg, the player can pick it up and throw it");
+        ImGui::SetTooltip("A sphere, cylinder or capsule fits in the size; cylinders and capsules stand along Y. "
+                          "A hull wraps the model.");
+    }
+    if (body.shape != physics::ShapeKind::Hull) {
+        changed |= ImGui::DragFloat3("Size (m)", &body.size.x, 0.01f, 0.02f, 20.0f, "%.2f");
+        changed |= ImGui::DragFloat3("Center (m)", &body.center.x, 0.01f, -20.0f, 20.0f, "%.2f");
+        if (model != nullptr) {
+            if (ImGui::Button("Fit to the model")) {
+                const std::vector<glm::vec3> points = scene::ModelPoints(*model);
+                if (!points.empty()) {
+                    glm::vec3 low = points.front();
+                    glm::vec3 high = points.front();
+                    for (const glm::vec3& point : points) {
+                        low = glm::min(low, point);
+                        high = glm::max(high, point);
+                    }
+                    body.size = glm::max(high - low, glm::vec3(0.02f));
+                    body.center = (low + high) * 0.5f;
+                    changed = true;
+                }
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Size and center from the model's bounds");
+            }
+        }
+    }
+    changed |= ImGui::DragFloat("Mass (kg)", &body.mass, 0.5f, 0.0f, 5000.0f, "%.1f");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("0 makes it static. Up to 40 kg, the player can pick it up and throw it");
+    }
+    // What it is made of: the model's main surface unless chosen.
+    const std::string modelSurface = model != nullptr ? scene::MainSurface(*model) : std::string{};
+    const std::string shown = body.surface.empty() ? (modelSurface.empty() ? std::string("model's (none: wood)")
+                                                                           : "model's (" + modelSurface + ")")
+                                                   : body.surface;
+    if (ImGui::BeginCombo("Surface", shown.c_str())) {
+        if (ImGui::Selectable("model's", body.surface.empty())) {
+            body.surface.clear();
+            changed = true;
+        }
+        for (const std::string_view surface : scene::kBodySurfaces) {
+            if (ImGui::Selectable(std::string(surface).c_str(), body.surface == surface)) {
+                body.surface = surface;
+                changed = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    const physics::BodyMaterial material =
+        scene::SurfaceMaterial(body.surface.empty() ? std::string_view(modelSurface) : body.surface);
+    changed |= OptionalFloat("Friction", body.friction, material.friction, 2.0f);
+    changed |= OptionalFloat("Bounce", body.restitution, material.restitution, 1.0f);
+    if (body.mass > 0.0f) {
+        changed |= ImGui::Checkbox("Fast (debris)", &body.fast);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Swept each step, so that it does not fly through thin walls");
+        }
     }
     return changed;
 }
@@ -392,7 +476,7 @@ bool InspectBlock(scene::LevelBlock& block) {
     return changed;
 }
 
-bool InspectComponents(scene::LevelEntity& entity) {
+bool InspectComponents(scene::LevelEntity& entity, const scene::Model* model) {
     bool changed = false;
     changed |= Section("Block", entity.block, InspectBlock);
     changed |= Section("Sound", entity.sound, InspectSound);
@@ -420,7 +504,7 @@ bool InspectComponents(scene::LevelEntity& entity) {
         return edited;
     });
     changed |= Section("Trigger", entity.trigger, InspectTrigger);
-    changed |= Section("Loose object", entity.body, InspectBody);
+    changed |= Section("Loose object", entity.body, [model](scene::Body& body) { return InspectBody(body, model); });
 
     ImGui::Separator();
     if (ImGui::Button("Add a component")) {

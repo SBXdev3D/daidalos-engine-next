@@ -474,14 +474,25 @@ struct Trigger {
     [[nodiscard]] bool operator==(const Trigger&) const = default;
 };
 
-/// What a loose object is (ADR-0073): a box of this size, in meters, around a center in the entity's frame, and
-/// its mass in kilograms. A level entity with one falls, tumbles, and can be pushed, picked up and thrown.
+/// What a loose object is (ADR-0073, ADR-0125): a shape that fits in a box of this size, in meters, around a center
+/// in the entity's frame, and its mass in kilograms. A level entity with one falls, rolls, tumbles, and can be
+/// pushed, picked up and thrown.
 struct Body {
+    /// A box by default. A sphere, a cylinder or a capsule fits in the box (physics::BodyShape); a hull wraps the
+    /// entity's model, and ignores size and center.
+    physics::ShapeKind shape = physics::ShapeKind::Box;
     glm::vec3 size{0.5f};
     glm::vec3 center{0.0f};
     /// Kilograms. 0 makes a static box: it never moves, and stops the player, shots and sound (ADR-0083), as
     /// a prop of the level placed by a parent does too.
     float mass = 10.0f;
+    /// What it is made of: how it rubs, bounces and sounds (SurfaceMaterial). Empty: its model's main surface.
+    std::string surface;
+    /// What the surface says, unless set here.
+    std::optional<float> friction;
+    std::optional<float> restitution;
+    /// Small and fast, as debris: swept so that it does not pass through walls.
+    bool fast = false;
     [[nodiscard]] bool operator==(const Body&) const = default;
 };
 
@@ -500,6 +511,8 @@ inline constexpr std::array<std::uint32_t, 36> kBoxIndices{0, 2, 1, 1, 2, 3, 4, 
 /// step. The entity must have no parent.
 struct RigidBody {
     physics::BodyId body;
+    /// What it is made of, as the level or its model says, for the sounds of what it hits (ADR-0125).
+    std::string surface;
 };
 
 /// ECS component: what sets off triggers, as the player.

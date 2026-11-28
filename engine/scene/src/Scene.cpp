@@ -51,6 +51,54 @@ void Scene::SetPaused(bool paused) {
     m_sounds.SetPaused(paused);
 }
 
+void Scene::SetPhysicsPaused(bool paused) {
+    m_physicsPaused = paused;
+    if (paused) {
+        m_feedback.Stop(m_sounds);
+    }
+}
+
+void Scene::LoadPhysicsSounds(std::string_view directory, std::string_view dustEffect) {
+    PhysicsSounds bank;
+    const std::filesystem::path root = m_assetRoot / std::filesystem::path(std::string(directory));
+    const auto load = [&](const std::string& name) -> audio::ClipHandle {
+        if (!std::filesystem::exists(root / name)) {
+            return {};
+        }
+        core::Result<audio::ClipHandle> clip = m_sounds.Load(std::format("{}/{}", directory, name));
+        if (!clip) {
+            DAI_LOG_WARNING(kModule, "{}", core::Format(clip.error()));
+            return {};
+        }
+        return *clip;
+    };
+    for (const std::string_view surface : kBodySurfaces) {
+        for (const char* weight : {"light", "heavy"}) {
+            auto& hits = std::string_view(weight) == "light" ? bank.lightHits : bank.heavyHits;
+            for (int variant = 1; variant <= 4; ++variant) {
+                const audio::ClipHandle clip = load(std::format("hit_{}_{}_{}.wav", surface, weight, variant));
+                if (!clip.IsNull()) {
+                    hits[std::string(surface)].push_back(clip);
+                }
+            }
+        }
+        if (const audio::ClipHandle roll = load(std::format("roll_{}.wav", surface)); !roll.IsNull()) {
+            bank.rolls.emplace(surface, roll);
+        }
+        if (const audio::ClipHandle scrape = load(std::format("scrape_{}.wav", surface)); !scrape.IsNull()) {
+            bank.scrapes.emplace(surface, scrape);
+        }
+    }
+    if (!dustEffect.empty()) {
+        if (core::Result<ParticleEffectAsset> dust = m_assets.LoadParticleEffect(dustEffect)) {
+            bank.dust = dust->effect;
+        } else {
+            DAI_LOG_WARNING(kModule, "{}", core::Format(dust.error()));
+        }
+    }
+    m_feedback.SetSounds(std::move(bank));
+}
+
 void Scene::RunFixedStep(core::Seconds step) {
     if (m_paused) {
         return;
@@ -68,6 +116,14 @@ void Scene::RunFixedStep(core::Seconds step) {
             transform.translation = m_physics.BodyPosition(body.body);
             transform.rotation = m_physics.BodyRotation(body.body);
         });
+    // What they hit, roll and scrape along is heard, and heavy landings raise dust (ADR-0125).
+    const renderer::ParticleEffectHandle dust = m_feedback.Sounds().dust;
+    m_feedback.Update(
+        m_world, m_physics, m_sounds,
+        [this, dust](const glm::vec3& position, const glm::vec3& direction, std::uint32_t count) {
+            SpawnParticles(dust, position, direction, count);
+        },
+        seconds);
 }
 
 void Scene::SpawnParticles(renderer::ParticleEffectHandle effect, const glm::vec3& position, const glm::vec3& direction,

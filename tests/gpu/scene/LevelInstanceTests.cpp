@@ -215,6 +215,28 @@ TEST_F(LevelInstanceTest, ALooseObjectFallsAndGoesWithItsEntity) {
     EXPECT_EQ(m_scene->Physics().BodyCount(), bodies - 1);
 }
 
+TEST_F(LevelInstanceTest, ALooseObjectIsMadeOfItsModelsSurfaceAndCanWrapIt) {
+    // ADR-0125: the crate's materials say wood; a hull of the crate rests about where its box would.
+    Level level;
+    LevelEntity crate{.id = 1, .name = "Crate", .model = "Props/crate.gltf"};
+    crate.transform.translation = {0.0f, 1.0f, 0.0f};
+    crate.body = scene::Body{.shape = physics::ShapeKind::Hull, .mass = 15.0f};
+    LevelEntity ball{.id = 2, .name = "Ball"};
+    ball.transform.translation = {3.0f, 1.0f, 0.0f};
+    ball.body = scene::Body{.shape = physics::ShapeKind::Sphere, .size = glm::vec3(0.4f), .surface = "rubber"};
+    level.entities = {crate, ball};
+    m_instance->Build(level);
+    const scene::RigidBody* crateBody = m_scene->World().TryGet<scene::RigidBody>(m_instance->Find(1));
+    const scene::RigidBody* ballBody = m_scene->World().TryGet<scene::RigidBody>(m_instance->Find(2));
+    ASSERT_NE(crateBody, nullptr);
+    ASSERT_NE(ballBody, nullptr);
+    EXPECT_EQ(crateBody->surface, "wood");
+    EXPECT_EQ(ballBody->surface, "rubber");
+    const std::vector<physics::BodyOutline> outlines = m_scene->Physics().Outlines({0.0f, 1.0f, 0.0f}, 1.0f);
+    ASSERT_FALSE(outlines.empty());
+    EXPECT_FALSE(outlines.front().lines.empty());
+}
+
 TEST_F(LevelInstanceTest, APrefabPlacesItsEntitiesAsPartsOfOne) {
     Level level;
     level.entities.push_back(LevelEntity{.id = 5, .name = "Alarm", .prefab = "Prefabs/alarm_beams.prefab.json"});

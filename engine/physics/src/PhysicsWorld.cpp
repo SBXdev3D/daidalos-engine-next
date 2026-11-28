@@ -18,11 +18,17 @@
 #include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/CollideShape.h>
+#include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
+#include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+#include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
+#include <Jolt/Physics/Collision/Shape/CylinderShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
+#include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/RegisterTypes.h>
 // clang-format on
@@ -31,9 +37,12 @@
 #include <glm/trigonometric.hpp>
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <format>
+#include <mutex>
 #include <utility>
 #include <vector>
 
@@ -137,6 +146,153 @@ glm::vec3 ToGlm(JPH::Vec3Arg value) {
     return {value.GetX(), value.GetY(), value.GetZ()};
 }
 
+// A hull keeps the points that stick out furthest along these many directions, spread over the sphere, so that a
+// model of thousands of vertices makes a hull Jolt builds quickly.
+constexpr std::size_t kHullDirections = 64;
+
+std::vector<glm::vec3> HullPoints(std::span<const glm::vec3> points) {
+    if (points.size() <= kHullDirections) {
+        return {points.begin(), points.end()};
+    }
+    std::vector<std::size_t> kept;
+    kept.reserve(kHullDirections);
+    const float golden = 3.14159265f * (3.0f - std::sqrt(5.0f));
+    for (std::size_t index = 0; index < kHullDirections; ++index) {
+        const float y = 1.0f - 2.0f * (static_cast<float>(index) + 0.5f) / static_cast<float>(kHullDirections);
+        const float across = std::sqrt(std::max(1.0f - y * y, 0.0f));
+        const float angle = golden * static_cast<float>(index);
+        const glm::vec3 direction(std::cos(angle) * across, y, std::sin(angle) * across);
+        std::size_t best = 0;
+        float furthest = glm::dot(points[0], direction);
+        for (std::size_t point = 1; point < points.size(); ++point) {
+            const float along = glm::dot(points[point], direction);
+            if (along > furthest) {
+                furthest = along;
+                best = point;
+            }
+        }
+        kept.push_back(best);
+    }
+    std::ranges::sort(kept);
+    const auto duplicates = std::ranges::unique(kept);
+    kept.erase(duplicates.begin(), duplicates.end());
+    std::vector<glm::vec3> hull;
+    hull.reserve(kept.size());
+    for (const std::size_t index : kept) {
+        hull.push_back(points[index]);
+    }
+    return hull;
+}
+
+core::Result<JPH::RefConst<JPH::Shape>> MakeShape(const BodyShape& desc) {
+    const glm::vec3 size = glm::max(desc.size, glm::vec3(0.02f));
+    JPH::RefConst<JPH::Shape> shape;
+    switch (desc.kind) {
+    case ShapeKind::Box: {
+        const glm::vec3 half = size * 0.5f;
+        shape = new JPH::BoxShape(ToJolt(half), std::min({JPH::cDefaultConvexRadius, half.x, half.y, half.z}));
+        break;
+    }
+    case ShapeKind::Sphere:
+        shape = new JPH::SphereShape(std::min({size.x, size.y, size.z}) * 0.5f);
+        break;
+    case ShapeKind::Cylinder: {
+        const float radius = std::min(size.x, size.z) * 0.5f;
+        const float halfHeight = size.y * 0.5f;
+        shape = new JPH::CylinderShape(halfHeight, radius, std::min({JPH::cDefaultConvexRadius, radius, halfHeight}));
+        break;
+    }
+    case ShapeKind::Capsule: {
+        const float radius = std::min({size.x, size.y, size.z}) * 0.5f;
+        shape = new JPH::CapsuleShape(std::max(size.y * 0.5f - radius, 0.005f), radius);
+        break;
+    }
+    case ShapeKind::Hull: {
+        JPH::Array<JPH::Vec3> points;
+        for (const glm::vec3& point : HullPoints(desc.points)) {
+            points.push_back(ToJolt(point));
+        }
+        const JPH::ShapeSettings::ShapeResult hull = JPH::ConvexHullShapeSettings(points).Create();
+        if (hull.HasError()) {
+            return tl::unexpected(core::Error{core::ErrorCode::InvalidArgument, kModule,
+                                              std::format("Hull cannot collide: {}", hull.GetError().c_str())});
+        }
+        // Its points are already where they are in the body's frame.
+        return JPH::RefConst<JPH::Shape>(hull.Get());
+    }
+    }
+    if (desc.center == glm::vec3(0.0f)) {
+        return shape;
+    }
+    const JPH::ShapeSettings::ShapeResult moved =
+        JPH::RotatedTranslatedShapeSettings(ToJolt(desc.center), JPH::Quat::sIdentity(), shape).Create();
+    if (moved.HasError()) {
+        return tl::unexpected(core::Error{core::ErrorCode::InvalidArgument, kModule,
+                                          std::format("Shape cannot collide: {}", moved.GetError().c_str())});
+    }
+    return JPH::RefConst<JPH::Shape>(moved.Get());
+}
+
+// Below this, a touch that goes on is not worth reporting: neither body is moving.
+constexpr float kRestingSpeed = 0.05f;
+
+/// Collects what touched during a step. Jolt may call it from its jobs, so it locks, although the world steps on
+/// one thread today.
+class ContactCollector final : public JPH::ContactListener {
+public:
+    void OnContactAdded(const JPH::Body& first, const JPH::Body& second, const JPH::ContactManifold& manifold,
+                        JPH::ContactSettings& /*settings*/) override {
+        Add(first, second, manifold, true);
+    }
+
+    void OnContactPersisted(const JPH::Body& first, const JPH::Body& second, const JPH::ContactManifold& manifold,
+                            JPH::ContactSettings& /*settings*/) override {
+        const auto moving = [](const JPH::Body& body) {
+            return body.IsDynamic() && body.GetLinearVelocity().LengthSq() > kRestingSpeed * kRestingSpeed;
+        };
+        if (moving(first) || moving(second)) {
+            Add(first, second, manifold, false);
+        }
+    }
+
+    void Clear() {
+        const std::scoped_lock lock(m_mutex);
+        m_contacts.clear();
+    }
+
+    [[nodiscard]] std::span<const Contact> Contacts() const { return m_contacts; }
+
+private:
+    void Add(const JPH::Body& first, const JPH::Body& second, const JPH::ContactManifold& manifold, bool fresh) {
+        if (manifold.mRelativeContactPointsOn1.empty()) {
+            return;
+        }
+        // The middle of the points where they touch.
+        JPH::Vec3 sum = JPH::Vec3::sZero();
+        for (JPH::uint index = 0; index < manifold.mRelativeContactPointsOn1.size(); ++index) {
+            sum += JPH::Vec3(manifold.GetWorldSpaceContactPointOn1(index));
+        }
+        const JPH::RVec3 point(sum / static_cast<float>(manifold.mRelativeContactPointsOn1.size()));
+        // Jolt's normal points from the first body to the second.
+        const JPH::Vec3 normal = manifold.mWorldSpaceNormal;
+        const JPH::Vec3 relative = first.GetPointVelocity(point) - second.GetPointVelocity(point);
+        const float along = relative.Dot(normal);
+        Contact contact;
+        contact.first = BodyId{first.GetID().GetIndexAndSequenceNumber()};
+        contact.second = BodyId{second.GetID().GetIndexAndSequenceNumber()};
+        contact.point = ToGlm(JPH::Vec3(point));
+        contact.normal = -ToGlm(normal);
+        contact.approach = fresh ? std::max(along, 0.0f) : 0.0f;
+        contact.slide = (relative - normal * along).Length();
+        contact.fresh = fresh;
+        const std::scoped_lock lock(m_mutex);
+        m_contacts.push_back(contact);
+    }
+
+    std::mutex m_mutex;
+    std::vector<Contact> m_contacts;
+};
+
 } // namespace
 
 struct PhysicsWorld::State {
@@ -152,6 +308,7 @@ struct PhysicsWorld::State {
         // Loose objects fall at the Earth's gravity (ADR-0073); characters are virtual, and the game applies its
         // own gravity to them.
         system.SetGravity(JPH::Vec3(0.0f, -9.81f, 0.0f));
+        system.SetContactListener(&contacts);
     }
 
     [[nodiscard]] Character& Find(CharacterHandle character) { return characters.Get(character); }
@@ -174,6 +331,7 @@ struct PhysicsWorld::State {
     JPH::PhysicsSystem system;
     JPH::CharacterVsCharacterCollisionSimple characterCollisions;
     core::SlotPool<Character, CharacterTag> characters;
+    ContactCollector contacts;
 };
 
 PhysicsWorld::PhysicsWorld() {
@@ -199,7 +357,7 @@ PhysicsWorld::~PhysicsWorld() {
 
 core::Result<BodyId> PhysicsWorld::AddStaticMesh(std::span<const glm::vec3> positions,
                                                  std::span<const std::uint32_t> indices,
-                                                 const math::Transform& transform) {
+                                                 const math::Transform& transform, const BodyMaterial& material) {
     DAI_PROFILE_SCOPE("physics::AddStaticMesh");
     JPH::VertexList vertices;
     vertices.reserve(positions.size());
@@ -217,8 +375,10 @@ core::Result<BodyId> PhysicsWorld::AddStaticMesh(std::span<const glm::vec3> posi
         return tl::unexpected(core::Error{core::ErrorCode::InvalidArgument, kModule,
                                           std::format("Mesh cannot collide: {}", shape.GetError().c_str())});
     }
-    const JPH::BodyCreationSettings body(shape.Get(), JPH::RVec3(ToJolt(transform.translation)),
-                                         ToJolt(transform.rotation), JPH::EMotionType::Static, kStaticLayer);
+    JPH::BodyCreationSettings body(shape.Get(), JPH::RVec3(ToJolt(transform.translation)), ToJolt(transform.rotation),
+                                   JPH::EMotionType::Static, kStaticLayer);
+    body.mFriction = std::max(material.friction, 0.0f);
+    body.mRestitution = std::clamp(material.restitution, 0.0f, 1.0f);
     const JPH::BodyID id = m_state->system.GetBodyInterface().CreateAndAddBody(body, JPH::EActivation::DontActivate);
     if (id.IsInvalid()) {
         return tl::unexpected(core::Error{core::ErrorCode::InvalidArgument, kModule, "Too many bodies"});
@@ -248,20 +408,24 @@ core::Result<BodyId> PhysicsWorld::AddKinematicBox(const glm::vec3& halfExtents,
 
 core::Result<BodyId> PhysicsWorld::AddDynamicBox(const glm::vec3& halfExtents, float mass,
                                                  const math::Transform& transform, const glm::vec3& center) {
-    const float convexRadius = std::min({JPH::cDefaultConvexRadius, halfExtents.x, halfExtents.y, halfExtents.z});
-    JPH::RefConst<JPH::Shape> box = new JPH::BoxShape(ToJolt(halfExtents), convexRadius);
-    const JPH::ShapeSettings::ShapeResult shape =
-        JPH::RotatedTranslatedShapeSettings(ToJolt(center), JPH::Quat::sIdentity(), box).Create();
-    if (shape.HasError()) {
-        return tl::unexpected(core::Error{core::ErrorCode::InvalidArgument, kModule,
-                                          std::format("Box cannot collide: {}", shape.GetError().c_str())});
-    }
-    JPH::BodyCreationSettings body(shape.Get(), JPH::RVec3(ToJolt(transform.translation)), ToJolt(transform.rotation),
+    DynamicBodyDesc desc;
+    desc.shape.size = halfExtents * 2.0f;
+    desc.shape.center = center;
+    desc.mass = mass;
+    return AddDynamicBody(desc, transform);
+}
+
+core::Result<BodyId> PhysicsWorld::AddDynamicBody(const DynamicBodyDesc& desc, const math::Transform& transform) {
+    DAI_TRY_ASSIGN(const JPH::RefConst<JPH::Shape> shape, MakeShape(desc.shape));
+    JPH::BodyCreationSettings body(shape, JPH::RVec3(ToJolt(transform.translation)), ToJolt(transform.rotation),
                                    JPH::EMotionType::Dynamic, kMovingLayer);
     body.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
-    body.mMassPropertiesOverride.mMass = std::max(mass, 0.01f);
-    body.mFriction = 0.6f;
-    body.mRestitution = 0.1f;
+    body.mMassPropertiesOverride.mMass = std::max(desc.mass, 0.01f);
+    body.mFriction = std::max(desc.material.friction, 0.0f);
+    body.mRestitution = std::clamp(desc.material.restitution, 0.0f, 1.0f);
+    body.mLinearDamping = std::max(desc.material.linearDamping, 0.0f);
+    body.mAngularDamping = std::max(desc.material.angularDamping, 0.0f);
+    body.mMotionQuality = desc.fast ? JPH::EMotionQuality::LinearCast : JPH::EMotionQuality::Discrete;
     const JPH::BodyID id = m_state->system.GetBodyInterface().CreateAndAddBody(body, JPH::EActivation::Activate);
     if (id.IsInvalid()) {
         return tl::unexpected(core::Error{core::ErrorCode::InvalidArgument, kModule, "Too many bodies"});
@@ -278,6 +442,10 @@ glm::vec3 PhysicsWorld::BodyVelocity(BodyId body) const {
     return ToGlm(m_state->system.GetBodyInterface().GetLinearVelocity(JPH::BodyID(body.value)));
 }
 
+glm::vec3 PhysicsWorld::BodyAngularVelocity(BodyId body) const {
+    return ToGlm(m_state->system.GetBodyInterface().GetAngularVelocity(JPH::BodyID(body.value)));
+}
+
 void PhysicsWorld::SetBodyVelocity(BodyId body, const glm::vec3& linear, const glm::vec3& angular) {
     m_state->system.GetBodyInterface().SetLinearAndAngularVelocity(JPH::BodyID(body.value), ToJolt(linear),
                                                                    ToJolt(angular));
@@ -291,6 +459,40 @@ void PhysicsWorld::SetBodyTransform(BodyId body, const glm::vec3& position, cons
 
 void PhysicsWorld::AddImpulse(BodyId body, const glm::vec3& impulse) {
     m_state->system.GetBodyInterface().AddImpulse(JPH::BodyID(body.value), ToJolt(impulse));
+}
+
+void PhysicsWorld::AddImpulseAt(BodyId body, const glm::vec3& impulse, const glm::vec3& point) {
+    m_state->system.GetBodyInterface().AddImpulse(JPH::BodyID(body.value), ToJolt(impulse), JPH::RVec3(ToJolt(point)));
+}
+
+bool PhysicsWorld::IsSleeping(BodyId body) const {
+    const JPH::BodyInterface& bodies = m_state->system.GetBodyInterface();
+    const JPH::BodyID id(body.value);
+    return bodies.GetMotionType(id) == JPH::EMotionType::Dynamic && !bodies.IsActive(id);
+}
+
+std::vector<BodyId> PhysicsWorld::DynamicBodiesInSphere(const glm::vec3& center, float radius) const {
+    std::vector<BodyId> found;
+    if (radius <= 0.0f) {
+        return found;
+    }
+    const JPH::RefConst<JPH::Shape> sphere = new JPH::SphereShape(radius);
+    const JPH::CollideShapeSettings settings;
+    JPH::AllHitCollisionCollector<JPH::CollideShapeCollector> hits;
+    const JPH::NarrowPhaseQuery& query = m_state->system.GetNarrowPhaseQuery();
+    const JPH::DefaultBroadPhaseLayerFilter broadPhase(m_state->objectVsBroadPhase, kMovingLayer);
+    const JPH::SpecifiedObjectLayerFilter moving(kMovingLayer);
+    query.CollideShape(sphere, JPH::Vec3::sReplicate(1.0f), JPH::RMat44::sTranslation(JPH::RVec3(ToJolt(center))),
+                       settings, JPH::RVec3::sZero(), hits, broadPhase, moving);
+    const JPH::BodyInterface& bodies = m_state->system.GetBodyInterface();
+    for (const JPH::CollideShapeResult& hit : hits.mHits) {
+        const BodyId body{hit.mBodyID2.GetIndexAndSequenceNumber()};
+        if (bodies.GetMotionType(hit.mBodyID2) == JPH::EMotionType::Dynamic &&
+            std::ranges::find(found, body) == found.end()) {
+            found.push_back(body);
+        }
+    }
+    return found;
 }
 
 bool PhysicsWorld::IsDynamic(BodyId body) const {
@@ -328,7 +530,60 @@ glm::vec3 PhysicsWorld::BodyPosition(BodyId body) const {
 
 void PhysicsWorld::Step(float step) {
     DAI_PROFILE_SCOPE("physics::Step");
+    m_state->contacts.Clear();
     m_state->system.Update(step, 1, &m_state->temp, &m_state->jobs);
+}
+
+std::span<const Contact> PhysicsWorld::Contacts() const {
+    return m_state->contacts.Contacts();
+}
+
+std::vector<BodyOutline> PhysicsWorld::Outlines(const glm::vec3& center, float radius) const {
+    // A body is outlined by the edges of the triangles Jolt makes of its shape. The level's big meshes are left
+    // out: they would hide everything else.
+    constexpr int kMaxTriangles = 512;
+    constexpr int kBatch = 64;
+    JPH::AllHitCollisionCollector<JPH::CollideShapeBodyCollector> near;
+    m_state->system.GetBroadPhaseQuery().CollideSphere(ToJolt(center), radius, near);
+    std::vector<BodyOutline> outlines;
+    const JPH::BodyLockInterface& locks = m_state->system.GetBodyLockInterface();
+    for (const JPH::BodyID id : near.mHits) {
+        const JPH::BodyLockRead lock(locks, id);
+        if (!lock.Succeeded() || lock.GetBody().GetObjectLayer() == kCharacterLayer) {
+            continue;
+        }
+        const JPH::Body& body = lock.GetBody();
+        const JPH::Shape& shape = *body.GetShape();
+        if (body.IsStatic() && shape.GetStats().mNumTriangles > 64) {
+            continue;
+        }
+        BodyOutline outline;
+        outline.body = BodyId{id.GetIndexAndSequenceNumber()};
+        outline.dynamic = body.IsDynamic();
+        outline.sleeping = body.IsDynamic() && !body.IsActive();
+        JPH::Shape::GetTrianglesContext context;
+        shape.GetTrianglesStart(context, JPH::AABox::sBiggest(), JPH::Vec3(body.GetCenterOfMassPosition()),
+                                body.GetRotation(), JPH::Vec3::sReplicate(1.0f));
+        std::array<JPH::Float3, 3 * kBatch> triangles{};
+        int total = 0;
+        while (total < kMaxTriangles) {
+            const int count = shape.GetTrianglesNext(context, kBatch, triangles.data(), nullptr);
+            if (count == 0) {
+                break;
+            }
+            for (int triangle = 0; triangle < count; ++triangle) {
+                for (int corner = 0; corner < 3; ++corner) {
+                    const JPH::Float3& from = triangles[static_cast<std::size_t>(triangle * 3 + corner)];
+                    const JPH::Float3& to = triangles[static_cast<std::size_t>(triangle * 3 + (corner + 1) % 3)];
+                    outline.lines.emplace_back(from.x, from.y, from.z);
+                    outline.lines.emplace_back(to.x, to.y, to.z);
+                }
+            }
+            total += count;
+        }
+        outlines.push_back(std::move(outline));
+    }
+    return outlines;
 }
 
 std::optional<RayHit> PhysicsWorld::CastRay(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,

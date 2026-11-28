@@ -3121,7 +3121,15 @@ void Editor::DrawInspector() {
         ImGui::TextDisabled("The prefab's file changes every copy; the parts below change this copy only.");
         changed |= InspectPrefabParts(edited);
     }
-    changed |= InspectComponents(edited);
+    const scene::Model* placedModel = nullptr;
+    if (m_instance != nullptr) {
+        if (const ecs::Entity live = m_instance->Find(edited.id); !live.IsNull()) {
+            if (const scene::ModelInstance* instance = m_scene->World().TryGet<scene::ModelInstance>(live)) {
+                placedModel = instance->model;
+            }
+        }
+    }
+    changed |= InspectComponents(edited, placedModel);
     if ((edited.particles || edited.ribbon) && m_instance != nullptr) {
         if (ImGui::Button("Edit its effect")) {
             m_pendingEffect = m_instance->Resolve(edited.particles ? edited.particles->effect : edited.ribbon->effect);
@@ -3428,14 +3436,20 @@ void Editor::DrawShownExtras() {
             continue;
         }
         const glm::mat4& matrix = world.Get<ecs::WorldTransform>(created).matrix;
-        if (m_show.collision && entity.body && glm::distance(glm::vec3(matrix[3]), Focus()) < 80.0f) {
-            // Static boxes in cyan, bodies that move in magenta.
-            const ImU32 color = entity.body->mass <= 0.0f ? IM_COL32(60, 230, 230, 200) : IM_COL32(230, 80, 230, 200);
-            Box3D(draw, matrix, entity.body->center - entity.body->size * 0.5f,
-                  entity.body->center + entity.body->size * 0.5f, color, 1.5f);
-        }
         if (m_show.portals && entity.cell && entity.cell->enabled) {
             rooms.push_back(UnitBoxBounds(matrix));
+        }
+    }
+    if (m_show.collision) {
+        // The shapes physics really has (ADR-0125), where they are while simulating: static ones in cyan,
+        // bodies that move in magenta, asleep in grey.
+        for (const physics::BodyOutline& outline : m_scene->Physics().Outlines(Focus(), 80.0f)) {
+            const ImU32 color = !outline.dynamic   ? IM_COL32(60, 230, 230, 200)
+                                : outline.sleeping ? IM_COL32(160, 160, 170, 200)
+                                                   : IM_COL32(230, 80, 230, 200);
+            for (std::size_t point = 0; point + 1 < outline.lines.size(); point += 2) {
+                Line3D(draw, outline.lines[point], outline.lines[point + 1], color, 1.0f);
+            }
         }
     }
     for (const Bounds& opening : Openings(rooms)) {
@@ -5689,7 +5703,7 @@ void Editor::DrawShowMenu() {
     ImGui::TextDisabled("Over the view");
     ImGui::MenuItem("Grid", Keys("view.grid"), &m_show.grid);
     ImGui::MenuItem("Every light's reach", nullptr, &m_show.lightReach);
-    ImGui::MenuItem("Collision boxes", nullptr, &m_show.collision);
+    ImGui::MenuItem("Collision shapes", nullptr, &m_show.collision);
     if (ImGui::MenuItem("Navigation mesh", nullptr, &m_show.navigation) && m_show.navigation) {
         m_navigation.reset();
     }

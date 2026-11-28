@@ -393,6 +393,9 @@ VoiceHandle SoundWorld::Play(ClipHandle clip, const PlayOptions& options) {
 
     ma_sound* sound = voice->Get();
     ma_sound_set_volume(sound, options.volume);
+    if (options.pitch != 1.0f) {
+        ma_sound_set_pitch(sound, std::max(options.pitch, 0.05f));
+    }
     ma_sound_set_looping(sound, options.loop ? MA_TRUE : MA_FALSE);
     ma_sound_set_doppler_factor(sound, 0.0f);
     if (options.position.has_value() && !steamed) {
