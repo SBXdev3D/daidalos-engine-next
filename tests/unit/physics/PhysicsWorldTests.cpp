@@ -572,3 +572,222 @@ TEST(PhysicsWorld, TheSameStartEndsTheSame) {
     }
     EXPECT_EQ(ends[0], ends[1]);
 }
+
+// Joints (ADR-0126).
+
+namespace {
+
+BodyId AddWeight(PhysicsWorld& physics, const glm::vec3& at, float mass = 10.0f,
+                 const glm::vec3& size = glm::vec3(0.4f)) {
+    DynamicBodyDesc desc;
+    desc.shape.size = size;
+    desc.mass = mass;
+    math::Transform start;
+    start.translation = at;
+    core::Result<BodyId> body = physics.AddDynamicBody(desc, start);
+    EXPECT_TRUE(body.has_value());
+    return body.value_or(BodyId{});
+}
+
+} // namespace
+
+TEST(PhysicsWorldJoints, AJointNeedsADynamicFirstBodyAndTwoBodies) {
+    PhysicsWorld physics;
+    const BodyId floor = AddFloor(physics);
+    const BodyId weight = AddWeight(physics, {0.0f, 2.0f, 0.0f});
+    EXPECT_FALSE(physics.AddJoint({.kind = JointKind::Point, .first = floor}).has_value());
+    EXPECT_FALSE(physics.AddJoint({.kind = JointKind::Point, .first = weight, .second = weight}).has_value());
+    EXPECT_FALSE(physics.AddJoint({.kind = JointKind::Hinge, .first = weight, .axis = glm::vec3(0.0f)}).has_value());
+    EXPECT_EQ(physics.JointCount(), 0u);
+}
+
+TEST(PhysicsWorldJoints, AHangingWeightSwingsAndKeepsItsLength) {
+    // A lamp 1.5 m under a ball joint on the ceiling, pushed sideways: it swings back past the middle, and stays
+    // 1.5 m from the joint.
+    PhysicsWorld physics;
+    const glm::vec3 ceiling(0.0f, 5.0f, 0.0f);
+    const BodyId lamp = AddWeight(physics, {0.0f, 3.5f, 0.0f});
+    const core::Result<JointHandle> joint =
+        physics.AddJoint({.kind = JointKind::Point, .first = lamp, .anchor = ceiling});
+    ASSERT_TRUE(joint.has_value());
+    physics.SetBodyVelocity(lamp, {3.0f, 0.0f, 0.0f});
+    float farthest = 0.0f;
+    float lowest = 0.0f;
+    for (int step = 0; step < 180; ++step) {
+        physics.Step(kStep);
+        const glm::vec3 at = physics.BodyPosition(lamp);
+        farthest = std::max(farthest, glm::distance(at, ceiling));
+        lowest = std::min(lowest, at.x);
+    }
+    EXPECT_NEAR(farthest, 1.5f, 0.05f);
+    EXPECT_LT(lowest, -0.5f) << "It swung back to the other side";
+    EXPECT_NEAR(glm::distance(physics.JointAnchor(*joint), ceiling), 0.0f, 0.05f);
+    EXPECT_GT(physics.JointForce(*joint), 50.0f) << "It holds about the lamp's weight, more as it swings";
+}
+
+TEST(PhysicsWorldJoints, ADoorStopsAtItsLimit) {
+    // A door hinged on its left edge about Y, opening up to 90 degrees, pushed hard: it stops at 90.
+    PhysicsWorld physics;
+    const BodyId door = AddWeight(physics, {0.5f, 1.0f, 0.0f}, 20.0f, {1.0f, 2.0f, 0.05f});
+    const core::Result<JointHandle> hinge = physics.AddJoint({.kind = JointKind::Hinge,
+                                                              .first = door,
+                                                              .anchor = {0.0f, 1.0f, 0.0f},
+                                                              .axis = {0.0f, 1.0f, 0.0f},
+                                                              .limited = true,
+                                                              .lowest = 0.0f,
+                                                              .highest = glm::radians(90.0f)});
+    ASSERT_TRUE(hinge.has_value());
+    // Gravity pulls along the axis: the door stays up.
+    physics.AddImpulseAt(door, {0.0f, 0.0f, -60.0f}, {1.0f, 1.0f, 0.0f});
+    float widest = 0.0f;
+    for (int step = 0; step < 120; ++step) {
+        physics.Step(kStep);
+        widest = std::max(widest, std::abs(physics.JointPosition(*hinge)));
+    }
+    EXPECT_GT(widest, glm::radians(80.0f));
+    EXPECT_LT(widest, glm::radians(95.0f));
+    EXPECT_NEAR(physics.BodyPosition(door).y, 1.0f, 0.05f);
+}
+
+TEST(PhysicsWorldJoints, ARopeGoesSlackThenCatches) {
+    // A rope of 2 m from a hook to a weight 1 m under it, thrown up: it rises and falls freely, then the rope
+    // catches it 2 m under the hook.
+    PhysicsWorld physics;
+    const glm::vec3 hook(0.0f, 5.0f, 0.0f);
+    const BodyId weight = AddWeight(physics, {0.0f, 4.0f, 0.0f});
+    const core::Result<JointHandle> rope = physics.AddJoint({.kind = JointKind::Distance,
+                                                             .first = weight,
+                                                             .anchor = {0.0f, 4.0f, 0.0f},
+                                                             .secondAnchor = hook,
+                                                             .limited = true,
+                                                             .lowest = 0.0f,
+                                                             .highest = 2.0f});
+    ASSERT_TRUE(rope.has_value());
+    physics.Step(kStep);
+    EXPECT_LT(physics.JointForce(*rope), 1.0f) << "Slack: it pulls nothing";
+    for (int step = 0; step < 180; ++step) {
+        physics.Step(kStep);
+    }
+    EXPECT_NEAR(physics.BodyPosition(weight).y, 3.0f, 0.1f);
+    EXPECT_NEAR(physics.JointForce(*rope), 98.0f, 15.0f) << "Taut: it holds the weight";
+}
+
+TEST(PhysicsWorldJoints, AGlueBreaksUnderTooMuchWeightOnce) {
+    // A 10 kg box glued under a static beam holds; a 100 kg one, past the glue's 500 N, breaks it and falls.
+    PhysicsWorld physics;
+    AddFloor(physics);
+    const BodyId light = AddWeight(physics, {-2.0f, 3.0f, 0.0f}, 10.0f);
+    const BodyId heavy = AddWeight(physics, {2.0f, 3.0f, 0.0f}, 100.0f);
+    const core::Result<JointHandle> holds = physics.AddJoint(
+        {.kind = JointKind::Fixed, .first = light, .anchor = {-2.0f, 3.2f, 0.0f}, .breakForce = 500.0f});
+    const core::Result<JointHandle> breaks = physics.AddJoint(
+        {.kind = JointKind::Fixed, .first = heavy, .anchor = {2.0f, 3.2f, 0.0f}, .breakForce = 500.0f});
+    ASSERT_TRUE(holds.has_value() && breaks.has_value());
+    int broken = 0;
+    for (int step = 0; step < 120; ++step) {
+        physics.Step(kStep);
+        for (const JointBreak& snap : physics.BrokenJoints()) {
+            ++broken;
+            EXPECT_EQ(snap.joint, *breaks);
+            EXPECT_GT(snap.position.y, 2.5f);
+        }
+    }
+    EXPECT_EQ(broken, 1);
+    EXPECT_FALSE(physics.IsBroken(*holds));
+    EXPECT_TRUE(physics.IsBroken(*breaks));
+    EXPECT_NEAR(physics.BodyPosition(light).y, 3.0f, 0.05f);
+    EXPECT_NEAR(physics.BodyPosition(heavy).y, 0.2f, 0.05f);
+}
+
+TEST(PhysicsWorldJoints, ABrokenJointLetsGo) {
+    PhysicsWorld physics;
+    const BodyId weight = AddWeight(physics, {0.0f, 3.0f, 0.0f});
+    const JointHandle joint =
+        physics.AddJoint({.kind = JointKind::Fixed, .first = weight, .anchor = {0.0f, 3.0f, 0.0f}}).value();
+    RunSteps(physics, 30);
+    EXPECT_NEAR(physics.BodyPosition(weight).y, 3.0f, 0.02f);
+    physics.BreakJoint(joint);
+    RunSteps(physics, 30);
+    EXPECT_LT(physics.BodyPosition(weight).y, 2.0f);
+}
+
+TEST(PhysicsWorldJoints, MotorsTurnAndSlide) {
+    // A paddle wheel turning at 2 rad/s, and a piston driven 1 m along its slider.
+    PhysicsWorld physics;
+    const BodyId wheel = AddWeight(physics, {-3.0f, 3.0f, 0.0f}, 20.0f, {2.0f, 0.2f, 0.2f});
+    const core::Result<JointHandle> axle = physics.AddJoint({.kind = JointKind::Hinge,
+                                                             .first = wheel,
+                                                             .anchor = {-3.0f, 3.0f, 0.0f},
+                                                             .axis = {0.0f, 0.0f, 1.0f},
+                                                             .motor = {.mode = MotorMode::Speed, .target = 2.0f}});
+    const BodyId ram = AddWeight(physics, {3.0f, 3.0f, 0.0f}, 20.0f);
+    const core::Result<JointHandle> piston =
+        physics.AddJoint({.kind = JointKind::Slider,
+                          .first = ram,
+                          .anchor = {3.0f, 3.0f, 0.0f},
+                          .axis = {1.0f, 0.0f, 0.0f},
+                          .motor = {.mode = MotorMode::Position, .target = 1.0f, .strength = 5000.0f}});
+    ASSERT_TRUE(axle.has_value() && piston.has_value());
+    RunSteps(physics, 180);
+    EXPECT_NEAR(std::abs(physics.BodyAngularVelocity(wheel).z), 2.0f, 0.1f);
+    EXPECT_NEAR(physics.JointPosition(*piston), 1.0f, 0.05f);
+    EXPECT_NEAR(physics.BodyPosition(ram).x, 4.0f, 0.05f);
+    // Off, the wheel only coasts; the ram is driven back.
+    physics.SetJointMotor(*axle, {});
+    physics.SetJointMotor(*piston, {.mode = MotorMode::Position, .target = 0.0f, .strength = 5000.0f});
+    RunSteps(physics, 180);
+    EXPECT_NEAR(physics.BodyPosition(ram).x, 3.0f, 0.05f);
+}
+
+TEST(PhysicsWorldJoints, AChainHoldsALampWithoutStretching) {
+    // Ten links of 10 cm and 0.3 kg each, ball-jointed, holding a 10 kg lamp. Light links under a heavy weight
+    // stretch even with the joints' extra solver steps, so a chain also has a hidden rope as long as itself from
+    // the hook to the lamp: it does not stretch more than a few centimeters.
+    PhysicsWorld physics;
+    const glm::vec3 top(0.0f, 6.0f, 0.0f);
+    BodyId above;
+    for (int link = 0; link < 10; ++link) {
+        const glm::vec3 center = top - glm::vec3(0.0f, 0.05f + 0.1f * static_cast<float>(link), 0.0f);
+        const BodyId body = AddWeight(physics, center, 0.3f, {0.03f, 0.1f, 0.03f});
+        const glm::vec3 joint = center + glm::vec3(0.0f, 0.05f, 0.0f);
+        ASSERT_TRUE(
+            physics.AddJoint({.kind = JointKind::Point, .first = body, .second = above, .anchor = joint}).has_value());
+        above = body;
+    }
+    const BodyId lamp = AddWeight(physics, top - glm::vec3(0.0f, 1.2f, 0.0f), 10.0f);
+    ASSERT_TRUE(
+        physics
+            .AddJoint(
+                {.kind = JointKind::Point, .first = lamp, .second = above, .anchor = top - glm::vec3(0.0f, 1.0f, 0.0f)})
+            .has_value());
+    ASSERT_TRUE(physics
+                    .AddJoint({.kind = JointKind::Distance,
+                               .first = lamp,
+                               .anchor = physics.BodyPosition(lamp),
+                               .secondAnchor = top,
+                               .limited = true,
+                               .lowest = 0.0f,
+                               .highest = 1.2f})
+                    .has_value());
+    physics.SetBodyVelocity(lamp, {2.0f, 0.0f, 0.0f});
+    float longest = 0.0f;
+    for (int step = 0; step < 300; ++step) {
+        physics.Step(kStep);
+        longest = std::max(longest, glm::distance(physics.BodyPosition(lamp), top));
+    }
+    EXPECT_LT(longest, 1.2f * 1.05f);
+}
+
+TEST(PhysicsWorldJoints, RemovingABodyRemovesItsJoints) {
+    PhysicsWorld physics;
+    const BodyId first = AddWeight(physics, {0.0f, 3.0f, 0.0f});
+    const BodyId second = AddWeight(physics, {0.0f, 2.0f, 0.0f});
+    ASSERT_TRUE(physics.AddJoint({.kind = JointKind::Point, .first = first, .anchor = {0.0f, 3.5f, 0.0f}}));
+    ASSERT_TRUE(
+        physics.AddJoint({.kind = JointKind::Point, .first = second, .second = first, .anchor = {0.0f, 2.5f, 0.0f}}));
+    EXPECT_EQ(physics.JointCount(), 2u);
+    physics.RemoveBody(first);
+    EXPECT_EQ(physics.JointCount(), 0u);
+    RunSteps(physics, 10);
+    EXPECT_LT(physics.BodyPosition(second).y, 2.0f) << "It falls now";
+}

@@ -215,6 +215,26 @@ void PhysicsFeedback::Update(ecs::World& world, const physics::PhysicsWorld& phy
         }
     }
 
+    // Joints that broke (ADR-0126) snap, as the body they held is made.
+    if (!physics.BrokenJoints().empty()) {
+        std::unordered_map<std::uint32_t, std::string_view> held;
+        world.Each<Joints, RigidBody>([&held](ecs::Entity, const Joints& joints, const RigidBody& body) {
+            for (const physics::JointHandle joint : joints.handles) {
+                held.emplace(joint.Index(), body.surface);
+            }
+        });
+        for (const physics::JointBreak& snap : physics.BrokenJoints()) {
+            const auto found = held.find(snap.joint.Index());
+            const audio::ClipHandle* clip =
+                Find(m_sounds.snaps, found != held.end() ? found->second : std::string_view{});
+            if (clip != nullptr) {
+                sounds.Play(*clip,
+                            {.position = snap.position, .volume = 0.9f, .minDistance = 1.5f, .maxDistance = 35.0f});
+            }
+            ++m_snaps;
+        }
+    }
+
     // Rolling and scraping loops, which follow how fast each body rolls or slides along what it touches.
     const float follow = std::min(step * kLoopResponse, 1.0f);
     for (auto& [id, known] : bodies) {

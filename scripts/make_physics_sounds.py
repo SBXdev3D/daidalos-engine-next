@@ -158,6 +158,30 @@ def scrape(surface, rng):
     return seamless(samples, seconds, fade)
 
 
+def snap(surface, rng):
+    """A joint giving way: a chain link or a bolt pinging off, wood cracking, cloth tearing, plastic cracking."""
+    if surface == "metal":
+        base = rng.uniform(1800, 2400)
+        ping = partials(rng, 0.8, [base, base * 2.1, base * 3.4], [0.25, 0.15, 0.08], [0.6, 0.35, 0.2])
+        return mix((envelope(highpass(noise(rng, 0.8), 3000), 0.0002, 0.006), 0.9), (ping, 0.5),
+                   (thump(rng, 160, 0.015, 0.8), 0.3))
+    if surface == "cloth":
+        tear = []
+        for _ in range(rng.randint(10, 16)):
+            at = rng.uniform(0.0, 0.25)
+            tear.append((silence(at) + envelope(bandpass(noise(rng, 0.04), 1200, 6000), 0.001, 0.01),
+                         rng.uniform(0.3, 0.7)))
+        return mix(*tear)
+    # Wood, plastic and the rest: a sharp crack and a splintering tail.
+    crack = envelope(bandpass(noise(rng, 0.6), 800, 7000), 0.0002, 0.012)
+    splinters = []
+    for _ in range(rng.randint(6, 10)):
+        at = rng.uniform(0.01, 0.2)
+        splinters.append((silence(at) + envelope(bandpass(noise(rng, 0.03), 2000, 7000), 0.0005, 0.006),
+                          rng.uniform(0.2, 0.5)))
+    return mix((crack, 1.0), (thump(rng, 140 if surface == "wood" else 220, 0.02, 0.6), 0.4), *splinters)
+
+
 def main():
     rng = random.Random(2125)
     OUT.mkdir(parents=True, exist_ok=True)
@@ -169,6 +193,8 @@ def main():
         write(OUT / f"roll_{surface}.wav", normalize(roll(surface, rng), 0.5))
     for surface in ("metal", "wood", "plastic", "concrete", "cloth"):
         write(OUT / f"scrape_{surface}.wav", normalize(scrape(surface, rng), 0.45))
+    for surface in ("metal", "wood", "plastic", "cloth"):
+        write(OUT / f"snap_{surface}.wav", normalize(snap(surface, rng), 0.85))
     print(f"Wrote {len(list(OUT.glob('*.wav')))} sounds to {OUT}")
 
 

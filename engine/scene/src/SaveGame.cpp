@@ -240,6 +240,14 @@ void SaveScene(Scene& scene, SaveData& data) {
         if (const WetVolume* wet = world.TryGet<WetVolume>(entity)) {
             data.Put(*key + ".wetness", static_cast<double>(wet->wetness));
         }
+        // Joints that broke (ADR-0126), by their place in the entity's list.
+        if (const Joints* joints = world.TryGet<Joints>(entity)) {
+            for (std::size_t index = 0; index < joints->handles.size(); ++index) {
+                if (scene.Physics().IsBroken(joints->handles[index])) {
+                    data.Put(std::format("{}.joint{}.broken", *key, index), true);
+                }
+            }
+        }
     });
     for (const auto& [circuit, on] : scene.Power().Switched()) {
         data.Put("power." + circuit, on);
@@ -279,6 +287,13 @@ void LoadScene(Scene& scene, const SaveData& data) {
         }
         if (WetVolume* wet = world.TryGet<WetVolume>(entity)) {
             wet->wetness = static_cast<float>(data.Number(*key + ".wetness").value_or(wet->wetness));
+        }
+        if (const Joints* joints = world.TryGet<Joints>(entity)) {
+            for (std::size_t index = 0; index < joints->handles.size(); ++index) {
+                if (data.Flag(std::format("{}.joint{}.broken", *key, index)).value_or(false)) {
+                    scene.Physics().BreakJoint(joints->handles[index]);
+                }
+            }
         }
     }
     for (const std::string& key : data.Keys("power.")) {

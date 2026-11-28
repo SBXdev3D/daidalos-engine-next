@@ -304,6 +304,58 @@ TEST(LevelFileTest, LooseObjectsKeepTheirShapeAndSurface) {
     EXPECT_NE(text.find("\"cylinder\""), std::string::npos);
 }
 
+TEST(LevelFileTest, LooseObjectsKeepTheirJoints) {
+    // ADR-0126: a door on a hinge of 0 to 100 degrees with a motor, and a crate on a rope to entity 7 that breaks.
+    Level level;
+    LevelEntity door{.id = 1, .name = "Door"};
+    door.body = scene::Body{.mass = 30.0f};
+    door.joints.push_back(
+        {.kind = physics::JointKind::Hinge,
+         .anchor = {-0.5f, 1.0f, 0.0f},
+         .axis = {0.0f, 1.0f, 0.0f},
+         .limited = true,
+         .lowest = 0.0f,
+         .highest = glm::radians(100.0f),
+         .friction = 5.0f,
+         .motor = {.mode = physics::MotorMode::Speed, .target = glm::radians(45.0f), .strength = 200.0f}});
+    LevelEntity crate{.id = 2, .name = "Crate"};
+    crate.body = scene::Body{};
+    crate.joints.push_back({.kind = physics::JointKind::Distance,
+                            .to = 7,
+                            .toAnchor = {0.0f, -0.2f, 0.0f},
+                            .limited = true,
+                            .lowest = 0.0f,
+                            .highest = 2.5f,
+                            .breakForce = 800.0f});
+    crate.joints.push_back({.kind = physics::JointKind::Fixed});
+    level.entities = {door, crate};
+    const std::string text = WriteLevel(level);
+    const core::Result<Level> read = ParseLevel(text);
+    ASSERT_TRUE(read.has_value()) << core::Format(read.error());
+    ASSERT_EQ(read->entities.size(), 2u);
+    // Degrees in the file come back as the same radians, to float precision.
+    const scene::LevelJoint& hinge = read->entities[0].joints.at(0);
+    EXPECT_NEAR(hinge.highest, glm::radians(100.0f), 1e-5f);
+    EXPECT_NEAR(hinge.motor.target, glm::radians(45.0f), 1e-5f);
+    EXPECT_NE(text.find("\"highest\": 100"), std::string::npos) << text;
+    EXPECT_EQ(read->entities[1], level.entities[1]);
+}
+
+TEST(LevelFileTest, BadJointsAreErrors) {
+    EXPECT_NE(ErrorOf(R"({"format": "daidalos-level", "version": 1, "entities": [
+        {"id": 1, "name": "A", "joints": [{"kind": "glue"}]}]})")
+                  .find("glue"),
+              std::string::npos);
+    EXPECT_NE(ErrorOf(R"({"format": "daidalos-level", "version": 1, "entities": [
+        {"id": 1, "name": "A", "joints": [{"kind": "slider", "limits": {"lowest": 1, "highest": -1}}]}]})")
+                  .find("lowest"),
+              std::string::npos);
+    EXPECT_NE(ErrorOf(R"({"format": "daidalos-level", "version": 1, "entities": [
+        {"id": 1, "name": "A", "joints": {"kind": "point"}}]})")
+                  .find("array"),
+              std::string::npos);
+}
+
 TEST(LevelFileTest, ABodyWithoutAShapeIsABox) {
     // Levels written before ADR-0125 load unchanged.
     const core::Result<Level> read = ParseLevel(R"({"format": "daidalos-level", "version": 1, "entities": [

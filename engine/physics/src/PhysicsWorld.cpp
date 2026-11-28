@@ -29,6 +29,11 @@
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <Jolt/Physics/Constraints/DistanceConstraint.h>
+#include <Jolt/Physics/Constraints/FixedConstraint.h>
+#include <Jolt/Physics/Constraints/HingeConstraint.h>
+#include <Jolt/Physics/Constraints/PointConstraint.h>
+#include <Jolt/Physics/Constraints/SliderConstraint.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/RegisterTypes.h>
 // clang-format on
@@ -43,6 +48,7 @@
 #include <cstdio>
 #include <format>
 #include <mutex>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -233,6 +239,10 @@ core::Result<JPH::RefConst<JPH::Shape>> MakeShape(const BodyShape& desc) {
     return JPH::RefConst<JPH::Shape>(moved.Get());
 }
 
+// Solver steps of islands that have joints (ADR-0126), against Jolt's default 10 and 2.
+constexpr JPH::uint kJointVelocitySteps = 30;
+constexpr JPH::uint kJointPositionSteps = 10;
+
 // Below this, a touch that goes on is not worth reporting: neither body is moving.
 constexpr float kRestingSpeed = 0.05f;
 
@@ -240,6 +250,24 @@ constexpr float kRestingSpeed = 0.05f;
 /// one thread today.
 class ContactCollector final : public JPH::ContactListener {
 public:
+    /// Bodies held together by a joint pass through each other (ADR-0126): links of a chain overlap where they
+    /// meet, a door its frame.
+    JPH::ValidateResult OnContactValidate(const JPH::Body& first, const JPH::Body& second, JPH::RVec3Arg /*offset*/,
+                                          const JPH::CollideShapeResult& /*result*/) override {
+        return m_jointed.contains(Pair(first.GetID(), second.GetID()))
+                   ? JPH::ValidateResult::RejectAllContactsForThisBodyPair
+                   : JPH::ValidateResult::AcceptAllContactsForThisBodyPair;
+    }
+
+    /// Bodies held by more joints than one stay apart until the last goes.
+    void Join(JPH::BodyID first, JPH::BodyID second) { ++m_jointed[Pair(first, second)]; }
+    void Part(JPH::BodyID first, JPH::BodyID second) {
+        const auto found = m_jointed.find(Pair(first, second));
+        if (found != m_jointed.end() && --found->second == 0) {
+            m_jointed.erase(found);
+        }
+    }
+
     void OnContactAdded(const JPH::Body& first, const JPH::Body& second, const JPH::ContactManifold& manifold,
                         JPH::ContactSettings& /*settings*/) override {
         Add(first, second, manifold, true);
@@ -289,13 +317,35 @@ private:
         m_contacts.push_back(contact);
     }
 
+    [[nodiscard]] static std::uint64_t Pair(JPH::BodyID first, JPH::BodyID second) {
+        const std::uint32_t low = std::min(first.GetIndexAndSequenceNumber(), second.GetIndexAndSequenceNumber());
+        const std::uint32_t high = std::max(first.GetIndexAndSequenceNumber(), second.GetIndexAndSequenceNumber());
+        return (static_cast<std::uint64_t>(high) << 32U) | low;
+    }
+
     std::mutex m_mutex;
     std::vector<Contact> m_contacts;
+    // Read by Jolt during Update, changed only between steps.
+    std::unordered_map<std::uint64_t, int> m_jointed;
 };
 
 } // namespace
 
 struct PhysicsWorld::State {
+    struct Joint {
+        JointHandle self;
+        JointKind kind = JointKind::Point;
+        BodyId first;
+        BodyId second;
+        JPH::Ref<JPH::TwoBodyConstraint> constraint;
+        /// The anchors in their bodies' frames, or the second in the world's without a second body.
+        glm::vec3 firstAnchor{0.0f};
+        glm::vec3 secondAnchor{0.0f};
+        float breakForce = 0.0f;
+        float force = 0.0f;
+        bool broken = false;
+    };
+
     struct Character {
         CharacterConfig config;
         JPH::Ref<JPH::CharacterVirtual> controller;
@@ -332,6 +382,30 @@ struct PhysicsWorld::State {
     JPH::CharacterVsCharacterCollisionSimple characterCollisions;
     core::SlotPool<Character, CharacterTag> characters;
     ContactCollector contacts;
+    core::SlotPool<Joint, JointTag> joints;
+    std::vector<JointBreak> breaks;
+
+    /// A point of the world in a body's frame, or as it is without a body.
+    [[nodiscard]] glm::vec3 ToBody(BodyId body, const glm::vec3& point) const {
+        if (!body.IsValid()) {
+            return point;
+        }
+        const JPH::RMat44 world = system.GetBodyInterface().GetWorldTransform(JPH::BodyID(body.value));
+        return ToGlm(JPH::Vec3(world.InversedRotationTranslation() * JPH::RVec3(ToJolt(point))));
+    }
+
+    [[nodiscard]] glm::vec3 ToWorld(BodyId body, const glm::vec3& point) const {
+        if (!body.IsValid()) {
+            return point;
+        }
+        const JPH::RMat44 world = system.GetBodyInterface().GetWorldTransform(JPH::BodyID(body.value));
+        return ToGlm(JPH::Vec3(world * JPH::RVec3(ToJolt(point))));
+    }
+
+    void RemoveJoint(Joint& joint) {
+        system.RemoveConstraint(joint.constraint);
+        joint.constraint = nullptr;
+    }
 };
 
 PhysicsWorld::PhysicsWorld() {
@@ -344,6 +418,8 @@ PhysicsWorld::~PhysicsWorld() {
         return;
     }
     m_state->characters = {}; // Before the bodies: each character has one.
+    m_state->joints.ForEach([this](State::Joint& joint) { m_state->RemoveJoint(joint); });
+    m_state->joints = {};
     JPH::BodyInterface& bodies = m_state->system.GetBodyInterface();
     JPH::BodyIDVector all;
     m_state->system.GetBodies(all);
@@ -508,6 +584,16 @@ float PhysicsWorld::BodyMass(BodyId body) const {
 }
 
 void PhysicsWorld::RemoveBody(BodyId body) {
+    // Its joints first: Jolt keeps them pointing at the body.
+    std::vector<JointHandle> held;
+    m_state->joints.ForEach([&held, body](const State::Joint& joint) {
+        if (joint.first == body || joint.second == body) {
+            held.push_back(joint.self);
+        }
+    });
+    for (const JointHandle joint : held) {
+        RemoveJoint(joint);
+    }
     JPH::BodyInterface& bodies = m_state->system.GetBodyInterface();
     const JPH::BodyID id(body.value);
     bodies.RemoveBody(id);
@@ -531,7 +617,250 @@ glm::vec3 PhysicsWorld::BodyPosition(BodyId body) const {
 void PhysicsWorld::Step(float step) {
     DAI_PROFILE_SCOPE("physics::Step");
     m_state->contacts.Clear();
+    m_state->breaks.clear();
     m_state->system.Update(step, 1, &m_state->temp, &m_state->jobs);
+    // How hard each joint pulled, from the impulse its position part needed this step; those pulled past their
+    // force break (ADR-0126).
+    std::vector<JointHandle> breaking;
+    m_state->joints.ForEach([step, &breaking](State::Joint& joint) {
+        if (joint.broken) {
+            joint.force = 0.0f;
+            return;
+        }
+        float impulse = 0.0f;
+        switch (joint.kind) {
+        case JointKind::Point:
+            impulse = static_cast<JPH::PointConstraint*>(joint.constraint.GetPtr())->GetTotalLambdaPosition().Length();
+            break;
+        case JointKind::Hinge:
+            impulse = static_cast<JPH::HingeConstraint*>(joint.constraint.GetPtr())->GetTotalLambdaPosition().Length();
+            break;
+        case JointKind::Fixed:
+            impulse = static_cast<JPH::FixedConstraint*>(joint.constraint.GetPtr())->GetTotalLambdaPosition().Length();
+            break;
+        case JointKind::Distance:
+            impulse =
+                std::abs(static_cast<JPH::DistanceConstraint*>(joint.constraint.GetPtr())->GetTotalLambdaPosition());
+            break;
+        case JointKind::Slider:
+            impulse = std::sqrt(
+                static_cast<JPH::SliderConstraint*>(joint.constraint.GetPtr())->GetTotalLambdaPosition().LengthSq());
+            break;
+        }
+        joint.force = impulse / std::max(step, 1e-6f);
+        if (joint.breakForce > 0.0f && joint.force > joint.breakForce) {
+            breaking.push_back(joint.self);
+        }
+    });
+    for (const JointHandle joint : breaking) {
+        BreakJoint(joint);
+        m_state->breaks.push_back({.joint = joint, .position = JointAnchor(joint)});
+    }
+}
+
+core::Result<JointHandle> PhysicsWorld::AddJoint(const JointDesc& desc) {
+    const auto invalid = [](std::string message) {
+        return tl::unexpected(core::Error{core::ErrorCode::InvalidArgument, kModule, std::move(message)});
+    };
+    if (!desc.first.IsValid() || !IsDynamic(desc.first)) {
+        return invalid("A joint's first body must be dynamic");
+    }
+    if (desc.second == desc.first) {
+        return invalid("A joint joins two bodies, not one to itself");
+    }
+    const bool hasAxis = desc.kind == JointKind::Hinge || desc.kind == JointKind::Slider;
+    if (hasAxis && glm::length(desc.axis) < 1e-6f) {
+        return invalid("A hinge or a slider needs an axis");
+    }
+    // Jolt measures how far the second body turned or slid from the first: given the opposite axis, its angles,
+    // positions, limits and motors are the first body's along the axis as given.
+    const JPH::Vec3 axis = hasAxis ? -ToJolt(glm::normalize(desc.axis)) : JPH::Vec3::sAxisY();
+    const JPH::Vec3 normal = axis.GetNormalizedPerpendicular();
+    const JPH::RVec3 anchor(ToJolt(desc.anchor));
+    const JPH::MotorSettings motor(2.0f, 1.0f, desc.motor.strength, desc.motor.strength);
+
+    JPH::Ref<JPH::TwoBodyConstraintSettings> settings;
+    switch (desc.kind) {
+    case JointKind::Point: {
+        auto* point = new JPH::PointConstraintSettings();
+        point->mPoint1 = point->mPoint2 = anchor;
+        settings = point;
+        break;
+    }
+    case JointKind::Hinge: {
+        auto* hinge = new JPH::HingeConstraintSettings();
+        hinge->mPoint1 = hinge->mPoint2 = anchor;
+        hinge->mHingeAxis1 = hinge->mHingeAxis2 = axis;
+        hinge->mNormalAxis1 = hinge->mNormalAxis2 = normal;
+        if (desc.limited) {
+            hinge->mLimitsMin = std::clamp(desc.lowest, -JPH::JPH_PI, 0.0f);
+            hinge->mLimitsMax = std::clamp(desc.highest, 0.0f, JPH::JPH_PI);
+        }
+        hinge->mMaxFrictionTorque = std::max(desc.friction, 0.0f);
+        hinge->mMotorSettings = motor;
+        settings = hinge;
+        break;
+    }
+    case JointKind::Distance: {
+        auto* distance = new JPH::DistanceConstraintSettings();
+        distance->mPoint1 = anchor;
+        distance->mPoint2 = JPH::RVec3(ToJolt(desc.secondAnchor));
+        if (desc.limited) {
+            distance->mMinDistance = std::max(std::min(desc.lowest, desc.highest), 0.0f);
+            distance->mMaxDistance = std::max(desc.highest, distance->mMinDistance);
+        }
+        settings = distance;
+        break;
+    }
+    case JointKind::Fixed: {
+        auto* fixed = new JPH::FixedConstraintSettings();
+        fixed->mPoint1 = fixed->mPoint2 = anchor;
+        fixed->mAxisX1 = fixed->mAxisX2 = JPH::Vec3::sAxisX();
+        fixed->mAxisY1 = fixed->mAxisY2 = JPH::Vec3::sAxisY();
+        settings = fixed;
+        break;
+    }
+    case JointKind::Slider: {
+        auto* slider = new JPH::SliderConstraintSettings();
+        slider->mPoint1 = slider->mPoint2 = anchor;
+        slider->mSliderAxis1 = slider->mSliderAxis2 = axis;
+        slider->mNormalAxis1 = slider->mNormalAxis2 = normal;
+        if (desc.limited) {
+            slider->mLimitsMin = std::min(desc.lowest, 0.0f);
+            slider->mLimitsMax = std::max(desc.highest, 0.0f);
+        }
+        slider->mMaxFrictionForce = std::max(desc.friction, 0.0f);
+        slider->mMotorSettings = motor;
+        settings = slider;
+        break;
+    }
+    }
+    // Chains hold heavy lamps by light links, which Jolt's default ten velocity steps let stretch: islands with
+    // joints are solved harder.
+    settings->mNumVelocityStepsOverride = kJointVelocitySteps;
+    settings->mNumPositionStepsOverride = kJointPositionSteps;
+    JPH::BodyInterface& bodies = m_state->system.GetBodyInterface();
+    JPH::TwoBodyConstraint* constraint =
+        bodies.CreateConstraint(settings, JPH::BodyID(desc.first.value),
+                                desc.second.IsValid() ? JPH::BodyID(desc.second.value) : JPH::BodyID());
+    if (constraint == nullptr) {
+        return invalid("Jolt could not make the joint");
+    }
+    m_state->system.AddConstraint(constraint);
+    bodies.ActivateConstraint(constraint);
+    if (desc.second.IsValid()) {
+        m_state->contacts.Join(JPH::BodyID(desc.first.value), JPH::BodyID(desc.second.value));
+    }
+
+    State::Joint joint;
+    joint.kind = desc.kind;
+    joint.first = desc.first;
+    joint.second = desc.second;
+    joint.constraint = constraint;
+    joint.firstAnchor = m_state->ToBody(desc.first, desc.anchor);
+    joint.secondAnchor =
+        m_state->ToBody(desc.second, desc.kind == JointKind::Distance ? desc.secondAnchor : desc.anchor);
+    joint.breakForce = std::max(desc.breakForce, 0.0f);
+    const JointHandle handle = m_state->joints.Insert(std::move(joint));
+    m_state->joints.Get(handle).self = handle;
+    SetJointMotor(handle, desc.motor);
+    return handle;
+}
+
+void PhysicsWorld::RemoveJoint(JointHandle joint) {
+    if (State::Joint* found = m_state->joints.TryGet(joint)) {
+        if (!found->broken && found->second.IsValid()) {
+            m_state->contacts.Part(JPH::BodyID(found->first.value), JPH::BodyID(found->second.value));
+        }
+        m_state->RemoveJoint(*found);
+        m_state->joints.Remove(joint);
+    }
+}
+
+std::size_t PhysicsWorld::JointCount() const {
+    return m_state->joints.Size();
+}
+
+void PhysicsWorld::BreakJoint(JointHandle joint) {
+    State::Joint* found = m_state->joints.TryGet(joint);
+    if (found == nullptr || found->broken) {
+        return;
+    }
+    found->broken = true;
+    found->constraint->SetEnabled(false);
+    if (found->second.IsValid()) {
+        m_state->contacts.Part(JPH::BodyID(found->first.value), JPH::BodyID(found->second.value));
+    }
+    JPH::BodyInterface& bodies = m_state->system.GetBodyInterface();
+    bodies.ActivateBody(JPH::BodyID(found->first.value));
+    if (found->second.IsValid() &&
+        bodies.GetMotionType(JPH::BodyID(found->second.value)) == JPH::EMotionType::Dynamic) {
+        bodies.ActivateBody(JPH::BodyID(found->second.value));
+    }
+}
+
+bool PhysicsWorld::IsBroken(JointHandle joint) const {
+    const State::Joint* found = m_state->joints.TryGet(joint);
+    return found != nullptr && found->broken;
+}
+
+void PhysicsWorld::SetJointMotor(JointHandle joint, const JointMotor& motor) {
+    State::Joint* found = m_state->joints.TryGet(joint);
+    if (found == nullptr) {
+        return;
+    }
+    const auto state = motor.mode == MotorMode::Speed      ? JPH::EMotorState::Velocity
+                       : motor.mode == MotorMode::Position ? JPH::EMotorState::Position
+                                                           : JPH::EMotorState::Off;
+    if (found->kind == JointKind::Hinge) {
+        auto* hinge = static_cast<JPH::HingeConstraint*>(found->constraint.GetPtr());
+        hinge->GetMotorSettings().SetTorqueLimit(std::max(motor.strength, 0.0f));
+        hinge->SetMotorState(state);
+        hinge->SetTargetAngularVelocity(motor.mode == MotorMode::Speed ? motor.target : 0.0f);
+        hinge->SetTargetAngle(motor.mode == MotorMode::Position ? motor.target : 0.0f);
+    } else if (found->kind == JointKind::Slider) {
+        auto* slider = static_cast<JPH::SliderConstraint*>(found->constraint.GetPtr());
+        slider->GetMotorSettings().SetForceLimit(std::max(motor.strength, 0.0f));
+        slider->SetMotorState(state);
+        slider->SetTargetVelocity(motor.mode == MotorMode::Speed ? motor.target : 0.0f);
+        slider->SetTargetPosition(motor.mode == MotorMode::Position ? motor.target : 0.0f);
+    } else {
+        return;
+    }
+    m_state->system.GetBodyInterface().ActivateConstraint(found->constraint);
+}
+
+float PhysicsWorld::JointPosition(JointHandle joint) const {
+    const State::Joint* found = m_state->joints.TryGet(joint);
+    if (found == nullptr) {
+        return 0.0f;
+    }
+    if (found->kind == JointKind::Hinge) {
+        return static_cast<const JPH::HingeConstraint*>(found->constraint.GetPtr())->GetCurrentAngle();
+    }
+    if (found->kind == JointKind::Slider) {
+        return static_cast<const JPH::SliderConstraint*>(found->constraint.GetPtr())->GetCurrentPosition();
+    }
+    return 0.0f;
+}
+
+float PhysicsWorld::JointForce(JointHandle joint) const {
+    const State::Joint* found = m_state->joints.TryGet(joint);
+    return found != nullptr ? found->force : 0.0f;
+}
+
+glm::vec3 PhysicsWorld::JointAnchor(JointHandle joint) const {
+    const State::Joint* found = m_state->joints.TryGet(joint);
+    return found != nullptr ? m_state->ToWorld(found->first, found->firstAnchor) : glm::vec3(0.0f);
+}
+
+glm::vec3 PhysicsWorld::JointSecondAnchor(JointHandle joint) const {
+    const State::Joint* found = m_state->joints.TryGet(joint);
+    return found != nullptr ? m_state->ToWorld(found->second, found->secondAnchor) : glm::vec3(0.0f);
+}
+
+std::span<const JointBreak> PhysicsWorld::BrokenJoints() const {
+    return m_state->breaks;
 }
 
 std::span<const Contact> PhysicsWorld::Contacts() const {

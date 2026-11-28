@@ -89,6 +89,9 @@ std::vector<std::uint64_t> PasteEntities(scene::Level& level, std::vector<scene:
         if (entity.lightning) {
             entity.lightning->light = follow(entity.lightning->light);
         }
+        for (scene::LevelJoint& joint : entity.joints) {
+            joint.to = follow(joint.to);
+        }
         if (entity.particles && entity.particles->surface) {
             entity.particles->surface->entity = follow(entity.particles->surface->entity);
             if (entity.particles->surface->entity == 0) {
