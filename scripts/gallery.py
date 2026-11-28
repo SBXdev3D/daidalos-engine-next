@@ -219,20 +219,21 @@ class Room:
     def column(self, part, x, z, size, y0, y1, what=None):
         self.box(part, (x - size / 2, y0, z - size / 2), (x + size / 2, y1, z + size / 2), what)
 
-    def ramp(self, part, x0, x1, z_top, z_foot, height, what="ramp"):
-        """A ramp across x, from the floor at z_foot up to height at z_top, where it has a wall down to the floor."""
+    def ramp(self, part, x0, x1, z_top, z_foot, height, what="ramp", base=0.0):
+        """A ramp across x, from the floor at z_foot up to height at z_top, where it has a wall down to the floor;
+        or from base, as if base were the floor."""
         mesh = self.g.mesh(part)
-        a, b = (x0, height, z_top), (x1, height, z_top)  # Top edge.
-        c, d = (x1, 0.0, z_foot), (x0, 0.0, z_foot)  # Foot.
-        e, f = (x0, 0.0, z_top), (x1, 0.0, z_top)  # Under the top edge.
+        a, b = (x0, base + height, z_top), (x1, base + height, z_top)  # Top edge.
+        c, d = (x1, base, z_foot), (x0, base, z_foot)  # Foot.
+        e, f = (x0, base, z_top), (x1, base, z_top)  # Under the top edge.
         rise = math.copysign(1.0, z_foot - z_top)
         slope = normalize([0.0, abs(z_foot - z_top), rise * height])
         faces = [([a, b, c, d], slope), ([e, f, b, a], [0.0, 0.0, -rise]), ([d, a, e], [-1.0, 0.0, 0.0]),
                  ([c, f, b], [1.0, 0.0, 0.0])]
         for corners, normal in faces:
             add_face(mesh, [self.world(p) for p in corners], normal)
-        self.g.boxes.append((self.world((x0, 0.0, min(z_top, z_foot))), self.world((x1, height, max(z_top, z_foot))),
-                             self.label(what)))
+        self.g.boxes.append((self.world((x0, base, min(z_top, z_foot))),
+                             self.world((x1, base + height, max(z_top, z_foot))), self.label(what)))
 
     def surface_height(self, z, z_top, z_foot, height):
         """The height of a ramp's slope at z."""

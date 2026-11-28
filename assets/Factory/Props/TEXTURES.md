@@ -14,3 +14,4 @@ attribution. Their authors are credited here all the same. Fetched and converted
 | Rubber Tiles (`rubber_tiles`) | Amal Kumar | https://polyhaven.com/a/rubber_tiles |
 | Metal Plate (`metal_plate`) | Rob Tuytel | https://polyhaven.com/a/metal_plate |
 | Rubberized Track (`rubberized_track`) | Charlotte Baglioni | https://polyhaven.com/a/rubberized_track |
+| Rock Face (`rock_face`) | Greg Zaal, Dario Barresi | https://polyhaven.com/a/rock_face |

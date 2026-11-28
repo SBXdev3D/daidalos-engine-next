@@ -1,0 +1,122 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "scripts/make_physics_props.py"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "name": "ball_blue",
+   "mesh": 0
+  }
+ ],
+ "meshes": [
+  {
+   "name": "ball_blue",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "materials": [
+  {
+   "name": "plastic_blue",
+   "pbrMetallicRoughness": {
+    "baseColorFactor": [
+     0.03,
+     0.15,
+     0.62,
+     1.0
+    ],
+    "metallicFactor": 0.0,
+    "roughnessFactor": 0.3
+   },
+   "extras": {
+    "surface": "plastic"
+   }
+  }
+ ],
+ "buffers": [
+  {
+   "uri": "ball_blue.bin",
+   "byteLength": 7968
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteOffset": 0,
+   "byteLength": 1836,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 1836,
+   "byteLength": 1836,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 3672,
+   "byteLength": 1224,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 4896,
+   "byteLength": 3072,
+   "target": 34963
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 153,
+   "type": "VEC3",
+   "min": [
+    -0.08,
+    -0.08,
+    -0.08
+   ],
+   "max": [
+    0.08,
+    0.08,
+    0.08
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 153,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 153,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5125,
+   "count": 768,
+   "type": "SCALAR"
+  }
+ ]
+}

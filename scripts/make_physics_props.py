@@ -23,7 +23,9 @@ Writes, under assets/Factory/Props, a .gltf and .bin for each:
 - chain_link: an oval link of 8 mm steel bar, 16 cm long, about its center, long along Y (rusted steel);
 - hook: a crane hook, its eye on its origin, 45 cm long (rusted steel);
 - steel_ball: a wrecking ball of 45 cm radius, with an eye on top, about its center (rusted steel);
-- rubber_ball: a red rubber ball of 15 cm radius.
+- rubber_ball: a red rubber ball of 15 cm radius;
+- boulder: a lumpy rock about 2 m across, a little flat, about its center (rock);
+- ball_red, ball_yellow, ball_blue, ball_green, ball_white: the pool's plastic balls, 16 cm across.
 
 Their sizes are their real sizes: the level gives their bodies the same sizes (a box, a sphere), so a joint's
 anchor is a point on the model.
@@ -56,6 +58,7 @@ TEXTURES = {
     "rubber_tiles": "rubber",  # Black rubber in segments: the belt.
     "metal_plate": "metal",  # Tread plate: the dry lane.
     "rubberized_track": "rubber",  # Red rubber: the ball.
+    "rock_face": "concrete",  # Weathered brown rock: the boulder.
 }
 # The factory's door (in assets/Factory), once across the door's face.
 DOOR = ("door_", "metal", (1.0, 2.1))
@@ -63,6 +66,16 @@ DOOR = ("door_", "metal", (1.0, 2.1))
 PLAIN = {
     "oil": ([0.03, 0.025, 0.02], 0.08, "metal"),  # Steel under a film of oil: dark and glossy.
 }
+# The pool's balls, of glossy plastic in a ball pit's colors (linear).
+BALL_COLORS = {
+    "red": [0.62, 0.04, 0.03],
+    "yellow": [0.8, 0.52, 0.03],
+    "blue": [0.03, 0.15, 0.62],
+    "green": [0.06, 0.42, 0.08],
+    "white": [0.78, 0.78, 0.76],
+}
+PLAIN.update({f"plastic_{name}": (color, 0.3, "plastic") for name, color in BALL_COLORS.items()})
+BALL_RADIUS = 0.08
 TEXTURE_SIZE = 512  # Texels: the props are small.
 
 
@@ -121,6 +134,35 @@ class Mesh:
                 # Counterclockwise from outside.
                 self.indices += [a, a + 1, b, a + 1, b + 1, b]
 
+    def lumpy(self, radius, bumps, rings=16, segments=32):
+        """A sphere of the radius whose surface rises and falls by bumps(direction), a factor near 1: a rock."""
+        start = len(self.positions)
+
+        def point(theta, phi):
+            d = (math.sin(theta) * math.cos(phi), math.cos(theta), math.sin(theta) * math.sin(phi))
+            return [radius * bumps(d) * d[k] for k in range(3)]
+
+        for ring in range(rings + 1):
+            theta = math.pi * ring / rings
+            for segment in range(segments + 1):
+                phi = 2.0 * math.pi * segment / segments
+                # The normal from the surface's slopes, a little off the poles, where phi does not move it.
+                t = min(max(theta, 1e-3), math.pi - 1e-3)
+                e = 1e-3
+                dt = [b - a for a, b in zip(point(t - e, phi), point(t + e, phi))]
+                dp = [b - a for a, b in zip(point(t, phi - e), point(t, phi + e))]
+                n = normalize([dp[1] * dt[2] - dp[2] * dt[1], dp[2] * dt[0] - dp[0] * dt[2],
+                               dp[0] * dt[1] - dp[1] * dt[0]])
+                p = point(theta, phi)
+                if sum(n[k] * p[k] for k in range(3)) < 0:
+                    n = [-c for c in n]
+                self.vertex(p, n, (segment / segments * 2.0 * math.pi * radius, theta * radius))
+        for ring in range(rings):
+            for segment in range(segments):
+                a = start + ring * (segments + 1) + segment
+                b = a + segments + 1
+                self.indices += [a, a + 1, b, a + 1, b + 1, b]
+
     def tube(self, path, radius, closed, sides=10):
         """A bar of the given radius along a path in the XY plane."""
         start = len(self.positions)
@@ -169,6 +211,20 @@ class Mesh:
                         self.indices += [center, a, b]
                     else:
                         self.indices += [center, b, a]
+
+
+def normalize(v):
+    length = math.sqrt(sum(c * c for c in v)) or 1.0
+    return [c / length for c in v]
+
+
+def boulder_bumps(d):
+    """How far the boulder's surface stands out along direction d, about 1: a few broad lumps, flattened a little
+    top and bottom, so that it tumbles more than it rolls."""
+    x, y, z = d
+    lumps = (0.09 * math.sin(2.3 * x + 0.7) * math.sin(2.9 * z + 1.9) + 0.07 * math.sin(3.7 * y + 2.6 * x + 0.3) +
+             0.05 * math.sin(5.3 * z - 4.1 * y + 1.1) + 0.03 * math.sin(7.9 * x + 6.7 * z))
+    return (1.0 + lumps) * (1.0 - 0.18 * y * y)
 
 
 def stadium(half_straight, radius, steps=8):
@@ -395,6 +451,15 @@ def main():
     rubber = Mesh()
     rubber.sphere((0.0, 0.0, 0.0), 0.15)
     write_prop("rubber_ball", rubber, "rubberized_track")
+
+    boulder = Mesh()
+    boulder.lumpy(1.0, boulder_bumps, rings=20, segments=40)
+    write_prop("boulder", boulder, "rock_face")
+
+    for color in BALL_COLORS:
+        ball = Mesh()
+        ball.sphere((0.0, 0.0, 0.0), BALL_RADIUS, rings=8, segments=16)
+        write_prop(f"ball_{color}", ball, f"plastic_{color}")
 
 
 if __name__ == "__main__":

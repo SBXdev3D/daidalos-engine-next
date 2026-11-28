@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-11-24
+- **Amended by:** ADR-0129 (the lamps and the door are shot; the machines room waits for its turn; the Dominoes and Materials rooms make way for a boulder down stairs and a pool of balls)
 - **Amends:** ADR-0122 (the galleries share `scripts/gallery.py`), ADR-0125 (body groups; heavy hits and dust go by reduced mass), ADR-0126 (a turning motor keeps its bodies awake)
 
 ## Context

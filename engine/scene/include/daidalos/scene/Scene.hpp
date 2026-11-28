@@ -124,6 +124,15 @@ public:
     [[nodiscard]] std::size_t PlayingSequences() const { return m_sequences.size(); }
     /// The names of the event cues played since the last call, for the game's code.
     [[nodiscard]] std::vector<std::string> TakeEvents() { return std::exchange(m_events, {}); }
+    /// A shot cue played (ADR-0129): the game fires it, from a point toward a point of a loose object, with a
+    /// weapon it knows by name.
+    struct CueShot {
+        glm::vec3 from{0.0f};
+        glm::vec3 to{0.0f};
+        std::string weapon;
+    };
+    /// The shot cues played since the last call, for the game's code.
+    [[nodiscard]] std::vector<CueShot> TakeShots() { return std::exchange(m_shots, {}); }
     /// Whether a camera cue has the camera.
     [[nodiscard]] bool InCinematic() const { return m_cinematic.has_value(); }
     /// Where the camera cue has the camera now, if one has it: for the game to open doors on its way (ADR-0120).
@@ -233,6 +242,7 @@ private:
     float m_shakeScale = 1.0f;
     std::vector<Caption> m_captions;
     std::vector<std::string> m_events;
+    std::vector<CueShot> m_shots;
     audio::SoundWorld m_sounds;
     PhysicsFeedback m_feedback;
     ecs::Schedule m_fixedSystems;

@@ -15,10 +15,10 @@ It writes, under assets/Factory:
 
     +sandbox.scene Factory/PhysicsGallery.level.json +sandbox.sequence Factory/Sequences/physics_tour.sequence.json
 
-The rooms are swinging lamps, falling crates, rolling barrels, explosions, a wrecking ball, dominoes, materials,
-joints that break, machines, and a chain reaction. What happens in them is the physics' own: the cues only let a
-held body fall, push one, blow, snap a joint or drive a motor, and the same run gives the same picture, so a cue
-timed to a landing stays on it. Its props are in Props (make_physics_props.py) and the showcase kit. The file is
+The rooms are swinging lamps, falling crates, rolling barrels, explosions, a wrecking ball, a boulder down stairs,
+a pool filled with balls, joints that break, machines, and a chain reaction. What happens in them is the physics'
+own: the cues only let a held body fall, push one, blow, snap a joint or drive a motor, and the same run gives the
+same picture, so a cue timed to a landing stays on it. Its props are in Props (make_physics_props.py) and the showcase kit. The file is
 the source: changes belong here, not in the editor.
 """
 
@@ -38,6 +38,7 @@ TOUR_COMMENT = ("The physics gallery's tour (ADR-0128): a shot of each room, fad
 # The chain link of make_physics_props.py: links hang LINK_PITCH apart, the inner length of the one above.
 LINK_PITCH = 0.112
 LINK_SIZE = [0.08, 0.144, 0.04]
+BALL_RADIUS = 0.08  # The pool's balls (make_physics_props.py).
 CRATE = "Props/crate.gltf"  # 60 cm, about its center (make_crate.py).
 
 
@@ -101,6 +102,21 @@ def impulse_cue(at, entity, impulse, point=None):
     if point:
         cue["point"] = r(point)
     return {"at": at, "impulse": cue}
+
+
+def shot_cue(at, room, entity, frm, point=None, weapon="handgun"):
+    """A shot from an unseen gun at frm, in the room's coordinates, through a point of a loose object (ADR-0129):
+    it pushes as the game's weapon does, 2 kg m/s per point of damage, 20 for the handgun and 100 for the rifle."""
+    cue = {"entity": room.label(entity), "from": r(room.world(frm)), "weapon": weapon}
+    if point:
+        cue["point"] = r(point)
+    return {"at": at, "shot": cue}
+
+
+def from_behind(target, push, distance):
+    """Where a gun stands to push target along push: distance meters back along it."""
+    length = math.sqrt(sum(v * v for v in push))
+    return [target[i] - push[i] / length * distance for i in range(3)]
 
 
 def break_cue(at, entity, joint):
@@ -221,14 +237,21 @@ def dress(room, lamps=(), fill=30.0, haze=0.012):
 
 # The rooms ---------------------------------------------------------------------------------------------------
 
+# Where a hanging lamp's shade is, below where it hangs: what a shot at it aims at.
+LAMP_SHADE = -1.1
+
+
 def swinging_room(g):
-    """Lamps on chains, kicked one after another: their lights and the shadows of what stands under them sweep the
+    """Lamps on chains, shot one after another: their lights and the shadows of what stands under them sweep the
     room. A hook on a heavier chain, let go from the side, swings through the picture in front of them."""
     room = PhysicsRoom(g, "Swinging", 0, 7.0, 6.0, 4.6)
     events = []
     lamp = "hanging_industrial_lamp"
-    for index, (x, z, kick, at) in enumerate(((-2.8, -2.0, (20.0, 0.0, -6.0), 2.6), (0.0, -2.8, (0.0, 0.0, 19.0), 4.0),
-                                              (2.8, -2.0, (-17.0, 0.0, 10.0), 5.4))):
+    # Each lamp is shot with the handgun (20 kg m/s) through its shade, from out of the picture: the way it is
+    # pushed, how far back the gun stands, and when, far enough apart that each is seen to start on its own.
+    for index, (x, z, push, back, at) in enumerate(((-2.8, -2.0, (20.0, 0.0, -6.0), 4.0, 2.6),
+                                                    (0.0, -2.8, (0.0, 0.0, 19.0), 3.0, 5.2),
+                                                    (2.8, -2.0, (-17.0, 0.0, 10.0), 4.2, 7.8))):
         top = (x, room.h - 0.05, z)
         room.box("rust", (x - 0.12, room.h - 0.05, z - 0.12), (x + 0.12, room.h, z + 0.12), "ceiling plate")
         made = room.chain(f"lamp {index + 1} chain", top, (x, top[1] - 0.784, z))
@@ -236,7 +259,8 @@ def swinging_room(g):
         lamp_id = room.loose(name, lamp, made[1], {"shape": "hull", "mass": 6.0, "surface": "metal", "group": made[3]},
                              joints=room.hang(made, top)([0.0, 0.0, 0.0]), extent=0.7)
         room.child_light(lamp_id, f"lamp {index + 1} light", (0.0, -1.22, 0.0), LAMP_LIGHT, DOWN)
-        events.append(impulse_cue(at, room.label(name), kick, (0.0, -1.2, 0.0)))
+        shade = [made[1][0], made[1][1] + LAMP_SHADE, made[1][2]]
+        events.append(shot_cue(at, room, name, from_behind(shade, push, back), (0.0, LAMP_SHADE, 0.0)))
     # Under each lamp, something whose shadow it swings.
     room.showcase("stool", "metal_stool_01", (-2.6, 0.0, -1.7), 4.0, shape="cylinder")
     room.crate("crate", (0.2, 0.3, -2.9), turn=15.0)
@@ -253,7 +277,7 @@ def swinging_room(g):
     room.loose("hook", "Props/hook.gltf", made[1], {"shape": "hull", "mass": 30.0, "surface": "metal",
                                                      "held": True, "group": made[3]},
                joints=room.hang(made, pivot)([0.0, 0.0, 0.0]), extent=0.5)
-    events.append(release_cue(7.6, room.label("hook")))
+    events.append(release_cue(10.6, room.label("hook")))
     # Along the walls, in the dark between the pools.
     room.prop("steel_frame_shelves_02", (-6.6, 0.0, -2.5), 90.0)
     room.prop("steel_frame_shelves_02", (6.6, 0.0, -3.0), -90.0)
@@ -263,10 +287,10 @@ def swinging_room(g):
     room.light("point", (0.0, 4.0, 5.0), 4.0, (0.6, 0.7, 1.0), 12.0, what="cold fill")
     room.fog((0.0, 2.3, 0.0), (14.0, 4.6, 12.0), 0.008, noise=0.25, what="haze")
     room.entity("player", (0.0, 1.4, 5.0), game={"kind": "player"})
-    room.shot(18.0, [
+    room.shot(21.0, [
         (0.0, (-1.2, 1.3, 4.8), (0.0, 1.9, -2.2), 1.2),
-        (9.0, (0.4, 1.2, 4.2), (0.0, 1.8, -2.2), 1.2),
-        (18.5, (1.8, 1.4, 3.6), (-0.3, 1.6, -2.2), 1.2),
+        (10.5, (0.4, 1.2, 4.2), (0.0, 1.8, -2.2), 1.2),
+        (21.5, (1.8, 1.4, 3.6), (-0.3, 1.6, -2.2), 1.2),
     ], events)
 
 
@@ -443,111 +467,158 @@ def wrecking_room(g):
     ], [release_cue(2.6, room.label("ball"))])
 
 
-def domino_path():
-    """Where the dominoes stand: (x, z, heading x, heading z, scale) along straights and turns, a plank's height
-    apart, growing at the end toward the shelves."""
-    x, z, heading = -6.5, 5.5, 0.0  # Heading in degrees from +X toward -Z.
-    pieces = [(4.0, 0.0), (11.0, 180.0 / 11.0), (3.0, 0.0), (7.85, -180.0 / 7.85), (1.5, 0.0)]
-    planks = []
-    gap = 0.45
-    travelled, next_at = 0.0, 0.0
-    step = 0.05
-    for length, turn in pieces:
-        moved = 0.0
-        while moved < length - 1e-6:
-            if travelled >= next_at:
-                planks.append((x, z, math.cos(math.radians(heading)), -math.sin(math.radians(heading)), 1.0))
-                next_at += gap
-            x += step * math.cos(math.radians(heading))
-            z -= step * math.sin(math.radians(heading))
-            heading += turn * step
-            moved += step
-            travelled += step
-    # The last ones grow, each 1.2 times the last, a little more than half their height apart.
-    hx, hz = math.cos(math.radians(heading)), -math.sin(math.radians(heading))
-    scale = 1.0
-    for _ in range(5):
-        scale *= 1.2
-        advance = 0.5 * 0.9 * scale
-        x += hx * advance
-        z += hz * advance
-        planks.append((x, z, hx, hz, scale))
-    return planks, (x, z, hx, hz, scale)
-
-
-def dominoes_room(g):
-    """A line of planks that curves around the room, growing at its end, where the last one tips two shelves."""
-    room = PhysicsRoom(g, "Dominoes", 5, 9.0, 9.0, 6.0)
-    planks, last = domino_path()
-    for index, (x, z, hx, hz, scale) in enumerate(planks):
-        turn = math.degrees(math.atan2(hx, hz))
-        room.loose(f"plank {index + 1}", "Props/plank.gltf", (x, 0.0, z),
-                   {"size": [0.4, 0.9, 0.08], "center": [0.0, 0.45, 0.0], "mass": round(4.0 * scale ** 3, 2),
-                    "surface": "wood"}, yaw(turn), [scale] * 3 if scale != 1.0 else None, extent=0.5 * scale)
-    # Two shelves where the last plank falls, the second where the first falls, with boxes on top.
-    x, z, hx, hz, scale = last
-    turn = math.degrees(math.atan2(hx, hz))
-    for index, distance in enumerate((0.55 * 0.9 * scale + 0.25, 0.55 * 0.9 * scale + 0.25 + 1.5)):
-        sx, sz = x + hx * distance, z + hz * distance
-        room.showcase(f"shelf {index + 1}", "steel_frame_shelves_02", (sx, 0.0, sz), 35.0, turn=turn + 90.0)
-        room.showcase(f"shelf {index + 1} box", "plastic_crate_01", (sx, 2.14, sz), 3.0, turn=turn,
-                      surface="plastic")
-    first = planks[0]
-    events = [impulse_cue(2.4, room.label("plank 1"), (first[2] * 3.0, 0.0, first[3] * 3.0), (0.0, 0.85, 0.0))]
-    dress(room, lamps=((-4.0, 2.0), (2.0, -4.0), (4.0, 4.0)), fill=30.0)
-    room.light("spot", (0.0, 5.8, 0.0), 2500.0, (1.0, 0.9, 0.78), 14.0, (0.0, -1.0, 0.0), 40, 70, 0.3,
-               what="light over the line")
-    room.light("spot", (3.5, 5.8, -2.5), 2500.0, (1.0, 0.9, 0.78), 14.0, (-0.6, -1.0, -0.8), 30, 55, 0.2,
-               what="light on the shelves")
-    room.shot(19.0, [
-        (0.0, (-7.5, 3.6, 8.0), (-4.0, 0.3, 4.0), 1.2),
-        (7.0, (2.5, 4.0, 7.5), (-0.5, 0.2, 0.5), 1.2),
-        (12.0, (4.5, 2.6, 1.0), (-1.5, 0.4, -5.0), 1.2),
-        (19.5, (5.0, 1.8, -2.4), (1.2, 0.8, -6.4), 1.2),
-    ], events)
-
-
-def materials_room(g):
-    """The same drop for a plastic box, a steel tool chest, a rubber ball and a sack, then the same push for a
-    crate on a dry lane and one on an oily lane."""
-    room = PhysicsRoom(g, "Materials", 6, 8.0, 7.0, 6.0)
+def stairs_room(g):
+    """A big boulder dropped onto the top of a long flight of concrete stairs: it tumbles down them, step by step,
+    into crates and drums at their foot, the camera backing away before it."""
+    room = PhysicsRoom(g, "Stairs", 6, 15.0, 9.0, 14.0)
     events = []
-    drops = (("box", "plastic_crate_01", -6.3, 2.0, "box", {"surface": "plastic"}),
-             ("tool chest", "metal_tool_chest", -4.9, 45.0, "box", {"surface": "metal"}),
-             ("ball", "Props/rubber_ball.gltf", -3.5, 1.0, "sphere", {"surface": "rubber"}),
-             ("sack", "cement_bag", -2.1, 25.0, "box", {"surface": "cloth"}))
-    for what, model, x, mass, shape, more in drops:
-        name = f"dropped {what}"
-        if model.startswith("Props/"):
-            room.loose(name, model, (x, 3.0, -3.5), {"shape": "sphere", "size": [0.3, 0.3, 0.3], "mass": mass,
-                                                     "held": True, **more}, extent=0.2)
-        else:
-            room.showcase(name, model, (x, 2.8, -3.5), mass, shape=shape, held=True, **more)
-        events.append(release_cue(3.0, room.label(name)))
-    room.box("rust", (-7.0, 3.6, -3.9), (-1.4, 3.75, -3.1), "beam over the drops")
-    # Two lanes: dry, and oily (its friction almost none, wet to the eye).
-    for what, model, z, friction in (("dry lane", "lane", -1.5, 0.7), ("oily lane", "oily_lane", -3.3, 0.02)):
-        room.entity(what, (4.2, 0.02, z), model=f"Props/{model}.gltf",
-                    body={"mass": 0.0, "size": [7.0, 0.04, 1.2], "surface": "metal", "friction": friction})
-        room.crate(f"crate on the {what}", (1.2, 0.34, z), 15.0)
-        events.append(impulse_cue(8.6, room.label(f"crate on the {what}"), (52.0, 0.0, 0.0)))
-    dress(room, lamps=((-4.5, -1.0), (4.0, -1.0)), fill=30.0)
-    room.light("spot", (-4.2, 5.8, 1.0), 1600.0, (1.0, 0.9, 0.78), 12.0, (0.0, -1.0, -0.8), 25, 50, 0.2,
-               what="light on the drops")
-    room.light("spot", (4.2, 5.8, 1.5), 1600.0, (1.0, 0.9, 0.78), 12.0, (0.0, -1.0, -0.8), 30, 60, 0.2,
-               what="light on the lanes")
-    room.shot(15.0, [
-        (0.0, (-4.4, 1.4, 0.6), (-4.2, 2.3, -3.5), 1.2),
-        (2.9, (-4.3, 1.35, 0.5), (-4.2, 2.1, -3.5), 1.2),
-        (3.7, (-4.1, 1.2, 0.3), (-4.2, 0.9, -3.5), 1.2),
-        (6.0, (-3.9, 1.1, 0.0), (-4.2, 0.6, -3.5), 1.2),
-        (7.6, (-0.4, 1.6, 0.8), (4.0, 0.2, -2.4), 1.2),
-        (15.5, (0.6, 1.7, 1.2), (4.6, 0.2, -2.4), 1.2),
+    # The flight goes down along +X, from a landing against the west wall to the floor, between two parapets that
+    # keep the boulder on it.
+    z0, z1 = STAIRS_Z
+    room.box("walls", (-room.w, 0.0, z0), (STAIRS_TOP_EDGE, STAIRS_HEIGHT, z1), "landing")
+    steps = round(STAIRS_HEIGHT / STAIRS_RISE) - 1
+    for step in range(steps):
+        x = STAIRS_TOP_EDGE + STAIRS_TREAD * step
+        top = STAIRS_HEIGHT - STAIRS_RISE * (step + 1)
+        room.box("walls", (x, 0.0, z0), (x + STAIRS_TREAD, top, z1), f"step {step + 1}")
+        for side, (a, b) in (("far", (z0 - 0.25, z0)), ("near", (z1, z1 + 0.25))):
+            room.box("rust", (x, 0.0, a), (x + STAIRS_TREAD, top + 0.9, b), f"{side} parapet {step + 1}")
+    for side, (a, b) in (("far", (z0 - 0.25, z0)), ("near", (z1, z1 + 0.25))):
+        room.box("rust", (-room.w, 0.0, a), (STAIRS_TOP_EDGE, STAIRS_HEIGHT + 0.9, b), f"{side} landing parapet")
+    # The boulder, 2 m across and 8 tonnes, held over the second step and a little turned, let go.
+    zc = (z0 + z1) / 2
+    room.loose("boulder", "Props/boulder.gltf", (STAIRS_TOP_EDGE + 1.3, STAIRS_HEIGHT + 5.0, zc + 0.3),
+               {"shape": "hull", "mass": 8000.0, "surface": "concrete", "held": True, "fast": True},
+               quat_mul(quat_axis([1, 0, 0], 25.0), quat_axis([0, 1, 0], 40.0)), extent=1.2)
+    events.append(release_cue(2.6, room.label("boulder")))
+    # At the foot of the stairs, what it runs into.
+    foot = STAIRS_TOP_EDGE + STAIRS_TREAD * steps
+    for row, count in enumerate((4, 3, 2, 1)):
+        for column in range(count):
+            room.crate(f"crate {row} {column}",
+                       (foot + 3.5, 0.3 + 0.6 * row, zc - 0.62 * (count - 1) / 2 + 0.62 * column), 12.0,
+                       turn=(column - row) * 4.0)
+    room.showcase("drum", "Barrel_01", (foot + 2.0, 0.0, z1 + 1.4), 20.0, shape="cylinder")
+    room.showcase("drum 2", "barrel_03", (foot + 5.5, 0.0, z0 + 0.3), 25.0, shape="cylinder")
+    room.showcase("drum 3", "Barrel_02", (foot + 6.2, 0.0, zc + 0.4), 20.0, shape="cylinder")
+    room.showcase("cart", "tool_cart", (foot + 3.0, 0.0, z0 - 1.2), 30.0, turn=10.0, shape="hull")
+    room.prop("steel_frame_shelves_02", (14.4, 0.0, -6.0), -90.0)
+    dress(room, lamps=((-11.0, -5.0), (-4.0, -5.0), (3.0, -5.0), (10.0, -5.0)), fill=60.0)
+    room.light("spot", (-8.0, 13.6, 3.0), 7000.0, (1.0, 0.9, 0.78), 24.0, (0.0, -1.0, -0.6), 30, 55, 0.2,
+               what="light on the landing")
+    room.light("spot", (-3.0, 13.6, 3.0), 7000.0, (1.0, 0.9, 0.78), 24.0, (0.0, -1.0, -0.6), 30, 55, 0.2,
+               what="light on the stairs")
+    room.light("spot", (6.0, 13.6, 3.0), 6000.0, (1.0, 0.9, 0.78), 24.0, (0.0, -1.0, -0.6), 30, 60, 0.2,
+               what="light on the foot")
+    # From beyond the foot, up the flight; as the boulder comes down, the camera backs away before it.
+    room.shot(18.0, [
+        (0.0, (6.0, 3.4, 1.8), (-9.0, 8.5, zc), 1.2),
+        (3.2, (6.0, 3.3, 1.8), (-8.0, 6.0, zc), 1.2),
+        (4.6, (7.0, 3.2, 1.9), (-5.0, 3.8, zc), 1.2),
+        (7.2, (12.0, 2.8, 2.2), (-0.5, 1.4, zc), 1.2),
+        (9.5, (13.8, 2.6, 2.6), (4.0, 0.9, zc - 0.5), 1.2),
+        (18.5, (14.0, 2.8, 3.0), (6.0, 0.6, zc - 1.0), 1.2),
     ], events)
+
+
+# The stairs room's flight (ADR-0129): from a landing STAIRS_HEIGHT high, down along +X from STAIRS_TOP_EDGE in
+# steps of STAIRS_RISE and STAIRS_TREAD (big ones, as a factory's), between z STAIRS_Z.
+STAIRS_HEIGHT = 6.0
+STAIRS_RISE = 0.4
+STAIRS_TREAD = 0.7
+STAIRS_TOP_EDGE = -10.0
+STAIRS_Z = (-7.0, -2.0)
+
+
+def pool_room(g):
+    """A pool that a duct from the ceiling fills with plastic balls, hundreds of them: they bounce off one another,
+    the rim and the crates in the pool, and pile up."""
+    # The duct, square, through the ceiling over the pool, and above the ceiling, out of sight, a hopper: a channel
+    # as wide as the duct whose floor slopes down to it, where the balls wait in rows across it.
+    dx, dz, half = POOL_DUCT
+    room = PhysicsRoom(g, "Pool", 5, 8.0, 7.0, 6.0, holes=[(dx - half, dx + half, dz - half, dz + half)])
+    events = []
+    # The pool: a basin of concrete on the floor.
+    x0, x1, z0, z1, rim = -3.0, 2.6, -4.8, -1.2, 0.8
+    for low, high, what in (((x0 - 0.25, 0.0, z0 - 0.25), (x1 + 0.25, rim, z0), "back"),
+                            ((x0 - 0.25, 0.0, z1), (x1 + 0.25, rim, z1 + 0.25), "front"),
+                            ((x0 - 0.25, 0.0, z0), (x0, rim, z1), "left"),
+                            ((x1, 0.0, z0), (x1 + 0.25, rim, z1), "right")):
+        room.box("walls", low, high, f"pool {what} rim")
+    room.box("metal", (x0, 0.0, z0), (x1, 0.02, z1), "pool floor")
+    # The duct, from the ceiling down to 3.2 m.
+    t = 0.05
+    bottom, top = 3.2, room.h + 0.3
+    for low, high, what in (((dx - half - t, bottom, dz - half - t), (dx + half + t, top, dz - half), "back"),
+                            ((dx - half - t, bottom, dz + half), (dx + half + t, top, dz + half + t), "front"),
+                            ((dx - half - t, bottom, dz - half), (dx - half, top, dz + half), "left"),
+                            ((dx + half, bottom, dz - half), (dx + half + t, top, dz + half), "right")):
+        room.box("rust", low, high, f"duct {what}")
+    # The hopper over the ceiling, along +Z from the duct.
+    floor = room.h + 0.3
+    length, rise = 6.0, 2.5
+    z_foot, z_top = dz + half, dz + half + length
+    room.ramp("rust", dx - half, dx + half, z_top, z_foot, rise, "hopper floor", base=floor)
+    hopper_top = floor + rise + 2.0
+    room.box("rust", (dx - half - t, floor, dz - half - t), (dx + half + t, hopper_top, dz - half), "hopper back")
+    room.box("rust", (dx - half - t, floor, z_top), (dx + half + t, hopper_top, z_top + t), "hopper end")
+    for xa, xb in ((dx - half - t, dx - half), (dx + half, dx + half + t)):
+        room.box("rust", (xa, floor, dz - half), (xb, hopper_top, z_top), "hopper side")
+    # The balls: across the channel five by five, up the slope, in layers; each row of every layer let go in
+    # turn, the nearest the duct first, so that they pour down the duct in a stream.
+    colors = ("red", "yellow", "blue", "green", "white")
+    pitch = 2 * BALL_RADIUS + 0.04
+    across = [dx + pitch * (column - 2) for column in range(5)]
+    rows = int((length - 0.3) / pitch)
+    count = 0
+    for row in range(rows):
+        z = z_foot + 0.15 + pitch * row
+        ground = floor + room.surface_height(z, z_top, z_foot, rise)
+        names = []
+        for layer in range(POOL_LAYERS):
+            for column, x in enumerate(across):
+                name = f"ball {count + 1}"
+                color = colors[(row * 7 + layer * 3 + column) % len(colors)]
+                room.loose(name, f"Props/ball_{color}.gltf", (x, ground + BALL_RADIUS + 0.05 + pitch * layer, z),
+                           {"shape": "sphere", "size": [2 * BALL_RADIUS] * 3, "mass": 0.12, "surface": "plastic",
+                            "held": True}, extent=BALL_RADIUS)
+                names.append(name)
+                count += 1
+        events += [release_cue(round(POOL_START + POOL_ROW_GAP * row, 3), room.label(name)) for name in names]
+    # What the balls land on and around, in the pool.
+    room.crate("crate", (0.3, 0.3, -3.6), 15.0, turn=20.0)
+    room.crate("crate 2", (1.6, 0.3, -2.2), 15.0, turn=-35.0)
+    room.showcase("drum", "barrel_03", (1.9, 0.0, -4.1), 25.0, shape="cylinder")
+    room.loose("rubber ball", "Props/rubber_ball.gltf", (-2.5, 0.17, -1.6),
+               {"shape": "sphere", "size": [0.3, 0.3, 0.3], "mass": 1.0, "surface": "rubber"}, extent=0.2)
+    dress(room, lamps=((-4.0, 2.0), (4.0, 2.0)), fill=35.0)
+    room.light("spot", (2.5, 5.8, 1.5), 2600.0, (1.0, 0.9, 0.78), 14.0, (-0.5, -1.0, -0.7), 30, 60, 0.2,
+               what="light on the pool")
+    room.light("spot", (-5.0, 5.8, -0.5), 1600.0, (1.0, 0.9, 0.78), 12.0, (0.6, -1.0, -0.6), 25, 50, 0.2,
+               what="light on the duct")
+    end = POOL_START + POOL_ROW_GAP * rows
+    room.shot(end + 10.0, [
+        (0.0, (1.2, 3.2, 3.8), (-0.8, 1.6, -3.0), 1.2),
+        (POOL_START + 3.0, (0.9, 3.0, 3.2), (-0.6, 0.9, -3.0), 1.2),
+        (end + 10.5, (-0.2, 3.6, 2.4), (-0.2, 0.2, -3.0), 1.2),
+    ], events)
+    return count
+
+
+# The pool room's duct (ADR-0129): its middle (x, z) and half its width, inside; how many layers of balls wait in
+# the hopper, when the first row is let go and how long after each other the rows are.
+POOL_DUCT = (-1.2, -3.0, 0.52)
+POOL_LAYERS = 7
+POOL_START = 2.0
+POOL_ROW_GAP = 0.15
+
+
+# Where the second shot at the door comes from, in front of it, for the door as the first shot left it.
+DOOR_SECOND_SHOT = (-6.1, 1.0, 1.0)
 
 
 def joints_room(g):
-    """In a row, the camera passing along them: a door on its hinge, kicked; a sign on two chains, one of which
+    """In a row, the camera passing along them: a door on its hinge, shot; a sign on two chains, one of which
     snaps; a shelf glued together, blown apart; a see-saw that throws a crate."""
     room = PhysicsRoom(g, "Joints", 7, 10.0, 7.0, 4.6)
     events = []
@@ -560,8 +631,9 @@ def joints_room(g):
                                                            "mass": 30.0, "surface": "metal"},
                joints=[hinge(0, [0.0, 1.05, 0.0], [0.0, 1.0, 0.0], limits=(-110.0, 110.0), friction=4.0)],
                extent=1.1)
-    events += [impulse_cue(2.4, room.label("door"), (0.0, 0.0, 75.0), (0.9, 1.0, 0.0)),
-               impulse_cue(4.8, room.label("door"), (0.0, 0.0, -75.0), (0.9, 1.0, 0.0))]
+    # Shot with the rifle (100 kg m/s) near its free edge: from behind it, then back from in front.
+    events += [shot_cue(2.4, room, "door", (dx + 0.9, 1.0, dz - 3.8), (0.9, 1.0, 0.0), "rifle"),
+               shot_cue(4.8, room, "door", DOOR_SECOND_SHOT, (0.9, 1.0, 0.0), "rifle")]
     # The sign on two chains; the right one snaps.
     sx, sz = -2.4, -3.0
     links = 9
@@ -626,8 +698,9 @@ def joints_room(g):
 
 
 def machines_room(g):
-    """A conveyor carries boxes off its end onto a turning paddle, which bats them across the room; beside it, a
-    piston shoves crates off a ledge."""
+    """A conveyor carries boxes to its end, where a turning paddle comes down on them and bats them back up over the
+    belt, which brings them back to be hit again; beside it, a piston shoves crates off a ledge. The rooms before it
+    play first, with the belt running: its boxes are held on it, and the paddle stands, until the room starts."""
     room = PhysicsRoom(g, "Machines", 8, 9.0, 8.0, 6.0)
     events = []
     bz = -3.0
@@ -643,15 +716,19 @@ def machines_room(g):
     for index in range(7):
         x = -2.6 - 0.95 * index
         if index % 2:
-            room.showcase(f"belt box {index + 1}", "plastic_crate_01", (x, belt_top, bz), 3.0, turn=90.0,
-                          surface="plastic")
+            name = f"belt box {index + 1}"
+            room.showcase(name, "plastic_crate_01", (x, belt_top, bz), 3.0, turn=90.0, surface="plastic",
+                          held=True)
         else:
-            room.crate(f"belt crate {index + 1}", (x, belt_top + 0.18, bz), 6.0, scale=[0.6, 0.6, 0.6])
-    # The paddle, turned by a motor, its left side rising past the belt's end, high enough to clear what falls.
+            name = f"belt crate {index + 1}"
+            room.crate(name, (x, belt_top + 0.18, bz), 6.0, scale=[0.6, 0.6, 0.6], held=True)
+        events.append(release_cue(0.0, room.label(name)))
+    # The paddle, turned by a motor, its left side coming down past the belt's end, onto what arrives there.
     hub = (0.0, 2.35, bz)
     room.loose("paddle", "Props/paddle.gltf", hub, {"size": [2.4, 0.08, 0.8], "mass": 20.0, "surface": "wood"},
                joints=[hinge(0, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0],
-                             motor={"mode": "speed", "target": PADDLE_SPEED, "strength": 3000.0})], extent=1.3)
+                             motor={"mode": "speed", "target": 0.0, "strength": 3000.0})], extent=1.3)
+    events.append(motor_cue(0.0, room.label("paddle"), 0, "speed", round(math.radians(PADDLE_SPEED), 4), 3000.0))
     room.box("rust", (hub[0] - 0.1, 0.0, bz - 0.6), (hub[0] + 0.1, hub[1], bz - 0.45), "paddle post")
     # The piston on a ledge to the right, three crates in front of it, pushed off toward the camera.
     room.box("walls", (3.4, 0.0, -7.0), (6.2, 1.2, -3.8), "ledge")
@@ -678,8 +755,8 @@ def machines_room(g):
     ], events)
 
 
-# Degrees a second: the paddle's left side rises past the belt's end.
-PADDLE_SPEED = 150.0
+# Degrees a second: the paddle's left side comes down past the belt's end (ADR-0129: livelier than rising).
+PADDLE_SPEED = -150.0
 
 
 def finale_room(g):
@@ -776,7 +853,7 @@ FINALE_BOTTLES = (2.0, 0.0)
 FINALE_BLAST = 11.3
 
 
-ROOMS = [swinging_room, falling_room, rolling_room, explosions_room, wrecking_room, dominoes_room, materials_room,
+ROOMS = [swinging_room, falling_room, rolling_room, explosions_room, wrecking_room, stairs_room, pool_room,
          joints_room, machines_room, finale_room]
 
 

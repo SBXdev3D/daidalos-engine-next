@@ -302,6 +302,13 @@ bool SequencePanel::DrawCue(scene::Cue& cue, const Context& context) {
         changed |= EntityField("Loose object", cue.name, context);
         ImGui::TextDisabled("Lets a body held where it is fall");
         break;
+    case scene::Cue::Kind::Shot:
+        changed |= EntityField("Loose object", cue.name, context);
+        changed |= ImGui::DragFloat3("At (m, its frame)", &cue.point.x, 0.01f);
+        changed |= ImGui::DragFloat3("From (m)", &cue.position.x, 0.05f);
+        changed |= InputString("Weapon", cue.path);
+        ImGui::TextDisabled("Fired unseen, as the game's own: handgun or rifle");
+        break;
     case scene::Cue::Kind::Break:
     case scene::Cue::Kind::Motor: {
         changed |= EntityField("Loose object", cue.name, context);

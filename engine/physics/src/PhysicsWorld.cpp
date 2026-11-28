@@ -59,9 +59,11 @@ namespace {
 constexpr const char* kModule = "physics";
 
 constexpr std::uint32_t kMaxBodies = 4096;
-constexpr std::uint32_t kMaxBodyPairs = 4096;
-constexpr std::uint32_t kMaxContacts = 2048;
-constexpr std::size_t kTempMemory = 16 * 1024 * 1024;
+// A heap of a thousand small loose objects touches in about four thousand places, and a contact past these is
+// dropped: what rests on the floor under them falls through it (ADR-0129).
+constexpr std::uint32_t kMaxBodyPairs = 16384;
+constexpr std::uint32_t kMaxContacts = 16384;
+constexpr std::size_t kTempMemory = 32 * 1024 * 1024;
 
 // What never moves does not collide with itself. The bodies inside characters collide with nothing:
 // characters push each other through their own test, and the bodies are only there for rays.
@@ -376,6 +378,9 @@ private:
 } // namespace
 
 struct PhysicsWorld::State {
+    /// Whether a step has said it dropped contacts: said once.
+    bool overflowReported = false;
+
     struct Joint {
         JointHandle self;
         JointKind kind = JointKind::Point;
@@ -692,7 +697,11 @@ void PhysicsWorld::Step(float step) {
     DAI_PROFILE_SCOPE("physics::Step");
     m_state->contacts.Clear();
     m_state->breaks.clear();
-    m_state->system.Update(step, 1, &m_state->temp, &m_state->jobs);
+    const JPH::EPhysicsUpdateError error = m_state->system.Update(step, 1, &m_state->temp, &m_state->jobs);
+    if (error != JPH::EPhysicsUpdateError::None && !std::exchange(m_state->overflowReported, true)) {
+        DAI_LOG_WARNING(kModule, "Too many touching bodies: contacts were dropped (Jolt error {:#x})",
+                        static_cast<unsigned>(error));
+    }
     // How hard each joint pulled, from the impulse its position part needed this step; those pulled past their
     // force break (ADR-0126).
     std::vector<JointHandle> breaking;

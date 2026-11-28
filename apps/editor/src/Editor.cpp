@@ -1645,7 +1645,7 @@ void Editor::DrawSelectedCue() {
                 draw->AddCircleFilled({at->x, at->y}, 5.0f, color);
             }
         }
-    } else if (cue->kind == scene::Cue::Kind::Move) {
+    } else if (cue->kind == scene::Cue::Kind::Move || cue->kind == scene::Cue::Kind::Shot) {
         for (const scene::LevelEntity& entity : m_level.entities) {
             if (entity.name == cue->name) {
                 const ecs::Entity created = m_instance->Find(entity.id);

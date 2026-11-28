@@ -1,0 +1,177 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "scripts/make_physics_props.py"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "name": "boulder",
+   "mesh": 0
+  }
+ ],
+ "meshes": [
+  {
+   "name": "boulder",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "materials": [
+  {
+   "name": "rock_face",
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0
+    },
+    "metallicRoughnessTexture": {
+     "index": 2
+    },
+    "metallicFactor": 1.0,
+    "roughnessFactor": 1.0
+   },
+   "normalTexture": {
+    "index": 1
+   },
+   "occlusionTexture": {
+    "index": 2
+   },
+   "extras": {
+    "surface": "concrete"
+   }
+  }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "extensions": {
+    "KHR_texture_basisu": {
+     "source": 0
+    }
+   }
+  },
+  {
+   "sampler": 0,
+   "extensions": {
+    "KHR_texture_basisu": {
+     "source": 1
+    }
+   }
+  },
+  {
+   "sampler": 0,
+   "extensions": {
+    "KHR_texture_basisu": {
+     "source": 2
+    }
+   }
+  }
+ ],
+ "images": [
+  {
+   "uri": "textures/rock_face_d.ktx2",
+   "mimeType": "image/ktx2"
+  },
+  {
+   "uri": "textures/rock_face_n.ktx2",
+   "mimeType": "image/ktx2"
+  },
+  {
+   "uri": "textures/rock_face_arm.ktx2",
+   "mimeType": "image/ktx2"
+  }
+ ],
+ "samplers": [
+  {}
+ ],
+ "extensionsUsed": [
+  "KHR_texture_basisu"
+ ],
+ "extensionsRequired": [
+  "KHR_texture_basisu"
+ ],
+ "buffers": [
+  {
+   "uri": "boulder.bin",
+   "byteLength": 46752
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteOffset": 0,
+   "byteLength": 10332,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 10332,
+   "byteLength": 10332,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 20664,
+   "byteLength": 6888,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 27552,
+   "byteLength": 19200,
+   "target": 34963
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 861,
+   "type": "VEC3",
+   "min": [
+    -0.907236,
+    -0.868982,
+    -1.04801
+   ],
+   "max": [
+    1.127236,
+    0.848903,
+    0.987327
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 861,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 861,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5125,
+   "count": 4800,
+   "type": "SCALAR"
+  }
+ ]
+}
